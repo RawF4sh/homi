@@ -2,7 +2,7 @@
 
 A Flutter app for iPhone and Android that helps residents document home concerns, explore possible assistance programs, and prepare draft applications.
 
-The first shared slice is a Flutter iOS/Android app with three fictional program-result examples, v1 JSON contracts and typed Dart adapters. The examples are bundled locally; there is no live matching API or deployed backend.
+The shared app has three fictional program-result examples, v1 JSON contracts and typed Dart adapters. A new mobile API client can call the local matching server developed in the backend worktree. The default screen still uses bundled examples; no cloud backend is deployed. See the [matching API handoff](docs/matching-api.md) to run the complete local check.
 
 See [getting started and first commits](docs/getting-started.md) for run commands, the two local work areas and the manual commit order.
 

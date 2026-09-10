@@ -99,7 +99,9 @@ void validate(
     'uniqueItems',
     'minItems',
     'minLength',
+    'maxLength',
     'minimum',
+    'maximum',
     'enum',
     'const',
     'pattern',
@@ -191,9 +193,15 @@ void validate(
   if (value is num && s.containsKey('minimum')) {
     require(value >= (s['minimum'] as num), 'below minimum');
   }
+  if (value is num && s.containsKey('maximum')) {
+    require(value <= (s['maximum'] as num), 'above maximum');
+  }
   if (value is String) {
     if (s.containsKey('minLength')) {
       require(value.runes.length >= (s['minLength'] as int), 'too short');
+    }
+    if (s.containsKey('maxLength')) {
+      require(value.runes.length <= (s['maxLength'] as int), 'too long');
     }
     if (s.containsKey('pattern')) {
       require(
