@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:safe_at_home/shared/models/contracts.dart';
 import 'package:safe_at_home/shared/services/io_matching_transport.dart';
 import 'package:safe_at_home/shared/services/matching_api_client.dart';
+import 'package:safe_at_home/shared/services/packet_api_client.dart';
 
 Future<void> main(List<String> arguments) async {
   if (arguments.isNotEmpty &&
@@ -153,9 +154,146 @@ Future<void> main(List<String> arguments) async {
     stdout.writeln(
       'PASS: invalid tokens, stale saved revisions and late responses are rejected.',
     );
+
+    final packetEndpoint = Uri.parse(configuration['packetEndpoint'] as String);
+    PacketApiClient packetClient(String token) => PacketApiClient(
+      endpoint: packetEndpoint,
+      tokenProvider: () async => token,
+      transport: IoMatchingTransport(),
+      allowInsecureLoopback: true,
+    );
+    final alicePackets = packetClient(configuration['alice'] as String);
+    final bobPackets = packetClient(configuration['bob'] as String);
+    for (final scenario in scenarios) {
+      final input = CaseSnapshot.fromJson(scenario['case']);
+      final programId = MatchResponse.fromJson(
+        scenario['match'],
+      ).matches.single.programId;
+      final key = 'smoke-${scenario['id']}';
+      final packet = await alicePackets.preparePacket(
+        input,
+        programId: programId,
+        generationKey: key,
+        currentCase: () => input,
+      );
+      final retry = await alicePackets.preparePacket(
+        input,
+        programId: programId,
+        generationKey: key,
+        currentCase: () => input,
+      );
+      require(
+        packet.packetId == retry.packetId &&
+            packet.generatedAt == retry.generatedAt,
+        'Retry created a different packet.',
+      );
+      require(
+        packet.caseId == input.caseId &&
+            packet.caseRevision == input.revision &&
+            packet.programId == programId &&
+            packet.status == 'draft' &&
+            packet.isDemo,
+        'Draft identity or state changed.',
+      );
+      require(
+        packet.formVersion == null &&
+            packet.mappingVersion == null &&
+            packet.storageReference == null &&
+            packet.attachments.isEmpty,
+        'Unverified forms or evidence must not be fabricated.',
+      );
+      require(
+        packet.missingItems.any((item) => item.id == 'official-form'),
+        'Unverified official form must stay on the checklist.',
+      );
+      require(
+        packet.isFreshFor(
+          input,
+          programId: programId,
+          ruleVersion: MatchResponse.fromJson(
+            scenario['match'],
+          ).matches.single.ruleVersion,
+          formVersion: null,
+          mappingVersion: null,
+          now: DateTime.now().toUtc(),
+        ),
+        'The live demo draft is unexpectedly stale.',
+      );
+      if (scenario['id'] == 'unknown') {
+        require(
+          packet.missingItems.any(
+            (item) => item.id == 'check:plan' && item.resolvedBy == 'resident',
+          ),
+          'Missing plan confirmation lost its next step.',
+        );
+      }
+    }
+    const programId = 'demo-home-support';
+    await expectCode(
+      () => bobPackets.preparePacket(
+        snapshot,
+        programId: programId,
+        generationKey: 'smoke-matched',
+        currentCase: () => snapshot,
+      ),
+      'CASE_NOT_FOUND',
+    );
+    final bobDraft = await bobPackets.preparePacket(
+      bobSnapshot,
+      programId: programId,
+      generationKey: 'smoke-matched',
+      currentCase: () => bobSnapshot,
+    );
+    require(
+      bobDraft.caseId == bobSnapshot.caseId,
+      'Another user received the wrong draft.',
+    );
+    await expectCode(
+      () => packetClient('invalid-demo-token').preparePacket(
+        snapshot,
+        programId: programId,
+        generationKey: 'smoke-auth',
+        currentCase: () => snapshot,
+      ),
+      'UNAUTHENTICATED',
+    );
+    await expectCode(
+      () => alicePackets.preparePacket(
+        newer,
+        programId: programId,
+        generationKey: 'smoke-revision',
+        currentCase: () => newer,
+      ),
+      'CASE_REVISION_MISMATCH',
+    );
+    await expectCode(
+      () => alicePackets.preparePacket(
+        snapshot,
+        programId: 'missing-program',
+        generationKey: 'smoke-missing',
+        currentCase: () => snapshot,
+      ),
+      'PROGRAM_NOT_FOUND',
+    );
+    reads = 0;
+    await expectCode(
+      () => alicePackets.preparePacket(
+        snapshot,
+        programId: programId,
+        generationKey: 'smoke-late',
+        currentCase: () => ++reads == 1 ? snapshot : newer,
+      ),
+      'STALE_RESPONSE',
+    );
+    stdout.writeln(
+      'PASS: all 3 cases return draft checklists with stable retry IDs and unresolved official forms.',
+    );
+    stdout.writeln(
+      'PASS: draft authorization, invalid sessions, missing programs, revision mismatches and late responses.',
+    );
   } catch (_) {
     stderr.writeln(
-      'Matching API integration check failed. Run the backend and Dart tests for diagnostics; no credentials are logged here.',
+      'Matching/packet API integration check failed. Run the backend and Dart tests for diagnostics; no credentials are logged here.',
     );
     exitCode = 1;
   } finally {
@@ -178,7 +316,7 @@ void require(bool condition, String message) {
 }
 
 Future<void> expectCode(
-  Future<MatchResponse> Function() operation,
+  Future<Object?> Function() operation,
   String code,
 ) async {
   try {

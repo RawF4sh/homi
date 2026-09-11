@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://safe-at-home.example/contracts/v1/packet.schema.json",
   "title": "Draft packet v1",
-  "description": "Future draft-preparation output only. No submission or approval is implied. Storage references are private object identifiers, never public URLs.",
+  "description": "Draft-preparation output only. No submission or approval is implied. Verified form adapters may provide form/mapping versions; the checklist service still returns null storage and no attachments until authorized artifact/evidence adapters are implemented. Storage references are private object identifiers, never public URLs.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "packetId", "caseId", "caseRevision", "programId", "ruleVersion", "formVersion", "mappingVersion", "status", "isDemo", "generatedAt", "recheckAfter", "storageReference", "attachments", "missingItems"],

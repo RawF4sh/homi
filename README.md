@@ -2,7 +2,7 @@
 
 A Flutter app for iPhone and Android that helps residents document home concerns, explore possible assistance programs, and prepare draft applications.
 
-The shared app has three fictional program-result examples, v1 JSON contracts and typed Dart adapters. A new mobile API client can call the local matching server developed in the backend worktree. The default screen still uses bundled examples; no cloud backend is deployed. See the [matching API handoff](docs/matching-api.md) to run the complete local check.
+The shared app has three fictional program-result examples, draft checklist previews, v1 JSON contracts and typed Dart API clients. The local backend supports authenticated matching and draft preparation with safe retries. The default screen uses bundled examples; no cloud backend or official PDF generator is deployed. See the [matching API handoff](docs/matching-api.md) and [draft checklist handoff](docs/packet-api.md) to run the complete local check.
 
 See [getting started and first commits](docs/getting-started.md) for run commands, the two local work areas and the manual commit order.
 

@@ -20,6 +20,21 @@ void main() {
     }
   });
 
+  test('every shared draft fixture satisfies its JSON schema', () {
+    final packets =
+        jsonDecode(
+              File('contracts/v1/fixtures/packets.json').readAsStringSync(),
+            )
+            as List;
+    for (final entry in packets) {
+      validate(entry['packet'], packetSchema);
+      expect(entry['packet']['status'], 'draft');
+      expect(entry['packet']['formVersion'], isNull);
+      expect(entry['packet']['storageReference'], isNull);
+      expect(entry['packet']['attachments'], isEmpty);
+    }
+  });
+
   test('schemas reject missing fields, unexpected fields and type drift', () {
     final scenarios =
         jsonDecode(
@@ -37,40 +52,37 @@ void main() {
     expect(() => validate(input, caseSchema), throwsStateError);
   });
 
-  test(
-    'future packet shape remains a draft and supports unresolved form details',
-    () {
-      final packet = <String, dynamic>{
-        'schemaVersion': '1',
-        'packetId': 'fictional-packet',
-        'caseId': 'fictional-case',
-        'caseRevision': 1,
-        'programId': 'demo-home-support',
-        'ruleVersion': 'demo-v1',
-        'formVersion': null,
-        'mappingVersion': null,
-        'status': 'draft',
-        'isDemo': true,
-        'generatedAt': '2026-10-13T19:00:00Z',
-        'recheckAfter': null,
-        'storageReference': null,
-        'attachments': [],
-        'missingItems': [
-          {
-            'id': 'official-form',
-            'description': 'Verify the current official form.',
-            'resolvedBy': 'program',
-          },
-        ],
-      };
-      validate(packet, packetSchema);
-      packet['status'] = 'submitted';
-      expect(() => validate(packet, packetSchema), throwsStateError);
-      packet['status'] = 'draft';
-      packet['generatedAt'] = '2026-02-30T19:00:00Z';
-      expect(() => validate(packet, packetSchema), throwsStateError);
-    },
-  );
+  test('packet shape remains a draft and supports unresolved form details', () {
+    final packet = <String, dynamic>{
+      'schemaVersion': '1',
+      'packetId': 'fictional-packet',
+      'caseId': 'fictional-case',
+      'caseRevision': 1,
+      'programId': 'demo-home-support',
+      'ruleVersion': 'demo-v1',
+      'formVersion': null,
+      'mappingVersion': null,
+      'status': 'draft',
+      'isDemo': true,
+      'generatedAt': '2026-10-13T19:00:00Z',
+      'recheckAfter': null,
+      'storageReference': null,
+      'attachments': [],
+      'missingItems': [
+        {
+          'id': 'official-form',
+          'description': 'Verify the current official form.',
+          'resolvedBy': 'program',
+        },
+      ],
+    };
+    validate(packet, packetSchema);
+    packet['status'] = 'submitted';
+    expect(() => validate(packet, packetSchema), throwsStateError);
+    packet['status'] = 'draft';
+    packet['generatedAt'] = '2026-02-30T19:00:00Z';
+    expect(() => validate(packet, packetSchema), throwsStateError);
+  });
 }
 
 Map<String, dynamic> readSchema(String name) =>

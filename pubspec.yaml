@@ -26,6 +26,7 @@ flutter:
 
   assets:
     - contracts/v1/fixtures/scenarios.json
+    - contracts/v1/fixtures/packets.json
 
 
 

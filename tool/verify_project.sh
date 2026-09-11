@@ -8,7 +8,7 @@ Usage: bash tool/verify_project.sh [flutter|backend|all] [options]
 Scopes (default: all):
   flutter   Check Dart formatting, Flutter analysis/tests, and tracked diff whitespace.
   backend   Check TypeScript types, Node tests, shared fixtures, and diff whitespace.
-  all       Run both scopes plus the real Dart-to-HTTP matching integration check.
+  all       Run both scopes plus real Dart-to-HTTP matching and form-answer checks.
 
 Options:
   --backend PATH     Backend package directory containing package.json.
@@ -144,6 +144,7 @@ fi
 
 if [[ "$scope" == all ]]; then
   require_file "$app_dir/tool/check_matching_api.dart" 'The Dart HTTP integration check is unavailable.'
+  require_file "$app_dir/tool/check_form_answers_api.dart" 'The reviewed-answer HTTP integration check is unavailable.'
   require_file "$backend_dir/src/api/demo-server.ts" 'The local HTTP demo server is unavailable.'
 fi
 
@@ -167,6 +168,9 @@ if [[ "$scope" == all ]]; then
   run_check 'Dart-to-HTTP matching integration' "$app_dir" \
     "$dart_bin" --packages="$app_dir/.dart_tool/package_config.json" \
     "$app_dir/tool/check_matching_api.dart" --backend "$backend_dir"
+  run_check 'Dart-to-HTTP reviewed answers integration' "$app_dir" \
+    "$dart_bin" --packages="$app_dir/.dart_tool/package_config.json" \
+    "$app_dir/tool/check_form_answers_api.dart" --backend "$backend_dir"
 fi
 
 printf '\nPASS: all checks selected by scope "%s" completed.\n' "$scope"

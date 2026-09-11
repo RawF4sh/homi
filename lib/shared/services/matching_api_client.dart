@@ -67,7 +67,7 @@ class MatchingApiClient {
     late MatchingHttpResponse response;
     try {
       exchange = _transport.post(
-        MatchingHttpRequest._(
+        MatchingHttpRequest(
           endpoint: _endpoint,
           bearerToken: token,
           body: utf8.encode(
@@ -158,7 +158,7 @@ abstract interface class MatchingTransport {
 }
 
 class MatchingHttpRequest {
-  MatchingHttpRequest._({
+  MatchingHttpRequest({
     required this.endpoint,
     required this.bearerToken,
     required List<int> body,
@@ -210,6 +210,57 @@ class MatchingTransportException implements Exception {
 
 class MatchingApiException implements Exception {
   const MatchingApiException._(this.code, this.message, {this.statusCode});
+
+  factory MatchingApiException.forCode(String code, {int? statusCode}) {
+    const messages = {
+      'INVALID_REQUEST':
+          'The request was invalid. Review the case and try again.',
+      'UNAUTHENTICATED': 'Sign in before continuing.',
+      'CASE_NOT_FOUND': 'This case is unavailable to the signed-in user.',
+      'PROGRAM_NOT_FOUND':
+          'The selected program is unavailable. Refresh the programs.',
+      'NOT_FOUND':
+          'The endpoint was not found. Check the service configuration.',
+      'CASE_REVISION_MISMATCH':
+          'The saved case changed. Reload it before continuing.',
+      'PACKET_GENERATION_CONFLICT':
+          'The case or program changed since this draft was started. Start a new draft.',
+      'FORM_NOT_AVAILABLE':
+          'Reviewed form answers are unavailable for this program.',
+      'FORM_CONTEXT_MISMATCH':
+          'The form changed. Reload it before saving answers.',
+      'FORM_ANSWERS_CONFLICT':
+          'The saved answers changed. Reload them before saving.',
+      'FORM_ANSWERS_STALE':
+          'Review and save the form answers for the current case and form before preparing a draft.',
+      'FORM_SAVE_UNCERTAIN':
+          'The save outcome is unknown. Reload the case and form answers before saving again.',
+      'PAYLOAD_TOO_LARGE': 'The request was too large.',
+      'UNSUPPORTED_MEDIA_TYPE':
+          'The service could not read the request format.',
+      'METHOD_NOT_ALLOWED': 'The service could not accept this request method.',
+      'INTERNAL_ERROR': 'The service could not finish the request. Try again.',
+      'SERVICE_UNAVAILABLE':
+          'The service is temporarily unavailable. Try again later.',
+      'TIMEOUT': 'The request timed out. Retry the same preparation attempt.',
+      'NETWORK_ERROR': 'Unable to reach the service. Try again when connected.',
+      'RESPONSE_TOO_LARGE': 'The service response was too large. Try again.',
+      'REDIRECT_BLOCKED':
+          'The service destination changed. Check the service configuration.',
+      'STALE_RESPONSE':
+          'The case or selected program changed. Refresh before continuing.',
+      'UNEXPECTED_RESPONSE':
+          'The service returned an unexpected response. Try again.',
+    };
+    final message = messages[code];
+    if (message == null) {
+      return const MatchingApiException._(
+        'UNEXPECTED_RESPONSE',
+        'The service returned an unexpected response. Try again.',
+      );
+    }
+    return MatchingApiException._(code, message, statusCode: statusCode);
+  }
   final String code;
   final String message;
   final int? statusCode;

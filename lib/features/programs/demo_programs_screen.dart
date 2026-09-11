@@ -2,11 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../../shared/models/contracts.dart';
 import '../../shared/services/demo_scenario_service.dart';
+import '../../shared/services/packet_preparation_service.dart';
+import '../requests/draft_packet_screen.dart';
 
 class DemoProgramsScreen extends StatefulWidget {
-  const DemoProgramsScreen({super.key, required this.service});
+  const DemoProgramsScreen({
+    super.key,
+    required this.service,
+    required this.packetService,
+  });
 
   final DemoScenarioService service;
+  final PacketPreparationService packetService;
 
   @override
   State<DemoProgramsScreen> createState() => _DemoProgramsScreenState();
@@ -138,7 +145,27 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
                           ),
                         ),
                       for (final match in selected.matchResponse.matches)
-                        _ProgramCard(match: match),
+                        _ProgramCard(
+                          match: match,
+                          onOpenDraft: () {
+                            Navigator.of(context).push<void>(
+                              MaterialPageRoute(
+                                builder: (_) => DraftPacketScreen(
+                                  snapshot: selected.caseSnapshot,
+                                  program: match,
+                                  service: widget.packetService,
+                                  currentCase: () => scenarios
+                                      .firstWhere(
+                                        (scenario) =>
+                                            scenario.id == _selectedId,
+                                        orElse: () => scenarios.first,
+                                      )
+                                      .caseSnapshot,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       const SizedBox(height: 12),
                       Text(
                         'Saved example from ${selected.matchResponse.evaluationDate}. '
@@ -158,9 +185,10 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
 }
 
 class _ProgramCard extends StatelessWidget {
-  const _ProgramCard({required this.match});
+  const _ProgramCard({required this.match, required this.onOpenDraft});
 
   final ProgramMatch match;
+  final VoidCallback onOpenDraft;
 
   @override
   Widget build(BuildContext context) {
@@ -203,6 +231,12 @@ class _ProgramCard extends StatelessWidget {
             const SizedBox(height: 16),
             _CheckDetail(check: check),
           ],
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: onOpenDraft,
+            icon: const Icon(Icons.checklist_outlined),
+            label: const Text('View draft checklist'),
+          ),
         ],
       ),
     );
