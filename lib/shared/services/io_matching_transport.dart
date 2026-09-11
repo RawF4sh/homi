@@ -23,7 +23,7 @@ class IoMatchingTransport implements MatchingTransport {
       outgoing.headers
         ..set(HttpHeaders.authorizationHeader, 'Bearer ${request.bearerToken}')
         ..set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8')
-        ..set(HttpHeaders.acceptHeader, 'application/json')
+        ..set(HttpHeaders.acceptHeader, request.accept)
         ..set(HttpHeaders.acceptEncodingHeader, 'identity');
       outgoing.add(request.body);
       final response = await outgoing.close();

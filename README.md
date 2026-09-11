@@ -1,5 +1,7 @@
 # Safe at Home
 
+Private evidence and draft export contracts/clients are now available in the shared Flutter code. Their provider-independent implementation is on the backend branch; combine that work before using the endpoints. Run `dart run tool/check_draft_export_api.dart --backend ../safe-at-home-backend/backend` for a fictional image-preview/PDF-download round trip, or `bash tool/verify_project.sh all` for the complete local checks. See [shared contracts](contracts/v1/README.md). Production storage, assessment upload and mobile review/share integration remain open.
+
 A Flutter app for iPhone and Android that helps residents document home concerns, explore possible assistance programs, and prepare draft applications.
 
 The shared app has three fictional program-result examples, draft checklist previews, v1 JSON contracts and typed Dart API clients. The local backend supports authenticated matching and draft preparation with safe retries. The default screen uses bundled examples; no cloud backend or official PDF generator is deployed. See the [matching API handoff](docs/matching-api.md) and [draft checklist handoff](docs/packet-api.md) to run the complete local check.

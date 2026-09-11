@@ -163,12 +163,14 @@ class MatchingHttpRequest {
     required this.bearerToken,
     required List<int> body,
     required this.maxResponseBytes,
+    this.accept = 'application/json',
   }) : body = List.unmodifiable(body);
 
   final Uri endpoint;
   final String bearerToken;
   final List<int> body;
   final int maxResponseBytes;
+  final String accept;
 }
 
 class MatchingHttpResponse {
@@ -235,6 +237,21 @@ class MatchingApiException implements Exception {
           'Review and save the form answers for the current case and form before preparing a draft.',
       'FORM_SAVE_UNCERTAIN':
           'The save outcome is unknown. Reload the case and form answers before saving again.',
+      'ARTIFACT_NOT_FOUND': 'The requested private file is unavailable.',
+      'EVIDENCE_CONFLICT':
+          'The evidence changed. Reload it and review your selection again.',
+      'FORM_ANSWER_REVISION_MISMATCH':
+          'The saved answers changed. Reload them before preparing a draft.',
+      'EXPORT_GENERATION_CONFLICT':
+          'This export attempt no longer matches the current case. Review the changes before starting another attempt.',
+      'EXPORT_EXPIRED':
+          'This draft download has expired. Prepare a new draft from the current case.',
+      'EXPORT_REVIEW_REQUIRED':
+          'Review the selected evidence before preparing the draft.',
+      'EXPORT_BUSY':
+          'Another draft is being prepared. Wait and retry this same attempt.',
+      'STORAGE_LIMIT_REACHED':
+          'Private storage is full. Ask the service operator to free space. Restarting the local demo clears its temporary data.',
       'PAYLOAD_TOO_LARGE': 'The request was too large.',
       'UNSUPPORTED_MEDIA_TYPE':
           'The service could not read the request format.',
