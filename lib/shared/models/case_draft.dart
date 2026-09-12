@@ -110,6 +110,7 @@ CaseSnapshot _parseCase(Object? json, int maximumBytes) {
 
 void _text(String value) {
   if (value.trim().isEmpty ||
+      value.contains('\u0000') ||
       value.runes.any((rune) => rune >= 0xd800 && rune <= 0xdfff)) {
     ExportContractValues.invalid();
   }

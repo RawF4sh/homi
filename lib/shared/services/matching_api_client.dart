@@ -269,7 +269,7 @@ class MatchingApiException implements Exception {
       'EXPORT_BUSY':
           'Another draft is being prepared. Wait and retry this same attempt.',
       'STORAGE_LIMIT_REACHED':
-          'Private storage is full. Ask the service operator to free space. Restarting the local demo clears its temporary data.',
+          'Private storage has reached its limit. Contact the app operator before retrying.',
       'PAYLOAD_TOO_LARGE': 'The request was too large.',
       'UNSUPPORTED_MEDIA_TYPE':
           'The service could not read the request format.',

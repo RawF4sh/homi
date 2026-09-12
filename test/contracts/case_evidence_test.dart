@@ -143,13 +143,17 @@ void main() {
     },
   );
   test(
-    'blank-only and lone-surrogate facts fail; Unicode scalar IDs stay intact',
+    'blank, NUL and lone-surrogate facts fail; Unicode scalar IDs stay intact',
     () {
-      for (final value in ['   ', '\n', '\ud800']) {
+      for (final value in ['   ', '\n', '\ud800', 'Town\u0000name']) {
         final input = draftJson();
         (input['profile'] as Map)['city'] = value;
         expect(() => CaseDraft.fromJson(input), throwsFormatException);
       }
+      final observation = draftJson();
+      ((observation['findings'] as List).first as Map)['observation'] =
+          'Step\u0000edge';
+      expect(() => CaseDraft.fromJson(observation), throwsFormatException);
       final unicode = List.filled(200, '🏠').join();
       expect(draft(caseId: unicode).caseId, unicode);
       expect(() => draft(caseId: '${unicode}x'), throwsFormatException);
