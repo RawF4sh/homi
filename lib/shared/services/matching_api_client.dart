@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../models/contracts.dart';
 
@@ -157,6 +158,13 @@ abstract interface class MatchingTransport {
   MatchingExchange post(MatchingHttpRequest request);
 }
 
+List<int> _immutableBytes(List<int> bytes) {
+  if (bytes.any((byte) => byte < 0 || byte > 255)) {
+    throw ArgumentError('HTTP body must contain bytes from 0 through 255.');
+  }
+  return Uint8List.fromList(bytes).asUnmodifiableView();
+}
+
 class MatchingHttpRequest {
   MatchingHttpRequest({
     required this.endpoint,
@@ -164,7 +172,7 @@ class MatchingHttpRequest {
     required List<int> body,
     required this.maxResponseBytes,
     this.accept = 'application/json',
-  }) : body = List.unmodifiable(body);
+  }) : body = _immutableBytes(body);
 
   final Uri endpoint;
   final String bearerToken;
@@ -178,7 +186,7 @@ class MatchingHttpResponse {
     required this.statusCode,
     required this.contentType,
     required List<int> body,
-  }) : body = List.unmodifiable(body);
+  }) : body = _immutableBytes(body);
 
   final int statusCode;
   final String? contentType;
@@ -225,6 +233,16 @@ class MatchingApiException implements Exception {
           'The endpoint was not found. Check the service configuration.',
       'CASE_REVISION_MISMATCH':
           'The saved case changed. Reload it before continuing.',
+      'CASE_ID_UNAVAILABLE':
+          'This case identifier is unavailable. Reload the selected case to recover an earlier attempt, or start a new case with a fresh identifier.',
+      'CASE_SAVE_UNCERTAIN':
+          'The case save outcome is unknown. Reload this same case identifier before deciding whether to save again.',
+      'EVIDENCE_SAVE_UNCERTAIN':
+          'The image change outcome is unknown. Reload the case and evidence catalog before changing the image again.',
+      'INVALID_IMAGE':
+          'The image could not be processed. Choose a supported JPEG or PNG within the image limits.',
+      'UPLOAD_BUSY':
+          'Another image is being processed. Wait before trying again.',
       'PACKET_GENERATION_CONFLICT':
           'The case or program changed since this draft was started. Start a new draft.',
       'FORM_NOT_AVAILABLE':

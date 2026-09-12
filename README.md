@@ -1,6 +1,6 @@
 # Safe at Home
 
-Private evidence and draft export contracts/clients are now available in the shared Flutter code. Their provider-independent implementation is on the backend branch; combine that work before using the endpoints. Run `dart run tool/check_draft_export_api.dart --backend ../safe-at-home-backend/backend` for a fictional image-preview/PDF-download round trip, or `bash tool/verify_project.sh all` for the complete local checks. See [shared contracts](contracts/v1/README.md). Production storage, assessment upload and mobile review/share integration remain open.
+Case creation/saving, private photo upload/replacement/deletion and draft export contracts/clients are available in the shared Flutter code. Their provider-independent implementation is on the backend branch; combine that work before using the endpoints. Run `dart run tool/check_case_evidence_api.dart --backend ../safe-at-home-backend/backend` for a fictional case/photo/PDF lifecycle with lost-write recovery, or `bash tool/verify_project.sh all` for the complete local checks. See [shared contracts](contracts/v1/README.md) and the backend branch's `docs/case-evidence-api.md`. Production storage, native capture and mobile review/share integration remain open.
 
 A Flutter app for iPhone and Android that helps residents document home concerns, explore possible assistance programs, and prepare draft applications.
 

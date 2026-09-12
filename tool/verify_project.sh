@@ -8,7 +8,7 @@ Usage: bash tool/verify_project.sh [flutter|backend|all] [options]
 Scopes (default: all):
   flutter   Check Dart formatting, Flutter analysis/tests, and tracked diff whitespace.
   backend   Check TypeScript types, Node tests, shared fixtures, and diff whitespace.
-  all       Run both scopes plus real Dart-to-HTTP matching, form-answer and export checks.
+  all       Run both scopes plus real Dart-to-HTTP matching, answers, export and case/photo checks.
 
 Options:
   --backend PATH     Backend package directory containing package.json.
@@ -146,6 +146,7 @@ if [[ "$scope" == all ]]; then
   require_file "$app_dir/tool/check_matching_api.dart" 'The Dart HTTP integration check is unavailable.'
   require_file "$app_dir/tool/check_form_answers_api.dart" 'The reviewed-answer HTTP integration check is unavailable.'
   require_file "$app_dir/tool/check_draft_export_api.dart" 'The private draft export integration check is unavailable.'
+  require_file "$app_dir/tool/check_case_evidence_api.dart" 'The case/photo write integration check is unavailable.'
   require_file "$backend_dir/src/api/demo-server.ts" 'The local HTTP demo server is unavailable.'
 fi
 
@@ -175,6 +176,9 @@ if [[ "$scope" == all ]]; then
   run_check 'Dart-to-HTTP private draft export integration' "$app_dir" \
     "$dart_bin" --packages="$app_dir/.dart_tool/package_config.json" \
     "$app_dir/tool/check_draft_export_api.dart" --backend "$backend_dir"
+  run_check 'Dart-to-HTTP case and photo writes integration' "$app_dir" \
+    "$dart_bin" --packages="$app_dir/.dart_tool/package_config.json" \
+    "$app_dir/tool/check_case_evidence_api.dart" --backend "$backend_dir"
 fi
 
 printf '\nPASS: all checks selected by scope "%s" completed.\n' "$scope"

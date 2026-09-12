@@ -37,6 +37,15 @@ class CaseSnapshot {
   final CaseProfile profile;
   final List<String> unresolvedFields;
   final List<Finding> findings;
+
+  Map<String, Object?> toJson() => {
+    'schemaVersion': schemaVersion,
+    'caseId': caseId,
+    'revision': revision,
+    'profile': profile.toJson(),
+    'unresolvedFields': List.of(unresolvedFields),
+    'findings': findings.map((finding) => finding.toJson()).toList(),
+  };
 }
 
 class CaseProfile {
@@ -82,6 +91,17 @@ class CaseProfile {
   final int? householdSize;
   final num? annualIncomeUsd;
   final bool? ownerConsentReported;
+
+  Map<String, Object?> toJson() => {
+    'city': city,
+    'county': county,
+    'healthPlan': healthPlan,
+    'tenure': tenure,
+    'ageYears': ageYears,
+    'householdSize': householdSize,
+    'annualIncomeUsd': annualIncomeUsd,
+    'ownerConsentReported': ownerConsentReported,
+  };
 }
 
 class Finding {
@@ -119,6 +139,17 @@ class Finding {
   final String reviewState;
   final List<String> evidenceIds;
   final List<Measurement> measurements;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'room': room,
+    'observation': observation,
+    'reviewState': reviewState,
+    'evidenceIds': List.of(evidenceIds),
+    'measurements': measurements
+        .map((measurement) => measurement.toJson())
+        .toList(),
+  };
 }
 
 class Measurement {
@@ -146,6 +177,14 @@ class Measurement {
   final String unit;
   final String method;
   final bool confirmed;
+
+  Map<String, Object?> toJson() => {
+    'type': type,
+    'value': value,
+    'unit': unit,
+    'method': method,
+    'confirmed': confirmed,
+  };
 }
 
 class MatchResponse {

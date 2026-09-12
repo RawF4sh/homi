@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 bool acceptsContract(
   Object? value,
   dynamic rule,
@@ -21,6 +23,7 @@ bool acceptsContract(
     'prefixItems',
     'minItems',
     'maxItems',
+    'uniqueItems',
     'minLength',
     'maxLength',
     'minimum',
@@ -85,6 +88,7 @@ bool acceptsContract(
         'array' => value is List,
         'string' => value is String,
         'boolean' => value is bool,
+        'number' => value is num && value.isFinite,
         'integer' =>
           value is num && value.isFinite && value == value.truncateToDouble(),
         _ => throw StateError('Unsupported schema type'),
@@ -108,6 +112,10 @@ bool acceptsContract(
     }
   }
   if (value is List) {
+    if (rule['uniqueItems'] == true &&
+        value.map(jsonEncode).toSet().length != value.length) {
+      return false;
+    }
     if (rule['minItems'] != null && value.length < (rule['minItems'] as int)) {
       return false;
     }
