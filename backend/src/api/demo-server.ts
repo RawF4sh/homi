@@ -27,13 +27,14 @@ export function createDemoServer(fixturePath?: string) {
     matchPrograms(snapshot, [program], { evaluatedAt: startedAt.toISOString(), evaluationDate: startedAt.toISOString().slice(0, 10) });
   }
   const cases = new MemoryCaseRepository(entries);
-  const server = createMatchingServer({
-    authenticate: async token => tokens.has(token) ? { userId: tokens.get(token)! } : null,
+  const dependencies = {
+    authenticate: async (token: string) => tokens.has(token) ? { userId: tokens.get(token)! } : null,
     cases,
     loadRegistry: async () => [structuredClone(program)],
     now: () => new Date(),
     allowDemoPrograms: true,
-  });
+  };
+  const server = createMatchingServer(dependencies, dependencies);
   return { server, cases, sessions: { alice: aliceToken, bob: bobToken },
     caseIds: { alice: scenarios.map(scenario => scenario.case.caseId), bob: bobCase.caseId } };
 }
@@ -57,11 +58,13 @@ async function main() {
   });
   const address = demo.server.address();
   if (!address || typeof address === 'string') throw new Error('Local listener was not created.');
-  const ready = { type: 'demo-ready', endpoint: `http://127.0.0.1:${address.port}/v1/match-case`, ...demo.sessions, caseIds: demo.caseIds };
+  const ready = { type: 'demo-ready', endpoint: `http://127.0.0.1:${address.port}/v1/match-case`,
+    packetEndpoint: `http://127.0.0.1:${address.port}/v1/prepare-packet`, ...demo.sessions, caseIds: demo.caseIds };
   if (machine) console.log(JSON.stringify(ready));
   else {
     console.log('Fictional local API. Cases/results are in memory and disappear on exit.');
     console.log(`Endpoint: ${ready.endpoint}`);
+    console.log(`Draft packet endpoint: ${ready.packetEndpoint}`);
     console.log(`Alice demo bearer token: ${ready.alice}`);
     console.log(`Bob demo bearer token: ${ready.bob}`);
     console.log(`Alice case IDs: ${ready.caseIds.alice.join(', ')}`);
