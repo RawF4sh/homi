@@ -245,6 +245,14 @@ class MatchingApiException implements Exception {
           'Another image is being processed. Wait before trying again.',
       'PACKET_GENERATION_CONFLICT':
           'The case or program changed since this draft was started. Start a new draft.',
+      'REQUEST_REVISION_MISMATCH':
+          'The request history changed. Reload it before recording another update.',
+      'REQUEST_UPDATE_CONFLICT':
+          'This update identifier already refers to a different saved report. Read the history before continuing.',
+      'REQUEST_HISTORY_FULL':
+          'This case has reached its request history limit.',
+      'REQUEST_UPDATE_UNCERTAIN':
+          'The update outcome is unknown. Read this request history and compare the retained update before deciding whether to retry.',
       'FORM_NOT_AVAILABLE':
           'Reviewed form answers are unavailable for this program.',
       'FORM_CONTEXT_MISMATCH':
