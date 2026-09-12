@@ -124,3 +124,27 @@ export interface MatchResponse {
   evaluationDate: string;
   matches: Match[];
 }
+
+export interface MissingPacketItem {
+  id: string;
+  description: string;
+  resolvedBy: ResolvedBy;
+}
+
+export interface DraftPacket {
+  schemaVersion: '1';
+  packetId: string;
+  caseId: string;
+  caseRevision: number;
+  programId: string;
+  ruleVersion: string;
+  formVersion: string | null;
+  mappingVersion: string | null;
+  status: 'draft';
+  isDemo: boolean;
+  generatedAt: string;
+  recheckAfter: string | null;
+  storageReference: string | null;
+  attachments: { evidenceId: string; findingId: string; storageReference: string }[];
+  missingItems: MissingPacketItem[];
+}
