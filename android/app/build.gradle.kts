@@ -20,7 +20,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.safe_at_home"
-        minSdk = flutter.minSdkVersion
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -35,4 +35,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
 }
