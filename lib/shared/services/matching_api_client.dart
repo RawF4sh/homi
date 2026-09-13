@@ -116,7 +116,10 @@ class MatchingApiClient {
       throw _unexpectedResponse;
     }
     if (response.statusCode != 200) {
-      throw _apiError(response.statusCode, json);
+      throw _apiError(
+        response.statusCode,
+        json,
+      ).withRetryAfter(response.retryAfter);
     }
 
     final MatchResponse result;
@@ -186,8 +189,10 @@ class MatchingHttpResponse {
     required this.statusCode,
     required this.contentType,
     required List<int> body,
+    this.retryAfter,
   }) : body = _immutableBytes(body);
 
+  final String? retryAfter;
   final int statusCode;
   final String? contentType;
   final List<int> body;
@@ -219,7 +224,12 @@ class MatchingTransportException implements Exception {
 }
 
 class MatchingApiException implements Exception {
-  const MatchingApiException._(this.code, this.message, {this.statusCode});
+  const MatchingApiException._(
+    this.code,
+    this.message, {
+    this.statusCode,
+    this.retryAfter,
+  });
 
   factory MatchingApiException.forCode(String code, {int? statusCode}) {
     const messages = {
@@ -241,6 +251,8 @@ class MatchingApiException implements Exception {
           'The image change outcome is unknown. Reload the case and evidence catalog before changing the image again.',
       'INVALID_IMAGE':
           'The image could not be processed. Choose a supported JPEG or PNG within the image limits.',
+      'RATE_LIMITED':
+          'Too many requests. Wait before trying this same action again.',
       'UPLOAD_BUSY':
           'Another image is being processed. Wait before trying again.',
       'PACKET_GENERATION_CONFLICT':
@@ -308,6 +320,25 @@ class MatchingApiException implements Exception {
   final String message;
   final int? statusCode;
 
+  final Duration? retryAfter;
+
+  MatchingApiException withRetryAfter(String? value) {
+    if ((statusCode != 429 && statusCode != 503) ||
+        value == null ||
+        value.length > 4 ||
+        RegExp(r'[1-9][0-9]{0,3}').stringMatch(value) != value) {
+      return this;
+    }
+    final seconds = int.parse(value);
+    if (seconds > 3600) return this;
+    return MatchingApiException._(
+      code,
+      message,
+      statusCode: statusCode,
+      retryAfter: Duration(seconds: seconds),
+    );
+  }
+
   @override
   String toString() => 'MatchingApiException($code): $message';
 }
@@ -372,6 +403,10 @@ MatchingApiException _apiError(int statusCode, Object? json) {
     409: (
       'CASE_REVISION_MISMATCH',
       'The saved case changed. Refresh it before matching.',
+    ),
+    429: (
+      'RATE_LIMITED',
+      'Too many requests. Wait before trying this same action again.',
     ),
     413: ('PAYLOAD_TOO_LARGE', 'The matching request was too large.'),
     415: (

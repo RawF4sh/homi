@@ -360,7 +360,10 @@ class DraftExportApiClient {
           response.body.length > 1024 * 1024) {
         throw _error('UNEXPECTED_RESPONSE');
       }
-      throw _apiError(response.statusCode, _json(response));
+      throw _apiError(
+        response.statusCode,
+        _json(response),
+      ).withRetryAfter(response.retryAfter);
     }
     if (mediaType != accept) throw _error('UNEXPECTED_RESPONSE');
     return response;
@@ -536,7 +539,7 @@ MatchingApiException _apiError(int status, Object? json) {
     },
     410: {'EXPORT_EXPIRED'},
     422: {'EXPORT_REVIEW_REQUIRED'},
-    429: {'EXPORT_BUSY'},
+    429: {'RATE_LIMITED', 'EXPORT_BUSY'},
     507: {'STORAGE_LIMIT_REACHED'},
     413: {'PAYLOAD_TOO_LARGE'},
     415: {'UNSUPPORTED_MEDIA_TYPE'},

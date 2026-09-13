@@ -393,7 +393,10 @@ class CaseEvidenceApiClient {
       throw _error(uncertain ?? 'UNEXPECTED_RESPONSE');
     }
     if (response.statusCode != 200) {
-      final error = _apiError(response.statusCode, json);
+      final error = _apiError(
+        response.statusCode,
+        json,
+      ).withRetryAfter(response.retryAfter);
       if (uncertain != null &&
           (error.code == 'UNEXPECTED_RESPONSE' ||
               (response.statusCode >= 500 &&
@@ -500,7 +503,7 @@ MatchingApiException _apiError(int status, Object? json) {
     404: {'CASE_NOT_FOUND', 'ARTIFACT_NOT_FOUND', 'NOT_FOUND'},
     409: {'CASE_REVISION_MISMATCH', 'CASE_ID_UNAVAILABLE', 'EVIDENCE_CONFLICT'},
     422: {'INVALID_IMAGE'},
-    429: {'UPLOAD_BUSY'},
+    429: {'RATE_LIMITED', 'UPLOAD_BUSY'},
     507: {'STORAGE_LIMIT_REACHED'},
     413: {'PAYLOAD_TOO_LARGE'},
     415: {'UNSUPPORTED_MEDIA_TYPE'},

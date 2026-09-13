@@ -46,10 +46,14 @@ class IoMatchingTransport implements MatchingTransport {
         }
         bytes.add(chunk);
       }
+      final retryAfterValues = response.headers[HttpHeaders.retryAfterHeader];
       return MatchingHttpResponse(
         statusCode: response.statusCode,
         contentType: response.headers.value(HttpHeaders.contentTypeHeader),
         body: bytes.takeBytes(),
+        retryAfter: retryAfterValues?.length == 1
+            ? retryAfterValues!.single
+            : null,
       );
     } on MatchingTransportException {
       rethrow;

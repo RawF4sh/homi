@@ -113,7 +113,12 @@ class PacketApiClient {
     } catch (_) {
       throw MatchingApiException.forCode('UNEXPECTED_RESPONSE');
     }
-    if (response.statusCode != 200) throw _apiError(response.statusCode, json);
+    if (response.statusCode != 200) {
+      throw _apiError(
+        response.statusCode,
+        json,
+      ).withRetryAfter(response.retryAfter);
+    }
     final DraftPacket packet;
     try {
       packet = DraftPacket.fromJson(json);
@@ -210,8 +215,10 @@ MatchingApiException _apiError(int status, Object? json) {
     413: {'PAYLOAD_TOO_LARGE'},
     415: {'UNSUPPORTED_MEDIA_TYPE'},
     405: {'METHOD_NOT_ALLOWED'},
+    429: {'RATE_LIMITED'},
     500: {'INTERNAL_ERROR'},
     503: {'SERVICE_UNAVAILABLE'},
+    507: {'STORAGE_LIMIT_REACHED'},
   };
   if (json is Map<String, dynamic> &&
       json.length == 2 &&

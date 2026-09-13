@@ -283,7 +283,10 @@ class FormAnswersApiClient {
       throw _error(isSave ? 'FORM_SAVE_UNCERTAIN' : 'UNEXPECTED_RESPONSE');
     }
     if (response.statusCode != 200) {
-      final error = _apiError(response.statusCode, json);
+      final error = _apiError(
+        response.statusCode,
+        json,
+      ).withRetryAfter(response.retryAfter);
       if (isSave &&
           (response.statusCode >= 500 || error.code == 'UNEXPECTED_RESPONSE')) {
         throw _error('FORM_SAVE_UNCERTAIN');
@@ -398,6 +401,7 @@ MatchingApiException _apiError(int status, Object? json) {
     413: {'PAYLOAD_TOO_LARGE'},
     415: {'UNSUPPORTED_MEDIA_TYPE'},
     405: {'METHOD_NOT_ALLOWED'},
+    429: {'RATE_LIMITED'},
     500: {'INTERNAL_ERROR'},
     503: {'SERVICE_UNAVAILABLE'},
   };

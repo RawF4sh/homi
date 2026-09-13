@@ -193,7 +193,12 @@ class CaseDiscoveryApiClient {
     } catch (_) {
       throw _error('UNEXPECTED_RESPONSE');
     }
-    if (response.statusCode != 200) throw _apiError(response.statusCode, json);
+    if (response.statusCode != 200) {
+      throw _apiError(
+        response.statusCode,
+        json,
+      ).withRetryAfter(response.retryAfter);
+    }
     return json;
   }
 }
@@ -216,6 +221,7 @@ MatchingApiException _apiError(int status, Object? json) {
     405: {'METHOD_NOT_ALLOWED'},
     413: {'PAYLOAD_TOO_LARGE'},
     415: {'UNSUPPORTED_MEDIA_TYPE'},
+    429: {'RATE_LIMITED'},
     500: {'INTERNAL_ERROR'},
     503: {'SERVICE_UNAVAILABLE'},
   };

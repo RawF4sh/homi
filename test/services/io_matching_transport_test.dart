@@ -98,6 +98,55 @@ void main() {
     },
   );
 
+  test(
+    'native transport carries one bounded retry hint without retrying',
+    () async {
+      var requests = 0;
+      server.listen((request) async {
+        requests++;
+        await request.drain<void>();
+        request.response.statusCode = 429;
+        request.response.headers.contentType = ContentType.json;
+        if (requests == 1) {
+          request.response.headers.set(HttpHeaders.retryAfterHeader, '7');
+        } else {
+          request.response.headers.add(HttpHeaders.retryAfterHeader, '7');
+          request.response.headers.add(HttpHeaders.retryAfterHeader, '9');
+        }
+        request.response.write(
+          jsonEncode({
+            'schemaVersion': '1',
+            'error': {
+              'code': 'RATE_LIMITED',
+              'message': 'Private provider details',
+            },
+          }),
+        );
+        await request.response.close();
+      });
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await expectLater(
+          client().matchCase(snapshot, currentCase: () => snapshot),
+          throwsA(
+            isA<MatchingApiException>()
+                .having((error) => error.code, 'code', 'RATE_LIMITED')
+                .having(
+                  (error) => error.retryAfter,
+                  'delay',
+                  attempt == 0 ? const Duration(seconds: 7) : null,
+                )
+                .having(
+                  (error) => error.message,
+                  'safe message',
+                  isNot(contains('Private')),
+                ),
+          ),
+        );
+        expect(requests, attempt + 1);
+      }
+    },
+  );
+
   test('declared oversized response is rejected before parsing', () async {
     server.listen((request) async {
       request.response.headers.contentType = ContentType.json;
