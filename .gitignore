@@ -95,3 +95,6 @@ supabase/.branches/
 private-data/
 private-packets/
 
+*.sah-backup
+*.key
+*.pem
