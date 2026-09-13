@@ -17,13 +17,14 @@ const requestBody = { schemaVersion: '1', caseId: snapshot.caseId, expectedCaseR
 
 async function start(t: TestContext) {
   const cases = new MemoryCaseRepository([{ userId: 'alice', snapshot }]);
-  const server = createMatchingServer({
-    authenticate: async token => token === 'alice-token' ? { userId: 'alice' } : token === 'bob-token' ? { userId: 'bob' } : null,
+  const dependencies = {
+    authenticate: async (token: string) => token === 'alice-token' ? { userId: 'alice' } : token === 'bob-token' ? { userId: 'bob' } : null,
     cases,
     loadRegistry: async () => [structuredClone(demoProgram)],
     now: () => new Date(demoContext.evaluatedAt),
     allowDemoPrograms: true,
-  });
+  };
+  const server = createMatchingServer(dependencies, dependencies);
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise<void>((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve());
@@ -136,4 +137,45 @@ test('memory adapter copies inputs and outputs and rejects wrong revision/owners
   assert.equal(await cases.saveMatchIfCurrent('alice', snapshot.caseId, 1, result), 'saved');
   result.caseRevision = 2;
   assert.equal((await cases.readSavedMatchForUser('alice', snapshot.caseId))!.caseRevision, 1);
+});
+
+const packetRequest = { ...requestBody, programId: demoProgram.programId, generationKey: 'http-draft-001' };
+
+test('packet HTTP route returns an exact idempotent draft and leaves the matching endpoint available', async t => {
+  const { endpoint } = await start(t);
+  const packetEndpoint = endpoint.replace('/match-case', '/prepare-packet');
+  const first = await send(packetEndpoint, packetRequest);
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get('cache-control'), 'no-store');
+  const draft = await first.json();
+  assert.equal(draft.status, 'draft'); assert.equal(draft.storageReference, null);
+  assert.deepEqual(draft.attachments, []);
+  assert.deepEqual(await (await send(packetEndpoint, packetRequest)).json(), draft);
+  assert.equal((await send(endpoint)).status, 200);
+});
+
+test('packet HTTP route applies bearer parsing, owner isolation and strict request validation', async t => {
+  const { endpoint } = await start(t);
+  const packetEndpoint = endpoint.replace('/match-case', '/prepare-packet');
+  const unsigned = await fetch(packetEndpoint, { method: 'POST' });
+  assert.equal(unsigned.status, 401); assert.equal(unsigned.headers.get('www-authenticate'), 'Bearer');
+  assert.equal((await send(packetEndpoint, packetRequest, 'bob-token')).status, 404);
+  assert.equal((await send(packetEndpoint, { ...packetRequest, programId: 'missing' })).status, 404);
+  assert.equal((await send(packetEndpoint, { ...packetRequest, ownerId: 'alice' })).status, 400);
+  assert.equal((await send(packetEndpoint, { ...packetRequest, generationKey: 'valid-key\n' })).status, 400);
+  const duplicate = await rawRequest(packetEndpoint, ['Authorization', 'Bearer alice-token', 'Authorization', 'Bearer bob-token', 'Content-Type', 'application/json'], [Buffer.from(JSON.stringify(packetRequest))]);
+  assert.equal(duplicate.status, 401);
+});
+
+test('packet HTTP route reuses body byte limits, UTF-8 parsing, media types and method restrictions', async t => {
+  const { endpoint } = await start(t);
+  const packetEndpoint = endpoint.replace('/match-case', '/prepare-packet');
+  const headers = { Authorization: 'Bearer alice-token', 'Content-Type': 'application/json' };
+  assert.equal((await fetch(packetEndpoint, { method: 'POST', headers, body: '{' })).status, 400);
+  assert.equal((await fetch(packetEndpoint, { method: 'POST', headers: { ...headers, 'Content-Type': 'text/plain' }, body: '{}' })).status, 415);
+  assert.equal((await fetch(packetEndpoint)).status, 405);
+  const oversized = await rawRequest(packetEndpoint, ['Authorization', 'Bearer alice-token', 'Content-Type', 'application/json', 'Transfer-Encoding', 'chunked'], [Buffer.alloc(MAX_REQUEST_BYTES + 1, 'x')]);
+  assert.equal(oversized.status, 413);
+  const invalid = await rawRequest(packetEndpoint, ['Authorization', 'Bearer alice-token', 'Content-Type', 'application/json'], [Buffer.from([0xc3, 0x28])]);
+  assert.equal(invalid.status, 400);
 });
