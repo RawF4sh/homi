@@ -17,7 +17,7 @@ const wrongPlanCase: CaseSnapshot = { ...matchedCase, profile: { ...matchedCase.
 
 const clone = <T>(value: T): T => structuredClone(value);
 const result = (snapshot: unknown = matchedCase, program: unknown = demoProgram, context: unknown = demoContext) => matchPrograms(snapshot, [program], context).matches[0];
-const rule = (field: 'city' | 'healthPlan', value: string): Rule => ({ kind: 'eq', field, value, sourceIds: [], resolvedBy: 'resident' });
+const rule = (field: 'city' | 'healthPlan', value: string): Extract<Rule, { kind: 'eq' }> => ({ kind: 'eq', field, value, sourceIds: [], resolvedBy: 'resident' });
 const plan = rule('healthPlan', 'Example Plan');
 const city = rule('city', 'Demo City');
 const withCriterion = (criterion: Criterion): ProgramDefinition => ({ ...clone(demoProgram), criteria: [criterion] });
@@ -38,6 +38,15 @@ function sourcedProgram(): ProgramDefinition {
     rule: { ...criterion.rule, sourceIds: ['synthetic-source'] } as Rule,
   }));
   return program;
+}
+
+const manualReview = {
+  kind: 'manual_review', reason: 'Review the synthetic supporting evidence.',
+  sourceIds: ['synthetic-source'], resolvedBy: 'professional',
+} satisfies Rule;
+
+function manualProgram(rule: Rule = clone(manualReview)): ProgramDefinition {
+  return { ...sourcedProgram(), criteria: [{ id: 'review', label: 'Synthetic review', rule }] };
 }
 
 test('matching demo preserves case identity, revision, clock, and demo labels', () => {
@@ -352,4 +361,128 @@ test('duplicate string-list items and invalid URL/availability types are rejecte
 
 test('an empty registry returns no matches without inventing a program', () => {
   assert.deepEqual(matchPrograms(matchedCase, [], demoContext).matches, []);
+});
+
+test('manual review stays unknown with an explicit reason, source and responsible party', () => {
+  for (const resolvedBy of ['resident', 'program', 'professional'] as const) {
+    const program = manualProgram({ ...manualReview, resolvedBy });
+    for (const snapshot of [matchedCase, wrongPlanCase, missingPlanCase]) {
+      const match = result(snapshot, program);
+      assert.equal(match.status, 'needs_confirmation');
+      assert.equal(match.isDemo, false);
+      assert.equal(match.checks[0].id, 'review');
+      assert.equal(match.checks[0].status, 'unknown');
+      assert.equal(match.checks[0].reasonCode, 'manual_review_required');
+      assert.equal(match.checks[0].resolvedBy, resolvedBy);
+      assert.deepEqual(match.checks[0].missingFields, []);
+      assert.deepEqual(match.checks[0].sourceIds, ['synthetic-source']);
+      assert.ok(match.checks[0].explanation.includes(`Manual review (${resolvedBy}): ${manualReview.reason}`));
+    }
+  }
+});
+
+test('profile answers and confirmed observations cannot manufacture a manual decision', () => {
+  const snapshot: CaseSnapshot = {
+    ...clone(matchedCase),
+    profile: { city: 'Demo City', county: 'Demo County', healthPlan: 'Example Plan', tenure: 'owner',
+      ageYears: 65, householdSize: 1, annualIncomeUsd: 0, ownerConsentReported: true },
+    findings: [{ id: 'confirmed-finding', room: 'entrance', observation: 'Synthetic reviewed observation',
+      reviewState: 'confirmed', evidenceIds: ['evidence-1'],
+      measurements: [{ type: 'opening', value: 800, unit: 'mm', method: 'manual', confirmed: true }] }],
+  };
+  assert.equal(result(snapshot, manualProgram()).checks[0].status, 'unknown');
+});
+
+test('manual reviews compose with AND and OR without turning uncertainty into rejection', () => {
+  const passing = { ...city, sourceIds: ['synthetic-source'] };
+  const failing = { ...rule('city', 'Different City'), sourceIds: ['synthetic-source'] };
+  for (const [kind, other, expected] of [
+    ['and', passing, 'unknown'], ['and', failing, 'fail'],
+    ['or', failing, 'unknown'], ['or', passing, 'pass'],
+  ] as const) {
+    const check = result(matchedCase, manualProgram({ kind, rules: [manualReview, other] })).checks[0];
+    assert.equal(check.status, expected);
+    assert.equal(check.resolvedBy, expected === 'pass' ? null : 'professional');
+    assert.equal(check.explanation.includes(manualReview.reason), expected !== 'pass');
+    assert.deepEqual(check.missingFields, []);
+    assert.deepEqual(check.sourceIds, ['synthetic-source']);
+  }
+});
+
+test('a manual exception prevents rejection while a passing alternative clears unnecessary review', () => {
+  const program = manualProgram({ ...rule('city', 'Different City'), sourceIds: ['synthetic-source'] });
+  program.criteria[0].exception = manualReview;
+  const unresolved = result(matchedCase, program).checks[0];
+  assert.equal(unresolved.status, 'unknown');
+  assert.equal(unresolved.reasonCode, 'criterion_or_exception_unresolved');
+  assert.equal(unresolved.resolvedBy, 'professional');
+  assert.ok(unresolved.explanation.includes(manualReview.reason));
+
+  program.criteria[0].rule = { ...city, sourceIds: ['synthetic-source'] };
+  const passingBase = result(matchedCase, program).checks[0];
+  assert.equal(passingBase.status, 'pass');
+  assert.ok(!passingBase.explanation.includes(manualReview.reason));
+  program.criteria[0].rule = manualReview;
+  program.criteria[0].exception = { ...city, sourceIds: ['synthetic-source'] };
+  const passingException = result(matchedCase, program).checks[0];
+  assert.equal(passingException.reasonCode, 'exception_satisfied');
+  assert.equal(passingException.status, 'pass');
+  assert.equal(passingException.resolvedBy, null);
+  assert.ok(!passingException.explanation.includes(manualReview.reason));
+});
+
+test('mixed manual reviewers remain explicit without inventing a single owner', () => {
+  const other: Rule = { ...manualReview, reason: 'Review a separate synthetic determination.', resolvedBy: 'program' };
+  const check = result(matchedCase, manualProgram({ kind: 'and', rules: [manualReview, other] })).checks[0];
+  assert.equal(check.status, 'unknown');
+  assert.equal(check.resolvedBy, null);
+  assert.ok(check.explanation.includes(`Manual review (professional): ${manualReview.reason}`));
+  assert.ok(check.explanation.includes(`Manual review (program): ${other.reason}`));
+  assert.deepEqual(check.sourceIds, ['synthetic-source']);
+});
+
+test('unverified and stale policy gates keep manual reasons without evaluating alternatives', () => {
+  const program = manualProgram({ kind: 'or', rules: [manualReview, { ...city, sourceIds: ['synthetic-source'] }] });
+  program.criteria[0].exception = { ...manualReview, reason: 'Review a synthetic exception.', resolvedBy: 'resident' };
+  const unverified = { ...clone(program), rulesVerified: false };
+  const expired = clone(program);
+  expired.sources[0].effectiveUntil = '2026-10-12';
+  for (const [record, reasonCode] of [[unverified, 'rules_unverified'], [expired, 'source_not_current']] as const) {
+    const match = result(matchedCase, record);
+    assert.equal(match.status, 'needs_confirmation');
+    const check = match.checks[0];
+    assert.equal(check.status, 'unknown');
+    assert.equal(check.reasonCode, reasonCode);
+    assert.equal(check.resolvedBy, 'program');
+    assert.deepEqual(check.missingFields, []);
+    assert.deepEqual(check.sourceIds, ['synthetic-source']);
+    assert.match(check.explanation, /current program rules need verification/);
+    assert.ok(check.explanation.includes(`Manual review (professional): ${manualReview.reason}`));
+    assert.match(check.explanation, /Manual review \(resident\): Review a synthetic exception/);
+  }
+});
+
+test('manual leaves require valid metadata and cannot accept hidden decisions or profile inputs', () => {
+  const invalidRules = [
+    ...[undefined, null, '', '   ', 1, false].map(reason => ({ ...manualReview, reason })),
+    ...[undefined, null, 'agency', 1].map(resolvedBy => ({ ...manualReview, resolvedBy })),
+    ...[undefined, null, 'synthetic-source', ['missing'], ['synthetic-source', 'synthetic-source']].map(sourceIds => ({ ...manualReview, sourceIds })),
+    ...[{ field: 'city' }, { value: true }, { status: 'pass' }, { id: 'hidden-id' }, { rules: [city] }].map(extra => ({ ...manualReview, ...extra })),
+  ];
+  for (const rule of invalidRules) {
+    const program = { ...sourcedProgram(), criteria: [{ id: 'review', label: 'Review', rule }] };
+    assert.throws(() => result(matchedCase, program), InputValidationError);
+  }
+  const unsourced = manualProgram({ ...manualReview, sourceIds: [] });
+  assert.equal(result(matchedCase, unsourced).checks[0].reasonCode, 'rule_source_missing');
+});
+
+test('manual review outputs are deterministic and preserve case and registry inputs', () => {
+  const snapshot = clone(matchedCase);
+  const program = manualProgram();
+  const before = clone({ snapshot, program });
+  const first = matchPrograms(snapshot, [program], demoContext);
+  assert.deepEqual(first, matchPrograms(snapshot, [program], demoContext));
+  first.matches[0].checks[0].sourceIds.push('mutated-output');
+  assert.deepEqual({ snapshot, program }, before);
 });
