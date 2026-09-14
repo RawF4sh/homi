@@ -11,10 +11,14 @@
     "test": "node --test test/*.test.ts",
     "test:contracts": "node test/contracts.ts",
     "demo": "node src/demo.ts",
-    "serve:demo": "node src/api/demo-server.ts"
+    "serve:demo": "node src/api/demo-server.ts",
+    "research:scfhp": "node src/research-scfhp.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "pdf-lib": "1.17.1"
   }
 }

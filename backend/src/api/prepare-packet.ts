@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { matchPrograms } from '../matcher.ts';
-import { instantMicros, isPacketCurrent, PACKET_PLANNER_VERSION, planDraftPacket } from '../packets.ts';
+import { instantMicros, isPacketCurrent, PACKET_PLANNER_VERSION } from '../packets.ts';
+import { defineVerifiedFormTemplate, type VerifiedFormTemplate } from '../forms/field-mapping.ts';
+import { planPacketWithForm, type VerifiedTemplateArtifact } from '../forms/prepare-form-packet.ts';
+import { MAX_TEMPLATE_BYTES, verifyTemplateBytes } from '../forms/template-artifact.ts';
 import type { CaseSnapshot, DraftPacket, ProgramDefinition } from '../types.ts';
 import type { ApiErrorCode, AuthenticatedUser } from './match-case.ts';
 
@@ -35,6 +38,7 @@ export interface PreparePacketDependencies {
   authenticate(token: string): Promise<AuthenticatedUser | null>;
   cases: PacketCaseRepository;
   loadRegistry(): Promise<ProgramDefinition[]>;
+  loadFormTemplate?(programId: string): Promise<{ template: VerifiedFormTemplate; bytes: Uint8Array } | null>;
   now(): Date;
   allowDemoPrograms?: boolean;
   newPacketId?(): string;
@@ -119,6 +123,25 @@ async function processPreparePacket(
   let registry: ProgramDefinition[];
   try { registry = await deps.loadRegistry(); } catch { return failure('SERVICE_UNAVAILABLE'); }
   registry = structuredClone(registry);
+  const registryCheckedAt = clock(deps);
+  const selection = matchPrograms(snapshot, registry, { evaluatedAt: registryCheckedAt, evaluationDate: registryCheckedAt.slice(0, 10) });
+  const selected = selection.matches.find(candidate => candidate.programId === request.programId);
+  if (!selected) return failure('PROGRAM_NOT_FOUND');
+  if (selected.isDemo && deps.allowDemoPrograms !== true) return failure('INTERNAL_ERROR');
+  let artifact: VerifiedTemplateArtifact | null = null;
+  if (deps.loadFormTemplate) {
+    let loadedForm: { template: VerifiedFormTemplate; bytes: Uint8Array } | null;
+    try { loadedForm = await deps.loadFormTemplate(request.programId); } catch { return failure('SERVICE_UNAVAILABLE'); }
+    if (loadedForm !== null) {
+      if (!(loadedForm.bytes instanceof Uint8Array) || loadedForm.bytes.byteLength < 8
+        || loadedForm.bytes.byteLength > MAX_TEMPLATE_BYTES) return failure('INTERNAL_ERROR');
+      const detached = structuredClone(loadedForm);
+      const template = defineVerifiedFormTemplate(detached.template);
+      if (template.programId !== request.programId) return failure('INTERNAL_ERROR');
+      const templateSha256 = verifyTemplateBytes(detached.bytes, template.templateSha256);
+      artifact = { template, templateSha256 };
+    }
+  }
   const generatedAt = clock(deps);
   const response = matchPrograms(snapshot, registry, { evaluatedAt: generatedAt, evaluationDate: generatedAt.slice(0, 10) });
   const match = response.matches.find(candidate => candidate.programId === request.programId);
@@ -126,9 +149,9 @@ async function processPreparePacket(
   if (match.isDemo && deps.allowDemoPrograms !== true) return failure('INTERNAL_ERROR');
   const program = registry.find(candidate => candidate.programId === request.programId)!;
   const contextFingerprint = createHash('sha256').update(canonicalJson({
-    plannerVersion: PACKET_PLANNER_VERSION, snapshot, program, match,
+    plannerVersion: PACKET_PLANNER_VERSION, snapshot, program, match, formTemplate: artifact?.template ?? null,
   })).digest('hex');
-  const packet = planDraftPacket(snapshot, match, { packetId: deps.newPacketId?.() ?? `packet-${randomUUID()}`, generatedAt });
+  const packet = planPacketWithForm(snapshot, match, { packetId: deps.newPacketId?.() ?? `packet-${randomUUID()}`, generatedAt }, artifact);
   const checkedAt = clock(deps);
   if (instantMicros(checkedAt) < instantMicros(generatedAt)) throw new Error('The server clock moved backwards.');
   if (packet.recheckAfter !== null && instantMicros(checkedAt) >= instantMicros(packet.recheckAfter)) {
@@ -144,7 +167,7 @@ async function processPreparePacket(
   if (saved.status === 'generation_conflict') return failure('PACKET_GENERATION_CONFLICT');
   if (saved.status !== 'saved' && saved.status !== 'reused') return failure('INTERNAL_ERROR');
   const result = saved.packet;
-  const expected = planDraftPacket(snapshot, match, { packetId: result.packetId, generatedAt: result.generatedAt });
+  const expected = planPacketWithForm(snapshot, match, { packetId: result.packetId, generatedAt: result.generatedAt }, artifact);
   if (canonicalJson(result) !== canonicalJson(expected)) return failure('INTERNAL_ERROR');
   const returnedAt = clock(deps);
   if (instantMicros(result.generatedAt) > instantMicros(returnedAt)) return failure('INTERNAL_ERROR');

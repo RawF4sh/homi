@@ -60,6 +60,7 @@ interface LeafMetadata {
 export type Rule =
   | (LeafMetadata & { kind: 'eq'; field: ProfileField; value: string | number | boolean })
   | (LeafMetadata & { kind: 'gte' | 'lte'; field: NumericField; value: number })
+  | (LeafMetadata & { kind: 'manual_review'; reason: string })
   | { kind: 'and'; rules: Rule[] }
   | { kind: 'or'; rules: Rule[] };
 

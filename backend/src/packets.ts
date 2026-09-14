@@ -1,6 +1,6 @@
 import type { CaseSnapshot, DraftPacket, Match, MissingPacketItem } from './types.ts';
 
-export const PACKET_PLANNER_VERSION = 'draft-checklist-v1';
+export const PACKET_PLANNER_VERSION = 'draft-checklist-v2-form-review';
 
 const answerLabels: Record<string, string> = {
   'profile.city': 'city', 'profile.county': 'county', 'profile.healthPlan': 'health plan',

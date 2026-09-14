@@ -135,15 +135,20 @@ function assertRule(value: unknown, sourceIds: Set<string>, depth = 0): asserts 
     value.rules.forEach(rule => assertRule(rule, sourceIds, depth + 1));
     return;
   }
-  requireCondition(value.kind === 'eq' || value.kind === 'gte' || value.kind === 'lte', 'Unsupported rule kind.');
-  onlyKeys(value, ['kind', 'field', 'value', 'sourceIds', 'resolvedBy'], 'Rule');
-  requireCondition(typeof value.field === 'string' && fieldNames.includes(value.field as ProfileField), 'Unsupported profile field.');
-  const field = value.field as ProfileField;
-  requireCondition(typeof value.value === fieldTypes[field], `Rule value type must match ${field}.`);
-  requireCondition(value.kind === 'eq' || fieldTypes[field] === 'number', 'Range comparisons require numeric fields.');
-  requireCondition(typeof value.value !== 'number' || Number.isFinite(value.value), 'Rule numeric values must be finite.');
-  requireCondition(typeof value.value !== 'string' || text(value.value), 'Rule strings must not be empty.');
-  requireCondition(field !== 'tenure' || value.value === 'owner' || value.value === 'renter', 'Invalid tenure rule value.');
+  requireCondition(value.kind === 'eq' || value.kind === 'gte' || value.kind === 'lte' || value.kind === 'manual_review', 'Unsupported rule kind.');
+  if (value.kind === 'manual_review') {
+    onlyKeys(value, ['kind', 'reason', 'sourceIds', 'resolvedBy'], 'Manual review rule');
+    requireCondition(text(value.reason), 'Manual review rules require a nonblank reason.');
+  } else {
+    onlyKeys(value, ['kind', 'field', 'value', 'sourceIds', 'resolvedBy'], 'Rule');
+    requireCondition(typeof value.field === 'string' && fieldNames.includes(value.field as ProfileField), 'Unsupported profile field.');
+    const field = value.field as ProfileField;
+    requireCondition(typeof value.value === fieldTypes[field], `Rule value type must match ${field}.`);
+    requireCondition(value.kind === 'eq' || fieldTypes[field] === 'number', 'Range comparisons require numeric fields.');
+    requireCondition(typeof value.value !== 'number' || Number.isFinite(value.value), 'Rule numeric values must be finite.');
+    requireCondition(typeof value.value !== 'string' || text(value.value), 'Rule strings must not be empty.');
+    requireCondition(field !== 'tenure' || value.value === 'owner' || value.value === 'renter', 'Invalid tenure rule value.');
+  }
   requireCondition(stringArray(value.sourceIds), 'Rule sourceIds must be an array.');
   requireCondition(value.sourceIds.every(id => sourceIds.has(id)), 'Rule references an unknown source ID.');
   requireCondition(typeof value.resolvedBy === 'string' && resolvers.includes(value.resolvedBy), 'Rule must name who can resolve missing facts.');
@@ -191,6 +196,7 @@ interface Result {
   missingFields: string[];
   resolvers: ResolvedBy[];
   sourceIds: string[];
+  manualReviews: string[];
 }
 
 function unique<T>(items: T[]): T[] { return [...new Set(items)]; }
@@ -201,6 +207,11 @@ function leafSources(rule: Rule): string[] {
 
 function allLeavesSourced(rule: Rule): boolean {
   return rule.kind === 'and' || rule.kind === 'or' ? rule.rules.every(allLeavesSourced) : rule.sourceIds.length > 0;
+}
+
+function manualReviewDescriptions(rule: Rule): string[] {
+  if (rule.kind === 'and' || rule.kind === 'or') return unique(rule.rules.flatMap(manualReviewDescriptions));
+  return rule.kind === 'manual_review' ? [`Manual review (${rule.resolvedBy}): ${rule.reason}`] : [];
 }
 
 function combine(kind: 'and' | 'or', results: Result[]): Result {
@@ -214,19 +225,24 @@ function combine(kind: 'and' | 'or', results: Result[]): Result {
     missingFields: unique(relevant.flatMap(result => result.missingFields)),
     resolvers: unique(relevant.flatMap(result => result.resolvers)),
     sourceIds: unique(results.flatMap(result => result.sourceIds)),
+    manualReviews: unique(relevant.flatMap(result => result.manualReviews)),
   };
 }
 
 function evaluateRule(rule: Rule, snapshot: CaseSnapshot): Result {
   if (rule.kind === 'and' || rule.kind === 'or') return combine(rule.kind, rule.rules.map(child => evaluateRule(child, snapshot)));
+  if (rule.kind === 'manual_review') return {
+    status: 'unknown', reasonCode: 'manual_review_required', missingFields: [],
+    resolvers: [rule.resolvedBy], sourceIds: [...rule.sourceIds], manualReviews: manualReviewDescriptions(rule),
+  };
   const path = `profile.${rule.field}`;
   const value = snapshot.profile[rule.field];
   const conflicting = snapshot.unresolvedFields.some(field => field === path || field === rule.field || field === 'profile');
   if (conflicting || value === null) {
-    return { status: 'unknown', reasonCode: conflicting ? 'unresolved_input' : 'missing_input', missingFields: [path], resolvers: [rule.resolvedBy], sourceIds: [...rule.sourceIds] };
+    return { status: 'unknown', reasonCode: conflicting ? 'unresolved_input' : 'missing_input', missingFields: [path], resolvers: [rule.resolvedBy], sourceIds: [...rule.sourceIds], manualReviews: [] };
   }
   const passed = rule.kind === 'eq' ? value === rule.value : rule.kind === 'gte' ? Number(value) >= rule.value : Number(value) <= rule.value;
-  return { status: passed ? 'pass' : 'fail', reasonCode: passed ? 'criterion_satisfied' : 'criterion_not_satisfied', missingFields: [], resolvers: [], sourceIds: [...rule.sourceIds] };
+  return { status: passed ? 'pass' : 'fail', reasonCode: passed ? 'criterion_satisfied' : 'criterion_not_satisfied', missingFields: [], resolvers: [], sourceIds: [...rule.sourceIds], manualReviews: [] };
 }
 
 function freshnessIssue(program: ProgramDefinition, context: EvaluationContext): string | null {
@@ -257,11 +273,14 @@ function recheckBoundary(program: ProgramDefinition, context: EvaluationContext)
 
 function evaluateCriterion(criterion: Criterion, snapshot: CaseSnapshot, freshness: string | null): Check {
   const sources = unique([...leafSources(criterion.rule), ...(criterion.exception ? leafSources(criterion.exception) : [])]);
-  if (freshness !== null) return {
-    id: criterion.id, status: 'unknown', reasonCode: freshness,
-    explanation: `${criterion.label}: current program rules need verification before this check can be used.`,
-    missingFields: [], resolvedBy: 'program', sourceIds: sources,
-  };
+  if (freshness !== null) {
+    const reviews = unique([...manualReviewDescriptions(criterion.rule), ...(criterion.exception ? manualReviewDescriptions(criterion.exception) : [])]);
+    return {
+      id: criterion.id, status: 'unknown', reasonCode: freshness,
+      explanation: [`${criterion.label}: current program rules need verification before this check can be used.`, ...reviews].join(' '),
+      missingFields: [], resolvedBy: 'program', sourceIds: sources,
+    };
+  }
   let result = evaluateRule(criterion.rule, snapshot);
   if (criterion.exception && result.status !== 'pass') {
     const exception = evaluateRule(criterion.exception, snapshot);
@@ -271,10 +290,11 @@ function evaluateCriterion(criterion: Criterion, snapshot: CaseSnapshot, freshne
   const explanation = result.status === 'pass'
     ? result.reasonCode === 'exception_satisfied' ? 'A documented exception satisfies this requirement.' : 'The supplied answers satisfy this coded requirement.'
     : result.status === 'fail' ? 'The supplied answers do not satisfy this requirement or any applicable coded alternative.'
-      : 'Information needed to resolve this requirement or its alternatives is missing or conflicting.';
+      : result.reasonCode === 'manual_review_required' ? 'A manual review is required; this check has not been decided.'
+        : 'Information needed to resolve this requirement or its alternatives is missing or conflicting.';
   return {
     id: criterion.id, status: result.status, reasonCode: result.reasonCode,
-    explanation: `${criterion.label}: ${explanation}`,
+    explanation: [`${criterion.label}: ${explanation}`, ...result.manualReviews].join(' '),
     missingFields: result.missingFields, resolvedBy: result.resolvers.length === 1 ? result.resolvers[0] : null,
     sourceIds: sources,
   };
