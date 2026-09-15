@@ -1,5 +1,7 @@
 import { instantMicros } from '../packets.ts';
 import type { CaseSnapshot, ResolvedBy } from '../types.ts';
+import { createFormAnswerContext, FORM_ANSWER_FIELDS, formAnswersAreCurrent, parseSavedFormAnswers,
+  validateAnswersForTemplate, type FormAnswerKey } from './form-answers.ts';
 
 export type PdfFieldType = 'Tx' | 'Btn' | 'Sig' | 'Ch';
 export type FieldSemantic = 'routing' | 'identity' | 'contact' | 'clinical'
@@ -16,6 +18,7 @@ export interface FormWidget {
 
 export type FieldBinding =
   | { readonly kind: 'routing'; readonly programId: string; readonly widgetIndex: number; readonly value: string }
+  | { readonly kind: 'reviewed_answer'; readonly answerKey: FormAnswerKey }
   | { readonly kind: 'manual'; readonly reason: ManualReason; readonly resolvedBy: ResolvedBy };
 
 export interface FormFieldDefinition {
@@ -43,14 +46,23 @@ export interface VerifiedFormTemplate {
   readonly fields: readonly FormFieldDefinition[];
 }
 
-export interface FieldOrigin {
+export type FieldOrigin = {
   readonly kind: 'verified_program_routing';
   readonly programId: string;
   readonly sourceUrl: string;
   readonly reviewedOn: string;
   readonly templateSha256: string;
   readonly mappingVersion: string;
-}
+} | {
+  readonly kind: 'reviewed_form_answer';
+  readonly answerKey: FormAnswerKey;
+  readonly sourceValue: string;
+  readonly answerRevision: number;
+  readonly reviewedBy: string;
+  readonly reviewedAt: string;
+  readonly formContextId: string;
+  readonly valueTransform: 'identity' | 'iso_date_to_mm_dd_yyyy';
+};
 
 export interface FormFieldDecision {
   readonly fieldName: string;
@@ -64,7 +76,7 @@ export interface FormFieldDecision {
   readonly value: string | null;
   readonly widgetValues: readonly (string | null)[];
   readonly origin: FieldOrigin | null;
-  readonly reasonCode: 'ROUTING_SELECTED' | Uppercase<ManualReason>;
+  readonly reasonCode: 'ROUTING_SELECTED' | 'REVIEWED_ANSWER' | 'ANSWER_NOT_COLLECTED' | 'ANSWER_NEEDS_REVIEW' | Uppercase<ManualReason>;
   readonly resolvedBy: ResolvedBy | null;
 }
 
@@ -162,6 +174,12 @@ export function defineVerifiedFormTemplate(input: unknown): VerifiedFormTemplate
         && Number(binding.widgetIndex) < field.widgets.length, 'Invalid routing widget index.');
       requireCondition(binding.value === (field.widgets[Number(binding.widgetIndex)] as Record<string, unknown>).exportValue,
         'Routing selection must use the reviewed widget appearance value.');
+    } else if (binding.kind === 'reviewed_answer') {
+      record(binding, ['kind', 'answerKey']);
+      const allowed = FORM_ANSWER_FIELDS.find(item => item.key === binding.answerKey);
+      requireCondition(allowed !== undefined && field.pdfType === 'Tx'
+        && field.fieldName === allowed.fieldName && field.semantic === allowed.semantic,
+      'Reviewed answers require an explicitly allowed text field and semantic.');
     } else {
       record(binding, ['kind', 'reason', 'resolvedBy']);
       requireCondition(binding.kind === 'manual' && reasons.includes(binding.reason as ManualReason)
@@ -178,6 +196,7 @@ export function planFormFields(
   snapshot: CaseSnapshot,
   templateInput: VerifiedFormTemplate,
   context: FormPlanningContext,
+  answersInput?: unknown,
 ): FormPreparationPlan {
   requireCondition(isRecord(snapshot) && snapshot.schemaVersion === '1' && identifier(snapshot.caseId)
     && Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 1, 'A valid case identity and revision are required.');
@@ -192,6 +211,14 @@ export function planFormFields(
     throw new FormMappingError('Invalid form-planning timestamp.');
   }
   requireCondition(context.plannedAt.slice(0, 10) >= template.reviewedOn, 'Form planning predates the template review.');
+  const answers = answersInput === undefined || answersInput === null ? null : parseSavedFormAnswers(answersInput);
+  if (answers !== null) {
+    requireCondition(formAnswersAreCurrent(answers, snapshot, createFormAnswerContext(template)),
+      'Form answers must be reviewed for the current case and form context.');
+    requireCondition(instantMicros(answers.updatedAt) <= instantMicros(context.plannedAt),
+      'Form planning predates the saved answers.');
+    validateAnswersForTemplate(answers.answers, template);
+  }
   const fields: FormFieldDecision[] = template.fields.map(field => {
     const common = { fieldName: field.fieldName, label: field.label, pdfType: field.pdfType,
       widgets: field.widgets, semantic: field.semantic, required: field.required, maxLength: field.maxLength };
@@ -202,6 +229,24 @@ export function planFormFields(
         origin: { kind: 'verified_program_routing', programId: template.programId, sourceUrl: template.sourceUrl,
           reviewedOn: template.reviewedOn, templateSha256: template.templateSha256, mappingVersion: template.mappingVersion },
         reasonCode: 'ROUTING_SELECTED', resolvedBy: null };
+    }
+    if (field.binding.kind === 'reviewed_answer') {
+      const key = field.binding.answerKey;
+      const answer = answers?.answers.find(item => item.key === key);
+      if (answer?.reviewState === 'reviewed' && answer.value !== null) {
+        const isDate = FORM_ANSWER_FIELDS.find(item => item.key === key)!.kind === 'date';
+        const value = isDate ? `${answer.value.slice(5, 7)}/${answer.value.slice(8, 10)}/${answer.value.slice(0, 4)}` : answer.value;
+        requireCondition(field.maxLength === null || [...value].length <= field.maxLength,
+          'A reviewed answer exceeds the declared PDF character limit.');
+        return { ...common, status: 'mapped', value, widgetValues: field.widgets.map(() => null),
+          origin: { kind: 'reviewed_form_answer', answerKey: key, sourceValue: answer.value,
+            answerRevision: answers!.answerRevision, reviewedBy: answer.reviewedBy!, reviewedAt: answer.reviewedAt!,
+            formContextId: answers!.formContextId, valueTransform: isDate ? 'iso_date_to_mm_dd_yyyy' : 'identity' },
+          reasonCode: 'REVIEWED_ANSWER', resolvedBy: null };
+      }
+      return { ...common, status: answer?.value ? 'requires_review' : 'missing', value: null,
+        widgetValues: field.widgets.map(() => null), origin: null,
+        reasonCode: answer?.value ? 'ANSWER_NEEDS_REVIEW' : 'ANSWER_NOT_COLLECTED', resolvedBy: 'resident' };
     }
     const reason = field.binding.reason;
     const status = reason === 'layout_only' || reason === 'out_of_scope' ? 'not_applicable'

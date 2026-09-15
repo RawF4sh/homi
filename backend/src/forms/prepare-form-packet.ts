@@ -12,12 +12,13 @@ export function planPacketWithForm(
   match: Match,
   context: { packetId: string; generatedAt: string },
   artifact: VerifiedTemplateArtifact | null,
+  answersInput?: unknown,
 ): DraftPacket {
   const packet = planDraftPacket(snapshot, match, context);
   if (artifact === null) return packet;
   const plan = planFormFields(snapshot, artifact.template, {
     programId: match.programId, templateSha256: artifact.templateSha256, plannedAt: context.generatedAt,
-  });
+  }, answersInput);
   packet.formVersion = plan.formVersion;
   packet.mappingVersion = plan.mappingVersion;
   packet.missingItems = packet.missingItems.filter(item => !['official-form', 'field-mapping'].includes(item.id));

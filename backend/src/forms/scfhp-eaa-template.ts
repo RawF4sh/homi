@@ -1,10 +1,11 @@
 import { defineVerifiedFormTemplate } from './field-mapping.ts';
+import { FORM_ANSWER_FIELDS } from './form-answers.ts';
 
 const definition = {
   "schemaVersion": "1",
   "programId": "scfhp-eaa",
   "formVersion": "sha256:ebd403673949e7fa01005789700fa6baddd77d351de90a44f7fee1eb81516cd7",
-  "mappingVersion": "scfhp-41567-eaa-routing-v1",
+  "mappingVersion": "scfhp-41567-eaa-reviewed-identity-v2",
   "templateSha256": "ebd403673949e7fa01005789700fa6baddd77d351de90a44f7fee1eb81516cd7",
   "publisherRevision": null,
   "sourceUrl": "https://res.cloudinary.com/dpmykpsih/image/upload/santa-clara-site-299/media/220648f9db4244ab883beee4ece8e702/41567-community-supports-referral-form-asthma-remediation-and-home-modifications-final.pdf",
@@ -64,5 +65,8 @@ const definition = {
 };
 
 export function createScfhpEaaFormTemplate() {
-  return defineVerifiedFormTemplate(definition);
+  return defineVerifiedFormTemplate({ ...definition, fields: definition.fields.map(field => {
+    const answer = FORM_ANSWER_FIELDS.find(answer => answer.fieldName === field.fieldName);
+    return answer ? { ...field, binding: { kind: 'reviewed_answer', answerKey: answer.key } } : field;
+  }) });
 }
