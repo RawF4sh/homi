@@ -2,6 +2,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { Socket } from 'node:net';
 import { handleMatchCase, type MatchCaseDependencies, type ApiErrorCode } from './match-case.ts';
 import { handlePreparePacket, type PreparePacketDependencies } from './prepare-packet.ts';
+import { handleReadFormAnswers, handleSaveFormAnswers, type FormAnswerDependencies } from './form-answers.ts';
+import { handleReadCase } from './read-case.ts';
+import { handleDraftExport, type DraftExportDependencies, type ExportRoute } from './draft-export.ts';
 
 export const MAX_REQUEST_BYTES = 16 * 1024;
 
@@ -34,9 +37,12 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
 }
 
-export function createMatchingServer(dependencies: MatchCaseDependencies, packetDependencies?: PreparePacketDependencies) {
+export function createMatchingServer(
+  dependencies: MatchCaseDependencies, packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
+  exportDependencies?: DraftExportDependencies,
+) {
   const server = createServer({ maxHeaderSize: 8192 }, (request, response) => {
-    void route(request, response, dependencies, packetDependencies).catch(() => {
+    void route(request, response, dependencies, packetDependencies, formAnswerDependencies, exportDependencies).catch(() => {
       fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
     });
   });
@@ -48,9 +54,18 @@ export function createMatchingServer(dependencies: MatchCaseDependencies, packet
   return server;
 }
 
-async function route(request: IncomingMessage, response: ServerResponse, dependencies: MatchCaseDependencies, packetDependencies?: PreparePacketDependencies) {
+async function route(
+  request: IncomingMessage, response: ServerResponse, dependencies: MatchCaseDependencies,
+  packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
+  exportDependencies?: DraftExportDependencies,
+) {
+  const exportRoutes: ExportRoute[] = ['list-evidence', 'download-evidence', 'create-draft-export', 'download-draft-export'];
+  const exportRoute = exportDependencies === undefined ? undefined : exportRoutes.find(route => request.url === `/v1/${route}`);
   const isPacketRequest = request.url === '/v1/prepare-packet' && packetDependencies !== undefined;
-  if (request.url !== '/v1/match-case' && !isPacketRequest) {
+  const isFormRead = request.url === '/v1/read-form-answers' && formAnswerDependencies !== undefined;
+  const isFormSave = request.url === '/v1/save-form-answers' && formAnswerDependencies !== undefined;
+  const isCaseRead = request.url === '/v1/read-case';
+  if (request.url !== '/v1/match-case' && !isPacketRequest && !isFormRead && !isFormSave && !isCaseRead && !exportRoute) {
     fail(response, 404, 'NOT_FOUND', 'This endpoint does not exist.');
     request.resume();
     return;
@@ -91,8 +106,20 @@ async function route(request: IncomingMessage, response: ServerResponse, depende
     return;
   }
   const input = { body, bearerToken: bearer[1] };
-  const result = isPacketRequest
-    ? await handlePreparePacket(input, packetDependencies!)
-    : await handleMatchCase(input, dependencies);
+  if (exportRoute) {
+    const result = await handleDraftExport(input, exportDependencies!, exportRoute);
+    if (result.body instanceof Uint8Array) {
+      if (!response.destroyed && !response.writableEnded) {
+        response.writeHead(result.status, result.headers);
+        response.end(result.body);
+      }
+    } else sendJson(response, result.status, result.body, result.headers);
+    return;
+  }
+  const result = isCaseRead ? await handleReadCase(input, dependencies)
+    : isFormRead ? await handleReadFormAnswers(input, formAnswerDependencies!)
+      : isFormSave ? await handleSaveFormAnswers(input, formAnswerDependencies!)
+        : isPacketRequest ? await handlePreparePacket(input, packetDependencies!)
+          : await handleMatchCase(input, dependencies);
   sendJson(response, result.status, result.body, result.headers);
 }

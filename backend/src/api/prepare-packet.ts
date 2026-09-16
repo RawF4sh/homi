@@ -4,6 +4,7 @@ import { instantMicros, isPacketCurrent, PACKET_PLANNER_VERSION } from '../packe
 import { defineVerifiedFormTemplate, type VerifiedFormTemplate } from '../forms/field-mapping.ts';
 import { planPacketWithForm, type VerifiedTemplateArtifact } from '../forms/prepare-form-packet.ts';
 import { MAX_TEMPLATE_BYTES, verifyTemplateBytes } from '../forms/template-artifact.ts';
+import { createFormAnswerContext, formAnswersAreCurrent, parseSavedFormAnswers, type SavedFormAnswerSet } from '../forms/form-answers.ts';
 import type { CaseSnapshot, DraftPacket, ProgramDefinition } from '../types.ts';
 import type { ApiErrorCode, AuthenticatedUser } from './match-case.ts';
 
@@ -31,6 +32,7 @@ export type CreatePacketResult =
 
 export interface PacketCaseRepository {
   loadForUser(userId: string, caseId: string): Promise<CaseSnapshot | null>;
+  loadFormAnswersForUser?(userId: string, caseId: string, programId: string): Promise<SavedFormAnswerSet | null>;
   createPacketIfCurrent(input: CreatePacketInput): Promise<CreatePacketResult>;
 }
 
@@ -44,7 +46,7 @@ export interface PreparePacketDependencies {
   newPacketId?(): string;
 }
 
-export type PacketErrorCode = ApiErrorCode | 'PROGRAM_NOT_FOUND' | 'PACKET_GENERATION_CONFLICT';
+export type PacketErrorCode = ApiErrorCode | 'PROGRAM_NOT_FOUND' | 'PACKET_GENERATION_CONFLICT' | 'FORM_ANSWERS_STALE';
 export interface PreparePacketResult {
   status: number;
   body: DraftPacket | { schemaVersion: '1'; error: { code: PacketErrorCode; message: string } };
@@ -58,6 +60,7 @@ const errors: Record<PacketErrorCode, { status: number; message: string }> = {
   PROGRAM_NOT_FOUND: { status: 404, message: 'The selected program is unavailable.' },
   CASE_REVISION_MISMATCH: { status: 409, message: 'The case changed. Reload it before preparing a draft.' },
   PACKET_GENERATION_CONFLICT: { status: 409, message: 'This draft request is no longer current. Review the latest case and program, then use a new generation key.' },
+  FORM_ANSWERS_STALE: { status: 409, message: 'Review and save the form answers for the current case and form before preparing a draft.' },
   SERVICE_UNAVAILABLE: { status: 503, message: 'Draft preparation is temporarily unavailable. Try again later.' },
   INTERNAL_ERROR: { status: 500, message: 'The draft packet could not be prepared.' },
 };
@@ -109,10 +112,11 @@ async function processPreparePacket(
   try { user = await deps.authenticate(token); } catch { return failure('SERVICE_UNAVAILABLE'); }
   if (user === null) return failure('UNAUTHENTICATED');
   if (!isRecord(user) || typeof user.userId !== 'string' || !user.userId.trim()) return failure('INTERNAL_ERROR');
+  const userId = user.userId;
   if (!validRequest(input.body)) return failure('INVALID_REQUEST');
-  const request = input.body;
+  const request = structuredClone(input.body);
   let loaded: CaseSnapshot | null;
-  try { loaded = await deps.cases.loadForUser(user.userId, request.caseId); } catch { return failure('SERVICE_UNAVAILABLE'); }
+  try { loaded = await deps.cases.loadForUser(userId, request.caseId); } catch { return failure('SERVICE_UNAVAILABLE'); }
   if (loaded === null) return failure('CASE_NOT_FOUND');
   const snapshot = structuredClone(loaded);
   const validatedAt = clock(deps);
@@ -142,6 +146,24 @@ async function processPreparePacket(
       artifact = { template, templateSha256 };
     }
   }
+  let formAnswers: SavedFormAnswerSet | null = null;
+  if (artifact?.template.fields.some(field => field.binding.kind === 'reviewed_answer')) {
+    if (!deps.cases.loadFormAnswersForUser) return failure('INTERNAL_ERROR');
+    let loadedAnswers: SavedFormAnswerSet | null;
+    try { loadedAnswers = await deps.cases.loadFormAnswersForUser(userId, request.caseId, request.programId); }
+    catch { return failure('SERVICE_UNAVAILABLE'); }
+    if (loadedAnswers !== null) {
+      formAnswers = parseSavedFormAnswers(loadedAnswers);
+      if (formAnswers.caseId !== request.caseId || formAnswers.programId !== request.programId
+        || formAnswers.updatedBy !== userId
+        || formAnswers.answers.some(answer => answer.reviewedBy !== null && answer.reviewedBy !== userId)) {
+        return failure('INTERNAL_ERROR');
+      }
+      if (!formAnswersAreCurrent(formAnswers, snapshot, createFormAnswerContext(artifact.template))) {
+        return failure('FORM_ANSWERS_STALE');
+      }
+    }
+  }
   const generatedAt = clock(deps);
   const response = matchPrograms(snapshot, registry, { evaluatedAt: generatedAt, evaluationDate: generatedAt.slice(0, 10) });
   const match = response.matches.find(candidate => candidate.programId === request.programId);
@@ -149,9 +171,9 @@ async function processPreparePacket(
   if (match.isDemo && deps.allowDemoPrograms !== true) return failure('INTERNAL_ERROR');
   const program = registry.find(candidate => candidate.programId === request.programId)!;
   const contextFingerprint = createHash('sha256').update(canonicalJson({
-    plannerVersion: PACKET_PLANNER_VERSION, snapshot, program, match, formTemplate: artifact?.template ?? null,
+    plannerVersion: PACKET_PLANNER_VERSION, snapshot, program, match, formTemplate: artifact?.template ?? null, formAnswers,
   })).digest('hex');
-  const packet = planPacketWithForm(snapshot, match, { packetId: deps.newPacketId?.() ?? `packet-${randomUUID()}`, generatedAt }, artifact);
+  const packet = planPacketWithForm(snapshot, match, { packetId: deps.newPacketId?.() ?? `packet-${randomUUID()}`, generatedAt }, artifact, formAnswers);
   const checkedAt = clock(deps);
   if (instantMicros(checkedAt) < instantMicros(generatedAt)) throw new Error('The server clock moved backwards.');
   if (packet.recheckAfter !== null && instantMicros(checkedAt) >= instantMicros(packet.recheckAfter)) {
@@ -159,7 +181,7 @@ async function processPreparePacket(
   }
   let saved: CreatePacketResult;
   try {
-    saved = await deps.cases.createPacketIfCurrent({ userId: user.userId, caseId: request.caseId,
+    saved = await deps.cases.createPacketIfCurrent({ userId, caseId: request.caseId,
       revision: snapshot.revision, generationKey: request.generationKey, contextFingerprint, packet, checkedAt });
   } catch { return failure('SERVICE_UNAVAILABLE'); }
   if (saved.status === 'not_found') return failure('CASE_NOT_FOUND');
@@ -167,7 +189,7 @@ async function processPreparePacket(
   if (saved.status === 'generation_conflict') return failure('PACKET_GENERATION_CONFLICT');
   if (saved.status !== 'saved' && saved.status !== 'reused') return failure('INTERNAL_ERROR');
   const result = saved.packet;
-  const expected = planPacketWithForm(snapshot, match, { packetId: result.packetId, generatedAt: result.generatedAt }, artifact);
+  const expected = planPacketWithForm(snapshot, match, { packetId: result.packetId, generatedAt: result.generatedAt }, artifact, formAnswers);
   if (canonicalJson(result) !== canonicalJson(expected)) return failure('INTERNAL_ERROR');
   const returnedAt = clock(deps);
   if (instantMicros(result.generatedAt) > instantMicros(returnedAt)) return failure('INTERNAL_ERROR');

@@ -106,12 +106,13 @@ async function processMatchCase(input: MatchCaseInput, deps: MatchCaseDependenci
   }
   if (user === null) return failure('UNAUTHENTICATED');
   if (!isRecord(user) || typeof user.userId !== 'string' || user.userId.trim().length === 0) return failure('INTERNAL_ERROR');
+  const userId = user.userId;
   if (!validRequest(input.body)) return failure('INVALID_REQUEST');
-  const request = input.body;
+  const request = structuredClone(input.body);
 
   let loaded: CaseSnapshot | null;
   try {
-    loaded = await deps.cases.loadForUser(user.userId, request.caseId);
+    loaded = await deps.cases.loadForUser(userId, request.caseId);
   } catch {
     return failure('SERVICE_UNAVAILABLE');
   }
@@ -133,7 +134,7 @@ async function processMatchCase(input: MatchCaseInput, deps: MatchCaseDependenci
 
   let saved: 'saved' | 'not_found' | 'conflict';
   try {
-    saved = await deps.cases.saveMatchIfCurrent(user.userId, request.caseId, snapshot.revision, response);
+    saved = await deps.cases.saveMatchIfCurrent(userId, request.caseId, snapshot.revision, response);
   } catch {
     return failure('SERVICE_UNAVAILABLE');
   }
