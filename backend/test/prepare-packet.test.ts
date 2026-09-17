@@ -186,6 +186,23 @@ test('concurrent identical requests atomically return the same saved packet', as
   assert.deepEqual(packet(results[2]), packet(results[0]));
 });
 
+test('mutable authentication and request objects cannot retarget preparation across awaits', async () => {
+  const state = setup();
+  const identity = { userId: 'alice' };
+  const body = { ...request };
+  state.deps.authenticate = async () => identity;
+  state.deps.loadRegistry = async () => {
+    identity.userId = 'bob';
+    body.caseId = 'packet-case-bob'; body.programId = 'changed-program'; body.generationKey = 'changed-key';
+    return [structuredClone(demoProgram)];
+  };
+  const result = packet(await state.send(body));
+  assert.equal(result.caseId, request.caseId);
+  assert.equal(result.programId, request.programId);
+  assert.equal(state.attempts[0].userId, 'alice');
+  assert.equal(state.attempts[0].generationKey, request.generationKey);
+});
+
 test('different selected programs cannot reuse a generation key', async () => {
   const state = setup();
   packet(await state.send());

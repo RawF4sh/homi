@@ -7,6 +7,7 @@ import {
 } from 'pdf-lib';
 import { renderDraftPreview, DraftPreviewError } from '../src/forms/render-draft-preview.ts';
 import { defineVerifiedFormTemplate, type FormPlanningContext, type VerifiedFormTemplate } from '../src/forms/field-mapping.ts';
+import { createFormAnswerContext, createSavedFormAnswers, type FormAnswerInput, type SavedFormAnswerSet } from '../src/forms/form-answers.ts';
 import type { CaseSnapshot } from '../src/types.ts';
 
 const CASE: CaseSnapshot = { schemaVersion: '1', caseId: 'private-fictional-case-id', revision: 4,
@@ -101,6 +102,37 @@ async function revise(f: Fixture, mutate: (document: PDFDocument) => void): Prom
 
 async function render(f: Fixture) { return renderDraftPreview(CASE, f.template, f.bytes, f.context); }
 
+async function reviewedFixture(): Promise<Fixture> {
+  const f = await revise(await fixture(), document => {
+    document.getForm().getField('name').acroField.setPartialName('First Name');
+  });
+  const template = defineVerifiedFormTemplate({ ...f.template, fields: f.template.fields.map(field =>
+    field.fieldName === 'name' ? { ...field, fieldName: 'First Name', label: 'Member given name',
+      binding: { kind: 'reviewed_answer', answerKey: 'memberFirstName' } } : field) });
+  return { ...f, template };
+}
+
+function reviewedAnswers(f: Fixture, value: string, reviewState: FormAnswerInput['reviewState'] = 'reviewed'): SavedFormAnswerSet {
+  return createSavedFormAnswers({ snapshot: CASE, context: createFormAnswerContext(f.template), answerRevision: 2,
+    updatedAt: f.context.plannedAt, updatedBy: 'fictional-reviewer',
+    answers: [{ key: 'memberFirstName', value, reviewState }] });
+}
+
+async function reviewedPreview(f: Fixture, value: string) {
+  return renderDraftPreview(CASE, f.template, f.bytes, f.context, reviewedAnswers(f, value));
+}
+
+async function syncReviewedWidgets(f: Fixture): Promise<Fixture> {
+  const document = await PDFDocument.load(f.bytes, { updateMetadata: false });
+  const widgets = document.getForm().getField('First Name').acroField.getWidgets().map(widget => ({
+    page: document.getPages().findIndex(page => widget.P() === page.ref) + 1,
+    rect: widget.Rect()!.asArray().map(value => document.context.lookup(value, PDFNumber).asNumber()),
+    exportValue: null,
+  }));
+  return { ...f, template: defineVerifiedFormTemplate({ ...f.template, fields: f.template.fields.map(field =>
+    field.fieldName === 'First Name' ? { ...field, widgets } : field) }) };
+}
+
 function streamText(document: PDFDocument): string {
   return document.context.enumerateIndirectObjects().map(([, object]) => object instanceof PDFRawStream
     ? Buffer.from(decodePDFRawStream(object).decode()).toString('latin1') : '').join('\n');
@@ -129,6 +161,7 @@ test('preview selects only the reviewed physical routing widget, independent of 
   assert.equal(result.plan.caseId, CASE.caseId);
   assert.equal(result.plan.caseRevision, CASE.revision);
   assert.equal(result.plan.templateSha256, digest(f.bytes));
+  assert.deepEqual(result.renderIssues, []);
 });
 
 test('manual values, defaults, rich text, clinical answers and signature appearances stay blank', async () => {
@@ -284,4 +317,164 @@ test('ordinary source links are excluded from the noninteractive output', async 
   const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
   assert.ok(document.getPages().every(page => !page.node.Annots() || page.node.Annots()!.size() === 0));
   assert.ok(!Buffer.from(result.bytes).toString('latin1').includes('private-link'));
+});
+
+test('reviewed text renders exactly, including supported accents, with source provenance intact', async () => {
+  const f = await reviewedFixture();
+  const value = 'Ángela Núñez';
+  const result = await reviewedPreview(f, value);
+  const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+  const expectedFont = document.embedStandardFont(StandardFonts.Helvetica);
+  const streams = streamText(document);
+  assert.ok(streams.includes(`${expectedFont.encodeText(value)} Tj`));
+  assert.match(streams, /\/SafeAtHomeReviewedText 10 Tf/);
+  assert.deepEqual(result.renderIssues, []);
+  const decision = result.plan.fields.find(field => field.fieldName === 'First Name')!;
+  assert.equal(decision.value, value);
+  assert.equal(decision.origin?.kind, 'reviewed_form_answer');
+  assert.equal(document.getAuthor(), undefined);
+  assert.equal(document.getTitle(), 'Incomplete draft - not submitted');
+  assert.equal(document.catalog.has(PDFName.of('AcroForm')), false);
+  assert.doesNotMatch(streams, /PRIVATE NAME ANSWER|PRIVATE CLINICAL ANSWER|PRIVATE SIGNED APPEARANCE/);
+});
+
+test('fit reduces text size deterministically while preserving the full answer and an 8pt floor', async () => {
+  const f = await reviewedFixture();
+  const value = 'A'.repeat(30);
+  const result = await reviewedPreview(f, value);
+  const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+  const streams = streamText(document);
+  const sizes = [...streams.matchAll(/\/SafeAtHomeReviewedText ([0-9.]+) Tf/g)].map(match => Number(match[1]));
+  assert.equal(sizes.length, 1);
+  assert.ok(sizes[0] >= 8 && sizes[0] < 10);
+  const font = document.embedStandardFont(StandardFonts.Helvetica);
+  assert.ok(streams.includes(`${font.encodeText(value)} Tj`));
+  assert.deepEqual(result.renderIssues, []);
+  const repeated = await reviewedPreview(f, value);
+  const other = await PDFDocument.load(repeated.bytes, { updateMetadata: false });
+  assert.match(streamText(other), new RegExp(`/SafeAtHomeReviewedText ${sizes[0]} Tf`));
+});
+
+test('overflow leaves the entire answer blank and reports a safe issue on every page', async () => {
+  const f = await reviewedFixture();
+  const value = 'W'.repeat(100);
+  const result = await reviewedPreview(f, value);
+  assert.equal(result.plan.fields.find(field => field.fieldName === 'First Name')!.value, value);
+  assert.deepEqual(result.renderIssues.map(({ fieldName, code }) => ({ fieldName, code })), [
+    { fieldName: 'First Name', code: 'TEXT_DOES_NOT_FIT' },
+  ]);
+  assert.ok(!JSON.stringify(result.renderIssues).includes(value));
+  assert.ok(Object.isFrozen(result.renderIssues) && Object.isFrozen(result.renderIssues[0]));
+  const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+  assert.doesNotMatch(streamText(document), /\/SafeAtHomeReviewedText/);
+  assert.match(streamText(document), /ON_HOME/);
+  const note = Buffer.from('1 reviewed answer omitted - review rendering issues').toString('hex').toUpperCase();
+  for (let index = 0; index < document.getPageCount(); index++) assert.ok(pageText(document, index).includes(note));
+});
+
+test('unsupported scripts and combining marks stay exact in the logical plan, never transliterated into the PDF', async () => {
+  const f = await reviewedFixture();
+  for (const value of ['李', 'Zoë😀', 'e\u0301']) {
+    const result = await reviewedPreview(f, value);
+    assert.equal(result.plan.fields.find(field => field.fieldName === 'First Name')!.value, value);
+    assert.equal(result.renderIssues.length, 1);
+    assert.equal(result.renderIssues[0].code, 'UNSUPPORTED_CHARACTERS');
+    assert.ok(!JSON.stringify(result.renderIssues).includes(value));
+    const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+    assert.doesNotMatch(streamText(document), /\/SafeAtHomeReviewedText/);
+  }
+});
+
+test('unreviewed answers stay blank without a misleading rendering omission', async () => {
+  const f = await reviewedFixture();
+  const result = await renderDraftPreview(CASE, f.template, f.bytes, f.context,
+    reviewedAnswers(f, 'Fictional unreviewed answer', 'needs_review'));
+  const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+  assert.notEqual(result.plan.fields.find(field => field.fieldName === 'First Name')!.status, 'mapped');
+  assert.deepEqual(result.renderIssues, []);
+  assert.doesNotMatch(streamText(document), /\/SafeAtHomeReviewedText/);
+});
+
+test('reviewed answer input is detached before asynchronous PDF work', async () => {
+  const f = await reviewedFixture();
+  const answers = reviewedAnswers(f, 'Original Fictional');
+  const operation = renderDraftPreview(CASE, f.template, f.bytes, f.context, answers);
+  answers.answers[0].value = 'Changed After Call';
+  answers.caseRevision += 1;
+  const result = await operation;
+  assert.equal(result.plan.fields.find(field => field.fieldName === 'First Name')!.value, 'Original Fictional');
+  assert.deepEqual(result.renderIssues, []);
+});
+
+test('stale case, form and answer context cannot reach a rendered preview', async () => {
+  const f = await reviewedFixture();
+  const mutations: ((answers: SavedFormAnswerSet) => void)[] = [
+    answers => { answers.caseId = 'another-case'; },
+    answers => { answers.caseRevision += 1; },
+    answers => { answers.programId = 'another-program'; },
+    answers => { answers.formVersion = 'another-form'; },
+    answers => { answers.mappingVersion = 'another-mapping'; },
+    answers => { answers.formContextId = '0'.repeat(64); },
+    answers => { answers.updatedAt = '2026-10-18T20:00:00Z'; },
+  ];
+  for (const mutate of mutations) {
+    const answers = reviewedAnswers(f, 'Private Fictional Answer');
+    mutate(answers);
+    await assert.rejects(renderDraftPreview(CASE, f.template, f.bytes, f.context, answers), error => {
+      assert.ok(error instanceof DraftPreviewError);
+      assert.equal(error.message, 'The form preview could not be prepared from the verified template.');
+      return true;
+    });
+  }
+});
+
+test('single-line answers fit multiline-capable boxes without changing source text or wrapping', async () => {
+  const f = await revise(await reviewedFixture(), document => document.getForm().getTextField('First Name').enableMultiline());
+  const result = await reviewedPreview(f, 'Fictional Name');
+  assert.deepEqual(result.renderIssues, []);
+  const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+  const matching = streamText(document).match(/\/SafeAtHomeReviewedText/g) ?? [];
+  assert.equal(matching.length, 1);
+});
+
+test('unsupported text widget semantics and rotation are review issues, not partial output', async () => {
+  const base = await reviewedFixture();
+  const mutations: ((document: PDFDocument) => void)[] = [
+    document => document.getForm().getTextField('First Name').enablePassword(),
+    document => document.getForm().getField('First Name').acroField.setFlag(1 << 20),
+    document => document.getForm().getField('First Name').acroField.setFlag(1 << 24),
+    document => document.getForm().getField('First Name').acroField.setFlag(1 << 25),
+    document => document.getForm().getField('First Name').acroField.getWidgets()[0]
+      .getOrCreateAppearanceCharacteristics().setRotation(90),
+  ];
+  for (const mutate of mutations) {
+    const f = await revise(base, mutate);
+    const result = await reviewedPreview(f, 'Fictional');
+    assert.equal(result.renderIssues[0].code, 'UNSUPPORTED_TEXT_LAYOUT');
+    const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+    assert.doesNotMatch(streamText(document), /\/SafeAtHomeReviewedText/);
+  }
+});
+
+test('every widget must fit before any copy of a reviewed field is rendered', async () => {
+  const f = await syncReviewedWidgets(await revise(await reviewedFixture(), document => {
+    document.getForm().getTextField('First Name').addToPage(document.getPage(1), { x: 200, y: 400, width: 20, height: 20 });
+  }));
+  const result = await reviewedPreview(f, 'Fictional Name');
+  assert.equal(result.renderIssues.length, 1);
+  assert.equal(result.renderIssues[0].code, 'TEXT_DOES_NOT_FIT');
+  const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+  assert.doesNotMatch(streamText(document), /\/SafeAtHomeReviewedText/);
+});
+
+test('vertical bounds include accented ink and reject a box below the readable minimum', async () => {
+  const f = await syncReviewedWidgets(await revise(await reviewedFixture(), document => {
+    document.getForm().getField('First Name').acroField.getWidgets()[0]
+      .setRectangle({ x: 40, y: 600, width: 180, height: 10 });
+  }));
+  const result = await reviewedPreview(f, 'Ág');
+  assert.equal(result.renderIssues.length, 1);
+  assert.equal(result.renderIssues[0].code, 'TEXT_DOES_NOT_FIT');
+  const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+  assert.doesNotMatch(streamText(document), /\/SafeAtHomeReviewedText/);
 });

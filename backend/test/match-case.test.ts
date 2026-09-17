@@ -140,6 +140,31 @@ test('a stale requested revision stops before loading rules or saving', async ()
   assert.equal(saved.length, 0);
 });
 
+test('a reused authentication object cannot retarget the owner during registry loading', async () => {
+  const { deps, saved } = setup(); const user = { userId: 'user-a' };
+  deps.authenticate = async () => user;
+  deps.loadRegistry = async () => {
+    await Promise.resolve(); user.userId = 'user-b';
+    return [structuredClone(demoProgram)];
+  };
+  const result = await handleMatchCase(structuredClone(request), deps);
+  assert.equal(result.status, 200); assert.equal(saved.length, 1);
+  assert.equal(saved[0].userId, 'user-a'); assert.equal(saved[0].caseId, 'case-a');
+});
+
+test('the parsed request is detached before an asynchronous case read', async () => {
+  const { deps, saved } = setup(); const input = structuredClone(request);
+  const load = deps.cases.loadForUser;
+  deps.cases.loadForUser = async (userId, caseId) => {
+    const loaded = await load(userId, caseId);
+    input.body.caseId = 'case-b'; input.body.expectedCaseRevision = 8;
+    return loaded;
+  };
+  const result = await handleMatchCase(input, deps);
+  assert.equal(result.status, 200); assert.equal(saved.length, 1);
+  assert.equal(saved[0].caseId, 'case-a'); assert.equal(saved[0].revision, 3);
+});
+
 test('a concurrent revision change during evaluation cannot save or return the old result', async () => {
   const { deps, cases, saved } = setup();
   deps.loadRegistry = async () => {

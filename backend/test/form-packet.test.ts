@@ -4,7 +4,9 @@ import test from 'node:test';
 import { demoContext, demoProgram } from '../fixtures/demo-program.ts';
 import { handlePreparePacket, type PreparePacketDependencies, type PreparePacketResult } from '../src/api/prepare-packet.ts';
 import { MemoryCaseRepository } from '../src/api/memory-case-repository.ts';
+import { handleSaveFormAnswers, type FormAnswersResponse } from '../src/api/form-answers.ts';
 import { defineVerifiedFormTemplate, type VerifiedFormTemplate } from '../src/forms/field-mapping.ts';
+import { createFormAnswerContext, type FormAnswerInput, type SavedFormAnswerSet } from '../src/forms/form-answers.ts';
 import type { CaseSnapshot, DraftPacket } from '../src/types.ts';
 
 function fixture() {
@@ -49,6 +51,33 @@ function setup() {
   };
   return { deps, form, cases, loads: () => loads, setNow: (value: string) => { now = value; },
     send: (body: unknown = request, bearerToken: string | null = 'alice') => handlePreparePacket({ body, bearerToken }, deps) };
+}
+
+function reviewedSetup() {
+  const state = setup();
+  state.form.template = defineVerifiedFormTemplate({ ...state.form.template,
+    fields: state.form.template.fields.map(field => field.fieldName === 'name'
+      ? { ...field, fieldName: 'First Name', label: 'Member given name',
+        binding: { kind: 'reviewed_answer', answerKey: 'memberFirstName' } } : field) });
+  return state;
+}
+
+async function saveAnswers(
+  state: ReturnType<typeof reviewedSetup>,
+  answers: FormAnswerInput[] = [{ key: 'memberFirstName', value: 'PRIVATE FICTIONAL ALICE NAME', reviewState: 'reviewed' }],
+): Promise<FormAnswersResponse> {
+  const current = await state.cases.loadForUser('alice', request.caseId);
+  assert.ok(current);
+  const previous = await state.cases.loadFormAnswersForUser('alice', request.caseId, request.programId);
+  const result = await handleSaveFormAnswers({ bearerToken: 'alice', body: {
+    schemaVersion: '1', caseId: request.caseId, expectedCaseRevision: current.revision,
+    programId: request.programId, expectedFormContextId: createFormAnswerContext(state.form.template).formContextId,
+    expectedAnswerRevision: previous?.answerRevision ?? 0, answers,
+  } }, { authenticate: state.deps.authenticate, cases: state.cases,
+    loadFormTemplate: async () => state.form, now: state.deps.now });
+  assert.equal(result.status, 200);
+  assert.ok('saved' in result.body && result.body.saved !== null);
+  return result.body;
 }
 
 function success(result: PreparePacketResult): DraftPacket {
@@ -126,7 +155,8 @@ test('form loading follows authentication, access, revision, program validation 
 });
 
 test('client form definitions, values, URLs and versions cannot override the server', async () => {
-  for (const key of ['formVersion', 'mappingVersion', 'templateSha256', 'template', 'formValues', 'formUrl']) {
+  for (const key of ['formVersion', 'mappingVersion', 'templateSha256', 'template', 'formValues', 'formUrl',
+    'answers', 'answerRevision', 'formContextId']) {
     const state = setup(); failure(await state.send({ ...request, [key]: 'untrusted' }), 400, 'INVALID_REQUEST');
     assert.equal(state.loads(), 0);
   }
@@ -181,4 +211,196 @@ test('repository cannot substitute another form version or invented rendered fil
       createPacketIfCurrent: async input => ({ status: 'saved', packet: { ...input.packet, ...override } }) };
     failure(await state.send(), 500, 'INTERNAL_ERROR');
   }
+});
+
+test('saved reviewed answers remove only their checklist task without returning private values', async () => {
+  const state = reviewedSetup();
+  const before = success(await state.send());
+  assert.ok(before.missingItems.some(item => item.id === 'form-field:1'));
+  const saved = await saveAnswers(state);
+  assert.equal(saved.caseRevision, 2);
+  assert.equal(saved.saved!.answerRevision, 1);
+  assert.equal(saved.saved!.updatedBy, 'alice');
+  const currentRequest = { ...request, expectedCaseRevision: saved.caseRevision, generationKey: 'reviewed-form-001' };
+  const packet = success(await state.send(currentRequest));
+  assert.equal(packet.caseRevision, 2);
+  assert.ok(!packet.missingItems.some(item => item.id === 'form-field:1'));
+  assert.ok(packet.missingItems.some(item => item.id === 'form-field:2'));
+  assert.ok(packet.missingItems.some(item => item.id === 'form-rendering'));
+  assert.equal(packet.storageReference, null);
+  assert.deepEqual(packet.attachments, []);
+  assert.doesNotMatch(JSON.stringify(packet), /PRIVATE FICTIONAL ALICE NAME|memberFirstName|reviewedBy|reviewedAt|sourceValue/);
+  assert.deepEqual(success(await state.send(currentRequest)), packet);
+  failure(await state.send(), 409, 'CASE_REVISION_MISMATCH');
+});
+
+test('unreviewed saved values remain explicit review tasks and are excluded from the checklist', async () => {
+  const state = reviewedSetup();
+  const saved = await saveAnswers(state, [{ key: 'memberFirstName', value: 'PRIVATE UNREVIEWED NAME', reviewState: 'needs_review' }]);
+  const packet = success(await state.send({ ...request, expectedCaseRevision: saved.caseRevision }));
+  const item = packet.missingItems.find(item => item.id === 'form-field:1');
+  assert.ok(item);
+  assert.match(item.description, /Review this part of the form/);
+  assert.equal(item.resolvedBy, 'resident');
+  assert.doesNotMatch(JSON.stringify(packet), /PRIVATE UNREVIEWED NAME/);
+  assert.ok(packet.missingItems.some(item => item.id === 'form-field:2'));
+});
+
+test('stale case revision or changed complete form context prevents packet creation', async () => {
+  for (const changed of ['case', 'mapping-version', 'same-version-label'] as const) {
+    const state = reviewedSetup();
+    const saved = await saveAnswers(state);
+    let writes = 0;
+    state.deps.cases = {
+      loadForUser: async (userId, caseId) => {
+        const snapshot = await state.cases.loadForUser(userId, caseId);
+        return snapshot && changed === 'case' ? { ...snapshot, revision: snapshot.revision + 1 } : snapshot;
+      },
+      loadFormAnswersForUser: (userId, caseId, programId) => state.cases.loadFormAnswersForUser(userId, caseId, programId),
+      createPacketIfCurrent: async () => { writes++; throw new Error('Packet must not be saved.'); },
+    };
+    if (changed !== 'case') {
+      state.form.template = defineVerifiedFormTemplate({ ...state.form.template,
+        mappingVersion: changed === 'mapping-version' ? 'new-mapping-version' : state.form.template.mappingVersion,
+        fields: state.form.template.fields.map(field => changed === 'same-version-label' && field.fieldName === 'First Name'
+          ? { ...field, label: 'Re-reviewed member given name' } : field) });
+    }
+    failure(await state.send({ ...request, expectedCaseRevision: saved.caseRevision + (changed === 'case' ? 1 : 0) }),
+      409, 'FORM_ANSWERS_STALE');
+    assert.equal(writes, 0);
+  }
+});
+
+test('reviewing and saving again for a changed form context restores valid preparation', async () => {
+  const state = reviewedSetup();
+  const first = await saveAnswers(state);
+  state.form.template = defineVerifiedFormTemplate({ ...state.form.template, mappingVersion: 'reviewed-v2' });
+  failure(await state.send({ ...request, expectedCaseRevision: first.caseRevision }), 409, 'FORM_ANSWERS_STALE');
+  const second = await saveAnswers(state);
+  assert.equal(second.caseRevision, 3);
+  assert.equal(second.saved!.answerRevision, 2);
+  assert.equal(second.saved!.mappingVersion, 'reviewed-v2');
+  const packet = success(await state.send({ ...request, expectedCaseRevision: second.caseRevision }));
+  assert.equal(packet.mappingVersion, 'reviewed-v2');
+  assert.ok(!packet.missingItems.some(item => item.id === 'form-field:1'));
+});
+
+test('answer loading is owner-scoped and occurs only after authenticated case access', async () => {
+  const state = reviewedSetup();
+  const saved = await saveAnswers(state);
+  const calls: string[][] = [];
+  state.deps.cases = {
+    loadForUser: (userId, caseId) => state.cases.loadForUser(userId, caseId),
+    loadFormAnswersForUser: async (userId, caseId, programId) => {
+      calls.push([userId, caseId, programId]);
+      return state.cases.loadFormAnswersForUser(userId, caseId, programId);
+    },
+    createPacketIfCurrent: input => state.cases.createPacketIfCurrent(input),
+  };
+  const body = { ...request, expectedCaseRevision: saved.caseRevision };
+  failure(await state.send(body, 'bob'), 404, 'CASE_NOT_FOUND');
+  failure(await state.send(body, null), 401, 'UNAUTHENTICATED');
+  assert.deepEqual(calls, []);
+  assert.equal(await state.cases.loadFormAnswersForUser('bob', request.caseId, request.programId), null);
+  success(await state.send(body));
+  assert.deepEqual(calls, [['alice', request.caseId, request.programId]]);
+});
+
+test('malformed or cross-owner internal answer records never disclose private values', async () => {
+  const mutations: ((saved: SavedFormAnswerSet) => void)[] = [
+    saved => { saved.caseId = 'private-other-case'; },
+    saved => { saved.programId = 'private-other-program'; },
+    saved => { saved.updatedBy = 'bob'; },
+    saved => { saved.answers[0].reviewedBy = 'bob'; },
+    saved => { saved.answers.push(structuredClone(saved.answers[0])); },
+    saved => { saved.answers[0].reviewedAt = null; },
+    saved => { saved.updatedAt = '2026-10-14T19:00:00Z'; },
+  ];
+  for (const mutate of mutations) {
+    const state = reviewedSetup();
+    const saved = await saveAnswers(state);
+    const record = structuredClone(saved.saved!);
+    mutate(record);
+    let writes = 0;
+    state.deps.cases = {
+      loadForUser: (userId, caseId) => state.cases.loadForUser(userId, caseId),
+      loadFormAnswersForUser: async () => record,
+      createPacketIfCurrent: async () => { writes++; throw new Error('Packet must not be saved.'); },
+    };
+    const result = await state.send({ ...request, expectedCaseRevision: saved.caseRevision });
+    failure(result, 500, 'INTERNAL_ERROR');
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE FICTIONAL|private-other|memberFirstName|reviewedBy|example.org/);
+    assert.equal(writes, 0);
+  }
+});
+
+test('answer-loader failures return an unavailable error without leaking thrown content', async () => {
+  const state = reviewedSetup();
+  state.deps.cases = {
+    loadForUser: (userId, caseId) => state.cases.loadForUser(userId, caseId),
+    loadFormAnswersForUser: async () => { throw new Error('PRIVATE RECORD AND ACCESS TOKEN'); },
+    createPacketIfCurrent: input => state.cases.createPacketIfCurrent(input),
+  };
+  const result = await state.send();
+  failure(result, 503, 'SERVICE_UNAVAILABLE');
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE RECORD|ACCESS TOKEN/);
+});
+
+test('answer edits racing packet persistence advance the case and reject the stale packet atomically', async () => {
+  const state = reviewedSetup();
+  const initial = await saveAnswers(state);
+  let changed = false;
+  let savedCaseRevision = 0;
+  state.deps.cases = {
+    loadForUser: (userId, caseId) => state.cases.loadForUser(userId, caseId),
+    loadFormAnswersForUser: (userId, caseId, programId) => state.cases.loadFormAnswersForUser(userId, caseId, programId),
+    createPacketIfCurrent: async input => {
+      if (!changed) {
+        changed = true;
+        assert.equal(input.revision, initial.caseRevision);
+        const saved = await saveAnswers(state, [{ key: 'memberFirstName', value: 'PRIVATE EDITED NAME', reviewState: 'reviewed' }]);
+        savedCaseRevision = saved.caseRevision;
+        assert.equal(savedCaseRevision, initial.caseRevision + 1);
+        assert.equal(saved.saved!.answerRevision, 2);
+      }
+      return state.cases.createPacketIfCurrent(input);
+    },
+  };
+  failure(await state.send({ ...request, expectedCaseRevision: initial.caseRevision }), 409, 'CASE_REVISION_MISMATCH');
+  assert.equal((await state.cases.loadForUser('alice', request.caseId))!.revision, savedCaseRevision);
+  const packet = success(await state.send({ ...request, expectedCaseRevision: savedCaseRevision }));
+  assert.equal(packet.caseRevision, savedCaseRevision);
+  assert.doesNotMatch(JSON.stringify(packet), /PRIVATE EDITED NAME/);
+});
+
+test('full answer contents invalidate idempotent retry even when a faulty adapter reuses answer revision', async () => {
+  const state = reviewedSetup();
+  const saved = await saveAnswers(state);
+  const body = { ...request, expectedCaseRevision: saved.caseRevision };
+  const first = success(await state.send(body));
+  const changed = structuredClone(saved.saved!);
+  changed.answers[0].value = 'PRIVATE DIFFERENT NAME SAME REVISION';
+  state.deps.cases = {
+    loadForUser: (userId, caseId) => state.cases.loadForUser(userId, caseId),
+    loadFormAnswersForUser: async () => changed,
+    createPacketIfCurrent: input => state.cases.createPacketIfCurrent(input),
+  };
+  const conflict = await state.send(body);
+  failure(conflict, 409, 'PACKET_GENERATION_CONFLICT');
+  assert.doesNotMatch(JSON.stringify(conflict), /PRIVATE DIFFERENT/);
+  const next = success(await state.send({ ...body, generationKey: 'changed-answer-intent' }));
+  assert.notEqual(next.packetId, first.packetId);
+  assert.deepEqual(next.missingItems, first.missingItems);
+});
+
+test('reviewed-answer templates require a loader, while no saved record remains a valid incomplete draft', async () => {
+  const state = reviewedSetup();
+  const incomplete = success(await state.send());
+  assert.ok(incomplete.missingItems.some(item => item.id === 'form-field:1'));
+  assert.equal(await state.cases.loadFormAnswersForUser('alice', request.caseId, request.programId), null);
+  state.deps.cases = {
+    loadForUser: (userId, caseId) => state.cases.loadForUser(userId, caseId),
+    createPacketIfCurrent: input => state.cases.createPacketIfCurrent(input),
+  };
+  failure(await state.send({ ...request, generationKey: 'missing-loader-intent' }), 500, 'INTERNAL_ERROR');
 });
