@@ -15,6 +15,9 @@ import type {
 import { canonicalJson, caseFingerprint, evidenceIdentifier, evidenceInstant, evidenceRevision,
   formAnswersFingerprint, parseEvidenceDescriptor, parseEvidenceSelections, parseSanitizedEvidenceImage } from '../evidence/validation.ts';
 import { parseExportArtifactMetadata } from '../exports/validation.ts';
+import { MAX_MEMORY_CASES, type CaseDraft } from '../cases/types.ts';
+import { parseCaseDraft } from '../cases/validation.ts';
+import type { CaseWriteRepository, CaseWriteResult } from '../cases/repository.ts';
 
 export interface MemoryEvidenceLimits { maxBytes: number; maxAssets: number; maxArtifacts: number }
 const DEFAULT_EVIDENCE_LIMITS: MemoryEvidenceLimits = { maxBytes: 64 * 1024 * 1024, maxAssets: 64, maxArtifacts: 16 };
@@ -40,10 +43,10 @@ export interface OwnedCase {
   snapshot: CaseSnapshot;
 }
 
-export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepository, FormAnswerCaseRepository, EvidenceRepository {
+export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepository, FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository {
   private readonly cases = new Map<string, OwnedCase>();
   private readonly matches = new Map<string, MatchResponse>();
-  private readonly packets = new Map<string, { contextFingerprint: string; packet: DraftPacket }>();
+  private readonly packets = new Map<string, { caseId: string; contextFingerprint: string; packet: DraftPacket | null }>();
   private readonly packetIds = new Set<string>();
   private readonly formAnswers = new Map<string, SavedFormAnswerSet>();
   private readonly evidence = new Map<string, Map<string, StoredEvidence>>();
@@ -53,6 +56,7 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
   private readonly evidenceLimits: MemoryEvidenceLimits;
 
   constructor(cases: OwnedCase[], evidenceLimits: MemoryEvidenceLimits = DEFAULT_EVIDENCE_LIMITS) {
+    if (!Array.isArray(cases) || cases.length > MAX_MEMORY_CASES) throw new Error('Memory case limit exceeded.');
     if (evidenceLimits === null || typeof evidenceLimits !== 'object' || Object.keys(evidenceLimits).length !== 3
       || (['maxBytes', 'maxAssets', 'maxArtifacts'] as const).some(key => !Object.hasOwn(evidenceLimits, key)
         || !Number.isSafeInteger(evidenceLimits[key]) || evidenceLimits[key] < 0 || evidenceLimits[key] > DEFAULT_EVIDENCE_LIMITS[key])) {
@@ -70,6 +74,41 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
   async loadForUser(userId: string, caseId: string): Promise<CaseSnapshot | null> {
     const entry = this.cases.get(caseId);
     return entry?.userId === userId ? structuredClone(entry.snapshot) : null;
+  }
+
+  async createForUser(userId: string, draft: CaseDraft): Promise<CaseWriteResult> {
+    if (!evidenceIdentifier(userId)) return { status: 'invalid_input' };
+    let parsed: CaseDraft;
+    try { parsed = parseCaseDraft(draft, true); } catch { return { status: 'invalid_input' }; }
+    if (this.cases.has(parsed.caseId)) return { status: 'id_unavailable' };
+    if (this.cases.size >= MAX_MEMORY_CASES) return { status: 'quota_exceeded' };
+    const snapshot: CaseSnapshot = { ...parsed, revision: 1 };
+    this.cases.set(parsed.caseId, { userId, snapshot });
+    return { status: 'saved', snapshot: structuredClone(snapshot) };
+  }
+
+  async replaceIfCurrent(userId: string, caseId: string, revision: number, draft: CaseDraft): Promise<CaseWriteResult> {
+    const existing = this.cases.get(caseId);
+    if (!existing || existing.userId !== userId) return { status: 'not_found' };
+    if (!evidenceIdentifier(userId) || !evidenceIdentifier(caseId) || !evidenceRevision(revision)) return { status: 'invalid_input' };
+    if (existing.snapshot.revision !== revision) return { status: 'conflict' };
+    const nextRevision = revision + 1;
+    if (!evidenceRevision(nextRevision)) throw new Error('Case revision exhausted.');
+    let parsed: CaseDraft;
+    try { parsed = parseCaseDraft(draft, false, nextRevision); } catch { return { status: 'invalid_input' }; }
+    if (parsed.caseId !== caseId) return { status: 'invalid_input' };
+    const links = new Map<string, string>();
+    for (const finding of parsed.findings) for (const evidenceId of finding.evidenceIds) links.set(evidenceId, finding.id);
+    for (const [evidenceId, stored] of this.evidence.get(caseId) ?? []) {
+      const findingId = links.get(evidenceId);
+      if ((stored.asset !== null && findingId !== stored.findingId)
+        || (findingId !== undefined && findingId !== stored.findingId)) return { status: 'evidence_conflict' };
+    }
+    const snapshot: CaseSnapshot = { ...parsed, revision: nextRevision };
+    const detached = structuredClone(snapshot);
+    this.cases.set(caseId, { userId, snapshot });
+    this.invalidateCaseOutputs(caseId);
+    return { status: 'saved', snapshot: detached };
   }
 
   async saveMatchIfCurrent(
@@ -132,7 +171,7 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     const nextCase = structuredClone({ ...entry, snapshot: { ...entry.snapshot, revision: caseRevision } });
     this.formAnswers.set(key, detached);
     this.cases.set(input.caseId, nextCase);
-    this.invalidateExports(input.caseId);
+    this.invalidateCaseOutputs(input.caseId);
     return { status: 'saved', saved: structuredClone(detached), caseRevision };
   }
 
@@ -392,6 +431,12 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     }
   }
 
+  private invalidateCaseOutputs(caseId: string): void {
+    this.matches.delete(caseId);
+    for (const row of this.packets.values()) if (row.caseId === caseId) row.packet = null;
+    this.invalidateExports(caseId);
+  }
+
   async createPacketIfCurrent(input: CreatePacketInput): Promise<CreatePacketResult> {
     const entry = this.cases.get(input.caseId);
     if (!entry || entry.userId !== input.userId) return { status: 'not_found' };
@@ -402,7 +447,7 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     const key = JSON.stringify([input.userId, input.caseId, input.generationKey]);
     const existing = this.packets.get(key);
     if (existing) {
-      if (existing.contextFingerprint !== input.contextFingerprint || !isPacketCurrent(existing.packet, input.checkedAt)) {
+      if (existing.packet === null || existing.contextFingerprint !== input.contextFingerprint || !isPacketCurrent(existing.packet, input.checkedAt)) {
         return { status: 'generation_conflict' };
       }
       return { status: 'reused', packet: structuredClone(existing.packet) };
@@ -412,7 +457,7 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
       return { status: 'generation_conflict' };
     }
     if (this.packetIds.has(input.packet.packetId)) throw new Error('Packet IDs must be unique.');
-    this.packets.set(key, { contextFingerprint: input.contextFingerprint, packet: structuredClone(input.packet) });
+    this.packets.set(key, { caseId: input.caseId, contextFingerprint: input.contextFingerprint, packet: structuredClone(input.packet) });
     this.packetIds.add(input.packet.packetId);
     return { status: 'saved', packet: structuredClone(input.packet) };
   }

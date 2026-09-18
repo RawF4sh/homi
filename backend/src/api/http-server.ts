@@ -5,8 +5,40 @@ import { handlePreparePacket, type PreparePacketDependencies } from './prepare-p
 import { handleReadFormAnswers, handleSaveFormAnswers, type FormAnswerDependencies } from './form-answers.ts';
 import { handleReadCase } from './read-case.ts';
 import { handleDraftExport, type DraftExportDependencies, type ExportRoute } from './draft-export.ts';
+import { handleCreateCase, handleSaveCase, type CaseWriteDependencies } from './write-case.ts';
+import { handleUploadEvidence, handleDeleteEvidence, type WriteEvidenceDependencies } from './write-evidence.ts';
+import { evidenceIdentifier } from '../evidence/validation.ts';
+import type { AuthenticatedUser } from './match-case.ts';
 
 export const MAX_REQUEST_BYTES = 16 * 1024;
+export const MAX_UPLOAD_REQUEST_BYTES = Math.ceil(8 * 1024 * 1024 / 3) * 4 + MAX_REQUEST_BYTES;
+
+interface UploadAdmission { active: boolean }
+type AuthenticationStopped = { status: 'aborted' } | { status: 'unavailable' };
+
+async function authenticateBeforeUpload(
+  request: IncomingMessage, response: ServerResponse, token: string, deps: WriteEvidenceDependencies,
+): Promise<{ status: 'authenticated'; user: AuthenticatedUser | null } | AuthenticationStopped> {
+  let stop: (value: AuthenticationStopped) => void = () => {};
+  const stopped = new Promise<AuthenticationStopped>(resolve => { stop = resolve; });
+  const onAbort = () => stop({ status: 'aborted' });
+  request.once('aborted', onAbort);
+  response.once('close', onAbort);
+  const timer = setTimeout(() => stop({ status: 'unavailable' }), 10_000);
+  timer.unref();
+  try {
+    if (request.destroyed || response.destroyed) return { status: 'aborted' };
+    return await Promise.race([
+      Promise.resolve().then(() => deps.authenticate(token))
+        .then(user => ({ status: 'authenticated' as const, user }), () => ({ status: 'unavailable' as const })),
+      stopped,
+    ]);
+  } finally {
+    clearTimeout(timer);
+    request.off('aborted', onAbort);
+    response.off('close', onAbort);
+  }
+}
 
 function sendJson(response: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
   if (response.destroyed || response.writableEnded) return;
@@ -19,19 +51,19 @@ function sendJson(response: ServerResponse, status: number, body: unknown, heade
   response.end(JSON.stringify(body));
 }
 
-function fail(response: ServerResponse, status: number, code: ApiErrorCode | 'NOT_FOUND' | 'METHOD_NOT_ALLOWED' | 'PAYLOAD_TOO_LARGE' | 'UNSUPPORTED_MEDIA_TYPE', message: string, headers: Record<string, string> = {}) {
+function fail(response: ServerResponse, status: number, code: ApiErrorCode | 'NOT_FOUND' | 'METHOD_NOT_ALLOWED' | 'PAYLOAD_TOO_LARGE' | 'UNSUPPORTED_MEDIA_TYPE' | 'UPLOAD_BUSY', message: string, headers: Record<string, string> = {}) {
   sendJson(response, status, { schemaVersion: '1', error: { code, message } }, headers);
 }
 
 class BodyTooLarge extends Error {}
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+async function readJson(request: IncomingMessage, limit = MAX_REQUEST_BYTES): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const part of request.iterator({ destroyOnReturn: false })) {
     const bytes = Buffer.isBuffer(part) ? part : Buffer.from(part);
     size += bytes.length;
-    if (size > MAX_REQUEST_BYTES) throw new BodyTooLarge();
+    if (size > limit) throw new BodyTooLarge();
     chunks.push(bytes);
   }
   return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
@@ -40,9 +72,12 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
 export function createMatchingServer(
   dependencies: MatchCaseDependencies, packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
   exportDependencies?: DraftExportDependencies,
+  caseWriteDependencies?: CaseWriteDependencies, evidenceWriteDependencies?: WriteEvidenceDependencies,
 ) {
+  const uploadAdmission: UploadAdmission = { active: false };
   const server = createServer({ maxHeaderSize: 8192 }, (request, response) => {
-    void route(request, response, dependencies, packetDependencies, formAnswerDependencies, exportDependencies).catch(() => {
+    void route(request, response, dependencies, uploadAdmission, packetDependencies, formAnswerDependencies,
+      exportDependencies, caseWriteDependencies, evidenceWriteDependencies).catch(() => {
       fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
     });
   });
@@ -56,8 +91,10 @@ export function createMatchingServer(
 
 async function route(
   request: IncomingMessage, response: ServerResponse, dependencies: MatchCaseDependencies,
+  uploadAdmission: UploadAdmission,
   packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
   exportDependencies?: DraftExportDependencies,
+  caseWriteDependencies?: CaseWriteDependencies, evidenceWriteDependencies?: WriteEvidenceDependencies,
 ) {
   const exportRoutes: ExportRoute[] = ['list-evidence', 'download-evidence', 'create-draft-export', 'download-draft-export'];
   const exportRoute = exportDependencies === undefined ? undefined : exportRoutes.find(route => request.url === `/v1/${route}`);
@@ -65,7 +102,12 @@ async function route(
   const isFormRead = request.url === '/v1/read-form-answers' && formAnswerDependencies !== undefined;
   const isFormSave = request.url === '/v1/save-form-answers' && formAnswerDependencies !== undefined;
   const isCaseRead = request.url === '/v1/read-case';
-  if (request.url !== '/v1/match-case' && !isPacketRequest && !isFormRead && !isFormSave && !isCaseRead && !exportRoute) {
+  const isCaseCreate = request.url === '/v1/create-case' && caseWriteDependencies !== undefined;
+  const isCaseSave = request.url === '/v1/save-case' && caseWriteDependencies !== undefined;
+  const isUpload = request.url === '/v1/upload-evidence' && evidenceWriteDependencies !== undefined;
+  const isDelete = request.url === '/v1/delete-evidence' && evidenceWriteDependencies !== undefined;
+  if (request.url !== '/v1/match-case' && !isPacketRequest && !isFormRead && !isFormSave && !isCaseRead && !exportRoute
+    && !isCaseCreate && !isCaseSave && !isUpload && !isDelete) {
     fail(response, 404, 'NOT_FOUND', 'This endpoint does not exist.');
     request.resume();
     return;
@@ -93,9 +135,62 @@ async function route(
     request.resume();
     return;
   }
+  if (isUpload && uploadAdmission.active) {
+    fail(response, 429, 'UPLOAD_BUSY', 'Another photo is being processed. Wait before trying again.',
+      { 'Retry-After': '1', Connection: 'close' });
+    request.resume();
+    return;
+  }
+  if (isUpload) uploadAdmission.active = true;
+  try {
+    if (isUpload) {
+      const auth = await authenticateBeforeUpload(request, response, bearer[1], evidenceWriteDependencies!);
+      if (auth.status === 'aborted') return;
+      if (auth.status === 'unavailable') {
+        fail(response, 503, 'SERVICE_UNAVAILABLE', 'Photo uploads are temporarily unavailable.', { Connection: 'close' });
+        request.resume();
+        return;
+      }
+      const user = auth.user;
+      if (user === null) {
+        fail(response, 401, 'UNAUTHENTICATED', 'Sign in to upload a photo.',
+          { 'WWW-Authenticate': 'Bearer', Connection: 'close' });
+        request.resume();
+        return;
+      }
+      if (!user || !evidenceIdentifier(user.userId)) {
+        fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.', { Connection: 'close' });
+        request.resume();
+        return;
+      }
+      if (request.destroyed || response.destroyed) return;
+    }
+    await readAndDispatch(request, response, bearer[1], dependencies, {
+      isCaseRead, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute,
+    }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies);
+  } finally {
+    if (isUpload) uploadAdmission.active = false;
+  }
+}
+
+async function readAndDispatch(
+  request: IncomingMessage, response: ServerResponse, token: string, dependencies: MatchCaseDependencies,
+  routes: { isCaseRead: boolean; isCaseCreate: boolean; isCaseSave: boolean; isFormRead: boolean; isFormSave: boolean;
+    isPacketRequest: boolean; isUpload: boolean; isDelete: boolean; exportRoute: ExportRoute | undefined },
+  packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
+  exportDependencies?: DraftExportDependencies, caseWriteDependencies?: CaseWriteDependencies,
+  evidenceWriteDependencies?: WriteEvidenceDependencies,
+) {
+  const { isCaseRead, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute } = routes;
+  const limit = isUpload ? MAX_UPLOAD_REQUEST_BYTES : MAX_REQUEST_BYTES;
+  if (request.headers['content-length'] && Number(request.headers['content-length']) > limit) {
+    fail(response, 413, 'PAYLOAD_TOO_LARGE', 'The request is too large.', { Connection: 'close' });
+    request.resume();
+    return;
+  }
   let body: unknown;
   try {
-    body = await readJson(request);
+    body = await readJson(request, limit);
   } catch (error) {
     if (error instanceof BodyTooLarge) {
       fail(response, 413, 'PAYLOAD_TOO_LARGE', 'The request is too large.', { Connection: 'close' });
@@ -105,7 +200,23 @@ async function route(
     }
     return;
   }
-  const input = { body, bearerToken: bearer[1] };
+  if (response.destroyed || response.writableEnded) return;
+  const input = { body, bearerToken: token };
+  if (isCaseCreate || isCaseSave || isUpload || isDelete) {
+    const controller = new AbortController();
+    const onClose = () => controller.abort();
+    response.once('close', onClose);
+    try {
+      const result = isCaseCreate ? await handleCreateCase(input, caseWriteDependencies!)
+        : isCaseSave ? await handleSaveCase(input, caseWriteDependencies!)
+          : isUpload ? await handleUploadEvidence({ ...input, signal: controller.signal }, evidenceWriteDependencies!)
+            : await handleDeleteEvidence({ ...input, signal: controller.signal }, evidenceWriteDependencies!);
+      sendJson(response, result.status, result.body, result.headers);
+    } finally {
+      response.off('close', onClose);
+    }
+    return;
+  }
   if (exportRoute) {
     const result = await handleDraftExport(input, exportDependencies!, exportRoute);
     if (result.body instanceof Uint8Array) {

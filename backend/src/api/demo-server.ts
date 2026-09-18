@@ -50,7 +50,8 @@ export async function createDemoServer(fixturePath?: string, options: { formAnsw
   };
   const formDependencies = form === null ? undefined : { ...dependencies,
     loadFormTemplate: async (programId: string) => programId === program.programId ? form : null };
-  const server = createMatchingServer(dependencies, formDependencies ?? dependencies, formDependencies, options.exports ? formDependencies : undefined);
+  const server = createMatchingServer(dependencies, formDependencies ?? dependencies, formDependencies,
+    options.exports ? formDependencies : undefined, dependencies, options.exports ? dependencies : undefined);
   return { server, cases, sessions: { alice: aliceToken, bob: bobToken },
     caseIds: { alice: scenarios.map(scenario => scenario.case.caseId), bob: bobCase.caseId } };
 }
@@ -80,10 +81,14 @@ async function main() {
   if (!address || typeof address === 'string') throw new Error('Local listener was not created.');
   const ready = { type: 'demo-ready', endpoint: `http://127.0.0.1:${address.port}/v1/match-case`,
     caseEndpoint: `http://127.0.0.1:${address.port}/v1/read-case`,
+    createCaseEndpoint: `http://127.0.0.1:${address.port}/v1/create-case`,
+    saveCaseEndpoint: `http://127.0.0.1:${address.port}/v1/save-case`,
     packetEndpoint: `http://127.0.0.1:${address.port}/v1/prepare-packet`,
     ...(formAnswers ? { formAnswersReadEndpoint: `http://127.0.0.1:${address.port}/v1/read-form-answers`,
       formAnswersSaveEndpoint: `http://127.0.0.1:${address.port}/v1/save-form-answers` } : {}),
     ...(exports ? { evidenceEndpoint: `http://127.0.0.1:${address.port}/v1/list-evidence`,
+      uploadEvidenceEndpoint: `http://127.0.0.1:${address.port}/v1/upload-evidence`,
+      deleteEvidenceEndpoint: `http://127.0.0.1:${address.port}/v1/delete-evidence`,
       evidenceDownloadEndpoint: `http://127.0.0.1:${address.port}/v1/download-evidence`,
       exportEndpoint: `http://127.0.0.1:${address.port}/v1/create-draft-export`,
       exportDownloadEndpoint: `http://127.0.0.1:${address.port}/v1/download-draft-export` } : {}),
@@ -93,12 +98,16 @@ async function main() {
     console.log('Fictional local API. Cases/results are in memory and disappear on exit.');
     console.log(`Endpoint: ${ready.endpoint}`);
     console.log(`Saved case endpoint: ${ready.caseEndpoint}`);
+    console.log(`Create/save cases: ${ready.createCaseEndpoint}, ${ready.saveCaseEndpoint}`);
     console.log(`Draft packet endpoint: ${ready.packetEndpoint}`);
     if (formAnswers) {
       console.log(`Fictional form answers read endpoint: ${ready.formAnswersReadEndpoint}`);
       console.log(`Fictional form answers save endpoint: ${ready.formAnswersSaveEndpoint}`);
     }
-    if (exports) console.log(`Private fictional draft export endpoint: ${ready.exportEndpoint}`);
+    if (exports) {
+      console.log(`Private photo upload/delete: ${ready.uploadEvidenceEndpoint}, ${ready.deleteEvidenceEndpoint}`);
+      console.log(`Private fictional draft export endpoint: ${ready.exportEndpoint}`);
+    }
     console.log(`Alice demo bearer token: ${ready.alice}`);
     console.log(`Bob demo bearer token: ${ready.bob}`);
     console.log(`Alice case IDs: ${ready.caseIds.alice.join(', ')}`);
