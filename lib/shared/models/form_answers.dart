@@ -214,14 +214,51 @@ class SavedFormAnswerSet {
   };
 }
 
+class FormAnswerFieldDefinition {
+  FormAnswerFieldDefinition._(this.key, this.label, this.kind, this.maxLength);
+  factory FormAnswerFieldDefinition.fromJson(Object? json) {
+    final object = _object(json, {'key', 'label', 'kind', 'maxLength'});
+    final key = _text(object['key'], 100);
+    final kind = _text(object['kind'], 20);
+    final limit = _integer(object['maxLength'], 1);
+    final expectedKind = key == 'memberBirthDate' || key == 'referralDate'
+        ? 'date'
+        : key == 'representativeEmail' || key == 'referrerEmail'
+        ? 'email'
+        : 'text';
+    if (formAnswerValueLimits[key] != limit || kind != expectedKind) {
+      _invalid('Unsupported administrative field definition.');
+    }
+    return FormAnswerFieldDefinition._(
+      key,
+      _text(object['label'], 200),
+      kind,
+      limit,
+    );
+  }
+  final String key;
+  final String label;
+  final String kind;
+  final int maxLength;
+  Map<String, Object?> toJson() => {
+    'key': key,
+    'label': label,
+    'kind': kind,
+    'maxLength': maxLength,
+  };
+}
+
 class FormAnswersResponse {
   FormAnswersResponse._(
     this.caseId,
     this.caseRevision,
     this.context,
     this.saved,
-    this.isCurrent,
-  );
+    this.isCurrent, {
+    this.fieldDefinitions = const [],
+    this.artifactKind = 'official_form_draft',
+    this.protocolVersion = '1',
+  });
 
   factory FormAnswersResponse.fromJson(Object? json) {
     final object = _object(json, {
@@ -260,7 +297,61 @@ class FormAnswersResponse {
     );
   }
 
-  String get schemaVersion => '1';
+  factory FormAnswersResponse.fromV2Json(Object? json) {
+    final object = _object(json, {
+      'schemaVersion',
+      'caseId',
+      'caseRevision',
+      'context',
+      'saved',
+      'isCurrent',
+      'fieldDefinitions',
+      'artifactKind',
+    });
+    if (object['schemaVersion'] != '2') {
+      _invalid('Unsupported form answer protocol.');
+    }
+    final raw = object['fieldDefinitions'];
+    if (raw is! List ||
+        raw.isEmpty ||
+        raw.length > formAnswerValueLimits.length) {
+      _invalid('Invalid field definition list.');
+    }
+    final fields = raw
+        .map(FormAnswerFieldDefinition.fromJson)
+        .toList(growable: false);
+    final keys = fields.map((field) => field.key).toSet();
+    if (keys.length != fields.length) _invalid('Repeated form field.');
+    final artifactKind = object['artifactKind'];
+    if (artifactKind != 'official_form_draft' &&
+        artifactKind != 'preparation_worksheet') {
+      _invalid('Invalid draft artifact kind.');
+    }
+    final base = FormAnswersResponse.fromJson({
+      for (final entry in object.entries)
+        if (entry.key != 'fieldDefinitions' && entry.key != 'artifactKind')
+          entry.key: entry.value,
+      'schemaVersion': '1',
+    });
+    if (base.isCurrent &&
+        base.saved!.answers.any((answer) => !keys.contains(answer.key))) {
+      _invalid('Current answer is outside the reviewed field policy.');
+    }
+    return FormAnswersResponse._(
+      base.caseId,
+      base.caseRevision,
+      base.context,
+      base.saved,
+      base.isCurrent,
+      fieldDefinitions: List.unmodifiable(fields),
+      artifactKind: artifactKind as String,
+      protocolVersion: '2',
+    );
+  }
+  final List<FormAnswerFieldDefinition> fieldDefinitions;
+  final String artifactKind;
+  final String protocolVersion;
+  String get schemaVersion => protocolVersion;
   final String caseId;
   final int caseRevision;
   final FormAnswerContext context;
@@ -277,6 +368,11 @@ class FormAnswersResponse {
     'context': context.toJson(),
     'saved': saved?.toJson(),
     'isCurrent': isCurrent,
+    if (protocolVersion == '2')
+      'fieldDefinitions': fieldDefinitions
+          .map((field) => field.toJson())
+          .toList(),
+    if (protocolVersion == '2') 'artifactKind': artifactKind,
   };
 }
 
