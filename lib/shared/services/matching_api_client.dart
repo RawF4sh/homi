@@ -233,6 +233,40 @@ class MatchingApiException implements Exception {
 
   factory MatchingApiException.forCode(String code, {int? statusCode}) {
     const messages = {
+      'RECENT_AUTHENTICATION_REQUIRED':
+          'Enter your password again before deleting your account.',
+      'ACCOUNT_CLOSED':
+          'This account is closed. Use the saved deletion receipt to check completion.',
+      'DELETION_NOT_FOUND':
+          'This deletion receipt is unavailable. Contact the app operator if confirmation was already sent.',
+      'DELETION_EXPIRED':
+          'The deletion preview expired. Review a new preview before confirming.',
+      'DELETION_CHANGED':
+          'Account data changed. Review a new deletion preview before confirming.',
+      'DELETION_UNCERTAIN':
+          'The deletion outcome is unknown. Check the retained receipt or reload the case before deciding whether to retry.',
+      'ASSESSMENT_CONFLICT':
+          'The assessment changed. Reload and reconcile your local changes.',
+      'ASSESSMENT_MUTATION_CONFLICT':
+          'This assessment attempt refers to different changes. Reload before continuing.',
+      'ASSESSMENT_HISTORY_LIMIT':
+          'This case reached its assessment history limit. Contact the app operator.',
+      'ASSESSMENT_UPDATE_REQUIRED':
+          'Use the assessment editor to preserve measurements and review history.',
+      'ANNOTATION_CONFLICT':
+          'The photo markings changed. Reload and review them before saving.',
+      'ANNOTATIONS_REQUIRE_V2':
+          'This photo has saved markings. Use the current draft export flow.',
+      'ANNOTATION_REVIEW_REQUIRED':
+          'Review the current photo and its markings before export.',
+      'INTAKE_CONFLICT':
+          'Program answers changed. Reload and reconcile your answers.',
+      'QUESTIONNAIRE_CHANGED':
+          'These questions changed. Review the current questionnaire.',
+      'INTAKE_SAVE_UNCERTAIN':
+          'The save result is uncertain. Keep your local answers and reload before reconciling.',
+      'INTAKE_REQUIRES_V2':
+          'Use the current draft workflow to include saved program answers.',
       'INVALID_REQUEST':
           'The request was invalid. Review the case and try again.',
       'UNAUTHENTICATED': 'Sign in before continuing.',

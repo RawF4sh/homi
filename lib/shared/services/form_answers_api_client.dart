@@ -12,6 +12,7 @@ class FormAnswersApiClient {
     required Uri caseEndpoint,
     required MatchingTokenProvider tokenProvider,
     required MatchingTransport transport,
+    this.protocolVersion = '1',
     this.timeout = const Duration(seconds: 15),
     this.maxResponseBytes = 1024 * 1024,
     this.maxRequestBytes = 16 * 1024,
@@ -19,13 +20,13 @@ class FormAnswersApiClient {
     bool allowAndroidEmulatorLoopback = false,
   }) : _readEndpoint = _endpoint(
          readEndpoint,
-         '/v1/read-form-answers',
+         '/v$protocolVersion/read-form-answers',
          allowInsecureLoopback,
          allowAndroidEmulatorLoopback,
        ),
        _saveEndpoint = _endpoint(
          saveEndpoint,
-         '/v1/save-form-answers',
+         '/v$protocolVersion/save-form-answers',
          allowInsecureLoopback,
          allowAndroidEmulatorLoopback,
        ),
@@ -37,7 +38,8 @@ class FormAnswersApiClient {
        ),
        _tokenProvider = tokenProvider,
        _transport = transport {
-    if (timeout <= Duration.zero ||
+    if ((protocolVersion != '1' && protocolVersion != '2') ||
+        timeout <= Duration.zero ||
         timeout > const Duration(seconds: 15) ||
         maxResponseBytes < 1 ||
         maxResponseBytes > 1024 * 1024 ||
@@ -51,6 +53,7 @@ class FormAnswersApiClient {
     }
   }
 
+  final String protocolVersion;
   final Uri _readEndpoint;
   final Uri _saveEndpoint;
   final Uri _caseEndpoint;
@@ -137,12 +140,16 @@ class FormAnswersApiClient {
     );
     final json = await _post(
       _readEndpoint,
-      request.toJson(),
+      {...request.toJson(), 'schemaVersion': protocolVersion},
       isSave: false,
       requireCurrent: requireCurrent,
     );
     requireCurrent();
-    final response = _response(json, isSave: false);
+    final response = _response(
+      json,
+      isSave: false,
+      protocolVersion: protocolVersion,
+    );
     if (response.caseId != request.caseId ||
         response.caseRevision != request.expectedCaseRevision ||
         response.context.programId != programId) {
@@ -191,7 +198,7 @@ class FormAnswersApiClient {
     );
     final json = await _post(
       _saveEndpoint,
-      request.toJson(),
+      {...request.toJson(), 'schemaVersion': protocolVersion},
       isSave: true,
       requireCurrent: requireCurrent,
     );
@@ -200,7 +207,11 @@ class FormAnswersApiClient {
     } catch (_) {
       throw _error('FORM_SAVE_UNCERTAIN');
     }
-    final response = _response(json, isSave: true);
+    final response = _response(
+      json,
+      isSave: true,
+      protocolVersion: protocolVersion,
+    );
     final saved = response.saved;
     if (response.caseId != request.caseId ||
         response.caseRevision != request.expectedCaseRevision + 1 ||
@@ -314,9 +325,15 @@ class FormAnswersApiClient {
   }
 }
 
-FormAnswersResponse _response(Object? json, {required bool isSave}) {
+FormAnswersResponse _response(
+  Object? json, {
+  required bool isSave,
+  required String protocolVersion,
+}) {
   try {
-    return FormAnswersResponse.fromJson(json);
+    return protocolVersion == '2'
+        ? FormAnswersResponse.fromV2Json(json)
+        : FormAnswersResponse.fromJson(json);
   } catch (_) {
     throw _error(isSave ? 'FORM_SAVE_UNCERTAIN' : 'UNEXPECTED_RESPONSE');
   }

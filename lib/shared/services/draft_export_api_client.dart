@@ -533,6 +533,8 @@ MatchingApiException _apiError(int status, Object? json) {
       'EVIDENCE_CONFLICT',
       'EXPORT_GENERATION_CONFLICT',
       'FORM_NOT_AVAILABLE',
+      'INTAKE_REQUIRES_V2',
+      'ANNOTATIONS_REQUIRE_V2',
       'FORM_CONTEXT_MISMATCH',
       'FORM_ANSWER_REVISION_MISMATCH',
       'FORM_ANSWERS_STALE',
