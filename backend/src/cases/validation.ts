@@ -62,7 +62,7 @@ function boundedJsonClone(value: unknown, maximumBytes = MAX_CASE_BYTES): unknow
     bytes += Buffer.byteLength(text, 'utf8'); check(bytes <= maximumBytes); chunks.push(text);
   }
   function scalar(text: string) {
-    check(text.length <= maximumBytes && !Array.from(text).some(character => {
+    check(text.length <= maximumBytes && !text.includes('\u0000') && !Array.from(text).some(character => {
       const code = character.codePointAt(0)!; return code >= 0xd800 && code <= 0xdfff;
     }));
     append(JSON.stringify(text));

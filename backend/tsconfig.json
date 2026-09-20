@@ -8,5 +8,5 @@
     "strict": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "fixtures/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "fixtures/**/*.ts", "test/**/*.ts", "tool/**/*.ts"]
 }

@@ -12,14 +12,21 @@
     "test:contracts": "node test/contracts.ts",
     "demo": "node src/demo.ts",
     "serve:demo": "node src/api/demo-server.ts",
+    "serve:durable": "node src/api/durable-server.ts",
+    "migrate": "node src/storage/migrate.ts",
+    "bootstrap:runtime": "node tool/bootstrap-runtime.ts",
+    "verify:live-sessions": "node tool/verify-live-sessions.ts",
+    "test:postgres": "node --test test/postgres/*.test.ts",
     "research:scfhp": "node src/research-scfhp.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
     "typescript": "5.9.3"
   },
   "dependencies": {
     "pdf-lib": "1.17.1",
+    "pg": "8.23.1",
     "sharp": "0.35.5"
   }
 }
