@@ -26,7 +26,7 @@ const errors: Record<CaseWriteErrorCode, [number, string]> = {
   CASE_REVISION_MISMATCH: [409, 'The saved case changed. Reload it before saving again.'],
   CASE_ID_UNAVAILABLE: [409, 'This case ID is unavailable. Reload your case or choose a new ID for a new case.'],
   EVIDENCE_CONFLICT: [409, 'Delete uploaded evidence before removing its link; an evidence ID cannot move to another finding.'],
-  STORAGE_LIMIT_REACHED: [507, 'Private development storage is full. Restarting the local demo clears its temporary data.'],
+  STORAGE_LIMIT_REACHED: [507, 'Private storage has reached its limit. Contact the app operator before retrying.'],
   SERVICE_UNAVAILABLE: [503, 'Case saving is temporarily unavailable. Reload the case before deciding whether to retry.'],
   INTERNAL_ERROR: [500, 'The case save could not be confirmed. Reload the case before saving again.'],
 };

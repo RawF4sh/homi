@@ -47,7 +47,7 @@ const errors = {
   EXPORT_EXPIRED: [410, 'This private draft expired. Review the latest inputs and generate a new draft.'],
   EXPORT_REVIEW_REQUIRED: [422, 'Some form text or evidence could not be rendered completely. Review its text, measurements, and images before exporting.'],
   EXPORT_BUSY: [429, 'Another draft is being prepared. Try again shortly.'],
-  STORAGE_LIMIT_REACHED: [507, 'Private local storage is full. Restarting the development server clears all demo data.'],
+  STORAGE_LIMIT_REACHED: [507, 'Private storage has reached its limit. Contact the app operator before retrying.'],
   SERVICE_UNAVAILABLE: [503, 'Private draft preparation is temporarily unavailable. Try again later.'],
   INTERNAL_ERROR: [500, 'The private draft request could not be completed.'],
 } as const;
