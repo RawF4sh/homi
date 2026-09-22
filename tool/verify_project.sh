@@ -8,7 +8,7 @@ Usage: bash tool/verify_project.sh [flutter|backend|all] [options]
 Scopes (default: all):
   flutter   Check Dart formatting, Flutter analysis/tests, and tracked diff whitespace.
   backend   Check TypeScript types, Node tests, shared fixtures, and diff whitespace.
-  all       Run both scopes plus real Dart-to-HTTP matching, answers, export, case/photo, discovery and manual request-history checks.
+  all       Run both scopes plus real Dart-to-HTTP matching, answers, export, case/photo, discovery, manual history and all three team v2 routes.
 
 Options:
   --backend PATH     Backend package directory containing package.json.
@@ -149,7 +149,10 @@ if [[ "$scope" == all ]]; then
   require_file "$app_dir/tool/check_case_evidence_api.dart" 'The case/photo write integration check is unavailable.'
   require_file "$app_dir/tool/check_case_discovery_api.dart" 'The case discovery/resume integration check is unavailable.'
   require_file "$app_dir/tool/check_request_tracking_api.dart" 'The manual request-history integration check is unavailable.'
+  require_file "$app_dir/tool/check_team_beta_api.dart" 'The three-route v2 HTTP integration check is unavailable.'
   require_file "$backend_dir/src/api/demo-server.ts" 'The local HTTP demo server is unavailable.'
+  require_file "$backend_dir/tool/team-beta-http-fixture.ts" 'The fictional team HTTP fixture is unavailable.'
+  require_file "$backend_dir/tool/check-team-beta-pdf.ts" 'The downloaded team draft verification is unavailable.'
 fi
 
 if [[ "$scope" == flutter || "$scope" == all ]]; then
@@ -187,6 +190,9 @@ if [[ "$scope" == all ]]; then
   run_check 'Dart-to-HTTP manual request history integration' "$app_dir" \
     "$dart_bin" --packages="$app_dir/.dart_tool/package_config.json" \
     "$app_dir/tool/check_request_tracking_api.dart" --backend "$backend_dir"
+  run_check 'Dart-to-HTTP assessment, intake, annotations and all three program drafts' "$app_dir" \
+    "$dart_bin" --packages="$app_dir/.dart_tool/package_config.json" \
+    "$app_dir/tool/check_team_beta_api.dart" --backend "$backend_dir"
 fi
 
 printf '\nPASS: all checks selected by scope "%s" completed.\n' "$scope"
