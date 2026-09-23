@@ -46,6 +46,22 @@ test('canonical schema rejects metadata overrides, malformed fields and duplicat
   }
 });
 
+test('case text rejects NUL before storage while preserving ordinary multiline Unicode', async () => {
+  for (const field of ['city', 'county', 'healthPlan', 'observation'] as const) {
+    const value = draft();
+    if (field === 'observation') value.findings[0].observation = 'Fictional\u0000text';
+    else value.profile[field] = 'Fictional\u0000text';
+    assert.throws(() => parseCaseDraft(value));
+    assert.throws(() => parseCaseSaveRequest({ ...value, expectedCaseRevision: 1 }));
+    const repository = setup();
+    assert.equal((await repository.replaceIfCurrent('alice', CASE, 1, value)).status, 'invalid_input');
+    assert.equal((await repository.loadForUser('alice', CASE))!.revision, 1);
+    assert.equal((await new MemoryCaseRepository([]).createForUser('alice', value)).status, 'invalid_input');
+  }
+  const value = draft(); value.findings[0].observation = 'Fictional José\nSecond line';
+  assert.equal(parseCaseDraft(value).findings[0].observation, value.findings[0].observation);
+});
+
 test('new IDs require lowercase UUIDv4 while existing saved case IDs remain compatible', async () => {
   const repository = setup();
   for (const caseId of ['legacy', CASE.toUpperCase().replace('10000000', 'A0000000'),
