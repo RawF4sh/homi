@@ -5,6 +5,7 @@ supabase-database-password.txt
 !.env.example
 !.env.migration.example
 !.env.sessions.example
+!.env.hosted.example
 *.pem
 *.key
 local-postgres/

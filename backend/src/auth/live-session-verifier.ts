@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { isNewCaseId } from '../cases/validation.ts';
 import { matchPrograms } from '../matcher.ts';
 import { createSupabaseAuthenticator, MAX_AUTH_RESPONSE_BYTES, type SupabaseAuthConfig } from './supabase-auth.ts';
@@ -44,13 +45,30 @@ export function validateTestAccounts(value: readonly TestAccount[]): readonly [T
   return Object.freeze(accounts) as unknown as readonly [TestAccount, TestAccount];
 }
 
-function configuration(input: LiveSessionConfiguration) {
+export function validateRemoteApiOrigin(value: unknown): string {
+  try {
+    if (typeof value !== 'string' || value.length > 2048 || /\s|\\/.test(value)) return fail('configuration');
+    const parsed = new URL(value);
+    const hostname = parsed.hostname;
+    if (parsed.protocol !== 'https:' || value !== parsed.origin || parsed.port !== ''
+      || parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== '/'
+      || isIP(hostname.replace(/^\[|\]$/g, '')) !== 0 || !hostname.includes('.')
+      || hostname.endsWith('.') || hostname === 'localhost' || hostname.endsWith('.localhost')
+      || hostname.endsWith('.local') || !/^[a-z0-9.-]+$/.test(hostname)
+      || hostname.split('.').some(label => !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) return fail('configuration');
+    return parsed.origin;
+  } catch { return fail('configuration'); }
+}
+
+function configuration(input: LiveSessionConfiguration, allowRemoteHttps: boolean) {
   try {
     createSupabaseAuthenticator(input.auth);
     const auth = { ...input.auth };
     const accounts = validateTestAccounts(input.accounts);
-    if (!/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(input.apiOrigin)
-      || Number(new URL(input.apiOrigin).port) > 65535 || typeof input.createFixtures !== 'boolean'
+    const validOrigin = allowRemoteHttps ? validateRemoteApiOrigin(input.apiOrigin) === input.apiOrigin
+      : /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(input.apiOrigin)
+        && Number(new URL(input.apiOrigin).port) <= 65535;
+    if (!validOrigin || typeof input.createFixtures !== 'boolean'
       || !Array.isArray(input.caseIds) || input.caseIds.length !== 2
       || !input.caseIds.every(value => isNewCaseId(value) && value.length === 36)
       || input.caseIds[0] === input.caseIds[1]) return fail('configuration');
@@ -136,9 +154,10 @@ export interface LiveSessionReport {
 }
 
 export async function verifyLiveSessions(
-  input: LiveSessionConfiguration, options: { fetchImpl?: typeof fetch } = {},
+  input: LiveSessionConfiguration, options: { fetchImpl?: typeof fetch; allowRemoteHttps?: boolean } = {},
 ): Promise<LiveSessionReport> {
-  const config = configuration(input);
+  if (options.allowRemoteHttps !== undefined && typeof options.allowRemoteHttps !== 'boolean') return fail('configuration');
+  const config = configuration(input, options.allowRemoteHttps ?? false);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== 'function') return fail('configuration');
   const authenticate = createSupabaseAuthenticator(config.auth, fetchImpl);

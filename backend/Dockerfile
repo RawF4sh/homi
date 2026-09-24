@@ -1,0 +1,17 @@
+FROM node:24.22.0-bookworm-slim
+
+WORKDIR /app
+ENV NODE_ENV=production \
+    SAFEATHOME_HOST=0.0.0.0 \
+    SAFEATHOME_DATABASE_CA_FILE=/app/certs/supabase-root-2021.crt
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+
+COPY --chown=node:node src ./src
+COPY --chown=node:node migrations ./migrations
+COPY --chown=node:node certs/supabase-root-2021.crt ./certs/supabase-root-2021.crt
+USER node
+
+EXPOSE 8788
+CMD ["node", "src/api/durable-server.ts"]

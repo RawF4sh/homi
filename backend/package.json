@@ -16,6 +16,7 @@
     "migrate": "node src/storage/migrate.ts",
     "bootstrap:runtime": "node tool/bootstrap-runtime.ts",
     "verify:live-sessions": "node tool/verify-live-sessions.ts",
+    "verify:hosted-api": "node tool/verify-hosted-api.ts",
     "test:postgres": "node --test test/postgres/*.test.ts",
     "research:scfhp": "node src/research-scfhp.ts"
   },
