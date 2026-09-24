@@ -9,12 +9,21 @@ import { handleCreateCase, handleSaveCase, type CaseWriteDependencies } from './
 import { handleUploadEvidence, handleDeleteEvidence, type WriteEvidenceDependencies } from './write-evidence.ts';
 import { evidenceIdentifier } from '../evidence/validation.ts';
 import type { AuthenticatedUser } from './match-case.ts';
+import { createHostedAdmission } from './request-admission.ts';
 
 export const MAX_REQUEST_BYTES = 16 * 1024;
 export const MAX_UPLOAD_REQUEST_BYTES = Math.ceil(8 * 1024 * 1024 / 3) * 4 + MAX_REQUEST_BYTES;
 
 interface UploadAdmission { active: boolean }
 type AuthenticationStopped = { status: 'aborted' } | { status: 'unavailable' };
+
+export interface HttpServerOptions {
+  hosted?: boolean;
+  admissionNow?: () => number;
+}
+
+const HEAVY_ROUTES = new Set(['/v1/upload-evidence', '/v1/download-evidence',
+  '/v1/create-draft-export', '/v1/download-draft-export']);
 
 async function authenticateBeforeUpload(
   request: IncomingMessage, response: ServerResponse, token: string, deps: WriteEvidenceDependencies,
@@ -73,14 +82,61 @@ export function createMatchingServer(
   dependencies: MatchCaseDependencies, packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
   exportDependencies?: DraftExportDependencies,
   caseWriteDependencies?: CaseWriteDependencies, evidenceWriteDependencies?: WriteEvidenceDependencies,
+  options: HttpServerOptions = {},
 ) {
   const uploadAdmission: UploadAdmission = { active: false };
+  const admission = options.hosted === true ? createHostedAdmission(options.admissionNow) : null;
   const server = createServer({ maxHeaderSize: 8192 }, (request, response) => {
+    if (admission && request.url === '/healthz') {
+      if (request.method === 'GET' || request.method === 'HEAD') {
+        sendJson(response, 200, { status: 'ok' });
+      } else {
+        fail(response, 405, 'METHOD_NOT_ALLOWED', 'Use GET or HEAD for this endpoint.', { Allow: 'GET, HEAD' });
+      }
+      request.resume();
+      return;
+    }
+    const permit = admission?.acquire(HEAVY_ROUTES.has(request.url ?? ''));
+    if (permit && !permit.accepted) {
+      fail(response, 503, 'SERVICE_UNAVAILABLE', 'The server is busy. Try again shortly.',
+        { 'Retry-After': String(permit.retryAfter), Connection: 'close' });
+      request.resume();
+      return;
+    }
+    let settled = false;
+    let responseComplete = response.writableFinished || response.destroyed;
+    const release = () => {
+      if (!settled || !responseComplete) return;
+      if (permit?.accepted) permit.release();
+      response.off('finish', complete);
+      response.off('close', complete);
+    };
+    const complete = () => { responseComplete = true; release(); };
+    response.once('finish', complete);
+    response.once('close', complete);
+    const authenticationWork: Promise<unknown>[] = [];
+    const trackedEvidenceDependencies = permit?.accepted && evidenceWriteDependencies ? {
+      ...evidenceWriteDependencies,
+      authenticate: (token: string) => {
+        const work = Promise.resolve().then(() => evidenceWriteDependencies.authenticate(token));
+        authenticationWork.push(work);
+        return work;
+      },
+    } : evidenceWriteDependencies;
     void route(request, response, dependencies, uploadAdmission, packetDependencies, formAnswerDependencies,
-      exportDependencies, caseWriteDependencies, evidenceWriteDependencies).catch(() => {
-      fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
+      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies).catch(() => {
+      if (response.headersSent) response.destroy();
+      else fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
+    }).finally(async () => {
+      await Promise.allSettled(authenticationWork);
+      settled = true;
+      release();
     });
   });
+  if (admission) {
+    server.maxConnections = 64;
+    server.maxRequestsPerSocket = 100;
+  }
   server.requestTimeout = 15_000;
   server.headersTimeout = 10_000;
   server.keepAliveTimeout = 5_000;

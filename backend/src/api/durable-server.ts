@@ -26,30 +26,32 @@ export async function createDurableServer(options: DurableServerOptions) {
     loadFormTemplate: options.loadFormTemplate ?? (async () => null),
   };
   const server = createMatchingServer(dependencies, dependencies, dependencies,
-    dependencies, dependencies, dependencies);
+    dependencies, dependencies, dependencies, { hosted: true });
   return { server, cases };
 }
 
-export function durableHttpConfiguration(env: NodeJS.ProcessEnv): { port: number; auth: SupabaseAuthConfig } {
-  const value = env.SAFEATHOME_PORT ?? '8788';
+export function durableHttpConfiguration(env: NodeJS.ProcessEnv): { port: number; host: '127.0.0.1' | '0.0.0.0'; auth: SupabaseAuthConfig } {
+  const value = env.PORT ?? env.SAFEATHOME_PORT ?? '8788';
   if (!/^[1-9][0-9]{0,4}$/.test(value) || Number(value) > 65535) throw new Error('Invalid durable server port.');
+  const host = env.SAFEATHOME_HOST ?? '127.0.0.1';
+  if (host !== '127.0.0.1' && host !== '0.0.0.0') throw new Error('Invalid durable server host.');
   const auth = { projectUrl: env.SAFEATHOME_SUPABASE_URL ?? '', publishableKey: env.SAFEATHOME_SUPABASE_PUBLISHABLE_KEY ?? '' };
   createSupabaseAuthenticator(auth);
-  return { port: Number(value), auth };
+  return { port: Number(value), host, auth };
 }
 
 async function main() {
   if (process.argv.length !== 2) throw new Error('Configure the durable server through its environment.');
-  const { port, auth } = durableHttpConfiguration(process.env);
+  const { port, host, auth } = durableHttpConfiguration(process.env);
   const pool = createPostgresPool(await databaseConfigurationFromEnvironment(process.env));
   try {
     const { server } = await createDurableServer({ pool, auth });
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       server.once('error', onError);
-      server.listen(port, '127.0.0.1', () => { server.off('error', onError); resolve(); });
+      server.listen(port, host, () => { server.off('error', onError); resolve(); });
     });
-    console.log(`Durable API listening on http://127.0.0.1:${port}. No live benefits registry is configured.`);
+    console.log(`Durable API listening on http://${host}:${port}. No live benefits registry is configured.`);
     await new Promise<void>(resolve => {
       let stopping = false;
       const stop = () => {
