@@ -31,7 +31,12 @@ class PrivateMediaPlatform(private val context: Context, private val messenger: 
                 try {
                     val args = call.arguments as? Map<*, *> ?: emptyMap<Any, Any>()
                     val answer: Any? = when (call.method) {
-                        "prepareCaptureStorage", "clearTemporaryMedia" -> { clearRawCopies(); null }
+                        "prepareCaptureStorage" -> { clearRawCopies(); null }
+                        "clearTemporaryMedia" -> {
+                            try { clearRawCopies() } finally { DraftShareCache.clear(context.cacheDir, null) }
+                            null
+                        }
+                        "clearSharedDraftCopy" -> { DraftShareCache.clear(context.cacheDir, args["name"] as String); null }
                         "privateRootDirectory" -> File(context.noBackupFilesDir, "sah-private").apply { mkdirs() }.canonicalPath
                         "preparePrivateDirectory" -> owned(args["path"] as String).apply { check(mkdirs() || isDirectory) }.canonicalPath
                         "normalizeImage" -> {

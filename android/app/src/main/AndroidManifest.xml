@@ -12,7 +12,7 @@
         android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:label="safe_at_home"
+        android:label="Safe at Home"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
