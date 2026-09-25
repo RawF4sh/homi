@@ -8,6 +8,22 @@ Without private connection configuration the app opens the labelled fictional de
 
 See [getting started and first commits](docs/getting-started.md) for run commands, the two local work areas and the manual commit order.
 
+The [iPhone beta handoff](docs/iphone-beta-handoff.md) summarizes this session's
+results, remaining acceptance gates and human-run commit commands. The
+[October 23 iPhone workflow record](docs/iphone-workflow-session.md) covers
+the updated ivory/teal interface, accessible forms and PDF navigation, encrypted
+capture recovery, account isolation and measured native checks. Use the
+[installed-app acceptance guide](integration_test/README.md) to run the complete
+fictional workflow with a disposable local backend. It distinguishes simulator
+and controlled-provider evidence from physical-camera and live-account checks.
+Development and testing have a **$0 out-of-pocket budget**; cloud jobs and paid
+device services are not required for these local checks.
+
+PDF previews use a pinned, licensed [pdfrx 2.4.7 compatibility patch](third_party/pdfrx/PATCHES.md)
+that disposes images decoded after their viewer or document has left. Keep the
+local package with the app; do not patch a shared pub cache or upgrade the native
+PDF engine to work around this fix.
+
 ## Team setup
 
 | Area | Owner | Handoff |

@@ -157,7 +157,7 @@ fi
 
 if [[ "$scope" == flutter || "$scope" == all ]]; then
   run_check 'Dart formatting (read-only)' "$app_dir" \
-    "$dart_bin" format --output=none --set-exit-if-changed lib test tool
+    "$dart_bin" format --output=none --set-exit-if-changed lib test tool integration_test
   run_check 'Flutter analysis' "$app_dir" "$flutter_bin" analyze --no-pub
   run_check 'Flutter tests' "$app_dir" "$flutter_bin" test --no-pub
   run_check 'App tracked diff whitespace' "$app_dir" "$git_bin" diff --check HEAD
