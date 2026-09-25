@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../models/assessment.dart';
 import '../models/export_contract_values.dart';
 import 'matching_api_client.dart';
+import 'token_availability.dart';
 
 class AssessmentApiClient {
   AssessmentApiClient({
@@ -119,6 +120,9 @@ class PrivateV2JsonClient {
     String? token;
     try {
       token = await _tokens().timeout(const Duration(seconds: 15));
+    } on RetryableTokenUnavailableException {
+      guard();
+      throw MatchingApiException.forCode('NETWORK_ERROR');
     } catch (_) {
       guard();
       throw MatchingApiException.forCode('UNAUTHENTICATED');

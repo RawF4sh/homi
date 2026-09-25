@@ -27,8 +27,9 @@ class CaseCoordinator extends ChangeNotifier {
   CaseSnapshot? snapshot;
   CaseDraft? draft;
   bool uncertain = false, conflict = false, busy = false;
+  bool localWritePending = false, localSaveFailed = false;
   String? notice;
-  int _selection = 0, _edit = 0;
+  int _selection = 0, _edit = 0, _localWriteVersion = 0;
   Future<void> _tail = Future.value();
   bool _disposed = false;
   int get generation => _selection;
@@ -36,6 +37,17 @@ class CaseCoordinator extends ChangeNotifier {
       !_disposed &&
       session.epoch == _accountEpoch &&
       session.userId == store.accountId;
+  bool get hasUndurableEdits => localWritePending || localSaveFailed;
+  void _guardCaseSelection() {
+    _guard();
+    if (busy) throw StateError('Finish the current save first.');
+    if (hasUndurableEdits) {
+      throw StateError(
+        'Keep the current case open until its device save succeeds.',
+      );
+    }
+  }
+
   bool get hasUnsavedChanges =>
       draft != null &&
       (snapshot == null ||
@@ -83,13 +95,31 @@ class CaseCoordinator extends ChangeNotifier {
   Future<void> _persist() async {
     if (draft == null) return;
     _guard();
-    await store.writeJson('case.${draft!.caseId}', {
+    final selected = _selection, write = ++_localWriteVersion;
+    final key = 'case.${draft!.caseId}';
+    final value = {
       'version': 1,
       'snapshot': snapshot?.toJson(),
       'draft': draft!.toJson(),
       'uncertain': uncertain,
       'conflict': conflict,
-    });
+    };
+    bool current() =>
+        isCurrent && selected == _selection && write == _localWriteVersion;
+    localWritePending = true;
+    localSaveFailed = false;
+    _changed();
+    try {
+      await store.writeJson(key, value);
+    } catch (_) {
+      if (current()) localSaveFailed = true;
+      rethrow;
+    } finally {
+      if (current()) {
+        localWritePending = false;
+        _changed();
+      }
+    }
   }
 
   Future<List<String>> localCaseIds() async => (await store.keys())
@@ -97,10 +127,11 @@ class CaseCoordinator extends ChangeNotifier {
       .map((key) => key.substring(5))
       .toList();
   Future<void> createDraft() async {
-    _guard();
-    if (busy) throw StateError('Finish the current save first.');
+    _guardCaseSelection();
     _selection++;
     _edit++;
+    localWritePending = false;
+    localSaveFailed = false;
     snapshot = null;
     uncertain = false;
     conflict = false;
@@ -126,9 +157,10 @@ class CaseCoordinator extends ChangeNotifier {
   }
 
   Future<void> restoreLocal(String caseId) async {
-    _guard();
-    if (busy) throw StateError('Finish the current save first.');
+    _guardCaseSelection();
     final generation = ++_selection;
+    localWritePending = false;
+    localSaveFailed = false;
     final value = await store.readJson('case.$caseId');
     _guard(generation);
     if (value == null || value['version'] != 1) {
@@ -153,9 +185,10 @@ class CaseCoordinator extends ChangeNotifier {
   }
 
   Future<void> resume(CaseSummary summary) async {
-    _guard();
-    if (busy) throw StateError('Finish the current save first.');
+    _guardCaseSelection();
     final generation = ++_selection;
+    localWritePending = false;
+    localSaveFailed = false;
     snapshot = null;
     draft = null;
     notice = null;
@@ -206,10 +239,38 @@ class CaseCoordinator extends ChangeNotifier {
       throw StateError('This draft belongs to another case.');
     }
     draft = CaseDraft.fromJson(value.toJson());
-    _edit++;
-    notice = 'Saved on this device; not yet saved online.';
+    final edit = ++_edit, selected = _selection;
+    notice = 'Saving changes on this device…';
     _changed();
+    try {
+      await _persist();
+      if (isCurrent && selected == _selection && edit == _edit) {
+        notice = 'Saved on this device; not yet saved online.';
+        _changed();
+      }
+    } catch (_) {
+      if (isCurrent && selected == _selection && edit == _edit) {
+        notice =
+            'The latest changes were not saved on this device. Keep this screen open and retry.';
+        _changed();
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> retryDeviceSave() async {
+    _guard();
+    if (busy || localWritePending || draft == null) {
+      throw StateError('Wait for the current case operation.');
+    }
+    final selected = _selection, edit = _edit;
     await _persist();
+    _guard(selected);
+    if (_edit != edit || localWritePending || localSaveFailed) return;
+    notice = uncertain || conflict
+        ? 'Saved on this device. Check the unresolved saved-state result before another online save.'
+        : 'Saved on this device.';
+    _changed();
   }
 
   Future<void> save() => serialize(() async {
@@ -350,20 +411,35 @@ class CaseCoordinator extends ChangeNotifier {
     _guard();
     if (busy) throw StateError('Finish the current operation first.');
     final id = draft?.caseId;
-    _selection++;
+    final generation = ++_selection;
+    busy = true;
+    localWritePending = false;
+    localSaveFailed = false;
     snapshot = null;
     draft = null;
     uncertain = false;
     conflict = false;
     notice = null;
     _changed();
-    if (id != null) {
-      for (final key in await store.keys()) {
-        if (key.split('.').contains(id) || key.startsWith('assessment:$id:')) {
-          await store.delete(key);
+    final next = _tail.then((_) async {
+      try {
+        _guard(generation);
+        if (id != null) {
+          for (final key in await store.keys()) {
+            _guard(generation);
+            if (key.split('.').contains(id) ||
+                key.startsWith('assessment:$id:')) {
+              await store.delete(key);
+            }
+          }
         }
+      } finally {
+        busy = false;
+        _changed();
       }
-    }
+    });
+    _tail = next.then<void>((_) {}, onError: (Object _, StackTrace stack) {});
+    await next;
   }
 
   @override
