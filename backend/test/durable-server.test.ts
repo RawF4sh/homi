@@ -9,12 +9,22 @@ const env = { SAFEATHOME_SUPABASE_URL: 'https://fictional.example.test',
 
 test('durable startup requires explicit auth and a bounded port before database I/O', () => {
   assert.equal(durableHttpConfiguration(env).port, 8788);
+  assert.equal(durableHttpConfiguration(env).host, '127.0.0.1');
   assert.equal(durableHttpConfiguration({ ...env, SAFEATHOME_PORT: '65535' }).port, 65535);
+  assert.equal(durableHttpConfiguration({ ...env, PORT: '3000', SAFEATHOME_PORT: '8788' }).port, 3000);
   for (const value of ['0', '-1', '65536', ' 8788', '8788\n', '08', '1.2', '']) {
     assert.throws(() => durableHttpConfiguration({ ...env, SAFEATHOME_PORT: value }));
+    assert.throws(() => durableHttpConfiguration({ ...env, PORT: value }));
   }
   assert.throws(() => durableHttpConfiguration({}));
   assert.throws(() => durableHttpConfiguration({ ...env, SAFEATHOME_SUPABASE_URL: 'http://fictional.example.test' }));
+});
+
+test('remote binding is explicit and limited to the supported proxy interface', () => {
+  assert.equal(durableHttpConfiguration({ ...env, SAFEATHOME_HOST: '0.0.0.0' }).host, '0.0.0.0');
+  for (const value of ['', 'localhost', '0.0.0.0 ', 'external.example.test', '::', '127.0.0.2']) {
+    assert.throws(() => durableHttpConfiguration({ ...env, SAFEATHOME_HOST: value }));
+  }
 });
 
 test('invalid authentication cannot open a database connection or create a listener', async () => {
