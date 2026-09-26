@@ -53,18 +53,18 @@ class PhotoCaptureCoordinator {
   final ImageValidator _validator;
 
   bool _busy = false;
-  bool _permissionBlocked = false;
+  final Set<CaptureSource> _blockedSources = {};
 
   bool get isBusy => _busy;
 
-  bool get permissionBlocked => _permissionBlocked;
+  bool get permissionBlocked => _blockedSources.contains(CaptureSource.camera);
 
   Future<PhotoOutcome> capture(
     CaptureRequest request, {
     StagingKey? replacing,
   }) async {
     if (_busy) return const PhotoFailed(PhotoFailed.busy);
-    if (_permissionBlocked) {
+    if (_blockedSources.contains(request.source)) {
       return const PhotoPermissionBlocked(canAskAgain: false);
     }
 
@@ -81,7 +81,7 @@ class PhotoCaptureCoordinator {
         case CaptureCancelled():
           return const PhotoKept();
         case CapturePermissionDenied(:final canAskAgain):
-          if (!canAskAgain) _permissionBlocked = true;
+          if (!canAskAgain) _blockedSources.add(request.source);
           return PhotoPermissionBlocked(canAskAgain: canAskAgain);
         case CaptureUnavailable():
           return const PhotoUnavailable();
@@ -120,7 +120,7 @@ class PhotoCaptureCoordinator {
   }
 
   void permissionMayHaveChanged() {
-    _permissionBlocked = false;
+    _blockedSources.clear();
   }
 
   Future<void> remove(StagingKey key) => _discardQuietly(key);
