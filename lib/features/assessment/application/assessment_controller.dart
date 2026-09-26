@@ -10,6 +10,10 @@ import '../domain/review/finding_review_tracker.dart';
 import '../domain/review/finding_review_state.dart';
 import '../domain/review/review_snapshot.dart';
 
+final class CaptureCapacityException implements Exception {
+  const CaptureCapacityException();
+}
+
 extension AssessmentAreaRoom on AssessmentArea {
   String get roomWireValue => switch (this) {
     AssessmentArea.bathroom => 'bathroom',
@@ -149,6 +153,19 @@ class AssessmentController extends ChangeNotifier {
   final Map<String, FindingDraft> _drafts = {};
   final Set<String> _issuedFindingIds = {};
   final Set<String> _issuedEvidenceIds = {};
+  final Set<String> _reservedFindingIds = {};
+  final Set<String> _reservedEvidenceIds = {};
+
+  String reserveFindingId() =>
+      _reserve(_ids.newFindingId(), _issuedFindingIds, _reservedFindingIds);
+  String reserveEvidenceId() =>
+      _reserve(_ids.newEvidenceId(), _issuedEvidenceIds, _reservedEvidenceIds);
+  bool isReservedFinding(String id) => _reservedFindingIds.contains(id);
+  bool isReservedEvidence(String id) => _reservedEvidenceIds.contains(id);
+  void abandonReservedIds({String? findingId, String? evidenceId}) {
+    _reservedFindingIds.remove(findingId);
+    _reservedEvidenceIds.remove(evidenceId);
+  }
 
   List<FindingDraft> get drafts => List.unmodifiable(_drafts.values);
 
@@ -163,8 +180,10 @@ class AssessmentController extends ChangeNotifier {
 
   Set<String> get removedFindingIds => Set.unmodifiable(_removedFindingIds);
 
-  String startFinding(AssessmentArea area) {
-    final String id = _issue(_ids.newFindingId(), _issuedFindingIds);
+  String startFinding(AssessmentArea area, {String? reservedId}) {
+    final String id = reservedId == null
+        ? _issue(_ids.newFindingId(), _issuedFindingIds)
+        : _consume(reservedId, _reservedFindingIds);
     _drafts[id] = FindingDraft._(
       id: id,
       area: area,
@@ -183,9 +202,15 @@ class AssessmentController extends ChangeNotifier {
     _update(draft._copyWith(observation: text));
   }
 
-  String addEvidence(String findingId, {required String version}) {
+  String addEvidence(
+    String findingId, {
+    required String version,
+    String? reservedId,
+  }) {
     final FindingDraft draft = _require(findingId);
-    final String evidenceId = _issue(_ids.newEvidenceId(), _issuedEvidenceIds);
+    final String evidenceId = reservedId == null
+        ? _issue(_ids.newEvidenceId(), _issuedEvidenceIds)
+        : _consume(reservedId, _reservedEvidenceIds);
     _tracker.viewAdded(findingId);
     _update(
       draft._copyWith(
@@ -354,6 +379,8 @@ class AssessmentController extends ChangeNotifier {
     _drafts.clear();
     _issuedFindingIds.clear();
     _issuedEvidenceIds.clear();
+    _reservedFindingIds.clear();
+    _reservedEvidenceIds.clear();
     _measurementHistory.clear();
     _removedFindingIds.clear();
     _tracker.clear();
@@ -525,6 +552,8 @@ class AssessmentController extends ChangeNotifier {
     },
     'issuedFindings': _issuedFindingIds.toList(),
     'issuedEvidence': _issuedEvidenceIds.toList(),
+    'reservedFindings': _reservedFindingIds.toList(),
+    'reservedEvidence': _reservedEvidenceIds.toList(),
     'removedFindings': _removedFindingIds.toList(),
   };
 
@@ -609,6 +638,24 @@ class AssessmentController extends ChangeNotifier {
     }
     _issuedFindingIds.addAll((value['issuedFindings'] as List).cast<String>());
     _issuedEvidenceIds.addAll((value['issuedEvidence'] as List).cast<String>());
+    _reservedFindingIds.addAll(
+      (value['reservedFindings'] as List? ?? const []).cast<String>(),
+    );
+    _reservedEvidenceIds.addAll(
+      (value['reservedEvidence'] as List? ?? const []).cast<String>(),
+    );
+    if (_reservedFindingIds.length > 1 ||
+        _reservedEvidenceIds.length > 1 ||
+        !_issuedFindingIds.containsAll(_reservedFindingIds) ||
+        !_issuedEvidenceIds.containsAll(_reservedEvidenceIds) ||
+        _reservedFindingIds.any(_drafts.containsKey) ||
+        drafts.any(
+          (d) => d.evidence.any(
+            (e) => _reservedEvidenceIds.contains(e.evidenceId),
+          ),
+        )) {
+      throw const FormatException('Invalid reserved capture identifiers');
+    }
     _removedFindingIds.addAll(
       (value['removedFindings'] as List).cast<String>(),
     );
@@ -648,6 +695,18 @@ class AssessmentController extends ChangeNotifier {
     if (!issued.add(id)) {
       throw StateError('IdFactory returned an ID it had already issued.');
     }
+    return id;
+  }
+
+  static String _reserve(String id, Set<String> issued, Set<String> reserved) {
+    if (issued.length >= 4096) throw const CaptureCapacityException();
+    if (reserved.isNotEmpty) throw StateError('Another capture is reserved.');
+    reserved.add(_issue(id, issued));
+    return id;
+  }
+
+  static String _consume(String id, Set<String> reserved) {
+    if (!reserved.remove(id)) throw StateError('Capture identifier expired.');
     return id;
   }
 }

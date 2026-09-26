@@ -33,6 +33,7 @@ class AssessmentFlowScreen extends StatelessWidget {
       listenable: Listenable.merge([flow, flow.controller]),
       builder: (context, _) {
         final AssessmentStep step = flow.step;
+        final bool editable = enabled && !flow.isBusy;
         return Scaffold(
           appBar: AppBar(
             actions: actions,
@@ -41,7 +42,7 @@ class AssessmentFlowScreen extends StatelessWidget {
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back),
                     tooltip: 'Back',
-                    onPressed: flow.back,
+                    onPressed: enabled ? flow.back : null,
                   )
                 : null,
           ),
@@ -54,22 +55,26 @@ class AssessmentFlowScreen extends StatelessWidget {
                   ?status,
                   _Progress(step: step),
                   const SizedBox(height: 16),
-                  AbsorbPointer(
-                    absorbing: !enabled,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: switch (step) {
-                        AssessmentStep.chooseArea => _chooseArea(context),
-                        AssessmentStep.viewPrompt => _viewPrompt(context),
-                        AssessmentStep.preview => _preview(context),
-                        AssessmentStep.details => [
-                          _DetailsStep(
-                            key: ValueKey('details-${flow.findingId}'),
-                            flow: flow,
-                          ),
-                        ],
-                        AssessmentStep.review => _review(context),
-                      },
+                  ExcludeFocus(
+                    excluding: !editable,
+                    child: AbsorbPointer(
+                      absorbing: !editable,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: switch (step) {
+                          AssessmentStep.chooseArea => _chooseArea(context),
+                          AssessmentStep.viewPrompt => _viewPrompt(context),
+                          AssessmentStep.preview => _preview(context),
+                          AssessmentStep.details => [
+                            _DetailsStep(
+                              key: ValueKey('details-${flow.findingId}'),
+                              flow: flow,
+                              enabled: editable,
+                            ),
+                          ],
+                          AssessmentStep.review => _review(context),
+                        },
+                      ),
                     ),
                   ),
                 ],
@@ -198,26 +203,34 @@ class AssessmentFlowScreen extends StatelessWidget {
             onPressed: flow.isBusy
                 ? null
                 : () async {
-                    final edited = await Navigator.of(context).push<Uint8List>(
-                      MaterialPageRoute(
-                        builder: (_) => PhotoPrivacyScreen(
-                          bytes: flow.bytesFor(evidenceId)!,
-                        ),
-                      ),
-                    );
-                    if (edited != null) {
+                    final bytes = flow.bytesFor(evidenceId);
+                    if (bytes == null) return;
+                    final attempt = await flow.beginPrivacyEdit(evidenceId);
+                    if (attempt == null) return;
+                    if (!context.mounted) {
+                      await flow.finishPrivacyEdit(attempt, null);
+                      return;
+                    }
+                    try {
+                      Uint8List? edited;
                       try {
-                        await flow.applyProcessedPhoto(evidenceId, edited);
-                      } catch (_) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'The private edited photo could not be saved. Keep the original and try again when device space is available.',
-                              ),
+                        edited = await Navigator.of(context).push<Uint8List>(
+                          MaterialPageRoute(
+                            builder: (_) => PhotoPrivacyScreen(bytes: bytes),
+                          ),
+                        );
+                      } finally {
+                        await flow.finishPrivacyEdit(attempt, edited);
+                      }
+                    } catch (_) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'The private edited photo could not be saved. Keep the original and try again when device space is available.',
                             ),
-                          );
-                        }
+                          ),
+                        );
                       }
                     }
                   },
@@ -291,6 +304,7 @@ class AssessmentFlowScreen extends StatelessWidget {
             await Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => AnnotationEditorScreen(
+                  onChanged: flow.annotationsChanged,
                   store: store,
                   findingId: flow.findingId!,
                   image: image,
@@ -518,7 +532,13 @@ class _PhotoState extends State<_Photo> {
   Future<void> _load() async {
     try {
       await widget.flow.loadBytes(widget.evidenceId);
-      if (mounted) setState(() => failed = false);
+      if (mounted) {
+        setState(
+          () => failed =
+              widget.flow.evidence[widget.evidenceId] != null &&
+              widget.flow.bytesFor(widget.evidenceId) == null,
+        );
+      }
     } catch (_) {
       if (mounted) setState(() => failed = true);
     }
@@ -570,6 +590,7 @@ class _PhotoState extends State<_Photo> {
       container: true,
       image: true,
       button: widget.onTap != null,
+      onTap: widget.onTap,
       label: label,
       excludeSemantics: true,
       child: widget.onTap == null
@@ -651,9 +672,10 @@ class _ClearedMeasurement extends StatelessWidget {
 }
 
 class _DetailsStep extends StatefulWidget {
-  const _DetailsStep({super.key, required this.flow});
+  const _DetailsStep({super.key, required this.flow, required this.enabled});
 
   final AssessmentFlow flow;
+  final bool enabled;
 
   @override
   State<_DetailsStep> createState() => _DetailsStepState();
@@ -687,9 +709,12 @@ class _DetailsStepState extends State<_DetailsStep> {
         TextField(
           key: const ValueKey('observation'),
           controller: _observation,
+          enabled: widget.enabled,
           minLines: 3,
           maxLines: 6,
-          onChanged: flow.setObservationText,
+          onChanged: (text) {
+            if (widget.enabled && !flow.isBusy) flow.setObservationText(text);
+          },
           decoration: InputDecoration(
             labelText: AssessmentCopy.observationLabel,
             helperText: AssessmentCopy.observationHint,
@@ -705,7 +730,10 @@ class _DetailsStepState extends State<_DetailsStep> {
         for (final String type in flow.measurementTypes)
           _measurementField(context, type),
         const SizedBox(height: 16),
-        FilledButton(onPressed: flow.saveDetails, child: const Text('Review')),
+        FilledButton(
+          onPressed: widget.enabled ? flow.saveDetails : null,
+          child: const Text('Review'),
+        ),
       ],
     );
   }
@@ -730,10 +758,15 @@ class _DetailsStepState extends State<_DetailsStep> {
             TextField(
               key: ValueKey('measurement-$type'),
               controller: _values[type],
+              enabled: widget.enabled,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              onChanged: (text) => flow.setMeasurementText(type, text),
+              onChanged: (text) {
+                if (widget.enabled && !flow.isBusy) {
+                  flow.setMeasurementText(type, text);
+                }
+              },
               decoration: InputDecoration(
                 labelText: '${spec.label} (${entry.unit.symbol})',
                 errorText: error == null
@@ -744,31 +777,38 @@ class _DetailsStepState extends State<_DetailsStep> {
               ),
             ),
             const SizedBox(height: 8),
-            SegmentedButton<LengthUnit>(
+            Wrap(
               key: ValueKey('unit-$type'),
-              segments: [
+              spacing: 8,
+              runSpacing: 8,
+              children: [
                 for (final LengthUnit unit in LengthUnit.values)
-                  ButtonSegment(
-                    value: unit,
-                    label: Text(unit.symbol),
-                    tooltip: _unitName(unit),
+                  Tooltip(
+                    message: _unitName(unit),
+                    child: ChoiceChip(
+                      label: Text(unit.symbol, semanticsLabel: _unitName(unit)),
+                      selected: entry.unit == unit,
+                      materialTapTargetSize: MaterialTapTargetSize.padded,
+                      onSelected: widget.enabled
+                          ? (_) => flow.setMeasurementUnit(type, unit)
+                          : null,
+                    ),
                   ),
               ],
-              selected: {entry.unit},
-              onSelectionChanged: (s) =>
-                  flow.setMeasurementUnit(type, s.single),
             ),
             CheckboxListTile(
               key: ValueKey('estimate-$type'),
               contentPadding: EdgeInsets.zero,
               value: entry.method == MeasurementMethod.estimated,
               title: const Text(AssessmentCopy.estimateLabel),
-              onChanged: (v) => flow.setMeasurementMethod(
-                type,
-                v == true
-                    ? MeasurementMethod.estimated
-                    : MeasurementMethod.manual,
-              ),
+              onChanged: widget.enabled
+                  ? (v) => flow.setMeasurementMethod(
+                      type,
+                      v == true
+                          ? MeasurementMethod.estimated
+                          : MeasurementMethod.manual,
+                    )
+                  : null,
             ),
           ],
         ),

@@ -8,7 +8,7 @@ class SavedPhotoWithMarks extends StatelessWidget {
     required this.width,
     required this.height,
     required this.marks,
-    this.semanticLabel = 'Saved photo with reviewed marks',
+    this.semanticLabel = 'Saved photo with observations',
   });
   final Uint8List bytes;
   final int width, height;

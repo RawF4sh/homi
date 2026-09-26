@@ -12,11 +12,20 @@ class NativeCaptureAdapter implements CaptureAdapter {
     required this.context,
     PrivateMediaPlatform media = const PrivateMediaPlatform(),
     ImagePicker? picker,
+    Future<List<CameraDescription>> Function()? loadCameras,
+    CameraController Function(CameraDescription)? cameraControllerFactory,
+    this.isCurrent,
   }) : _media = media,
-       _picker = picker ?? ImagePicker();
+       _picker = picker ?? ImagePicker(),
+       _loadCameras = loadCameras ?? availableCameras,
+       _cameraControllerFactory = cameraControllerFactory;
   final BuildContext Function() context;
   final PrivateMediaPlatform _media;
   final ImagePicker _picker;
+  final Future<List<CameraDescription>> Function() _loadCameras;
+  final CameraController Function(CameraDescription)? _cameraControllerFactory;
+  final bool Function()? isCurrent;
+  bool get _current => isCurrent?.call() ?? true;
 
   static Future<bool> discardInterruptedImport() async {
     if (!Platform.isAndroid) return false;
@@ -32,9 +41,13 @@ class NativeCaptureAdapter implements CaptureAdapter {
   @override
   Future<CaptureResult> capture(CaptureRequest request) async {
     XFile? file;
+    String? capturedAt;
     try {
+      if (!_current) return const CaptureCancelled();
       await discardInterruptedImport();
+      if (!_current) return const CaptureCancelled();
       await _media.prepareCaptureStorage();
+      if (!_current) return const CaptureCancelled();
       if (request.source == CaptureSource.library) {
         if (Platform.isIOS) {
           final path = await _media.pickPhoto();
@@ -47,21 +60,28 @@ class NativeCaptureAdapter implements CaptureAdapter {
         }
       } else {
         final outcome = await Navigator.of(context()).push<_CameraOutcome>(
-          MaterialPageRoute(builder: (_) => const _CameraScreen()),
+          MaterialPageRoute(
+            builder: (_) => _CameraScreen(
+              loadCameras: _loadCameras,
+              cameraControllerFactory: _cameraControllerFactory,
+              isCurrent: () => _current,
+            ),
+          ),
         );
+        file = outcome?.file;
+        if (!_current) return const CaptureCancelled();
         if (outcome?.error != null) {
           return _failure(outcome!.error!);
         }
-        file = outcome?.file;
+        capturedAt = outcome?.capturedAt;
       }
-      if (file == null) return const CaptureCancelled();
+      if (!_current || file == null) return const CaptureCancelled();
       final bytes = await _media.normalizePath(file.path);
+      if (!_current) return const CaptureCancelled();
       return CaptureSucceeded(
         bytes,
         orientationNormalized: true,
-        capturedAt: request.source == CaptureSource.camera
-            ? DateTime.now().toUtc().toIso8601String()
-            : null,
+        capturedAt: capturedAt,
       );
     } on CameraException catch (error) {
       return _failure(error.code);
@@ -81,6 +101,10 @@ class NativeCaptureAdapter implements CaptureAdapter {
   }
 
   CaptureResult _failure(String code) => switch (code) {
+    'PHOTO_IMPORT_TIMEOUT' => const CaptureFailed('photo_import_timeout'),
+    'PHOTO_IMPORT_FAILED' ||
+    'PHOTO_UNSUPPORTED' ||
+    'PICKER_UNAVAILABLE' => const CaptureFailed('photo_import_failed'),
     'CameraAccessDenied' ||
     'CameraAccessDeniedWithoutPrompt' ||
     'CameraAccessRestricted' ||
@@ -91,13 +115,21 @@ class NativeCaptureAdapter implements CaptureAdapter {
 }
 
 class _CameraOutcome {
-  const _CameraOutcome({this.file, this.error});
+  const _CameraOutcome({this.file, this.error, this.capturedAt});
   final XFile? file;
   final String? error;
+  final String? capturedAt;
 }
 
 class _CameraScreen extends StatefulWidget {
-  const _CameraScreen();
+  const _CameraScreen({
+    required this.loadCameras,
+    this.cameraControllerFactory,
+    required this.isCurrent,
+  });
+  final Future<List<CameraDescription>> Function() loadCameras;
+  final CameraController Function(CameraDescription)? cameraControllerFactory;
+  final bool Function() isCurrent;
   @override
   State<_CameraScreen> createState() => _CameraScreenState();
 }
@@ -117,11 +149,17 @@ class _CameraScreenState extends State<_CameraScreen>
   }
 
   Future<void> _open() async {
+    if (!widget.isCurrent()) return;
     final generation = ++_generation;
     CameraController? controller;
     try {
-      final cameras = await availableCameras();
-      if (!mounted || generation != _generation || !_foreground) return;
+      final cameras = await widget.loadCameras();
+      if (!mounted ||
+          generation != _generation ||
+          !_foreground ||
+          !widget.isCurrent()) {
+        return;
+      }
       if (cameras.isEmpty) {
         Navigator.of(context).pop(const _CameraOutcome(error: 'no_camera'));
         return;
@@ -131,14 +169,19 @@ class _CameraScreenState extends State<_CameraScreen>
               .where((c) => c.lensDirection == CameraLensDirection.back)
               .firstOrNull ??
           cameras.first;
-      controller = CameraController(
-        camera,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
+      controller =
+          widget.cameraControllerFactory?.call(camera) ??
+          CameraController(
+            camera,
+            ResolutionPreset.high,
+            enableAudio: false,
+            imageFormatGroup: ImageFormatGroup.jpeg,
+          );
       await controller.initialize();
-      if (!mounted || generation != _generation || !_foreground) {
+      if (!mounted ||
+          generation != _generation ||
+          !_foreground ||
+          !widget.isCurrent()) {
         await controller.dispose();
         return;
       }
@@ -162,6 +205,7 @@ class _CameraScreenState extends State<_CameraScreen>
         state == AppLifecycleState.paused) {
       _foreground = false;
       _generation++;
+      _taking = false;
       final previous = _controller;
       _controller = null;
       previous?.dispose();
@@ -174,21 +218,38 @@ class _CameraScreenState extends State<_CameraScreen>
 
   Future<void> _take() async {
     final controller = _controller;
-    if (_taking || controller == null || !controller.value.isInitialized) {
+    final generation = _generation;
+    if (_taking ||
+        !widget.isCurrent() ||
+        controller == null ||
+        !controller.value.isInitialized) {
       return;
     }
     setState(() => _taking = true);
     try {
       final file = await controller.takePicture();
-      if (mounted) {
-        Navigator.of(context).pop(_CameraOutcome(file: file));
+      if (mounted &&
+          _foreground &&
+          widget.isCurrent() &&
+          generation == _generation &&
+          identical(controller, _controller)) {
+        Navigator.of(context).pop(
+          _CameraOutcome(
+            file: file,
+            capturedAt: DateTime.now().toUtc().toIso8601String(),
+          ),
+        );
       } else {
         try {
           await File(file.path).delete();
         } catch (_) {}
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted &&
+          _foreground &&
+          widget.isCurrent() &&
+          generation == _generation &&
+          identical(controller, _controller)) {
         setState(() => _taking = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

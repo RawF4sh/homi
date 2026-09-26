@@ -9,6 +9,7 @@ import '../domain/measurement/length_unit.dart';
 import '../domain/measurement/measurement_input.dart';
 import 'assessment_controller.dart';
 import 'local_evidence_index.dart';
+import 'media_attempt.dart';
 
 enum AssessmentStep { chooseArea, viewPrompt, preview, details, review }
 
@@ -38,8 +39,37 @@ final class CaptureFailedNotice extends FlowNotice {
   const CaptureFailedNotice();
 }
 
+final class PhotoImportFailedNotice extends FlowNotice {
+  const PhotoImportFailedNotice({required this.timedOut});
+  final bool timedOut;
+}
+
+final class PhotoPreviewUnavailableNotice extends FlowNotice {
+  const PhotoPreviewUnavailableNotice();
+}
+
 final class PhotoRemovedNotice extends FlowNotice {
   const PhotoRemovedNotice();
+}
+
+final class InterruptedCaptureNotice extends FlowNotice {
+  const InterruptedCaptureNotice();
+}
+
+final class InterruptedPrivacyNotice extends FlowNotice {
+  const InterruptedPrivacyNotice();
+}
+
+final class PrivatePhotoSaveFailedNotice extends FlowNotice {
+  const PrivatePhotoSaveFailedNotice();
+}
+
+final class PhotoTargetChangedNotice extends FlowNotice {
+  const PhotoTargetChangedNotice();
+}
+
+final class PhotoCaptureLimitNotice extends FlowNotice {
+  const PhotoCaptureLimitNotice();
 }
 
 final class MeasurementEntry {
@@ -96,6 +126,8 @@ class AssessmentFlow extends ChangeNotifier {
     this.annotations,
     this.loadSavedImage,
     this.captureTimeForEvidence,
+    this.checkpoint,
+    this.isCurrent,
     this.allowStagedAnnotations = true,
     this.decimalSeparator = DecimalSeparator.point,
   }) : _capture = capture,
@@ -103,6 +135,9 @@ class AssessmentFlow extends ChangeNotifier {
        evidence = evidence ?? LocalEvidenceIndex();
 
   final bool allowStagedAnnotations;
+
+  final Future<void> Function()? checkpoint;
+  final bool Function()? isCurrent;
   final AssessmentController controller;
   final PhotoCaptureCoordinator _capture;
   final StagingStore _staging;
@@ -127,6 +162,10 @@ class AssessmentFlow extends ChangeNotifier {
   FlowNotice? _notice;
   bool _busy = false;
   bool _disposed = false;
+  int _mutationDepth = 0;
+  CaptureAttempt? _captureAttempt;
+  PrivacyAttempt? _privacyAttempt;
+  bool _privacyOpen = false;
   String _observation = '';
   Map<String, MeasurementEntry> _entries = {};
   DetailsErrors _errors = const DetailsErrors();
@@ -137,8 +176,10 @@ class AssessmentFlow extends ChangeNotifier {
   String? get findingId => _findingId;
   CaptureView get view => _view;
   FlowNotice? get notice => _notice;
-  bool get isBusy => _busy;
-  bool get canGoBack => _backStack.isNotEmpty && !_busy;
+  bool get isBusy => _busy || _privacyOpen;
+  bool get isMutatingSnapshot => _mutationDepth != 0;
+  bool get _current => !_disposed && (isCurrent?.call() ?? true);
+  bool get canGoBack => _backStack.isNotEmpty && !isBusy;
   String get observationText => _observation;
   DetailsErrors get errors => _errors;
   bool get cameraBlocked => _capture.permissionBlocked;
@@ -181,55 +222,172 @@ class AssessmentFlow extends ChangeNotifier {
     CaptureSource source = CaptureSource.camera,
   }) async {
     final AssessmentArea? area = _area;
-    if (_busy || area == null) return;
+    if (isBusy || area == null || !_current) return;
     final String? replacingId = retake ? _previewEvidenceId : null;
-    _busy = true;
-    _notice = null;
-    _notify();
-
-    final PhotoOutcome outcome = await _capture.capture(
-      CaptureRequest(
-        area: area,
-        view: _view,
-        promptId: '${area.name}-${_view.name}',
-        source: source,
-      ),
-      replacing: replacingId == null ? null : evidence[replacingId]?.key,
-    );
-    _busy = false;
-    if (_disposed) return;
-
-    switch (outcome) {
-      case PhotoStaged(:final image):
-        final String id = _ensureFinding();
-        final String version = localEvidenceVersion(image.key);
-        final String evidenceId;
-        if (replacingId != null) {
-          controller.replaceEvidence(id, replacingId, version: version);
-          evidenceId = replacingId;
-        } else {
-          evidenceId = controller.addEvidence(id, version: version);
+    final startingFinding = _findingId;
+    final replacingVersion = replacingId == null
+        ? null
+        : _versionOf(startingFinding, replacingId);
+    if (retake && (replacingId == null || replacingVersion == null)) return;
+    CaptureAttempt? attempt;
+    try {
+      _mutate(() {
+        _privacyAttempt = null;
+        _busy = true;
+        _notice = null;
+        final interrupted = _captureAttempt;
+        if (interrupted != null &&
+            _captureTargetCurrent(interrupted) &&
+            interrupted.source == source &&
+            interrupted.replacing == retake) {
+          attempt = interrupted;
+          return;
         }
-        evidence.put(evidenceId, image);
-        if (replacingId != null) {
-          annotations?.imageChanged(evidenceId, annotatableImage(evidenceId));
+        _abandonCapture();
+        final finding = startingFinding ?? controller.reserveFindingId();
+        try {
+          attempt = CaptureAttempt(
+            area: area,
+            view: _view,
+            source: source,
+            findingId: finding,
+            evidenceId: replacingId ?? controller.reserveEvidenceId(),
+            newFinding: startingFinding == null,
+            replacingVersion: replacingVersion,
+          );
+          _captureAttempt = attempt;
+        } catch (_) {
+          if (startingFinding == null) {
+            controller.abandonReservedIds(findingId: finding);
+          }
+          rethrow;
         }
-        _previewEvidenceId = evidenceId;
-        await _loadBytes(evidenceId);
-        if (_disposed) return;
-        if (_step != AssessmentStep.preview) _go(AssessmentStep.preview);
-      case PhotoKept():
-        _notice = const CaptureCancelledNotice();
-      case PhotoPermissionBlocked(:final canAskAgain):
-        _notice = PermissionNotice(canAskAgain: canAskAgain);
-      case PhotoUnavailable():
-        _notice = const CameraUnavailableNotice();
-      case PhotoRejected(:final reason):
-        _notice = PhotoRejectedNotice(reason);
-      case PhotoFailed(:final code):
-        if (code != PhotoFailed.busy) _notice = const CaptureFailedNotice();
+      });
+      await checkpoint?.call();
+      final retained = attempt!;
+      if (!_captureTargetCurrent(retained)) return;
+      final PhotoOutcome outcome = await _capture.capture(
+        CaptureRequest(
+          area: area,
+          view: retained.view,
+          promptId: '${area.name}-${retained.view.name}',
+          source: source,
+        ),
+      );
+      if (!_captureTargetCurrent(retained)) {
+        if (outcome case PhotoStaged(:final image)) {
+          await _capture.remove(image.key);
+        }
+        if (_current) _notice = const PhotoTargetChangedNotice();
+        return;
+      }
+
+      switch (outcome) {
+        case PhotoStaged(:final image):
+          final old = evidence[retained.evidenceId];
+          final evidenceId = retained.evidenceId;
+          _mutate(() {
+            final id = retained.newFinding
+                ? controller.startFinding(area, reservedId: retained.findingId)
+                : retained.findingId;
+            _findingId = id;
+            _backStack.removeWhere((p) => p.step == AssessmentStep.chooseArea);
+            final version = localEvidenceVersion(image.key);
+            if (retained.replacing) {
+              controller.replaceEvidence(id, evidenceId, version: version);
+            } else {
+              controller.addEvidence(
+                id,
+                version: version,
+                reservedId: evidenceId,
+              );
+            }
+            evidence.put(evidenceId, image);
+            _bytes.remove(evidenceId);
+            _savedImages.remove(evidenceId);
+            annotations?.imageChanged(evidenceId, annotatableImage(evidenceId));
+            _previewEvidenceId = evidenceId;
+            _captureAttempt = null;
+            if (_step != AssessmentStep.preview) _go(AssessmentStep.preview);
+          });
+          await checkpoint?.call();
+          if (!_current) return;
+          if (old != null) await _capture.remove(old.key);
+          try {
+            await _loadBytes(evidenceId);
+            if (_bytes[evidenceId] == null) {
+              _notice = const PhotoPreviewUnavailableNotice();
+            }
+          } catch (_) {
+            _notice = const PhotoPreviewUnavailableNotice();
+          }
+          if (!_current) return;
+        case PhotoKept():
+          _notice = const CaptureCancelledNotice();
+        case PhotoPermissionBlocked(:final canAskAgain):
+          _notice = PermissionNotice(canAskAgain: canAskAgain);
+        case PhotoUnavailable():
+          _notice = const CameraUnavailableNotice();
+        case PhotoRejected(:final reason):
+          _notice = PhotoRejectedNotice(reason);
+        case PhotoFailed(:final code):
+          if (code != PhotoFailed.busy) {
+            _notice = source == CaptureSource.library
+                ? PhotoImportFailedNotice(
+                    timedOut: code == 'photo_import_timeout',
+                  )
+                : const CaptureFailedNotice();
+          }
+      }
+    } on CaptureCapacityException {
+      if (_current) _notice = const PhotoCaptureLimitNotice();
+    } catch (_) {
+      if (_current) _notice = const PrivatePhotoSaveFailedNotice();
+    } finally {
+      if (_current) {
+        _mutate(() {
+          if (identical(_captureAttempt, attempt)) _abandonCapture();
+          _busy = false;
+        });
+      } else {
+        _busy = false;
+      }
     }
-    _notify();
+  }
+
+  bool _captureTargetCurrent(CaptureAttempt attempt) =>
+      _current &&
+      identical(_captureAttempt, attempt) &&
+      _area == attempt.area &&
+      _view == attempt.view &&
+      (attempt.newFinding
+          ? _findingId == null &&
+                controller.isReservedFinding(attempt.findingId)
+          : _findingId == attempt.findingId &&
+                controller.draftOf(attempt.findingId) != null) &&
+      (attempt.replacing
+          ? _versionOf(attempt.findingId, attempt.evidenceId) ==
+                attempt.replacingVersion
+          : controller.isReservedEvidence(attempt.evidenceId));
+
+  String? _versionOf(String? findingId, String evidenceId) => findingId == null
+      ? null
+      : controller
+            .draftOf(findingId)
+            ?.evidence
+            .where((e) => e.evidenceId == evidenceId)
+            .firstOrNull
+            ?.version;
+
+  void _abandonCapture() {
+    final attempt = _captureAttempt;
+    if (attempt != null) {
+      controller.abandonReservedIds(
+        findingId: attempt.newFinding ? attempt.findingId : null,
+        evidenceId: attempt.replacing ? null : attempt.evidenceId,
+      );
+    }
+    _captureAttempt = null;
   }
 
   void permissionMayHaveChanged() {
@@ -241,35 +399,50 @@ class AssessmentFlow extends ChangeNotifier {
   Future<void> removePreviewPhoto() async {
     final String? evidenceId = _previewEvidenceId;
     final String? id = _findingId;
-    if (_busy || evidenceId == null || id == null) return;
-    controller.removeEvidence(id, evidenceId);
-    final StagedImage? staged = evidence.remove(evidenceId);
-    annotations?.removeForEvidence(evidenceId);
-    _bytes.remove(evidenceId);
-    _previewEvidenceId = null;
-    _notice = const PhotoRemovedNotice();
-    if (_step == AssessmentStep.preview && !_popBack()) {
-      _step = AssessmentStep.viewPrompt;
-    }
-    _notify();
+    if (isBusy || evidenceId == null || id == null) return;
+    final staged = evidence[evidenceId];
+    _mutate(() {
+      _abandonCapture();
+      _privacyAttempt = null;
+      controller.removeEvidence(id, evidenceId);
+      evidence.remove(evidenceId);
+      annotations?.removeForEvidence(evidenceId);
+      _bytes.remove(evidenceId);
+      _previewEvidenceId = null;
+      _notice = const PhotoRemovedNotice();
+      if (_step == AssessmentStep.preview && !_popBack()) {
+        _step = AssessmentStep.viewPrompt;
+      }
+    });
     if (staged != null) await _capture.remove(staged.key);
+    _notify();
   }
 
   void addCloseUp() {
+    if (isBusy) return;
+    _abandonCapture();
+    _privacyAttempt = null;
     _notice = null;
-    _go(AssessmentStep.viewPrompt);
     _view = CaptureView.closeUp;
+    _go(AssessmentStep.viewPrompt);
   }
 
   void continueFromPreview() {
-    if (_step == AssessmentStep.preview) _go(AssessmentStep.details);
+    if (!isBusy && _step == AssessmentStep.preview) {
+      _abandonCapture();
+      _privacyAttempt = null;
+      _go(AssessmentStep.details);
+    }
   }
 
   void continueWithoutPhoto() {
-    if (_step != AssessmentStep.viewPrompt) return;
-    _ensureFinding();
-    _notice = null;
-    _go(AssessmentStep.details);
+    if (isBusy || _step != AssessmentStep.viewPrompt) return;
+    _mutate(() {
+      _abandonCapture();
+      _ensureFinding();
+      _notice = null;
+      _go(AssessmentStep.details);
+    });
   }
 
   void setObservationText(String text) {
@@ -318,23 +491,25 @@ class AssessmentFlow extends ChangeNotifier {
       return false;
     }
 
-    controller.setObservation(id, _observation);
-    parsed.forEach((type, input) {
-      final RecordedMeasurement? existing = controller
-          .draftOf(id)
-          ?.measurementOf(type);
-      final MeasurementMethod method = entryFor(type).method;
-      if (input == null) {
-        controller.clearMeasurement(id, type);
-      } else if (existing != null &&
-          existing.input.millimetres == input.millimetres &&
-          existing.input.unit == input.unit &&
-          existing.method == method) {
-      } else {
-        controller.setMeasurement(id, type, input, method: method);
-      }
+    _mutate(() {
+      controller.setObservation(id, _observation);
+      parsed.forEach((type, input) {
+        final RecordedMeasurement? existing = controller
+            .draftOf(id)
+            ?.measurementOf(type);
+        final MeasurementMethod method = entryFor(type).method;
+        if (input == null) {
+          controller.clearMeasurement(id, type);
+        } else if (existing != null &&
+            existing.input.millimetres == input.millimetres &&
+            existing.input.unit == input.unit &&
+            existing.method == method) {
+        } else {
+          controller.setMeasurement(id, type, input, method: method);
+        }
+      });
+      _go(AssessmentStep.review);
     });
-    _go(AssessmentStep.review);
     return true;
   }
 
@@ -359,7 +534,7 @@ class AssessmentFlow extends ChangeNotifier {
   }
 
   void openFinding(String findingId) {
-    if (_busy) return;
+    if (isBusy) return;
     final FindingDraft? draft = controller.draftOf(findingId);
     if (draft == null) return;
     _resetForNewFinding();
@@ -384,69 +559,150 @@ class AssessmentFlow extends ChangeNotifier {
 
   void openPhoto(String evidenceId) {
     final String? id = _findingId;
-    if (_busy || id == null || _step != AssessmentStep.review) return;
+    if (isBusy || id == null || _step != AssessmentStep.review) return;
     if (!_isAttached(evidenceId)) return;
+    _abandonCapture();
+    _privacyAttempt = null;
     _notice = null;
-    _go(AssessmentStep.preview);
     _previewEvidenceId = evidenceId;
     _view = CaptureView.overview;
+    _go(AssessmentStep.preview);
   }
 
   void startAnother() {
+    if (isBusy) return;
     _resetForNewFinding();
     _notify();
   }
 
   Future<void> discardFinding() async {
+    if (isBusy) return;
     final String? id = _findingId;
     final List<StagingKey> keys = [];
-    if (id != null) {
-      annotations?.removeForFinding(id);
-      final FindingDraft? removed = controller.removeFinding(id);
-      for (final e in removed?.evidence ?? const []) {
-        final StagedImage? staged = evidence.remove(e.evidenceId);
-        if (staged != null) keys.add(staged.key);
+    _mutate(() {
+      if (id != null) {
+        annotations?.removeForFinding(id);
+        final FindingDraft? removed = controller.removeFinding(id);
+        for (final e in removed?.evidence ?? const []) {
+          final StagedImage? staged = evidence.remove(e.evidenceId);
+          if (staged != null) keys.add(staged.key);
+        }
       }
-    }
-    _resetForNewFinding();
-    _notify();
+      _resetForNewFinding();
+    });
     for (final StagingKey key in keys) {
       await _capture.remove(key);
     }
+    _notify();
   }
 
   void annotationsChanged() => _notify();
 
+  Future<PrivacyAttempt?> beginPrivacyEdit(String evidenceId) async {
+    final findingId = _findingId;
+    final version = _versionOf(findingId, evidenceId);
+    if (isBusy || !_current || findingId == null || version == null) {
+      return null;
+    }
+    final attempt = PrivacyAttempt(findingId, evidenceId, version);
+    _abandonCapture();
+    _busy = true;
+    _privacyAttempt = attempt;
+    _notice = null;
+    _notify();
+    try {
+      await checkpoint?.call();
+      if (!_privacyTargetCurrent(attempt)) return null;
+      _privacyOpen = true;
+      return attempt;
+    } catch (_) {
+      if (_current) _notice = const PrivatePhotoSaveFailedNotice();
+      return null;
+    } finally {
+      _busy = false;
+      if (!_privacyOpen && identical(_privacyAttempt, attempt)) {
+        _privacyAttempt = null;
+      }
+      _notify();
+    }
+  }
+
+  Future<void> finishPrivacyEdit(
+    PrivacyAttempt attempt,
+    Uint8List? edited,
+  ) async {
+    if (!_privacyTargetCurrent(attempt)) {
+      if (_current) _notice = const PhotoTargetChangedNotice();
+      if (identical(_privacyAttempt, attempt)) _privacyAttempt = null;
+      _privacyOpen = false;
+      _notify();
+      return;
+    }
+    try {
+      if (edited != null) {
+        await applyProcessedPhoto(attempt.evidenceId, edited);
+      } else {
+        _privacyAttempt = null;
+      }
+    } finally {
+      _privacyOpen = false;
+      _notify();
+    }
+  }
+
+  bool _privacyTargetCurrent(PrivacyAttempt attempt) =>
+      _current &&
+      identical(_privacyAttempt, attempt) &&
+      _findingId == attempt.findingId &&
+      _versionOf(attempt.findingId, attempt.evidenceId) == attempt.version;
+
   Future<void> applyProcessedPhoto(String evidenceId, Uint8List bytes) async {
     final id = _findingId;
-    if (id == null || _busy || !_isAttached(evidenceId)) return;
+    if (id == null || _busy || !_current || !_isAttached(evidenceId)) return;
+    final startingVersion = _versionOf(id, evidenceId);
     final check = const ImageValidator().check(bytes);
     if (check is! ImageAccepted) {
       throw const FormatException('Invalid edited photo');
     }
     final previous = evidence[evidenceId];
-    final staged = await _staging.put(
-      bytes,
-      check,
-      capturedAt:
-          previous?.capturedAt ?? captureTimeForEvidence?.call(evidenceId),
-      orientationNormalized: true,
-    );
-    if (_disposed) {
-      await _staging.discard(staged.key);
-      return;
-    }
-    evidence.put(evidenceId, staged);
-    _bytes[evidenceId] = bytes;
-    _savedImages.remove(evidenceId);
-    controller.replaceEvidence(
-      id,
-      evidenceId,
-      version: localEvidenceVersion(staged.key),
-    );
-    annotations?.imageChanged(evidenceId, annotatableImage(evidenceId));
-    if (previous != null) await _staging.discard(previous.key);
+    _busy = true;
     _notify();
+    try {
+      final staged = await _staging.put(
+        bytes,
+        check,
+        capturedAt:
+            previous?.capturedAt ?? captureTimeForEvidence?.call(evidenceId),
+        orientationNormalized: true,
+      );
+      if (!_current ||
+          _findingId != id ||
+          !_isAttached(evidenceId) ||
+          _versionOf(id, evidenceId) != startingVersion ||
+          evidence[evidenceId]?.key != previous?.key) {
+        await _capture.remove(staged.key);
+        return;
+      }
+      _mutate(() {
+        evidence.put(evidenceId, staged);
+        _bytes[evidenceId] = Uint8List.fromList(bytes);
+        _savedImages.remove(evidenceId);
+        controller.replaceEvidence(
+          id,
+          evidenceId,
+          version: localEvidenceVersion(staged.key),
+        );
+        annotations?.imageChanged(evidenceId, annotatableImage(evidenceId));
+        _privacyAttempt = null;
+        _privacyOpen = false;
+      });
+      await checkpoint?.call();
+      if (!_current) return;
+      if (previous != null) await _capture.remove(previous.key);
+    } finally {
+      _busy = false;
+      _notify();
+    }
   }
 
   Future<void> refreshSavedImages() async {
@@ -468,6 +724,8 @@ class AssessmentFlow extends ChangeNotifier {
     'findingId': _findingId,
     'view': _view.name,
     'previewEvidenceId': _previewEvidenceId,
+    'captureAttempt': _captureAttempt?.toLocalJson(),
+    'privacyAttempt': _privacyAttempt?.toLocalJson(),
     'observation': _observation,
     'entries': {
       for (final e in _entries.entries)
@@ -502,6 +760,24 @@ class AssessmentFlow extends ChangeNotifier {
     }
     if (_previewEvidenceId != null && !_isAttached(_previewEvidenceId!)) {
       throw const FormatException('Draft image missing');
+    }
+    if (value['captureAttempt'] != null) {
+      _captureAttempt = CaptureAttempt.fromLocalJson(value['captureAttempt']);
+      if (!_captureTargetCurrent(_captureAttempt!)) {
+        _abandonCapture();
+        _notice = const PhotoTargetChangedNotice();
+      } else {
+        _notice = const InterruptedCaptureNotice();
+      }
+    }
+    if (value['privacyAttempt'] != null) {
+      _privacyAttempt = PrivacyAttempt.fromLocalJson(value['privacyAttempt']);
+      if (!_privacyTargetCurrent(_privacyAttempt!)) {
+        _privacyAttempt = null;
+        _notice = const PhotoTargetChangedNotice();
+      } else {
+        _notice = const InterruptedPrivacyNotice();
+      }
     }
     _notify();
   }
@@ -585,13 +861,16 @@ class AssessmentFlow extends ChangeNotifier {
       }
       _step = place.step;
       _view = place.view;
-      _previewEvidenceId = photo;
+      _previewEvidenceId = photo != null && _isAttached(photo) ? photo : null;
       return true;
     }
     return false;
   }
 
   void _resetForNewFinding() {
+    _abandonCapture();
+    _privacyAttempt = null;
+    _privacyOpen = false;
     _step = AssessmentStep.chooseArea;
     _backStack.clear();
     _area = null;
@@ -607,6 +886,16 @@ class AssessmentFlow extends ChangeNotifier {
   }
 
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (_current && !isMutatingSnapshot) notifyListeners();
+  }
+
+  T _mutate<T>(T Function() action) {
+    _mutationDepth++;
+    try {
+      return action();
+    } finally {
+      _mutationDepth--;
+      _notify();
+    }
   }
 }

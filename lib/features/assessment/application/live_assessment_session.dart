@@ -13,7 +13,6 @@ import '../../../shared/models/evidence.dart';
 import '../../../shared/models/evidence_annotations.dart';
 import '../../../shared/services/assessment_api_client.dart';
 import '../../../shared/services/evidence_annotations_api_client.dart';
-import '../../../shared/services/io_matching_transport.dart';
 import '../../../shared/services/matching_api_client.dart';
 import '../domain/annotation/box_annotation.dart';
 import '../domain/capture/photo_capture_coordinator.dart';
@@ -56,10 +55,14 @@ class LiveAssessmentSession extends ChangeNotifier {
   }) {
     caseId = services.coordinator.currentCase().caseId;
     _generation = services.coordinator.generation;
-    staging = EncryptedStagingStore(services.store, caseId: caseId);
+    staging = EncryptedStagingStore(
+      services.store,
+      caseId: caseId,
+      deferDeletion: true,
+    );
     controller = AssessmentController(ids: _Ids());
     annotations = AnnotationStore(newId: newUuidV4);
-    transport ??= IoMatchingTransport();
+    transport ??= services.transport;
     Future<String?> token() async {
       guard();
       final token = await services.session.accessToken();
@@ -83,13 +86,20 @@ class LiveAssessmentSession extends ChangeNotifier {
       evidence: evidence,
       staging: staging,
       capture: PhotoCaptureCoordinator(
-        adapter: NativeCaptureAdapter(context: context),
+        adapter:
+            services.captureAdapterFactory?.call(context) ??
+            NativeCaptureAdapter(context: context, isCurrent: () => isCurrent),
         staging: staging,
       ),
       annotations: annotations,
       loadSavedImage: loadSavedImage,
       captureTimeForEvidence: (id) => _savedEvidence[id]?.capturedAt,
       allowStagedAnnotations: false,
+      isCurrent: () => isCurrent,
+      checkpoint: () async {
+        await flush();
+        guard();
+      },
     );
     sync = AssessmentSync(
       gateway: _gateway,
@@ -133,6 +143,7 @@ class LiveAssessmentSession extends ChangeNotifier {
       _ready = false,
       _disposed = false;
   Future<void> _writes = Future.value();
+  bool _replacingLocal = false;
   String get localKey => 'assessment:$caseId:draft';
   bool get isCurrent =>
       !_disposed &&
@@ -147,6 +158,9 @@ class LiveAssessmentSession extends ChangeNotifier {
       : null;
   void guardWritable() {
     guard();
+    if (flow.isBusy) {
+      throw StateError('Finish the current photo step before saving online.');
+    }
     if (caseWriteBlocked) {
       throw StateError(
         'Reconcile resident details before saving assessment changes online.',
@@ -213,6 +227,7 @@ class LiveAssessmentSession extends ChangeNotifier {
       }
       flow.restoreLocal(Map<String, Object?>.from(local['flow'] as Map));
       sync.restoreLocal(Map<String, Object?>.from(local['sync'] as Map));
+      staging.restoreDiscardIntents(local['discardedPhotos']);
       localConflict =
           online &&
           sync.savedCase.revision != state!.caseSnapshot.revision &&
@@ -244,7 +259,7 @@ class LiveAssessmentSession extends ChangeNotifier {
           for (final item in catalog?.evidence ?? <EvidenceDescriptor>[])
             item.evidenceId: 'server:${item.evidenceRevision}:${item.sha256}',
         },
-        metadata: state?.metadata,
+        metadata: _boundMetadata(state),
       );
       sync.reset(saved);
     }
@@ -252,11 +267,13 @@ class LiveAssessmentSession extends ChangeNotifier {
       resumeNotice =
           'An interrupted photo import was discarded. Your saved measurements and staged photos are retained; choose the imported photo again.';
     }
+    guard();
     _ready = true;
     controller.addListener(_changed);
     flow.addListener(_changed);
     sync.addListener(_changed);
     await flush();
+    guard();
   }
 
   void _hydrate(AssessmentState saved, EvidenceCatalog catalog) {
@@ -266,10 +283,15 @@ class LiveAssessmentSession extends ChangeNotifier {
         for (final item in catalog.evidence)
           item.evidenceId: 'server:${item.evidenceRevision}:${item.sha256}',
       },
-      metadata: saved.metadata,
+      metadata: _boundMetadata(saved),
     );
     sync.reset(saved.caseSnapshot);
   }
+
+  Map<String, Object?>? _boundMetadata(AssessmentState? saved) =>
+      saved != null && saved.boundCaseRevision == saved.caseSnapshot.revision
+      ? saved.metadata
+      : null;
 
   Future<void> resolveLocalConflict({required bool keepLocal}) =>
       services.coordinator.serialize(() async {
@@ -280,28 +302,41 @@ class LiveAssessmentSession extends ChangeNotifier {
         );
         final catalog = await _catalog(fresh.caseSnapshot);
         guardWritable();
-        state = fresh;
-        pendingRequest = null;
         if (!keepLocal) {
           await staging.discardAll();
-          evidence.clear();
-          annotations.clear();
-          _hydrate(fresh, catalog);
-          flow.restoreLocal({
-            'step': 'chooseArea',
-            'area': null,
-            'findingId': null,
-            'view': 'overview',
-            'previewEvidenceId': null,
-            'observation': '',
-            'entries': <String, Object?>{},
-          });
-        } else {
-          sync.reset(fresh.caseSnapshot);
+          guardWritable();
+        }
+        _replacingLocal = true;
+        try {
+          state = fresh;
+          pendingRequest = null;
+          if (!keepLocal) {
+            evidence.clear();
+            annotations.clear();
+            _annotationStates.clear();
+            _savedEvidence.clear();
+            annotationConflictId = null;
+            annotationNotice = null;
+            _hydrate(fresh, catalog);
+            flow.restoreLocal({
+              'step': 'chooseArea',
+              'area': null,
+              'findingId': null,
+              'view': 'overview',
+              'previewEvidenceId': null,
+              'observation': '',
+              'entries': <String, Object?>{},
+            });
+          } else {
+            sync.reset(fresh.caseSnapshot);
+          }
+        } finally {
+          _replacingLocal = false;
         }
         await services.coordinator.adoptRemoteSnapshot(fresh.caseSnapshot);
         localConflict = false;
         await flush();
+        guard();
         notifyListeners();
       });
 
@@ -405,6 +440,7 @@ class LiveAssessmentSession extends ChangeNotifier {
     }
     if (flow.step == AssessmentStep.details && !flow.saveDetails()) {
       await flush();
+      guard();
       notifyListeners();
       return;
     }
@@ -415,6 +451,7 @@ class LiveAssessmentSession extends ChangeNotifier {
       state = latest;
       localConflict = true;
       await flush();
+      guard();
       notifyListeners();
       return;
     }
@@ -422,6 +459,7 @@ class LiveAssessmentSession extends ChangeNotifier {
     final report = await sync.save();
     if (report.errorCode != null) {
       await flush();
+      guard();
       notifyListeners();
       return;
     }
@@ -429,6 +467,7 @@ class LiveAssessmentSession extends ChangeNotifier {
     await _saveAnnotations();
     state = await api.readAssessment(caseId, isCurrent: () => isCurrent);
     await flush();
+    guard();
     notifyListeners();
   });
 
@@ -455,6 +494,7 @@ class LiveAssessmentSession extends ChangeNotifier {
         annotationNotice =
             'The saved marks differ from this device. Open the saved photo, then reload saved marks before making new changes.';
         await flush();
+        guard();
         notifyListeners();
         throw StateError('Annotation conflict');
       }
@@ -467,6 +507,7 @@ class LiveAssessmentSession extends ChangeNotifier {
         annotationNotice = null;
         await flush();
       } catch (_) {
+        if (!isCurrent) rethrow;
         annotationNotice ??=
             'Saving photo marks could not be confirmed. The marks are retained on this device. Save again to compare with the current saved marks first.';
         notifyListeners();
@@ -579,6 +620,7 @@ class LiveAssessmentSession extends ChangeNotifier {
         annotationConflictId = null;
         annotationNotice = null;
         await flush();
+        guard();
         notifyListeners();
       });
 
@@ -586,6 +628,7 @@ class LiveAssessmentSession extends ChangeNotifier {
     guardWritable();
     await sync.recover();
     await flush();
+    guard();
     notifyListeners();
   });
 
@@ -606,7 +649,9 @@ class LiveAssessmentSession extends ChangeNotifier {
       _pendingReceipt(saved)?['caseRevision'] == saved.caseSnapshot.revision;
 
   void _changed() {
-    if (!_ready || _disposed) return;
+    if (!_ready || !isCurrent || _replacingLocal || flow.isMutatingSnapshot) {
+      return;
+    }
     flush().catchError((Object _) {
       if (!_disposed) {
         localSaveFailed = true;
@@ -617,7 +662,7 @@ class LiveAssessmentSession extends ChangeNotifier {
   }
 
   Future<void> flush() {
-    if (!_ready && state == null) return Future.value();
+    if (!_ready) return Future.value();
     guard();
     final value = {
       'version': 1,
@@ -626,6 +671,7 @@ class LiveAssessmentSession extends ChangeNotifier {
       'flow': flow.toLocalJson(),
       'sync': sync.toLocalJson(),
       'evidence': evidence.toLocalJson(),
+      'discardedPhotos': staging.discardIntents,
       'annotations': annotations.toLocalJson(),
       'annotationStates': {
         for (final e in _annotationStates.entries) e.key: e.value.toJson(),
@@ -633,18 +679,33 @@ class LiveAssessmentSession extends ChangeNotifier {
       'assessmentState': state?.toJson(),
       'pendingRequest': pendingRequest,
     };
+    final bytes = Uint8List.fromList(utf8.encode(jsonEncode(value)));
+    if (bytes.length > 512 * 1024) {
+      return Future.error(
+        const FormatException('Assessment draft exceeds its storage bound'),
+      );
+    }
+    final persisted = services.store.writeBytes(localKey, bytes);
+    persisted.ignore();
     final next = _writes.then((_) async {
-      guard();
-      final bytes = Uint8List.fromList(utf8.encode(jsonEncode(value)));
-      if (bytes.length > 512 * 1024) {
-        throw const FormatException(
-          'Assessment draft exceeds its storage bound',
-        );
+      await persisted;
+      if (!isCurrent) return;
+      final savedIndex = value['evidence'] as Map<String, Object?>;
+      final retained = <String>{
+        for (final item in savedIndex.values) (item as Map)['key'] as String,
+      };
+      final pending = (value['sync'] as Map)['pendingUpload'] as Map?;
+      final pendingVersion = pending?['version'] as String?;
+      if (pendingVersion != null && pendingVersion.startsWith('local:')) {
+        retained.add(pendingVersion.substring('local:'.length));
       }
-      await services.store.writeBytes(localKey, bytes);
+      await staging.commitDiscardIntents(
+        persistedIntents: (value['discardedPhotos'] as List).cast<String>(),
+        retainedKeys: retained,
+      );
     });
     _writes = next.then<void>((_) {
-      localSaveFailed = false;
+      if (isCurrent) localSaveFailed = false;
     }, onError: (Object _, StackTrace _) {});
     return next;
   }

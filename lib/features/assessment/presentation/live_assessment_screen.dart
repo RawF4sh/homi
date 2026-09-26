@@ -6,6 +6,7 @@ import '../../../shared/services/matching_api_client.dart';
 import '../application/live_assessment_session.dart';
 import 'assessment_flow_screen.dart';
 import 'save_status_card.dart';
+import 'recovery_photo_review_card.dart';
 
 class LiveAssessmentScreen extends StatefulWidget {
   const LiveAssessmentScreen({super.key, required this.services});
@@ -21,7 +22,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     context: () => context,
   );
   late final Future<void> ready;
-  bool busy = false, canPop = false;
+  bool busy = false, canPop = false, initialized = false;
   String? notice;
   Uint8List? recoveredPhoto;
 
@@ -29,11 +30,13 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    ready = session.initialize();
+    ready = session.initialize().then((_) {
+      initialized = true;
+    });
   }
 
   Future<void> run(Future<void> Function() action) async {
-    if (busy) return;
+    if (busy || session.flow.isBusy) return;
     setState(() {
       busy = true;
       notice = null;
@@ -55,7 +58,12 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
   }
 
   Future<void> close() => run(() async {
-    await session.flush();
+    try {
+      await ready;
+    } catch (_) {
+      // ignore: empty_catches
+    }
+    if (initialized) await session.flush();
     if (!mounted) return;
     setState(() => canPop = true);
     Navigator.of(context).pop();
@@ -63,9 +71,10 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      session.flush().catchError((Object _) {});
+    if (initialized &&
+        (state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.paused)) {
+      Future<void>.sync(session.flush).catchError((Object _) {});
     }
   }
 
@@ -86,24 +95,38 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       future: ready,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
+          void leaveUnopenedAssessment() {
+            setState(() => canPop = true);
+            Navigator.of(context).pop();
+          }
+
           return Scaffold(
-            appBar: AppBar(title: const Text('Home assessment')),
-            body: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  const Text(
-                    'The saved assessment could not be opened. Your private draft has been kept. Check your connection and open this case again.',
+            appBar: AppBar(
+              title: const Text('Home assessment'),
+              leading: BackButton(onPressed: leaveUnopenedAssessment),
+            ),
+            body: SafeArea(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 680),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'The saved assessment could not be opened. Your private draft has been kept. Check your connection and open this case again.',
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton(
+                          key: const ValueKey('assessment-error-back'),
+                          onPressed: leaveUnopenedAssessment,
+                          child: const Text('Back to case'),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () {
-                      setState(() => canPop = true);
-                      Navigator.of(context).pop();
-                    },
-                    child: const Text('Back to case'),
-                  ),
-                ],
+                ),
               ),
             ),
           );
@@ -132,7 +155,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                 icon: const Icon(Icons.history),
               ),
               IconButton(
-                onPressed: busy ? null : close,
+                onPressed: busy || session.flow.isBusy ? null : close,
                 tooltip: 'Save on device and close',
                 icon: const Icon(Icons.close),
               ),
@@ -167,7 +190,10 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                             'Device: ${session.controller.findings.length} findings. Saved: ${session.state?.caseSnapshot.findings.length ?? 0} findings.',
                           ),
                           OutlinedButton(
-                            onPressed: busy || session.caseWriteBlocked
+                            onPressed:
+                                busy ||
+                                    session.flow.isBusy ||
+                                    session.caseWriteBlocked
                                 ? null
                                 : () => run(
                                     () => session.resolveLocalConflict(
@@ -179,7 +205,10 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                             ),
                           ),
                           TextButton(
-                            onPressed: busy || session.caseWriteBlocked
+                            onPressed:
+                                busy ||
+                                    session.flow.isBusy ||
+                                    session.caseWriteBlocked
                                 ? null
                                 : () => run(
                                     () => session.resolveLocalConflict(
@@ -195,67 +224,31 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                     ),
                   ),
                 if (session.sync.recoveryConflict != null)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'A photo is saved, but the interrupted upload did not return a receipt. Look at the saved photo before choosing which version to keep.',
-                          ),
-                          if (recoveredPhoto != null)
-                            Image.memory(
-                              recoveredPhoto!,
-                              height: 240,
-                              cacheWidth: 1024,
-                              fit: BoxFit.contain,
-                              semanticLabel: 'Current saved photo',
-                            ),
-                          OutlinedButton(
-                            onPressed: busy
-                                ? null
-                                : () => run(() async {
-                                    final bytes = await session.sync
-                                        .showRecoveredEvidence();
-                                    if (mounted) {
-                                      setState(() => recoveredPhoto = bytes);
-                                    }
-                                  }),
-                            child: const Text('Show saved photo'),
-                          ),
-                          FilledButton(
-                            onPressed: busy || recoveredPhoto == null
-                                ? null
-                                : () => run(() async {
-                                    await session.sync
-                                        .acceptRecoveredEvidence();
-                                    await session.flow.refreshSavedImages();
-                                    await session.flush();
-                                    recoveredPhoto = null;
-                                  }),
-                            child: const Text('Keep the saved photo'),
-                          ),
-                          TextButton(
-                            onPressed: busy
-                                ? null
-                                : () => run(() async {
-                                    session.sync.keepLocalEvidence();
-                                    await session.flush();
-                                    recoveredPhoto = null;
-                                  }),
-                            child: const Text(
-                              'Keep device photo to upload after review',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  RecoveryPhotoReviewCard(
+                    bytes: recoveredPhoto,
+                    busy: busy,
+                    onShowSaved: () => run(() async {
+                      setState(() => recoveredPhoto = null);
+                      final bytes = await session.sync.showRecoveredEvidence();
+                      if (mounted) setState(() => recoveredPhoto = bytes);
+                    }),
+                    onKeepSaved: () => run(() async {
+                      await session.sync.acceptRecoveredEvidence();
+                      await session.flow.refreshSavedImages();
+                      await session.flush();
+                      recoveredPhoto = null;
+                    }),
+                    onKeepDevice: () => run(() async {
+                      session.sync.keepLocalEvidence();
+                      await session.flush();
+                      recoveredPhoto = null;
+                    }),
                   )
                 else if (!session.localConflict && !session.caseWriteBlocked)
                   SaveStatusCard(
                     sync: session.sync,
                     durableLocal: !session.localSaveFailed,
+                    enabled: !busy && !session.flow.isBusy,
                     onSave: () => run(session.save),
                     onRecover: () => run(session.recover),
                   ),
@@ -263,7 +256,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                   Text(session.annotationNotice!),
                 if (session.annotationConflictId != null)
                   TextButton(
-                    onPressed: busy
+                    onPressed: busy || session.flow.isBusy
                         ? null
                         : () => run(session.reloadConflictingMarks),
                     child: const Text(
@@ -273,7 +266,8 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                 if (!session.localConflict &&
                     session.sync.recoveryConflict == null)
                   TextButton(
-                    onPressed: busy || session.caseWriteBlocked
+                    onPressed:
+                        busy || session.flow.isBusy || session.caseWriteBlocked
                         ? null
                         : () => run(session.save),
                     child: const Text('Save findings and photo marks online'),

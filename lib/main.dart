@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'app/live_app.dart';
 import 'app/safe_at_home_app.dart';
+import 'app/theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +14,8 @@ class _DemoEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Safe at Home',
+    theme: SafeAtHomeTheme.light(),
+    debugShowCheckedModeBanner: false,
     home: Scaffold(
       appBar: AppBar(title: const Text('Safe at Home')),
       body: SafeArea(

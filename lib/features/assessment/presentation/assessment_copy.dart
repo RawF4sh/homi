@@ -75,7 +75,23 @@ abstract final class AssessmentCopy {
     PhotoRejectedNotice(:final reason) => rejected(reason),
     CaptureFailedNotice() =>
       'Something went wrong taking the photo. Please try again.',
+    PhotoImportFailedNotice(timedOut: true) =>
+      'The selected photo took too long to become available. Open it in Photos to download it, then try again. You can choose another photo or continue without one.',
+    PhotoImportFailedNotice(timedOut: false) =>
+      'The selected photo could not be imported. Try again or choose another photo. You can continue without one.',
+    PhotoPreviewUnavailableNotice() =>
+      'The photo was captured, but its preview could not be opened. Reopen this finding to retry, or retake or remove the photo.',
     PhotoRemovedNotice() => 'Photo removed.',
+    InterruptedCaptureNotice() =>
+      'The last photo attempt was interrupted. No unfinished camera or library result was attached. Your earlier photo and measurements are kept. Take or choose the photo again, or continue without a new one.',
+    InterruptedPrivacyNotice() =>
+      'The photo editor was interrupted before its changes were saved. Unfinished crops and covers were not applied. Review the retained photo and apply the privacy edits again before saving online.',
+    PrivatePhotoSaveFailedNotice() =>
+      'The private photo checkpoint could not be saved. Keep this screen open and free some device space, then try again. Your previous saved photo is retained.',
+    PhotoTargetChangedNotice() =>
+      'This finding or photo changed while the photo step was open. The returned photo was not attached. Review the current finding before trying again.',
+    PhotoCaptureLimitNotice() =>
+      'This assessment has reached its photo-attempt limit. Your saved work is retained. Continue with the existing photos or without a new photo; freeing device space will not reset this limit.',
   };
 
   static String rejected(ImageRejection reason) => switch (reason) {

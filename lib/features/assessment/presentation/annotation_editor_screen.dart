@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../domain/annotation/box_annotation.dart';
+import 'photo_decode_gate.dart';
 
 class AnnotationEditorScreen extends StatefulWidget {
   const AnnotationEditorScreen({
@@ -13,6 +14,7 @@ class AnnotationEditorScreen extends StatefulWidget {
     required this.image,
     required this.bytes,
     required this.observation,
+    this.onChanged,
   });
 
   final AnnotationStore store;
@@ -22,11 +24,14 @@ class AnnotationEditorScreen extends StatefulWidget {
 
   final String observation;
 
+  final VoidCallback? onChanged;
+
   @override
   State<AnnotationEditorScreen> createState() => _AnnotationEditorScreenState();
 }
 
 class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
+  bool _canEdit = false;
   late final TextEditingController _label = TextEditingController(
     text: _box?.label ?? '',
   );
@@ -47,13 +52,22 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
   }
 
   void _apply(void Function(String id) edit) {
+    if (!_canEdit) return;
     final BoxAnnotation? box = _box;
     if (box == null) return;
     setState(() => edit(box.id));
+    widget.onChanged?.call();
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PhotoDecodeGate(
+    bytes: widget.bytes,
+    builder: (context, ready, failed) {
+      _canEdit = ready;
+      return _editor(context, ready, failed);
+    },
+  );
+  Widget _editor(BuildContext context, bool ready, bool failed) {
     final BoxAnnotation? box = _box;
     final List<BoxAnnotation> stale = widget.store
         .staleFor(widget.image.evidenceId)
@@ -77,6 +91,17 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
               ),
               const SizedBox(height: 8),
               Text('Your observation: ${widget.observation.trim()}'),
+              if (failed)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    'This photo could not be opened. Existing marks are retained. Go back and reload the saved photo before editing marks.',
+                  ),
+                )
+              else if (!ready)
+                const LinearProgressIndicator(
+                  semanticsLabel: 'Opening photo before marking',
+                ),
               if (stale.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Semantics(
@@ -89,11 +114,16 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => setState(() {
-                    for (final BoxAnnotation b in stale) {
-                      widget.store.remove(b.id);
-                    }
-                  }),
+                  onPressed: !ready
+                      ? null
+                      : () {
+                          setState(() {
+                            for (final BoxAnnotation b in stale) {
+                              widget.store.remove(b.id);
+                            }
+                          });
+                          widget.onChanged?.call();
+                        },
                   child: const Text('Remove old marks'),
                 ),
               ],
@@ -115,17 +145,23 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
               const SizedBox(height: 12),
               if (box == null)
                 FilledButton(
-                  onPressed: () => setState(() {
-                    widget.store.add(
-                      findingId: widget.findingId,
-                      image: widget.image,
-                    );
-                  }),
+                  onPressed: !ready
+                      ? null
+                      : () {
+                          setState(() {
+                            widget.store.add(
+                              findingId: widget.findingId,
+                              image: widget.image,
+                            );
+                          });
+                          widget.onChanged?.call();
+                        },
                   child: const Text('Add a box'),
                 )
               else ...[
                 TextField(
                   key: const ValueKey('annotation-label'),
+                  enabled: ready,
                   controller: _label,
                   maxLength: 80,
                   decoration: const InputDecoration(
@@ -175,17 +211,24 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
-                  onPressed: () => setState(
-                    () => widget.store.setHidden(box.id, !box.hidden),
-                  ),
+                  onPressed: !ready
+                      ? null
+                      : () => _apply(
+                          (id) => widget.store.setHidden(id, !box.hidden),
+                        ),
                   child: Text(box.hidden ? 'Show the box' : 'Hide the box'),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
-                  onPressed: () => setState(() {
-                    widget.store.remove(box.id);
-                    _label.clear();
-                  }),
+                  onPressed: !ready
+                      ? null
+                      : () {
+                          setState(() {
+                            widget.store.remove(box.id);
+                            _label.clear();
+                          });
+                          widget.onChanged?.call();
+                        },
                   child: const Text('Remove the box'),
                 ),
               ],
@@ -276,7 +319,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
 
   Widget _control(IconData icon, String label, VoidCallback onPressed) =>
       IconButton.outlined(
-        onPressed: onPressed,
+        onPressed: _canEdit ? onPressed : null,
         icon: Icon(icon),
         tooltip: label,
       );

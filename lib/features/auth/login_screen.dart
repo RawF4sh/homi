@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../shared/presentation/sah_components.dart';
 import '../../shared/services/session_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -17,8 +18,9 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController(), _password = TextEditingController();
-  bool _busy = false;
+  bool _busy = false, _passwordVisible = false;
   String? _message;
+  int _feedbackRevision = 0;
   @override
   void dispose() {
     _email.dispose();
@@ -31,6 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _busy = true;
       _message = null;
+      _feedbackRevision++;
     });
     try {
       if (recovery) {
@@ -47,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         await widget.session.signIn(_email.text, _password.text);
       }
+      if (!mounted) return;
       _password.clear();
     } catch (_) {
       if (mounted) {
@@ -61,6 +65,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _clearFeedback(String _) {
+    if (_message != null) setState(() => _message = null);
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Safe at Home')),
@@ -68,86 +76,145 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: ListView(
-            shrinkWrap: true,
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            children: [
-              Text(
-                widget.session.recoveryRequired
-                    ? 'Choose a new password'
-                    : 'Sign in to the private beta',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Use fictional resident information during the team beta.',
-              ),
-              const SizedBox(height: 24),
-              if (!widget.session.recoveryRequired)
-                TextField(
-                  controller: _email,
-                  keyboardType: TextInputType.emailAddress,
-                  autofillHints: const [AutofillHints.username],
-                  enabled: !_busy,
-                  decoration: const InputDecoration(labelText: 'Email'),
-                ),
-              TextField(
-                controller: _password,
-                obscureText: true,
-                enableSuggestions: false,
-                autocorrect: false,
-                autofillHints: [
-                  widget.session.recoveryRequired
-                      ? AutofillHints.newPassword
-                      : AutofillHints.password,
-                ],
-                enabled: !_busy,
-                decoration: InputDecoration(
-                  labelText: widget.session.recoveryRequired
-                      ? 'New password (12+ characters)'
-                      : 'Password',
-                ),
-                onSubmitted: (_) => _submit(),
-              ),
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _busy ? null : () => _submit(),
-                child: Text(
-                  _busy
-                      ? 'Please wait…'
-                      : widget.session.recoveryRequired
-                      ? 'Save password'
-                      : 'Sign in',
-                ),
-              ),
-              if (widget.emailDeliveryEnabled &&
-                  !widget.session.recoveryRequired)
-                TextButton(
-                  onPressed: _busy ? null : () => _submit(recovery: true),
-                  child: const Text('Forgot password'),
-                ),
-              if (!widget.emailDeliveryEnabled)
-                const Padding(
-                  padding: EdgeInsets.only(top: 16),
-                  child: Text(
-                    'Sign in with your provisioned team account. Email registration and recovery are not enabled for this beta.',
-                  ),
-                ),
-              if (widget.deletionStatusScreen != null)
-                TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => widget.deletionStatusScreen!,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: ExcludeSemantics(
+                      child: Icon(
+                        Icons.home_outlined,
+                        size: 30,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ),
-                  child: const Text('Check pending account deletion'),
                 ),
-              if (_message != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(_message!, semanticsLabel: _message),
+                SahPageHeader(
+                  title: widget.session.recoveryRequired
+                      ? 'Choose a new password'
+                      : 'Welcome back',
+                  description: widget.session.recoveryRequired
+                      ? 'Set a new password to return to your private workspace.'
+                      : 'Sign in to continue your home assessment and draft preparation.',
                 ),
-            ],
+                const SahNotice(
+                  title: 'Private team beta',
+                  message:
+                      'Use fictional resident information during the team beta.',
+                  icon: Icons.lock_outline_rounded,
+                ),
+                const SizedBox(height: 24),
+                if (!widget.session.recoveryRequired)
+                  TextField(
+                    controller: _email,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autocorrect: false,
+                    textCapitalization: TextCapitalization.none,
+                    autofillHints: const [AutofillHints.username],
+                    enabled: !_busy,
+                    onChanged: _clearFeedback,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      prefixIcon: Icon(Icons.alternate_email_rounded),
+                    ),
+                  ),
+                if (!widget.session.recoveryRequired)
+                  const SizedBox(height: 20),
+                TextField(
+                  controller: _password,
+                  obscureText: !_passwordVisible,
+                  textInputAction: TextInputAction.done,
+                  enableSuggestions: false,
+                  autocorrect: false,
+                  autofillHints: [
+                    widget.session.recoveryRequired
+                        ? AutofillHints.newPassword
+                        : AutofillHints.password,
+                  ],
+                  enabled: !_busy,
+                  onChanged: _clearFeedback,
+                  decoration: InputDecoration(
+                    labelText: widget.session.recoveryRequired
+                        ? 'New password (12+ characters)'
+                        : 'Password',
+                    prefixIcon: const Icon(Icons.lock_outline_rounded),
+                    suffixIcon: IconButton(
+                      tooltip: _passwordVisible
+                          ? 'Hide password'
+                          : 'Show password',
+                      onPressed: _busy
+                          ? null
+                          : () => setState(
+                              () => _passwordVisible = !_passwordVisible,
+                            ),
+                      icon: Icon(
+                        _passwordVisible
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                      ),
+                    ),
+                  ),
+                  onSubmitted: (_) => _submit(),
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  key: const ValueKey('auth-sign-in'),
+                  onPressed: _busy ? null : () => _submit(),
+                  child: Text(
+                    _busy
+                        ? 'Please wait…'
+                        : widget.session.recoveryRequired
+                        ? 'Save password'
+                        : 'Sign in',
+                  ),
+                ),
+                if (widget.emailDeliveryEnabled &&
+                    !widget.session.recoveryRequired)
+                  TextButton(
+                    onPressed: _busy ? null : () => _submit(recovery: true),
+                    child: const Text('Forgot password'),
+                  ),
+                if (_message != null)
+                  SahActionFeedback(
+                    key: const ValueKey('auth-action-feedback'),
+                    message: _message!,
+                    revealRevision: _feedbackRevision,
+                    tone: SahNoticeTone.warning,
+                  ),
+                if (!widget.emailDeliveryEnabled)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 16),
+                    child: Text(
+                      'Sign in with your provisioned team account. Email registration and recovery are not enabled for this beta.',
+                    ),
+                  ),
+                if (widget.deletionStatusScreen != null)
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => widget.deletionStatusScreen!,
+                      ),
+                    ),
+                    child: const Text('Check pending account deletion'),
+                  ),
+                if (widget.session.callbackNotice != null)
+                  SahNotice(
+                    message: widget.session.callbackNotice!,
+                    tone: SahNoticeTone.warning,
+                  ),
+              ],
+            ),
           ),
         ),
       ),

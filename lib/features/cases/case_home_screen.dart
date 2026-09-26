@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/case_list.dart';
+import '../../shared/presentation/sah_components.dart';
 import '../settings/account_settings_screen.dart';
 import 'case_workspace_screen.dart';
 
@@ -15,69 +17,101 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
   final _cases = <CaseSummary>[];
   List<String> _local = [];
   String? _cursor, _error;
-  bool _loading = false, _loaded = false;
-  int _request = 0;
+  bool _discovering = false, _opening = false, _loaded = false;
+  bool _refreshQueued = false;
+  int _request = 0, _localRequest = 0;
+  bool get _isCurrent => mounted && widget.services.coordinator.isCurrent;
+  bool get _selectionBlocked => widget.services.coordinator.hasUndurableEdits;
+  void _caseChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.services.coordinator.addListener(_caseChanged);
     _load();
   }
 
+  @override
+  void dispose() {
+    widget.services.coordinator.removeListener(_caseChanged);
+    super.dispose();
+  }
+
+  Future<void> _refreshLocal() async {
+    final request = ++_localRequest;
+    try {
+      final local = await widget.services.coordinator.localCaseIds();
+      if (_isCurrent && request == _localRequest) {
+        setState(() => _local = local);
+      }
+    } catch (_) {
+      // ignore: empty_catches
+    }
+  }
+
   Future<void> _load({bool more = false}) async {
-    if (_loading) return;
+    if (!_isCurrent) return;
+    unawaited(_refreshLocal());
+    if (_discovering) {
+      _refreshQueued = true;
+      return;
+    }
     final request = ++_request;
+    bool current() => _isCurrent && request == _request && !_refreshQueued;
     setState(() {
-      _loading = true;
+      _discovering = true;
       _error = null;
     });
     try {
-      final local = await widget.services.coordinator.localCaseIds();
       final page = await widget.services.discovery.listCases(
         afterCaseId: more ? _cursor : null,
-        isCurrent: () =>
-            mounted &&
-            request == _request &&
-            widget.services.coordinator.isCurrent,
+        isCurrent: current,
       );
-      if (!mounted) return;
+      if (!current()) return;
       setState(() {
         if (!more) _cases.clear();
         for (final item in page.cases) {
           if (!_cases.any((c) => c.caseId == item.caseId)) _cases.add(item);
         }
         _cursor = page.nextAfterCaseId;
-        _local = local;
         _loaded = true;
       });
     } catch (error) {
-      if (mounted) {
-        try {
-          _local = await widget.services.coordinator.localCaseIds();
-        } catch (_) {}
-        if (mounted) setState(() => _error = safeOperationMessage(error));
-      }
+      if (current()) setState(() => _error = safeOperationMessage(error));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (_isCurrent && request == _request) {
+        final refresh = _refreshQueued;
+        _refreshQueued = false;
+        setState(() => _discovering = false);
+        if (refresh) unawaited(_load());
+      }
     }
   }
 
-  Future<void> _open(Future<void> Function() action) async {
-    if (_loading) return;
-    setState(() => _loading = true);
+  Future<void> _open(
+    Future<void> Function() action, {
+    bool changesSelection = true,
+  }) async {
+    if (!_isCurrent || _opening || (changesSelection && _selectionBlocked)) {
+      return;
+    }
+    setState(() => _opening = true);
     try {
       await action();
-      if (!mounted) return;
+      if (!mounted || !_isCurrent) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => CaseWorkspaceScreen(services: widget.services),
         ),
       );
     } catch (error) {
-      if (mounted) await showOperationError(context, error);
+      if (mounted && _isCurrent) await showOperationError(context, error);
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-        _load();
+      if (_isCurrent) {
+        setState(() => _opening = false);
+        unawaited(_load());
       }
     }
   }
@@ -85,7 +119,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Your cases'),
+      title: const Text('Safe at Home'),
       actions: [
         IconButton(
           tooltip: 'Settings',
@@ -99,75 +133,120 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
       ],
     ),
     body: SafeArea(
-      child: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            const Text('Private team beta · Fictional information only'),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _loading
-                  ? null
-                  : () => _open(widget.services.coordinator.createDraft),
-              icon: const Icon(Icons.add),
-              label: const Text('Start a case'),
-            ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.all(20),
-                child: LinearProgressIndicator(),
+      child: SahContent(
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              const SahPageHeader(
+                title: 'Your cases',
+                description:
+                    'Pick up where you left off, or begin a new home assessment.',
               ),
-            if (_error != null) ...[
-              Text(_error!),
-              TextButton(
-                onPressed: _loading ? null : () => _load(),
-                child: const Text('Retry saved cases'),
+              FilledButton.icon(
+                key: const ValueKey('case-start'),
+                onPressed: !_isCurrent || _opening || _selectionBlocked
+                    ? null
+                    : () => _open(widget.services.coordinator.createDraft),
+                icon: const Icon(Icons.add),
+                label: const Text('Start a case'),
               ),
-            ],
-            if (_local.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              Text(
-                'On this device',
-                style: Theme.of(context).textTheme.titleLarge,
+              if (_selectionBlocked &&
+                  widget.services.coordinator.draft != null) ...[
+                const SahNotice(
+                  title: 'Keep your current work',
+                  message:
+                      'The current case has a device save that is pending or failed. Return to it before opening another case.',
+                  tone: SahNoticeTone.warning,
+                ),
+                OutlinedButton(
+                  key: const ValueKey('continue-undurable-case'),
+                  onPressed: !_isCurrent || _opening
+                      ? null
+                      : () => _open(() async {}, changesSelection: false),
+                  child: const Text('Continue current case'),
+                ),
+              ],
+              const SizedBox(height: 12),
+              const SahNotice(
+                message: 'Private team beta · Fictional information only',
+                icon: Icons.lock_outline_rounded,
               ),
-              for (final id in _local)
-                ListTile(
-                  title: Text('Case ${shortCaseId(id)}'),
-                  subtitle: const Text(
-                    'Local draft · Check saved state before continuing',
+              if (_opening)
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: LinearProgressIndicator(
+                    semanticsLabel: 'Opening your case',
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _loading
+                ),
+              if (_error != null) ...[
+                SahNotice(
+                  message: _error!,
+                  title: 'Saved cases are unavailable',
+                  tone: SahNoticeTone.warning,
+                ),
+                TextButton(
+                  onPressed: !_isCurrent || _discovering ? null : () => _load(),
+                  child: const Text('Retry saved cases'),
+                ),
+              ],
+              if (_local.isNotEmpty) ...[
+                const SahSectionHeading(
+                  title: 'On this device',
+                  description: 'Private local work you can resume here.',
+                ),
+                for (final id in _local)
+                  SahActionTile(
+                    key: ValueKey('local-case-$id'),
+                    title: 'Case ${shortCaseId(id)}',
+                    subtitle:
+                        'Local draft · Check saved state before continuing',
+                    icon: Icons.phone_iphone_rounded,
+                    onTap: !_isCurrent || _opening || _selectionBlocked
+                        ? null
+                        : () => _open(
+                            () => widget.services.coordinator.restoreLocal(id),
+                          ),
+                  ),
+              ],
+              const SahSectionHeading(title: 'Saved online'),
+              if (_discovering)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: LinearProgressIndicator(
+                    semanticsLabel: 'Checking saved cases online',
+                  ),
+                ),
+              if (_loaded && !_discovering && _error == null && _cases.isEmpty)
+                const SahEmptyState(
+                  title: 'No saved cases yet.',
+                  message:
+                      'Start with the details you know. You can add photos and review assistance programs as you go.',
+                  icon: Icons.cottage_outlined,
+                ),
+              for (final item in _cases)
+                SahActionTile(
+                  key: ValueKey('saved-case-${item.caseId}'),
+                  title: 'Case ${shortCaseId(item.caseId)}',
+                  subtitle: 'Saved revision ${item.caseRevision}',
+                  icon: Icons.cloud_done_outlined,
+                  onTap: !_isCurrent || _opening || _selectionBlocked
                       ? null
                       : () => _open(
-                          () => widget.services.coordinator.restoreLocal(id),
+                          () => widget.services.coordinator.resume(item),
                         ),
                 ),
+              if (_cursor != null)
+                OutlinedButton(
+                  onPressed: !_isCurrent || _discovering
+                      ? null
+                      : () => _load(more: true),
+                  child: const Text('Load more cases'),
+                ),
             ],
-            const SizedBox(height: 20),
-            Text('Saved online', style: Theme.of(context).textTheme.titleLarge),
-            if (_loaded && _cases.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Text('No saved cases yet.'),
-              ),
-            for (final item in _cases)
-              ListTile(
-                title: Text('Case ${shortCaseId(item.caseId)}'),
-                subtitle: Text('Saved revision ${item.caseRevision}'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _loading
-                    ? null
-                    : () =>
-                          _open(() => widget.services.coordinator.resume(item)),
-              ),
-            if (_cursor != null)
-              OutlinedButton(
-                onPressed: _loading ? null : () => _load(more: true),
-                child: const Text('Load more cases'),
-              ),
-          ],
+          ),
         ),
       ),
     ),

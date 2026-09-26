@@ -9,11 +9,13 @@ class SaveStatusCard extends StatelessWidget {
     this.onSave,
     this.onRecover,
     this.durableLocal = false,
+    this.enabled = true,
   });
 
   final AssessmentSync sync;
   final VoidCallback? onSave, onRecover;
   final bool durableLocal;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +74,10 @@ class SaveStatusCard extends StatelessWidget {
                 if (action != null)
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton(onPressed: onAction, child: Text(action)),
+                    child: TextButton(
+                      onPressed: enabled ? onAction : null,
+                      child: Text(action),
+                    ),
                   ),
               ],
             ),

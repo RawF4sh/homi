@@ -5,9 +5,13 @@ import 'package:crypto/crypto.dart' as hashing;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'theme.dart';
+import 'private_content_cover.dart';
+import '../features/assessment/domain/capture/capture_adapter.dart';
 import '../features/auth/login_screen.dart';
 import '../features/cases/case_home_screen.dart';
 import '../features/settings/account_settings_screen.dart';
+import '../shared/presentation/startup_error_screen.dart';
 import '../shared/services/annotated_export_api_client.dart';
 import '../shared/services/evidence_annotations_api_client.dart';
 import '../shared/services/case_coordinator.dart';
@@ -51,15 +55,7 @@ class LiveAppConfig {
   final String publishableKey;
   final bool emailDeliveryEnabled;
   Uri get callback => Uri.parse('safeathome://auth/callback');
-  bool acceptsCallback(Uri uri) =>
-      uri.scheme == callback.scheme &&
-      uri.host == callback.host &&
-      uri.path == callback.path &&
-      uri.userInfo.isEmpty &&
-      !uri.hasPort &&
-      uri.fragment.isEmpty &&
-      !uri.queryParameters.containsKey('access_token') &&
-      !uri.queryParameters.containsKey('refresh_token');
+  bool acceptsCallback(Uri uri) => acceptsAuthCallback(uri, callback);
   static LiveAppConfig fromEnvironment() => LiveAppConfig(
     apiOrigin: Uri.parse(const String.fromEnvironment('SAH_API_URL')),
     supabaseUrl: Uri.parse(const String.fromEnvironment('SUPABASE_URL')),
@@ -77,8 +73,8 @@ class AppServices {
     required this.store,
     MatchingTransport? transport,
     this.pdfPreviewBuilder,
-  }) {
-    transport ??= IoMatchingTransport();
+    this.captureAdapterFactory,
+  }) : transport = transport ?? IoMatchingTransport() {
     Future<String?> token() async {
       final epoch = session.epoch;
       final value = await session.accessToken();
@@ -96,13 +92,13 @@ class AppServices {
       uploadEvidenceEndpoint: endpoint('upload-evidence'),
       deleteEvidenceEndpoint: endpoint('delete-evidence'),
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     discovery = CaseDiscoveryApiClient(
       listCasesEndpoint: endpoint('list-cases'),
       caseEndpoint: endpoint('read-case'),
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     exports = DraftExportApiClient(
       evidenceEndpoint: endpoint('list-evidence'),
@@ -110,37 +106,37 @@ class AppServices {
       exportEndpoint: endpoint('create-draft-export'),
       exportDownloadEndpoint: endpoint('download-draft-export'),
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     lifecycle = LifecycleApiClient(
       apiBaseUrl: config.apiOrigin,
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     intake = ProgramIntakeApiClient(
       baseUri: config.apiOrigin,
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     annotatedExports = AnnotatedExportApiClient(
       baseUri: config.apiOrigin,
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     annotations = EvidenceAnnotationsApiClient(
       baseUri: config.apiOrigin,
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     matching = MatchingApiClient(
       endpoint: endpoint('match-case'),
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     packets = PacketApiClient(
       endpoint: endpoint('prepare-packet'),
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     answers = FormAnswersApiClient(
       protocolVersion: '2',
@@ -148,13 +144,13 @@ class AppServices {
       saveEndpoint: config.apiOrigin.resolve('/v2/save-form-answers'),
       caseEndpoint: endpoint('read-case'),
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     history = RequestTrackingApiClient(
       readHistoryEndpoint: endpoint('read-request-history'),
       appendUpdateEndpoint: endpoint('append-request-update'),
       tokenProvider: token,
-      transport: transport,
+      transport: this.transport,
     );
     coordinator = CaseCoordinator(
       session: session,
@@ -166,6 +162,10 @@ class AppServices {
   final LiveAppConfig config;
   final SessionService session;
   final LocalPrivateStore store;
+  final MatchingTransport transport;
+
+  final CaptureAdapter Function(BuildContext Function() context)?
+  captureAdapterFactory;
 
   final Widget Function(Uint8List bytes)? pdfPreviewBuilder;
   late final CaseEvidenceApiClient cases;
@@ -180,21 +180,10 @@ class AppServices {
   late final FormAnswersApiClient answers;
   late final RequestTrackingApiClient history;
   late final CaseCoordinator coordinator;
-  Future<void> signOut() async {
-    try {
-      await session.signOut();
-    } finally {
+  Future<void> signOut() => session.signOutAndClear(
+    () async {
       try {
-        final secrets = DeviceSecretStore();
-        final namespace = 'sah.auth.${config.supabaseUrl.host}';
-        try {
-          await SecureSessionStorage(
-            secrets,
-            namespace,
-          ).removePersistedSession();
-        } finally {
-          await SecurePkceStorage(secrets, namespace).clear();
-        }
+        await _clearPersistedAuth(config);
       } finally {
         try {
           await store.clear();
@@ -202,10 +191,21 @@ class AppServices {
           await _clearTransientMedia();
         }
       }
-    }
-  }
+    },
+    isCurrent: () => session.userId == store.accountId && coordinator.isCurrent,
+  );
 
   void dispose() => coordinator.dispose();
+}
+
+Future<void> _clearPersistedAuth(LiveAppConfig config) async {
+  final secrets = DeviceSecretStore();
+  final namespace = 'sah.auth.${config.supabaseUrl.host}';
+  try {
+    await SecureSessionStorage(secrets, namespace).removePersistedSession();
+  } finally {
+    await SecurePkceStorage(secrets, namespace).clear();
+  }
 }
 
 Future<void> _clearTransientMedia() async {
@@ -245,30 +245,41 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
       await marker.writeAsString('1', flush: true);
     }
     await _clearTransientMedia();
+    final sessionReady = Completer<SupabaseSessionService>();
+    final persistedSessionStorage = SecureSessionStorage(secrets, namespace);
     await Supabase.initialize(
       url: config.supabaseUrl.toString(),
       publishableKey: config.publishableKey,
       debug: false,
       authOptions: FlutterAuthClientOptions(
         authFlowType: AuthFlowType.pkce,
-        localStorage: SecureSessionStorage(secrets, namespace),
+        localStorage: persistedSessionStorage,
         pkceAsyncStorage: SecurePkceStorage(secrets, namespace),
-        detectSessionInUriPredicate: config.acceptsCallback,
+        detectSessionInUriPredicate: (uri) {
+          if (config.acceptsCallback(uri)) {
+            unawaited(
+              sessionReady.future.then(
+                (service) => service.handleCallback(uri),
+              ),
+            );
+          }
+          return false;
+        },
       ),
     );
-    return (
-      config,
-      SupabaseSessionService(
-        Supabase.instance.client,
-        callback: config.callback,
-        emailDeliveryEnabled: config.emailDeliveryEnabled,
-        reauthenticationClient: () => GoTrueClient(
-          url: '${config.supabaseUrl}/auth/v1',
-          headers: {'apikey': config.publishableKey},
-          autoRefreshToken: false,
-        ),
+    final session = SupabaseSessionService(
+      Supabase.instance.client,
+      callback: config.callback,
+      emailDeliveryEnabled: config.emailDeliveryEnabled,
+      persistedSessionStorage: persistedSessionStorage,
+      reauthenticationClient: () => GoTrueClient(
+        url: '${config.supabaseUrl}/auth/v1',
+        headers: {'apikey': config.publishableKey},
+        autoRefreshToken: false,
       ),
     );
+    sessionReady.complete(session);
+    return (config, session);
   }
 
   @override
@@ -276,66 +287,86 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
     future: _ready,
     builder: (context, state) {
       if (state.hasData) {
-        return _LiveSessionHost(
-          config: state.data!.$1,
-          session: state.data!.$2,
-        );
+        return LiveSessionHost(config: state.data!.$1, session: state.data!.$2);
       }
       return MaterialApp(
-        home: Scaffold(
-          body: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: state.hasError
-                    ? const Text(
-                        'Live setup could not be opened. Check the HTTPS API and Supabase build configuration, then restart. No case has been opened.',
-                      )
-                    : const CircularProgressIndicator(
+        theme: SafeAtHomeTheme.light(),
+        debugShowCheckedModeBanner: false,
+        home: state.hasError
+            ? const StartupErrorScreen.startup()
+            : const Scaffold(
+                body: SafeArea(
+                  child: Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: CircularProgressIndicator(
                         semanticsLabel: 'Opening secure session',
                       ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
       );
     },
   );
 }
 
-class _LiveSessionHost extends StatefulWidget {
-  const _LiveSessionHost({required this.config, required this.session});
+class LiveSessionHost extends StatefulWidget {
+  const LiveSessionHost({
+    super.key,
+    required this.config,
+    required this.session,
+    this.transport,
+  });
   final LiveAppConfig config;
   final SessionService session;
+  final MatchingTransport? transport;
   @override
-  State<_LiveSessionHost> createState() => _LiveSessionHostState();
+  State<LiveSessionHost> createState() => _LiveSessionHostState();
 }
 
-class _LiveSessionHostState extends State<_LiveSessionHost>
-    with WidgetsBindingObserver {
-  bool _privateCover = false;
+class _LiveSessionHostState extends State<LiveSessionHost> {
   String? _owner;
   int _ownerEpoch = -1, _openGeneration = 0;
   Future<AppServices>? _services;
   AppServices? _opened;
   Future<void> _cleanup = Future.value();
+  bool _cleanupRecoveryPending = false;
+  bool _storageExitBusy = false;
+  String? _storageExitError;
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     widget.session.addListener(_changed);
     _changed();
   }
 
   void _changed() {
+    if (widget.session.cleanupRequired) {
+      _cleanupRecoveryPending = true;
+    } else if (_cleanupRecoveryPending && !widget.session.cleaningUp) {
+      _cleanupRecoveryPending = false;
+      _cleanup = _cleanup.catchError((Object _) => _clearTransientMedia());
+      unawaited(_cleanup.catchError((Object _) {}));
+    }
     final owner = widget.session.userId;
     final epoch = widget.session.epoch;
     if (owner != _owner || epoch != _ownerEpoch) {
+      final departingOwner = _owner;
       _ownerEpoch = epoch;
       _openGeneration++;
+      _storageExitBusy = false;
+      _storageExitError = null;
       final previous = _opened;
-      if (previous != null) {
-        _cleanup = _cleanup.then((_) => previous.store.close());
+      if (departingOwner != null) {
+        _cleanup = _cleanup.then((_) async {
+          try {
+            await previous?.store.close();
+          } finally {
+            await widget.session.waitForAccountCleanup();
+            await _clearTransientMedia();
+          }
+        });
         unawaited(_cleanup.catchError((Object _) {}));
       }
       _opened?.dispose();
@@ -351,7 +382,10 @@ class _LiveSessionHostState extends State<_LiveSessionHost>
         mounted &&
         widget.session.userId == owner &&
         widget.session.epoch == epoch &&
-        _openGeneration == generation;
+        _openGeneration == generation &&
+        !widget.session.cleaningUp &&
+        !widget.session.cleanupRequired;
+    await widget.session.waitForAccountCleanup();
     await _cleanup;
     if (!current()) throw MatchingApiException.forCode('STALE_RESPONSE');
     const channel = MethodChannel('safe_at_home/private_media');
@@ -377,19 +411,60 @@ class _LiveSessionHostState extends State<_LiveSessionHost>
       config: widget.config,
       session: widget.session,
       store: store,
+      transport: widget.transport,
     );
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (mounted) {
-      setState(() => _privateCover = state != AppLifecycleState.resumed);
+  Future<void> _leaveUnavailableStorage(
+    String owner,
+    int epoch,
+    int generation,
+  ) async {
+    bool current() =>
+        mounted &&
+        widget.session.userId == owner &&
+        widget.session.epoch == epoch &&
+        _owner == owner &&
+        _ownerEpoch == epoch &&
+        _openGeneration == generation &&
+        _opened == null;
+    if (_storageExitBusy || !current()) return;
+    setState(() {
+      _storageExitBusy = true;
+      _storageExitError = null;
+    });
+    try {
+      await widget.session.signOutAndClear(
+        () => _clearPersistedAuth(widget.config),
+        isCurrent: current,
+      );
+    } catch (_) {
+      if (current()) {
+        setState(() {
+          _storageExitError =
+              'Sign-out could not be confirmed. Try again, or unlock your phone and restart the app.';
+        });
+      }
+    } finally {
+      if (current()) setState(() => _storageExitBusy = false);
     }
+  }
+
+  Future<void> _retryCleanup(int revision) async {
+    try {
+      await widget.session.retryAccountCleanup(expectedRevision: revision);
+    } catch (_) {
+      // ignore: empty_catches
+    }
+  }
+
+  Widget _cleanupRecoveryScreen() {
+    final revision = widget.session.cleanupRevision;
+    return StartupErrorScreen.cleanup(onRetry: () => _retryCleanup(revision));
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     widget.session.removeListener(_changed);
     _openGeneration++;
     if (_opened != null) unawaited(_opened!.store.close());
@@ -403,23 +478,19 @@ class _LiveSessionHostState extends State<_LiveSessionHost>
     key: ValueKey(widget.session.epoch),
     title: 'Safe at Home',
     debugShowCheckedModeBanner: false,
-    builder: (context, child) => Stack(
-      children: [
-        ?child,
-        if (_privateCover)
-          const Positioned.fill(
-            child: ColoredBox(
-              color: Color(0xFFF7F9F7),
-              child: Center(child: Text('Safe at Home')),
+    builder: (context, child) => PrivateContentCover(child: child!),
+    theme: SafeAtHomeTheme.light(),
+    home: widget.session.cleaningUp
+        ? const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(
+                semanticsLabel: 'Finishing private account cleanup',
+              ),
             ),
-          ),
-      ],
-    ),
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF176456)),
-      useMaterial3: true,
-    ),
-    home: widget.session.userId == null || widget.session.recoveryRequired
+          )
+        : widget.session.cleanupRequired
+        ? _cleanupRecoveryScreen()
+        : widget.session.userId == null || widget.session.recoveryRequired
         ? LoginScreen(
             session: widget.session,
             emailDeliveryEnabled: widget.config.emailDeliveryEnabled,
@@ -429,27 +500,19 @@ class _LiveSessionHostState extends State<_LiveSessionHost>
             future: _services,
             builder: (context, state) {
               if (state.hasData) return CaseHomeScreen(services: state.data!);
+              if (state.hasError) {
+                final owner = _owner!;
+                final epoch = _ownerEpoch, generation = _openGeneration;
+                return StartupErrorScreen.storage(
+                  onSignOut: () =>
+                      _leaveUnavailableStorage(owner, epoch, generation),
+                  signingOut: _storageExitBusy,
+                  error: _storageExitError,
+                );
+              }
               return Scaffold(
                 appBar: AppBar(title: const Text('Private storage')),
-                body: Center(
-                  child: state.hasError
-                      ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.all(24),
-                              child: Text(
-                                'Private storage could not be opened. Unlock your phone and restart the app.',
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => widget.session.signOut(),
-                              child: const Text('Sign out'),
-                            ),
-                          ],
-                        )
-                      : const CircularProgressIndicator(),
-                ),
+                body: const Center(child: CircularProgressIndicator()),
               );
             },
           ),
@@ -458,7 +521,7 @@ class _LiveSessionHostState extends State<_LiveSessionHost>
 
 String safeOperationMessage(Object error) => error is MatchingApiException
     ? error.message
-    : 'This action could not be completed. Your saved data has not been replaced. Please try again or check saved state.';
+    : 'This action could not be confirmed. Keep your local work and check saved state before trying again.';
 Future<void> showOperationError(BuildContext context, Object error) async {
   if (!context.mounted) return;
   ScaffoldMessenger.of(

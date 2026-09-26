@@ -4,6 +4,7 @@ import '../../../shared/models/contracts.dart';
 import '../../../shared/models/evidence.dart';
 import '../application/export_review.dart';
 import '../domain/export/export_selection_draft.dart';
+import 'photo_decode_gate.dart';
 
 class ExportReviewScreen extends StatefulWidget {
   const ExportReviewScreen({
@@ -25,11 +26,21 @@ class ExportReviewScreen extends StatefulWidget {
 
 class _ExportReviewScreenState extends State<ExportReviewScreen> {
   String? _rejection;
+  final Map<String, int> _decoded = {};
 
   @override
   void initState() {
     super.initState();
     if (widget.review.catalog == null) widget.review.load();
+  }
+
+  @override
+  void didUpdateWidget(ExportReviewScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.review, oldWidget.review)) {
+      _decoded.clear();
+      if (widget.review.catalog == null) widget.review.load();
+    }
   }
 
   @override
@@ -86,7 +97,14 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
                     _ordered(i, s.evidenceId, selection.length),
                   const SizedBox(height: 16),
                   FilledButton(
-                    onPressed: review.isStale || review.catalog == null
+                    onPressed:
+                        review.isStale ||
+                            review.catalog == null ||
+                            selection.any(
+                              (item) =>
+                                  _decoded[item.evidenceId] !=
+                                  item.expectedEvidenceRevision,
+                            )
                         ? null
                         : () => widget.onDone(review.selections),
                     child: Text(
@@ -151,81 +169,104 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
     final bool selected = review.draft.selection.any(
       (s) => s.evidenceId == c.evidenceId,
     );
-    return Card(
-      key: ValueKey('candidate-${c.evidenceId}'),
-      margin: const EdgeInsets.only(top: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(finding?.observation ?? 'Finding not found'),
-            if (!c.findingConfirmed)
-              const Text(
-                'This finding is not confirmed, so its photos cannot be '
-                'included.',
-              ),
-            const SizedBox(height: 8),
-            if (pixels != null)
-              Semantics(
-                container: true,
-                image: true,
-                label: 'Saved photo for: ${finding?.observation ?? ''}',
-                excludeSemantics: true,
-                child: Image.memory(
-                  pixels,
-                  height: 220,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => const SizedBox(
-                    height: 60,
-                    child: Center(child: Text('Preview unavailable')),
+    return PhotoDecodeGate(
+      key: ValueKey(
+        'decode-${review.catalog?.caseId}-${c.evidenceId}-${c.evidenceRevision}',
+      ),
+      bytes: pixels,
+      onChanged: (ready) {
+        if (!mounted || !identical(widget.review, review)) return;
+        setState(() {
+          if (ready) {
+            _decoded[c.evidenceId] = c.evidenceRevision;
+          } else if (_decoded[c.evidenceId] == c.evidenceRevision) {
+            _decoded.remove(c.evidenceId);
+          }
+        });
+      },
+      builder: (context, ready, failed) => Card(
+        key: ValueKey('candidate-${c.evidenceId}'),
+        margin: const EdgeInsets.only(top: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(finding?.observation ?? 'Finding not found'),
+              if (!c.findingConfirmed)
+                const Text(
+                  'This finding is not confirmed, so its photos cannot be '
+                  'included.',
+                ),
+              const SizedBox(height: 8),
+              if (pixels != null)
+                Semantics(
+                  container: true,
+                  image: true,
+                  label: 'Saved photo for: ${finding?.observation ?? ''}',
+                  excludeSemantics: true,
+                  child: Image.memory(
+                    pixels,
+                    cacheWidth: 1024,
+                    height: 220,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const SizedBox(
+                      height: 60,
+                      child: Center(child: Text('Preview unavailable')),
+                    ),
+                  ),
+                )
+              else
+                OutlinedButton(
+                  onPressed: review.isLoadingPixels(c.evidenceId)
+                      ? null
+                      : () => review.showPhoto(c.evidenceId),
+                  child: Text(
+                    review.isLoadingPixels(c.evidenceId)
+                        ? 'Loading photo'
+                        : 'Show photo',
                   ),
                 ),
-              )
-            else
-              OutlinedButton(
-                onPressed: review.isLoadingPixels(c.evidenceId)
-                    ? null
-                    : () => review.showPhoto(c.evidenceId),
-                child: Text(
-                  review.isLoadingPixels(c.evidenceId)
-                      ? 'Loading photo'
-                      : 'Show photo',
+              if (failed)
+                const Text(
+                  'This photo could not be opened for review. Leave it out and reload it.',
                 ),
+              if (pixels != null && !checked)
+                OutlinedButton(
+                  onPressed: !ready
+                      ? null
+                      : () => setState(() {
+                          _rejection = null;
+                          review.markChecked(c.evidenceId);
+                        }),
+                  child: const Text('I checked this photo'),
+                ),
+              if (checked)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text('Checked by you'),
+                ),
+              CheckboxListTile(
+                key: ValueKey('include-${c.evidenceId}'),
+                contentPadding: EdgeInsets.zero,
+                value: selected,
+                title: const Text('Include in the draft'),
+                onChanged: !c.findingConfirmed || !checked || !ready
+                    ? null
+                    : (v) => setState(() {
+                        if (v == true) {
+                          final SelectionRejection? r = review.include(
+                            c.evidenceId,
+                          );
+                          _rejection = r == null ? null : _rejectionText(r);
+                        } else {
+                          review.exclude(c.evidenceId);
+                          _rejection = null;
+                        }
+                      }),
               ),
-            if (pixels != null && !checked)
-              OutlinedButton(
-                onPressed: () => setState(() {
-                  _rejection = null;
-                  review.markChecked(c.evidenceId);
-                }),
-                child: const Text('I checked this photo'),
-              ),
-            if (checked)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text('Checked by you'),
-              ),
-            CheckboxListTile(
-              key: ValueKey('include-${c.evidenceId}'),
-              contentPadding: EdgeInsets.zero,
-              value: selected,
-              title: const Text('Include in the draft'),
-              onChanged: !c.findingConfirmed || !checked
-                  ? null
-                  : (v) => setState(() {
-                      if (v == true) {
-                        final SelectionRejection? r = review.include(
-                          c.evidenceId,
-                        );
-                        _rejection = r == null ? null : _rejectionText(r);
-                      } else {
-                        review.exclude(c.evidenceId);
-                        _rejection = null;
-                      }
-                    }),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
