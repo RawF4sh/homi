@@ -90,6 +90,43 @@ void main() {
   });
 
   group('permissions', () {
+    const library = CaptureRequest(
+      area: AssessmentArea.bathroom,
+      view: CaptureView.overview,
+      promptId: 'bathroom-library',
+      source: CaptureSource.library,
+    );
+
+    test(
+      'camera denial keeps the independent system photo picker available',
+      () async {
+        adapter.enqueue(const CapturePermissionDenied(canAskAgain: false));
+        await coordinator.capture(bathroomOverview);
+        adapter.enqueue(validPhoto());
+        expect(await coordinator.capture(library), isA<PhotoStaged>());
+        expect(coordinator.permissionBlocked, isTrue);
+        expect(adapter.requests.map((r) => r.source), [
+          CaptureSource.camera,
+          CaptureSource.library,
+        ]);
+        expect(
+          await coordinator.capture(bathroomOverview),
+          isA<PhotoPermissionBlocked>(),
+        );
+        expect(adapter.requests, hasLength(2));
+      },
+    );
+
+    test('library denial does not prevent a camera capture', () async {
+      adapter.enqueue(const CapturePermissionDenied(canAskAgain: false));
+      await coordinator.capture(library);
+      expect(coordinator.permissionBlocked, isFalse);
+      adapter.enqueue(validPhoto());
+      expect(await coordinator.capture(bathroomOverview), isA<PhotoStaged>());
+      expect(await coordinator.capture(library), isA<PhotoPermissionBlocked>());
+      expect(adapter.requests, hasLength(2));
+    });
+
     test('a permanent denial stops relaunching the camera', () async {
       adapter.enqueue(const CapturePermissionDenied(canAskAgain: false));
       final PhotoOutcome first = await coordinator.capture(bathroomOverview);

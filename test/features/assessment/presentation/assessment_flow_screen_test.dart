@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/features/assessment/application/assessment_controller.dart';
 import 'package:safe_at_home/features/assessment/application/assessment_flow.dart';
@@ -12,6 +14,7 @@ import 'package:safe_at_home/shared/models/contracts.dart';
 
 import '../fakes/fakes.dart';
 import '../fakes/image_bytes.dart';
+import '../fakes/decodable_photo.dart';
 
 void main() {
   late ScriptedCaptureAdapter adapter;
@@ -30,12 +33,16 @@ void main() {
     );
   });
 
-  Future<void> pumpScreen(WidgetTester tester, {double textScale = 1}) async {
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    double textScale = 1,
+    bool enabled = true,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: MediaQuery(
           data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
-          child: AssessmentFlowScreen(flow: flow),
+          child: AssessmentFlowScreen(flow: flow, enabled: enabled),
         ),
       ),
     );
@@ -47,6 +54,10 @@ void main() {
     await tester.ensureVisible(finder);
     await tester.pumpAndSettle();
     await tester.tap(finder);
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
     await tester.pumpAndSettle();
   }
 
@@ -98,6 +109,98 @@ void main() {
     expect(finding.evidenceIds, hasLength(1));
     semantics.dispose();
   });
+
+  for (final key in ['observation', 'measurement-thresholdHeight']) {
+    testWidgets('blocking assessment closes focused $key input without loss', (
+      tester,
+    ) async {
+      await toPreview(tester, AssessmentArea.entrance);
+      await tapText(tester, 'Continue');
+      final field = find.byKey(ValueKey(key));
+      final original = key == 'observation'
+          ? 'Fictional raised edge'
+          : ' 02.50 ';
+      await tester.enterText(field, original);
+      await tester.pump();
+      expect(tester.testTextInput.hasAnyClients, true);
+      final previousOnChanged = tester.widget<TextField>(field).onChanged!;
+
+      await pumpScreen(tester, enabled: false);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).enabled, false);
+      expect(tester.testTextInput.hasAnyClients, false);
+      tester.testTextInput.enterText('999');
+      previousOnChanged('999');
+      await tester.pump();
+      expect(
+        key == 'observation'
+            ? flow.observationText
+            : flow.entryFor('thresholdHeight').text,
+        original,
+      );
+      expect(tester.widget<TextField>(field).controller!.text, original);
+
+      await pumpScreen(tester);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).controller!.text, original);
+      await tester.enterText(
+        field,
+        key == 'observation' ? 'Edited safely' : '3',
+      );
+      expect(
+        key == 'observation'
+            ? flow.observationText
+            : flow.entryFor('thresholdHeight').text,
+        key == 'observation' ? 'Edited safely' : '3',
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final action in ['Review', 'cm']) {
+    testWidgets('blocking assessment releases keyboard focus from $action', (
+      tester,
+    ) async {
+      await toPreview(tester, AssessmentArea.entrance);
+      await tapText(tester, 'Continue');
+      await tester.enterText(
+        find.byKey(const ValueKey('observation')),
+        'Fictional raised edge',
+      );
+      final control = action == 'Review'
+          ? find.text('Review')
+          : find.descendant(
+              of: find.byKey(const ValueKey('unit-thresholdHeight')),
+              matching: find.text('cm'),
+            );
+      await tester.ensureVisible(control);
+      final focus = Focus.of(tester.element(control));
+      focus.requestFocus();
+      await tester.pump();
+      expect(focus.hasFocus, true);
+      final originalUnit = flow.entryFor('thresholdHeight').unit;
+      await pumpScreen(tester, enabled: false);
+      await tester.pumpAndSettle();
+      expect(focus.hasFocus, false);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(flow.step, AssessmentStep.details);
+      expect(flow.entryFor('thresholdHeight').unit, originalUnit);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Review'))
+            .onPressed,
+        isNull,
+      );
+      for (final chip in tester.widgetList<ChoiceChip>(
+        find.byType(ChoiceChip),
+      )) {
+        expect(chip.onSelected, isNull);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('cancelling the camera explains and offers to continue', (
     tester,
@@ -333,7 +436,7 @@ void main() {
     testWidgets('a PNG opens the editor and the mark is kept', (tester) async {
       await pumpScreen(tester);
       await tap(tester, find.byKey(const ValueKey('area-entrance')));
-      adapter.enqueue(CaptureSucceeded(pngHeader(width: 1200, height: 900)));
+      adapter.enqueue(CaptureSucceeded(fictionalPng()));
       await tapText(tester, 'Open camera');
 
       await tapText(tester, 'Mark the area on this photo');
@@ -437,6 +540,29 @@ void main() {
       expect(find.text('Check the photo'), findsOneWidget);
       expect(find.text('Retake'), findsOneWidget);
       handle.dispose();
+    });
+
+    testWidgets('screen-reader tap opens a review photo for editing', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      try {
+        final id = await finishOne(tester);
+        await tap(tester, find.byKey(ValueKey('finding-$id')));
+        final photo = find.bySemanticsLabel(
+          'Photo 1 of 1, open to retake or remove',
+        );
+        final node = tester.getSemantics(photo);
+        expect(node.getSemanticsData().hasAction(SemanticsAction.tap), true);
+        node.owner!.performAction(node.id, SemanticsAction.tap);
+        await tester.pumpAndSettle();
+        expect(flow.step, AssessmentStep.preview);
+        expect(find.text('Check the photo'), findsOneWidget);
+        expect(find.text('Retake'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      } finally {
+        handle.dispose();
+      }
     });
 
     testWidgets('an uploaded photo says it is saved instead of loading', (

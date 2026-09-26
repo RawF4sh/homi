@@ -9,12 +9,17 @@ import 'package:safe_at_home/shared/models/evidence.dart';
 
 import '../application/export_review_test.dart' show Fixture;
 import '../fakes/fake_case_server.dart';
+import '../fakes/decodable_photo.dart';
 
 void main() {
   Future<void> tap(WidgetTester tester, Finder finder) async {
     await tester.ensureVisible(finder);
     await tester.pumpAndSettle();
     await tester.tap(finder);
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
     await tester.pumpAndSettle();
   }
 
@@ -24,7 +29,7 @@ void main() {
     late Fixture fx;
     late List<String> photos;
     await tester.runAsync(() async {
-      fx = await Fixture.create();
+      fx = await Fixture.create(photoBytes: fictionalPng());
       photos = (await fx.seed()).photos;
     });
     final review = ExportReview(
@@ -69,6 +74,60 @@ void main() {
     await tap(tester, find.text('Use these photos'));
     expect(handed!.single.evidenceId, photos[0]);
     expect(handed!.single.reviewedForExport, isTrue);
+  });
+
+  testWidgets('invalid saved pixels cannot be checked or included', (
+    tester,
+  ) async {
+    late Fixture fx;
+    late List<String> photos;
+    await tester.runAsync(() async {
+      fx = await Fixture.create();
+      photos = (await fx.seed()).photos;
+    });
+    final review = ExportReview(
+      gateway: fx.server,
+      currentCase: () => fx.sync.savedCase,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ExportReviewScreen(
+          review: review,
+          savedCase: () => fx.sync.savedCase,
+          onDone: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tap(
+      tester,
+      find.descendant(
+        of: find.byKey(ValueKey('candidate-${photos[0]}')),
+        matching: find.text('Show photo'),
+      ),
+    );
+    expect(
+      find.textContaining('could not be opened for review'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.widgetWithText(OutlinedButton, 'I checked this photo'),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(ValueKey('include-${photos[0]}')),
+          )
+          .onChanged,
+      isNull,
+    );
+    expect(review.selections, isEmpty);
+    expect(tester.takeException(), isNull);
   });
 
   group('save status card', () {

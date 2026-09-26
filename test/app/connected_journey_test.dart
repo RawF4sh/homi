@@ -256,6 +256,7 @@ void main() {
       );
       addTearDown(app.dispose);
       Future<void> tap(String label, {double direction = 250}) async {
+        await tester.pumpAndSettle();
         await tester.scrollUntilVisible(
           find.text(label),
           direction,
@@ -293,17 +294,34 @@ void main() {
       expect((serverCase!['profile'] as Map)['annualIncomeUsd'], 0);
       expect((serverCase!['profile'] as Map)['ageYears'], isNull);
       await tap('Possible assistance and drafts');
+      await tap('Eligibility checks');
+      await tester.scrollUntilVisible(
+        find.text('A professional must review medical necessity.'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(
         find.text('A professional must review medical necessity.'),
         findsOneWidget,
       );
+      await tap('Eligibility checks', direction: -250);
       await tap('Review program questions');
       await tap('Save these reported answers');
       expect(revision(), 2);
       await back();
+      await tester.scrollUntilVisible(
+        find.textContaining('The case changed.'),
+        -250,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.textContaining('The case changed.'), findsOneWidget);
       await tap('Refresh program checks', direction: -250);
       await tap('Review administrative answers');
+      await tester.scrollUntilVisible(
+        input('Given name'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.enterText(input('Given name'), 'Fictional Resident');
       await tester.pumpAndSettle();
       await tester.tap(find.byType(CheckboxListTile).first);
@@ -351,6 +369,7 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.text('Validated fictional PDF preview'), findsOneWidget);
+      await tap('Unresolved draft items');
       expect(
         find.text('Professional review remains required.'),
         findsOneWidget,

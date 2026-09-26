@@ -157,6 +157,7 @@ void main() {
       completer.complete(photo());
       await pending;
       expect(controller.drafts, isEmpty);
+      expect(await staging.keys(), isEmpty);
     });
   });
 

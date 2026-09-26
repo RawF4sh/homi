@@ -51,29 +51,30 @@ class FailingSession extends FakeSession {
   }
 }
 
-ProgramMatch program() => ProgramMatch.fromJson({
-  'programId': 'fictional-program',
-  'programName': 'Fictional program',
-  'ruleVersion': 'test-v1',
-  'isDemo': true,
-  'status': 'needs_confirmation',
-  'availability': 'unverified',
-  'recheckAfter': null,
-  'checks': [
-    {
-      'id': 'review',
-      'status': 'unknown',
-      'reasonCode': 'REVIEW',
-      'explanation': 'Review required',
-      'missingFields': [],
-      'resolvedBy': null,
-      'sourceIds': [],
-    },
-  ],
-  'sources': [],
-  'requiredDocuments': [],
-  'intake': null,
-});
+ProgramMatch program({String programId = 'fictional-program'}) =>
+    ProgramMatch.fromJson({
+      'programId': programId,
+      'programName': 'Fictional program',
+      'ruleVersion': 'test-v1',
+      'isDemo': true,
+      'status': 'needs_confirmation',
+      'availability': 'unverified',
+      'recheckAfter': null,
+      'checks': [
+        {
+          'id': 'review',
+          'status': 'unknown',
+          'reasonCode': 'REVIEW',
+          'explanation': 'Review required',
+          'missingFields': [],
+          'resolvedBy': null,
+          'sourceIds': [],
+        },
+      ],
+      'sources': [],
+      'requiredDocuments': [],
+      'intake': null,
+    });
 AppServices services(MemoryPrivateStore store, FakeTransport transport) =>
     AppServices(
       config: LiveAppConfig(
@@ -156,15 +157,26 @@ void main() {
         MaterialApp(home: ProfileEditorScreen(services: app)),
       );
       await tester.pumpAndSettle();
-      expect(
-        find.text('Recovered unfinished edits from this device.'),
-        findsOneWidget,
+      expect(find.text('Compare unfinished edits'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('profile-review-recovered')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+        maxScrolls: 100,
       );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('profile-review-recovered')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('profile-review-recovered')));
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.text('Keep edits on this device'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
+      await tester.ensureVisible(find.text('Keep edits on this device'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Keep edits on this device'));
       await tester.pumpAndSettle();
       final profile = app.coordinator.draft!.profile;
@@ -252,14 +264,29 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        input('Reported cost'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.enterText(input('Reported cost'), '0');
       await tester.ensureVisible(find.text('Save these reported answers'));
       await tester.tap(find.text('Save these reported answers'));
       await tester.pumpAndSettle();
       expect(writes, 1);
+      await tester.scrollUntilVisible(
+        find.textContaining('A save may already have succeeded'),
+        -250,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(
         find.textContaining('A save may already have succeeded'),
         findsOneWidget,
+      );
+      await tester.scrollUntilVisible(
+        find.text('Save these reported answers'),
+        250,
+        scrollable: find.byType(Scrollable).first,
       );
       expect(
         tester
@@ -269,13 +296,20 @@ void main() {
             .onPressed,
         isNull,
       );
-      await tester.ensureVisible(
+      await tester.scrollUntilVisible(
         find.text('Check saved answers and reconcile'),
+        -250,
+        scrollable: find.byType(Scrollable).first,
       );
       await tester.tap(find.text('Check saved answers and reconcile'));
       await tester.pumpAndSettle();
       expect(writes, 1);
       expect(app.coordinator.snapshot!.revision, 2);
+      await tester.scrollUntilVisible(
+        find.text('The submitted answers are confirmed saved.'),
+        -250,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(
         find.text('The submitted answers are confirmed saved.'),
         findsOneWidget,

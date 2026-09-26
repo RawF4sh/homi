@@ -63,6 +63,11 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
+    await tester.scrollUntilVisible(
+      find.text('Delete account and application data'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('Delete account and application data'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));

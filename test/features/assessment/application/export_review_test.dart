@@ -23,9 +23,10 @@ class Fixture {
     this.staging,
     this.evidence,
     this.sync,
+    this.photoBytes,
   );
 
-  static Future<Fixture> create() async {
+  static Future<Fixture> create({Uint8List? photoBytes}) async {
     final server = FakeCaseServer(
       CaseSnapshot.fromJson({
         'schemaVersion': '1',
@@ -55,9 +56,10 @@ class Fixture {
       staging: staging,
       savedCase: server.serverCase,
     );
-    return Fixture._(server, controller, staging, evidence, sync);
+    return Fixture._(server, controller, staging, evidence, sync, photoBytes);
   }
 
+  final Uint8List? photoBytes;
   final FakeCaseServer server;
   final AssessmentController controller;
   final InMemoryStagingStore staging;
@@ -65,7 +67,7 @@ class Fixture {
   final AssessmentSync sync;
 
   Future<String> photo(String findingId) async {
-    final Uint8List bytes = jpegHeader(width: 1200, height: 900);
+    final Uint8List bytes = photoBytes ?? jpegHeader(width: 1200, height: 900);
     final StagedImage image = await staging.put(
       bytes,
       ImageAccepted(

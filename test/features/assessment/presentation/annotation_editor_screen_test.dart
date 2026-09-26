@@ -4,6 +4,7 @@ import 'package:safe_at_home/features/assessment/domain/annotation/box_annotatio
 import 'package:safe_at_home/features/assessment/presentation/annotation_editor_screen.dart';
 
 import '../fakes/image_bytes.dart';
+import '../fakes/decodable_photo.dart';
 
 const _image = AnnotatedImage(
   evidenceId: 'evidence-1',
@@ -20,18 +21,27 @@ void main() {
     store = AnnotationStore(newId: () => 'box-${++n}');
   });
 
-  Future<void> pumpEditor(WidgetTester tester) async {
+  Future<void> pumpEditor(
+    WidgetTester tester, {
+    VoidCallback? onChanged,
+    bool invalid = false,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: AnnotationEditorScreen(
           store: store,
           findingId: 'finding-1',
           image: _image,
-          bytes: pngHeader(width: 1200, height: 900),
+          bytes: invalid ? pngHeader(width: 1200, height: 900) : fictionalPng(),
           observation: 'I notice a raised threshold.',
+          onChanged: onChanged,
         ),
       ),
     );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
   }
 
   Future<void> tap(WidgetTester tester, Finder finder) async {
@@ -44,6 +54,78 @@ void main() {
   }
 
   BoxAnnotation box() => store.on(_image).single;
+
+  testWidgets('each edit signals durable saving before the editor closes', (
+    tester,
+  ) async {
+    final saved = <List<Object?>>[];
+    await pumpEditor(tester, onChanged: () => saved.add(store.toLocalJson()));
+    await tap(tester, find.text('Add a box'));
+    expect(saved, hasLength(1));
+    await tester.enterText(
+      find.byKey(const ValueKey('annotation-label')),
+      'fictional threshold',
+    );
+    expect(saved, hasLength(2));
+    expect((saved.last.single as Map)['label'], 'fictional threshold');
+    await tap(tester, find.byTooltip('Move right'));
+    await tap(tester, find.text('Hide the box'));
+    expect(saved, hasLength(4));
+    expect((saved.last.single as Map)['hidden'], isTrue);
+    await tap(tester, find.text('Remove the box'));
+    expect(saved.last, isEmpty);
+    expect(find.text('Done'), findsOneWidget);
+  });
+
+  testWidgets(
+    'failed decoding disables marks and retains existing annotations',
+    (tester) async {
+      await pumpEditor(tester, invalid: true);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Add a box'),
+            )
+            .onPressed,
+        isNull,
+      );
+      store.add(findingId: 'finding-1', image: _image);
+      final before = store.toLocalJson();
+      await pumpEditor(tester, invalid: true);
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Existing marks are retained'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'Remove the box'),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('annotation-label')))
+            .enabled,
+        isFalse,
+      );
+      expect(store.toLocalJson(), before);
+      await pumpEditor(tester);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'Remove the box'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('shows the observation in plain text', (tester) async {
     await pumpEditor(tester);
