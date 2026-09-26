@@ -11,6 +11,7 @@ RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY --chown=node:node src ./src
 COPY --chown=node:node migrations ./migrations
 COPY --chown=node:node certs/supabase-root-2021.crt ./certs/supabase-root-2021.crt
+COPY --chown=node:node assets/forms/scfhp-41567.pdf ./assets/forms/scfhp-41567.pdf
 USER node
 
 EXPOSE 8788

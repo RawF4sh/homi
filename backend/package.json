@@ -14,9 +14,12 @@
     "serve:demo": "node src/api/demo-server.ts",
     "serve:durable": "node src/api/durable-server.ts",
     "migrate": "node src/storage/migrate.ts",
+    "retention": "node tool/retention.ts",
+    "complete:account-deletions": "node tool/complete-account-deletions.ts",
     "bootstrap:runtime": "node tool/bootstrap-runtime.ts",
     "verify:live-sessions": "node tool/verify-live-sessions.ts",
     "verify:hosted-api": "node tool/verify-hosted-api.ts",
+    "verify:hosted-draft": "node tool/verify-hosted-draft.ts",
     "test:postgres": "node --test test/postgres/*.test.ts",
     "research:scfhp": "node src/research-scfhp.ts"
   },
