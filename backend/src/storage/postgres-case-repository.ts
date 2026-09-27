@@ -19,6 +19,8 @@ import { canonicalJson, caseFingerprint, evidenceIdentifier, evidenceInstant, ev
   parseSanitizedEvidenceImage } from '../evidence/validation.ts';
 import { parseExportArtifactMetadata } from '../exports/validation.ts';
 import type { ExportArtifactMetadata } from '../exports/types.ts';
+import { AccountClosedError, type LifecycleRepository, type DeletionCounts,
+  type AccountDeletionState, type ConfirmAccountDeletionResult } from '../lifecycle/types.ts';
 
 const S = 'safeathome_private';
 const LIMITS = { cases: 64, assets: 64, artifacts: 16, bytes: 64 * 1024 * 1024 };
@@ -42,6 +44,9 @@ function integer(value: unknown, zero = false): number {
   check(evidenceRevision(parsed, zero)); return parsed;
 }
 function next(value: number): number { return integer(value + 1); }
+const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const validHash = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+class DeletionPreviewExpiredError extends Error {}
 function linked(snapshot: CaseSnapshot, descriptor: Pick<EvidenceDescriptor, 'evidenceId' | 'findingId'>, confirmed = false): boolean {
   return snapshot.findings.some(finding => finding.id === descriptor.findingId
     && finding.evidenceIds.includes(descriptor.evidenceId) && (!confirmed || finding.reviewState === 'confirmed'));
@@ -65,11 +70,11 @@ function validatePdf(bytes: Uint8Array, metadata: ExportArtifactMetadata): void 
 }
 
 export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRepository,
-  FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository {
+  FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, LifecycleRepository {
   private readonly pool: Pool;
   constructor(pool: Pool) { this.pool = pool; }
 
-  private async transaction<T>(userId: string, write: boolean, operation: (tx: Tx) => Promise<T>): Promise<T> {
+  private async transaction<T>(userId: string, write: boolean, operation: (tx: Tx) => Promise<T>, allowClosed = false): Promise<T> {
     check(evidenceIdentifier(userId));
     const client = await this.pool.connect();
     let broken = false;
@@ -84,6 +89,9 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
         const row = (await client.query(`SELECT * FROM ${S}.repository_quota WHERE singleton FOR UPDATE`)).rows[0];
         check(row); quota = { cases: integer(row.case_count, true), assets: integer(row.asset_count, true),
           artifacts: integer(row.artifact_count, true), bytes: integer(row.stored_bytes, true) };
+      }
+      if (!allowClosed && (await client.query(`SELECT 1 FROM ${S}.closed_accounts WHERE owner_hash=$1`, [digest(userId)])).rowCount) {
+        throw new AccountClosedError();
       }
       const result = await operation({ client, quota });
       await client.query('COMMIT');
@@ -127,8 +135,9 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
   }
   private async invalidateExports(tx: Tx, caseId: string): Promise<void> {
     const bytes = await this.exportBytes(tx, caseId);
+    const active = integer((await tx.client.query(`SELECT count(bytes) AS count FROM ${S}.exports WHERE case_id=$1`, [caseId])).rows[0].count, true);
     await tx.client.query(`UPDATE ${S}.exports SET bytes=NULL, invalidated=true WHERE case_id=$1`, [caseId]);
-    if (bytes) await this.quotaDelta(tx, 0, 0, 0, -bytes);
+    if (bytes || active) await this.quotaDelta(tx, 0, 0, -active, -bytes);
   }
   private async invalidateCase(tx: Tx, caseId: string): Promise<void> {
     await tx.client.query(`DELETE FROM ${S}.matches WHERE case_id=$1`, [caseId]);
@@ -144,6 +153,159 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     return saved;
   }
 
+  async isAccountClosed(userId: string): Promise<boolean> {
+    return this.transaction(userId, false, async tx => Boolean((await tx.client.query(
+      `SELECT 1 FROM ${S}.closed_accounts WHERE owner_hash=$1`, [digest(userId)])).rowCount), true);
+  }
+
+  private async deletionSnapshot(tx: Tx, userId: string): Promise<{
+    ids: string[]; counts: DeletionCounts; fingerprint: string;
+  }> {
+    const rows = (await tx.client.query(`SELECT case_id,revision,catalog_revision FROM ${S}.cases
+      WHERE owner_id=$1 ORDER BY case_id FOR UPDATE`, [userId])).rows;
+    const ids = rows.map(row => String(row.case_id));
+    const cases = rows.map(row => ({ id: row.case_id, revision: integer(row.revision), catalog: integer(row.catalog_revision, true) }));
+    const inventory: Record<string, { total: number; active: number; bytes: number; fingerprint: string }> = {};
+    const content: Record<string, string> = {
+      matches: 'jsonb_build_array(case_id,response)::text',
+      packets: 'jsonb_build_array(case_id,generation_key,packet_id,context_fingerprint,packet)::text',
+      form_answers: 'jsonb_build_array(case_id,program_id,answer_revision,record)::text',
+      evidence: "jsonb_build_array(case_id,evidence_id,finding_id,revision,prepared_at,descriptor,encode(sha256(bytes),'hex'))::text",
+      exports: "jsonb_build_array(case_id,artifact_id,generation_key,bindings,metadata,invalidated,last_checked_at,extract(epoch FROM expires_at),encode(sha256(bytes),'hex'))::text",
+    };
+    for (const table of ['matches', 'packets', 'form_answers', 'evidence', 'exports']) {
+      const binary = table === 'evidence' || table === 'exports';
+      const row = (await tx.client.query(`SELECT count(*) AS total,count(size) AS active,
+        COALESCE(sum(size),0) AS bytes,
+        encode(sha256(convert_to(COALESCE(string_agg(row_hash,'' ORDER BY row_hash),''),'UTF8')),'hex') AS fingerprint
+        FROM (SELECT ${binary ? 'octet_length(bytes)' : '0'} AS size,
+          encode(sha256(convert_to(${content[table]},'UTF8')),'hex') AS row_hash
+          FROM ${S}.${table} WHERE case_id=ANY($1::text[])) AS inventory`, [ids])).rows[0];
+      check(validHash(row.fingerprint));
+      inventory[table] = { total: integer(row.total, true), active: integer(row.active, true), bytes: integer(row.bytes, true), fingerprint: row.fingerprint };
+    }
+    const counts = { cases: ids.length, evidence: inventory.evidence.active, exports: inventory.exports.active,
+      storedBytes: inventory.evidence.bytes + inventory.exports.bytes };
+    return { ids, counts, fingerprint: digest(canonicalJson({ cases, inventory })) };
+  }
+
+  private async eraseCases(tx: Tx, userId: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const rows = (await tx.client.query(`SELECT case_id,revision,catalog_revision FROM ${S}.cases
+      WHERE owner_id=$1 AND case_id=ANY($2::text[]) ORDER BY case_id FOR UPDATE`, [userId, ids])).rows;
+    check(rows.length === ids.length);
+    for (const row of rows) {
+      await tx.client.query(`INSERT INTO ${S}.deleted_cases(case_hash,owner_hash,revision,catalog_revision)
+        VALUES($1,$2,$3,$4)`, [digest(row.case_id), digest(userId), row.revision, row.catalog_revision]);
+    }
+    const amounts = (await tx.client.query(`SELECT
+      (SELECT count(*) FROM ${S}.evidence WHERE case_id=ANY($1::text[])) AS assets,
+      (SELECT count(bytes) FROM ${S}.exports WHERE case_id=ANY($1::text[])) AS artifacts,
+      ((SELECT COALESCE(sum(octet_length(bytes)),0) FROM ${S}.evidence WHERE case_id=ANY($1::text[]))+
+       (SELECT COALESCE(sum(octet_length(bytes)),0) FROM ${S}.exports WHERE case_id=ANY($1::text[]))) AS bytes`, [ids])).rows[0];
+    for (const table of ['matches', 'packets', 'form_answers', 'evidence', 'exports']) {
+      await tx.client.query(`DELETE FROM ${S}.${table} WHERE case_id=ANY($1::text[])`, [ids]);
+    }
+    const removed = await tx.client.query(`DELETE FROM ${S}.cases WHERE owner_id=$1 AND case_id=ANY($2::text[])`, [userId, ids]);
+    check(removed.rowCount === ids.length);
+    await this.quotaDelta(tx, -ids.length, -integer(amounts.assets, true), -integer(amounts.artifacts, true), -integer(amounts.bytes, true));
+  }
+
+  async deleteCaseIfCurrent(input: Parameters<LifecycleRepository['deleteCaseIfCurrent']>[0]): ReturnType<LifecycleRepository['deleteCaseIfCurrent']> {
+    const request = structuredClone(input);
+    if (![request.userId, request.caseId].every(evidenceIdentifier) || !evidenceRevision(request.revision)
+      || !evidenceRevision(request.expectedCatalogRevision, true)) return { status: 'invalid_input' };
+    return this.transaction(request.userId, true, async tx => {
+      const entry = await this.caseRow(tx, request.userId, request.caseId, true);
+      if (!entry) {
+        const prior = (await tx.client.query(`SELECT revision,catalog_revision FROM ${S}.deleted_cases
+          WHERE case_hash=$1 AND owner_hash=$2`, [digest(request.caseId), digest(request.userId)])).rows[0];
+        if (!prior) return { status: 'not_found' };
+        if (integer(prior.revision) !== request.revision) return { status: 'conflict' };
+        if (integer(prior.catalog_revision, true) !== request.expectedCatalogRevision) return { status: 'evidence_conflict' };
+        return { status: 'deleted' };
+      }
+      if (entry.snapshot.revision !== request.revision) return { status: 'conflict' };
+      if (entry.catalogRevision !== request.expectedCatalogRevision) return { status: 'evidence_conflict' };
+      await this.eraseCases(tx, request.userId, [request.caseId]);
+      return { status: 'deleted' };
+    });
+  }
+
+  async prepareAccountDeletion(input: Parameters<LifecycleRepository['prepareAccountDeletion']>[0]): ReturnType<LifecycleRepository['prepareAccountDeletion']> {
+    const request = structuredClone(input);
+    if (!evidenceIdentifier(request.userId) || !validHash(request.tokenHash)) return { status: 'invalid_input' };
+    return this.transaction(request.userId, true, async tx => {
+      const ownerHash = digest(request.userId);
+      if ((await tx.client.query(`SELECT 1 FROM ${S}.closed_accounts WHERE owner_hash=$1`, [ownerHash])).rowCount) return { status: 'closed' };
+      const snapshot = await this.deletionSnapshot(tx, request.userId);
+      const result = await tx.client.query(`INSERT INTO ${S}.account_deletion_previews(owner_hash,token_hash,fingerprint,expires_at)
+        VALUES($1,$2,$3,clock_timestamp()+interval '5 minutes') ON CONFLICT(owner_hash) DO UPDATE
+        SET token_hash=EXCLUDED.token_hash,fingerprint=EXCLUDED.fingerprint,expires_at=EXCLUDED.expires_at
+        RETURNING expires_at`, [ownerHash, request.tokenHash, snapshot.fingerprint]);
+      return { status: 'ready', counts: snapshot.counts, expiresAt: result.rows[0].expires_at.toISOString() };
+    }, true);
+  }
+
+  private deletionState(row: Row): AccountDeletionState {
+    return { status: row.auth_deleted_at === null ? 'auth_pending' : 'complete',
+      applicationDataDeleted: true, providerIdentityDeleted: row.auth_deleted_at !== null };
+  }
+
+  async confirmAccountDeletion(input: Parameters<LifecycleRepository['confirmAccountDeletion']>[0]): ReturnType<LifecycleRepository['confirmAccountDeletion']> {
+    const request = structuredClone(input);
+    if (!evidenceIdentifier(request.userId) || !validHash(request.tokenHash)) return { status: 'invalid_input' };
+    return this.transaction<ConfirmAccountDeletionResult>(request.userId, true, async tx => {
+      const ownerHash = digest(request.userId);
+      const prior = (await tx.client.query(`SELECT auth_deleted_at FROM ${S}.closed_accounts
+        WHERE owner_hash=$1 AND receipt_hash=$2 AND receipt_expires_at>clock_timestamp()`, [ownerHash, request.tokenHash])).rows[0];
+      if (prior) return { status: 'confirmed', deletion: this.deletionState(prior) };
+      if ((await tx.client.query(`SELECT 1 FROM ${S}.closed_accounts WHERE owner_hash=$1`, [ownerHash])).rowCount) return { status: 'not_found' };
+      const preview = (await tx.client.query(`SELECT fingerprint,expires_at>clock_timestamp() AS current
+        FROM ${S}.account_deletion_previews WHERE owner_hash=$1 AND token_hash=$2 FOR UPDATE`, [ownerHash, request.tokenHash])).rows[0];
+      if (!preview) return { status: 'not_found' };
+      if (!preview.current) return { status: 'expired' };
+      const snapshot = await this.deletionSnapshot(tx, request.userId);
+      if (snapshot.fingerprint !== preview.fingerprint) return { status: 'changed' };
+      const current = (await tx.client.query(`SELECT expires_at>clock_timestamp() AS current
+        FROM ${S}.account_deletion_previews WHERE owner_hash=$1`, [ownerHash])).rows[0];
+      if (!current?.current) return { status: 'expired' };
+      await this.eraseCases(tx, request.userId, snapshot.ids);
+      await tx.client.query(`INSERT INTO ${S}.closed_accounts(owner_hash,closed_at,receipt_hash,receipt_expires_at)
+        VALUES($1,clock_timestamp(),$2,clock_timestamp()+interval '30 days')`, [ownerHash, request.tokenHash]);
+      await tx.client.query(`INSERT INTO ${S}.auth_deletion_jobs(owner_hash,raw_user_id) VALUES($1,$2)`, [ownerHash, request.userId]);
+      const finalCheck = (await tx.client.query(`SELECT expires_at>clock_timestamp() AS current
+        FROM ${S}.account_deletion_previews WHERE owner_hash=$1`, [ownerHash])).rows[0];
+      if (!finalCheck?.current) throw new DeletionPreviewExpiredError();
+      await tx.client.query(`DELETE FROM ${S}.account_deletion_previews WHERE owner_hash=$1`, [ownerHash]);
+      return { status: 'confirmed', deletion: { status: 'auth_pending', applicationDataDeleted: true, providerIdentityDeleted: false } };
+    }, true).catch(error => {
+      if (error instanceof DeletionPreviewExpiredError) return { status: 'expired' };
+      throw error;
+    });
+  }
+
+  async readAccountDeletionReceipt(tokenHash: string): Promise<AccountDeletionState | null> {
+    if (!validHash(tokenHash)) return null;
+    const client = await this.pool.connect();
+    let broken = false;
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      await client.query("SET LOCAL statement_timeout = '5s'");
+      await client.query("SELECT set_config('safeathome.user_id', '', true), set_config('safeathome.receipt_hash', $1, true)", [tokenHash]);
+      const row = (await client.query(`SELECT auth_deleted_at FROM ${S}.closed_accounts
+        WHERE receipt_hash=$1 AND receipt_expires_at>clock_timestamp()`, [tokenHash])).rows[0];
+      const preview = row ? null : (await client.query(`SELECT 1 FROM ${S}.account_deletion_previews
+        WHERE token_hash=$1 AND expires_at>clock_timestamp()`, [tokenHash])).rows[0];
+      await client.query('COMMIT');
+      return row ? this.deletionState(row) : preview ? { status: 'awaiting_confirmation',
+        applicationDataDeleted: false, providerIdentityDeleted: false } : null;
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { broken = true; }
+      throw error;
+    } finally { client.release(broken); }
+  }
+
   async loadForUser(userId: string, caseId: string): Promise<CaseSnapshot | null> {
     return this.transaction(userId, false, async tx => (await this.caseRow(tx, userId, caseId))?.snapshot ?? null);
   }
@@ -153,6 +315,8 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     try { parsed = parseCaseDraft(draft, true); } catch { return { status: 'invalid_input' }; }
     const snapshot: CaseSnapshot = { ...parsed, revision: 1 };
     return this.transaction(userId, true, async tx => {
+      const deleted = await tx.client.query(`SELECT ${S}.case_id_was_deleted($1) AS deleted`, [digest(snapshot.caseId)]);
+      if (deleted.rows[0].deleted === true) return { status: 'id_unavailable' };
       await tx.client.query('SAVEPOINT create_case');
       const result = await tx.client.query(`INSERT INTO ${S}.cases(case_id,owner_id,revision,snapshot)
         VALUES($1,$2,1,$3::jsonb) ON CONFLICT(case_id) DO NOTHING RETURNING case_id`,
@@ -393,9 +557,10 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     return { artifactId: row.artifact_id, bindings, metadata, invalidated: row.invalidated,
       lastCheckedAt: row.last_checked_at, byteLength: integer(row.size, true) };
   }
-  private async exportRow(tx: Tx, caseId: string, userId: string, column: 'artifact_id' | 'generation_key', value: string): Promise<ExportRow | null> {
+  private async exportRow(tx: Tx, caseId: string, userId: string, column: 'artifact_id' | 'generation_key', value: string): Promise<ExportRow | 'compacted' | null> {
     const row = (await tx.client.query(`SELECT artifact_id,bindings,metadata,invalidated,last_checked_at,
       COALESCE(octet_length(bytes),0) AS size FROM ${S}.exports WHERE case_id=$1 AND ${column}=$2`, [caseId, value])).rows[0];
+    if (row && row.metadata === null && row.bindings === null && row.invalidated === true && integer(row.size, true) === 0) return 'compacted';
     return row ? this.parseExport(row, caseId, userId) : null;
   }
   private async bindingsCurrent(tx: Tx, entry: CaseRow, saved: ExportRow): Promise<EvidenceRepositoryFailure | null> {
@@ -416,7 +581,10 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     await tx.client.query(`UPDATE ${S}.exports SET last_checked_at=$2,
       invalidated=invalidated OR $3,bytes=CASE WHEN $3 THEN NULL ELSE bytes END WHERE artifact_id=$1`,
     [saved.artifactId, at, !current]);
-    if (!current && saved.byteLength) await this.quotaDelta(tx, 0, 0, 0, -saved.byteLength);
+    if (!current && saved.byteLength) {
+      await this.quotaDelta(tx, 0, 0, -1, -saved.byteLength);
+      saved.byteLength = 0; saved.invalidated = true;
+    }
     return current;
   }
   async publishExportIfCurrent(input: ExportPublishInput): ReturnType<EvidenceRepository['publishExportIfCurrent']> {
@@ -450,6 +618,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       check(instantMicros(metadata.generatedAt) <= instantMicros(at));
       if (!exportCurrent(metadata, at)) return { status: 'expired' };
       const existing = await this.exportRow(tx, request.caseId, request.userId, 'generation_key', request.generationKey);
+      if (existing === 'compacted') return { status: 'generation_conflict' };
       if (existing) {
         if (existing.invalidated || existing.bindings.contextFingerprint !== request.contextFingerprint
           || existing.bindings.caseFingerprint !== request.expectedCaseFingerprint || existing.bindings.catalogRevision !== request.expectedCatalogRevision
@@ -462,9 +631,9 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       const bindings: ExportBindings = { userId: request.userId, revision: request.revision, caseFingerprint: request.expectedCaseFingerprint,
         programId: request.programId, catalogRevision: request.expectedCatalogRevision, answersFingerprint: request.expectedAnswersFingerprint,
         contextFingerprint: request.contextFingerprint, selections };
-      await tx.client.query(`INSERT INTO ${S}.exports(artifact_id,case_id,generation_key,bindings,metadata,bytes,last_checked_at)
-        VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7)`, [metadata.artifactId, request.caseId, request.generationKey,
-        JSON.stringify(bindings), JSON.stringify(metadata), Buffer.from(bytes), at]);
+      await tx.client.query(`INSERT INTO ${S}.exports(artifact_id,case_id,generation_key,bindings,metadata,bytes,last_checked_at,expires_at)
+        VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8::timestamptz)`, [metadata.artifactId, request.caseId, request.generationKey,
+        JSON.stringify(bindings), JSON.stringify(metadata), Buffer.from(bytes), at, metadata.expiresAt]);
       await this.quotaDelta(tx, 0, 0, 1, bytes.byteLength);
       return { status: 'saved', artifact: metadata };
     });
@@ -476,6 +645,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       if (!entry) return { status: 'not_found' };
       const saved = await this.exportRow(tx, request.caseId, request.userId, 'artifact_id', request.artifactId);
       if (!saved) return { status: 'not_found' };
+      if (saved === 'compacted') return { status: 'expired' };
       const stale = await this.bindingsCurrent(tx, entry, saved);
       return stale ?? { status: 'found', artifact: saved.metadata };
     });
@@ -487,6 +657,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       if (!entry) return { status: 'not_found' };
       const saved = await this.exportRow(tx, request.caseId, request.userId, 'artifact_id', request.artifactId);
       if (!saved) return { status: 'not_found' };
+      if (saved === 'compacted') return { status: 'expired' };
       const stale = await this.bindingsCurrent(tx, entry, saved);
       if (stale) return stale;
       if (saved.bindings.contextFingerprint !== request.contextFingerprint) return { status: 'generation_conflict' };

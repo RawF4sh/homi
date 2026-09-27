@@ -4,7 +4,10 @@ import { pathToFileURL } from 'node:url';
 import type { Pool } from 'pg';
 import { createPostgresPool, databaseConfigurationFromEnvironment } from './postgres-pool.ts';
 
-const migrations = [{ version: '001', file: new URL('../../migrations/001_private_repository.sql', import.meta.url) }];
+const migrations = [
+  { version: '001', file: new URL('../../migrations/001_private_repository.sql', import.meta.url) },
+  { version: '002', file: new URL('../../migrations/002_retention_deletion.sql', import.meta.url) },
+];
 export class MigrationError extends Error {
   constructor() { super('Database migrations are missing, changed, or could not be applied.'); this.name = 'MigrationError'; }
 }
