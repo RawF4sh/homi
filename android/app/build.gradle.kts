@@ -39,4 +39,6 @@ flutter {
 
 dependencies {
     implementation("androidx.exifinterface:exifinterface:1.4.2")
+    implementation("com.google.ar:core:1.57.0")
+    testImplementation("junit:junit:4.13.2")
 }
