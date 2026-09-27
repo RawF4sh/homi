@@ -10,6 +10,8 @@ import { handleUploadEvidence, handleDeleteEvidence, type WriteEvidenceDependenc
 import { evidenceIdentifier } from '../evidence/validation.ts';
 import type { AuthenticatedUser } from './match-case.ts';
 import { createHostedAdmission } from './request-admission.ts';
+import { handleDeleteCase, handlePrepareAccountDeletion, handleConfirmAccountDeletion, handleAccountDeletionStatus,
+  type LifecycleDependencies, type LifecycleRoute } from './lifecycle.ts';
 
 export const MAX_REQUEST_BYTES = 16 * 1024;
 export const MAX_UPLOAD_REQUEST_BYTES = Math.ceil(8 * 1024 * 1024 / 3) * 4 + MAX_REQUEST_BYTES;
@@ -20,10 +22,11 @@ type AuthenticationStopped = { status: 'aborted' } | { status: 'unavailable' };
 export interface HttpServerOptions {
   hosted?: boolean;
   admissionNow?: () => number;
+  lifecycleDependencies?: LifecycleDependencies;
 }
 
 const HEAVY_ROUTES = new Set(['/v1/upload-evidence', '/v1/download-evidence',
-  '/v1/create-draft-export', '/v1/download-draft-export']);
+  '/v1/create-draft-export', '/v1/download-draft-export', '/v1/delete-case', '/v1/confirm-account-deletion']);
 
 async function authenticateBeforeUpload(
   request: IncomingMessage, response: ServerResponse, token: string, deps: WriteEvidenceDependencies,
@@ -124,7 +127,7 @@ export function createMatchingServer(
       },
     } : evidenceWriteDependencies;
     void route(request, response, dependencies, uploadAdmission, packetDependencies, formAnswerDependencies,
-      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies).catch(() => {
+      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies, options.lifecycleDependencies).catch(() => {
       if (response.headersSent) response.destroy();
       else fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
     }).finally(async () => {
@@ -151,6 +154,7 @@ async function route(
   packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
   exportDependencies?: DraftExportDependencies,
   caseWriteDependencies?: CaseWriteDependencies, evidenceWriteDependencies?: WriteEvidenceDependencies,
+  lifecycleDependencies?: LifecycleDependencies,
 ) {
   const exportRoutes: ExportRoute[] = ['list-evidence', 'download-evidence', 'create-draft-export', 'download-draft-export'];
   const exportRoute = exportDependencies === undefined ? undefined : exportRoutes.find(route => request.url === `/v1/${route}`);
@@ -162,8 +166,10 @@ async function route(
   const isCaseSave = request.url === '/v1/save-case' && caseWriteDependencies !== undefined;
   const isUpload = request.url === '/v1/upload-evidence' && evidenceWriteDependencies !== undefined;
   const isDelete = request.url === '/v1/delete-evidence' && evidenceWriteDependencies !== undefined;
+  const lifecycleRoutes: LifecycleRoute[] = ['delete-case', 'prepare-account-deletion', 'confirm-account-deletion', 'account-deletion-status'];
+  const lifecycleRoute = lifecycleDependencies === undefined ? undefined : lifecycleRoutes.find(route => request.url === `/v1/${route}`);
   if (request.url !== '/v1/match-case' && !isPacketRequest && !isFormRead && !isFormSave && !isCaseRead && !exportRoute
-    && !isCaseCreate && !isCaseSave && !isUpload && !isDelete) {
+    && !isCaseCreate && !isCaseSave && !isUpload && !isDelete && !lifecycleRoute) {
     fail(response, 404, 'NOT_FOUND', 'This endpoint does not exist.');
     request.resume();
     return;
@@ -222,8 +228,8 @@ async function route(
       if (request.destroyed || response.destroyed) return;
     }
     await readAndDispatch(request, response, bearer[1], dependencies, {
-      isCaseRead, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute,
-    }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies);
+      isCaseRead, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, lifecycleRoute,
+    }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies, lifecycleDependencies);
   } finally {
     if (isUpload) uploadAdmission.active = false;
   }
@@ -232,12 +238,14 @@ async function route(
 async function readAndDispatch(
   request: IncomingMessage, response: ServerResponse, token: string, dependencies: MatchCaseDependencies,
   routes: { isCaseRead: boolean; isCaseCreate: boolean; isCaseSave: boolean; isFormRead: boolean; isFormSave: boolean;
-    isPacketRequest: boolean; isUpload: boolean; isDelete: boolean; exportRoute: ExportRoute | undefined },
+    isPacketRequest: boolean; isUpload: boolean; isDelete: boolean; exportRoute: ExportRoute | undefined;
+    lifecycleRoute: LifecycleRoute | undefined },
   packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
   exportDependencies?: DraftExportDependencies, caseWriteDependencies?: CaseWriteDependencies,
   evidenceWriteDependencies?: WriteEvidenceDependencies,
+  lifecycleDependencies?: LifecycleDependencies,
 ) {
-  const { isCaseRead, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute } = routes;
+  const { isCaseRead, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, lifecycleRoute } = routes;
   const limit = isUpload ? MAX_UPLOAD_REQUEST_BYTES : MAX_REQUEST_BYTES;
   if (request.headers['content-length'] && Number(request.headers['content-length']) > limit) {
     fail(response, 413, 'PAYLOAD_TOO_LARGE', 'The request is too large.', { Connection: 'close' });
@@ -258,6 +266,14 @@ async function readAndDispatch(
   }
   if (response.destroyed || response.writableEnded) return;
   const input = { body, bearerToken: token };
+  if (lifecycleRoute) {
+    const result = lifecycleRoute === 'delete-case' ? await handleDeleteCase(input, lifecycleDependencies!)
+      : lifecycleRoute === 'prepare-account-deletion' ? await handlePrepareAccountDeletion(input, lifecycleDependencies!)
+        : lifecycleRoute === 'confirm-account-deletion' ? await handleConfirmAccountDeletion(input, lifecycleDependencies!)
+          : await handleAccountDeletionStatus(input, lifecycleDependencies!);
+    sendJson(response, result.status, result.body, result.headers);
+    return;
+  }
   if (isCaseCreate || isCaseSave || isUpload || isDelete) {
     const controller = new AbortController();
     const onClose = () => controller.abort();

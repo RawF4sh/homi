@@ -6,6 +6,8 @@ import { assertMigrationsCurrent } from '../storage/migrate.ts';
 import { assertRestrictedRuntimeRole, createPostgresPool, databaseConfigurationFromEnvironment } from '../storage/postgres-pool.ts';
 import type { DraftExportDependencies } from './draft-export.ts';
 import { createMatchingServer } from './http-server.ts';
+import { benefitsBundleNameFromEnvironment, loadRuntimeBenefitsBundle } from '../programs/runtime-bundle.ts';
+import { createRecentSupabaseAuthenticator } from '../auth/recent-authentication.ts';
 
 export interface DurableServerOptions {
   pool: Pool;
@@ -16,17 +18,23 @@ export interface DurableServerOptions {
 }
 
 export async function createDurableServer(options: DurableServerOptions) {
-  const authenticate = createSupabaseAuthenticator(options.auth, options.fetchImpl);
+  const providerAuthenticate = createSupabaseAuthenticator(options.auth, options.fetchImpl);
   await assertRestrictedRuntimeRole(options.pool);
   await assertMigrationsCurrent(options.pool);
   const cases = new PostgresCaseRepository(options.pool);
+  const authenticate = async (token: string) => {
+    const user = await providerAuthenticate(token);
+    return user && !await cases.isAccountClosed(user.userId) ? user : null;
+  };
+  const lifecycleDependencies = { authenticate, lifecycle: cases,
+    authenticateForDeletion: createRecentSupabaseAuthenticator(options.auth, options.fetchImpl) };
   const dependencies = {
     authenticate, cases, now: () => new Date(),
     loadRegistry: options.loadRegistry ?? (async () => []),
     loadFormTemplate: options.loadFormTemplate ?? (async () => null),
   };
   const server = createMatchingServer(dependencies, dependencies, dependencies,
-    dependencies, dependencies, dependencies, { hosted: true });
+    dependencies, dependencies, dependencies, { hosted: true, lifecycleDependencies });
   return { server, cases };
 }
 
@@ -43,15 +51,17 @@ export function durableHttpConfiguration(env: NodeJS.ProcessEnv): { port: number
 async function main() {
   if (process.argv.length !== 2) throw new Error('Configure the durable server through its environment.');
   const { port, host, auth } = durableHttpConfiguration(process.env);
+  const bundle = await loadRuntimeBenefitsBundle(benefitsBundleNameFromEnvironment(process.env));
   const pool = createPostgresPool(await databaseConfigurationFromEnvironment(process.env));
   try {
-    const { server } = await createDurableServer({ pool, auth });
+    const { server } = await createDurableServer({ pool, auth,
+      loadRegistry: bundle.loadRegistry, loadFormTemplate: bundle.loadFormTemplate });
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       server.once('error', onError);
       server.listen(port, host, () => { server.off('error', onError); resolve(); });
     });
-    console.log(`Durable API listening on http://${host}:${port}. No live benefits registry is configured.`);
+    console.log(`Durable API listening on http://${host}:${port}. Benefits bundle: ${bundle.name}; draft preparation only.`);
     await new Promise<void>(resolve => {
       let stopping = false;
       const stop = () => {
@@ -74,7 +84,7 @@ async function main() {
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   main().catch(() => {
-    console.error('Durable API could not start or stopped unexpectedly. Check authentication configuration, database role, TLS, migrations and port.');
+    console.error('Durable API could not start or stopped unexpectedly. Check authentication configuration, database role, TLS, migrations, benefits bundle/artifact and port.');
     process.exitCode = 1;
   });
 }
