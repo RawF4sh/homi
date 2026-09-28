@@ -15,5 +15,8 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "PrivateMediaPlatform") {
       PrivateMediaPlatform.register(with: registrar)
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "BathroomScanPlatform") {
+      BathroomScanPlatform.register(with: registrar)
+    }
   }
 }
