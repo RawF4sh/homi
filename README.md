@@ -19,6 +19,14 @@ and controlled-provider evidence from physical-camera and live-account checks.
 Development and testing have a **$0 out-of-pocket budget**; cloud jobs and paid
 device services are not required for these local checks.
 
+The optional [bathroom scanning workflow](docs/bathroom-scanning.md) adds iPhone
+LiDAR/RoomPlan and Android ARCore capture, a private 3D model review, and
+resident-confirmed improvement observations. The model stays encrypted on the
+device; confirmed findings use the existing assessment save and draft workflow.
+Real-room capture accuracy remains a separate physical-device acceptance gate.
+The [native capture validation loop](docs/native-capture-validation.md) records
+local lifecycle, geometry, accessibility and installed-bridge checks.
+
 PDF previews use a pinned, licensed [pdfrx 2.4.7 compatibility patch](third_party/pdfrx/PATCHES.md)
 that disposes images decoded after their viewer or document has left. Keep the
 local package with the app; do not patch a shared pub cache or upgrade the native

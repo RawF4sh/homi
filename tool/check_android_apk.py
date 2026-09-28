@@ -9,6 +9,56 @@ import sys
 import zipfile
 
 
+def native_capture_manifest_errors(manifest: str) -> list[str]:
+    """Inspect exact nodes in aapt2 xmltree output, including merged metadata.
+
+    Reading attributes from the owning node avoids accepting an exported scan
+    activity just because a different activity happens to be private.
+    """
+    nodes = []
+    stack = []
+    for line in manifest.splitlines():
+        element = re.match(r"^(\s*)E: ([\w-]+)\b", line)
+        if element:
+            indent = len(element[1])
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            path = (*stack[-1][1], element[2]) if stack else (element[2],)
+            attributes = {}
+            stack.append((indent, path, attributes))
+            nodes.append((path, attributes))
+        elif stack:
+            attribute = re.match(
+                r"^\s*A: http://schemas\.android\.com/apk/res/android:"
+                r"([\w]+)(?:\([^)]*\))?=(.*)$",
+                line,
+            )
+            if attribute:
+                stack[-1][2][attribute[1]] = attribute[2].split(" (Raw: ", 1)[0]
+
+    errors = []
+    ar_metadata = [
+        attrs for path, attrs in nodes
+        if path == ("manifest", "application", "meta-data")
+        and attrs.get("name") == '"com.google.ar.core"'
+    ]
+    if len(ar_metadata) != 1 or ar_metadata[0].get("value") != '"optional"':
+        errors.append("Packaged application must declare Google ARCore optional")
+    scan_activities = [
+        attrs for path, attrs in nodes
+        if path == ("manifest", "application", "activity")
+        and attrs.get("name", "").endswith('.BathroomScanActivity"')
+    ]
+    if len(scan_activities) != 1:
+        errors.append("Expected exactly one packaged bathroom scan activity")
+    else:
+        if scan_activities[0].get("exported") != "false":
+            errors.append("Packaged bathroom scanner must explicitly be unexported")
+        if scan_activities[0].get("excludeFromRecents") != "true":
+            errors.append("Packaged bathroom scanner must be excluded from recents")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("apk", type=Path)
@@ -22,7 +72,7 @@ def main() -> int:
         text=True,
     )
     permissions = set(re.findall(r"^uses-permission(?:-sdk-\d+)?: name='([^']+)'", badging, re.M))
-    errors = []
+    errors = native_capture_manifest_errors(manifest)
     for permission in ("CAMERA", "INTERNET"):
         if f"android.permission.{permission}" not in permissions:
             errors.append(f"Missing required {permission} declaration")
@@ -48,7 +98,7 @@ def main() -> int:
         for error in errors:
             print(f"FAIL: {error}", file=sys.stderr)
         return 1
-    print("Packaged APK privacy declarations passed: camera-only media permission, optional hardware, backup disabled.")
+    print("Packaged APK privacy declarations passed: camera-only media permission, optional hardware/ARCore, private scanner activity, backup disabled.")
     return 0
 
 
