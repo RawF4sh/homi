@@ -15,7 +15,7 @@ function fictionalCase(): CaseSnapshot {
   };
 }
 
-test('real-source research route never declares policy verified, capacity open or freshness known', () => {
+test('official referral draft never declares policy verified, capacity open or freshness known', () => {
   const program = createScfhpEaaResearchProgram();
   assert.equal(program.isDemo, false);
   assert.equal(program.rulesVerified, false);
@@ -23,9 +23,11 @@ test('real-source research route never declares policy verified, capacity open o
   assert.equal(program.recheckAfter, null);
   assert.equal(program.effectiveFrom, null);
   assert.equal(program.effectiveUntil, null);
-  assert.equal(program.criteria.length, 7);
+  assert.equal(program.criteria.length, 10);
   assert.ok(program.criteria.every(criterion => criterion.rule.kind === 'manual_review' && criterion.rule.sourceIds.length > 0));
-  assert.match(program.programName, /research preview/);
+  assert.match(program.programName, /referral draft/);
+  assert.equal(program.ruleVersion, 'referral-draft-2026-10-17-v2');
+  assert.ok(program.sources.every(source => source.effectiveFrom === null && source.effectiveUntil === null));
 });
 
 test('profile, tenure, income, age and observations cannot substitute for reviewed SCFHP decisions', () => {
@@ -67,6 +69,36 @@ test('research packet keeps form, evidence, consent and program review unresolve
   assert.ok(packet.missingItems.some(item => item.id === 'check:property-permission'));
   assert.ok(packet.missingItems.some(item => item.id === 'check:consent'));
   assert.ok(packet.missingItems.some(item => item.id === 'check:cost-and-prior-use'));
+  for (const [id, resolvedBy] of [
+    ['clinical-need', 'professional'], ['assessment', 'professional'],
+    ['alternative-coverage', 'program'], ['prior-use', 'program'], ['policy-currentness', 'program'],
+    ['property-permission', 'resident'], ['consent', 'resident'],
+  ]) {
+    const criterion = createScfhpEaaResearchProgram().criteria.find(item => item.id === id)!;
+    assert.equal(criterion.rule.kind, 'manual_review');
+    if (criterion.rule.kind === 'manual_review') assert.equal(criterion.rule.resolvedBy, resolvedBy);
+    const task = packet.missingItems.find(item => item.id === `check:${id}`)!;
+    assert.equal(task.resolvedBy, 'program');
+    assert.ok(task.description.includes(`Manual review (${resolvedBy}):`));
+  }
+});
+
+test('published route evidence does not turn enrollment, cost history or proposed changes into verified answers', () => {
+  const program = createScfhpEaaResearchProgram();
+  const election = program.sources.find(source => source.id === 'dhcs-elections-2026')!;
+  assert.equal(election.url, 'https://www.dhcs.ca.gov/file/community-supports-elections-by-mcp-and-county-pdf/');
+  assert.match(election.title, /page 4/);
+  const proposal = program.sources.find(source => source.id === 'dhcs-proposed-2026')!;
+  assert.match(proposal.title, /proposed.*adoption unverified/);
+  const match = matchPrograms(fictionalCase(), [program], context).matches[0];
+  for (const id of ['enrollment', 'cost-and-prior-use', 'prior-use', 'policy-currentness']) {
+    assert.equal(match.checks.find(check => check.id === id)?.status, 'unknown');
+  }
+  assert.ok(program.requiredDocuments.some(document => document.includes('if available and applicable')));
+  assert.ok(program.requiredDocuments.some(document => document.includes('two provider bids where possible')));
+  assert.ok(program.requiredDocuments.some(document => document.includes('evaluation exception')));
+  assert.match(program.intake!, /Informational only/);
+  assert.match(program.intake!, /does not submit referrals or promise approval/);
 });
 
 test('research registry returns isolated records and its source links remain explicit', () => {
@@ -75,7 +107,7 @@ test('research registry returns isolated records and its source links remain exp
   assert.deepEqual(first, second);
   first.sources[0].title = 'Changed'; first.criteria.length = 0;
   assert.notEqual(createScfhpEaaResearchProgram().sources[0].title, 'Changed');
-  assert.equal(second.criteria.length, 7);
+  assert.equal(second.criteria.length, 10);
   const sourceIds = new Set(second.sources.map(source => source.id));
   for (const criterion of second.criteria) {
     assert.equal(criterion.rule.kind, 'manual_review');

@@ -11,7 +11,7 @@ const apiOrigin = 'http://127.0.0.1:8788';
 const userIds = ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
 const caseIds = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'] as const;
 const config = (): LiveSessionConfiguration => ({
-  auth: { projectUrl: origin, publishableKey: 'sb_publishable_fictional', timeoutMs: 100 },
+  auth: { projectUrl: origin, publishableKey: 'sb_publishable_fictional', timeoutMs: 1000 },
   apiOrigin, accounts: [{ email: 'fictional-a@example.invalid', password: 'fictional-password-a' },
     { email: 'fictional-b@example.invalid', password: 'fictional-password-b' }], caseIds, createFixtures: false,
 });

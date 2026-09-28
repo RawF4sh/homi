@@ -162,7 +162,7 @@ test('RLS hides every private table with no identity and rejects another owner w
   const protectedTables = await admin.query(`SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='safeathome_private' AND c.relkind='r'`);
-  assert.equal(protectedTables.rows.length, 7);
+  assert.equal(protectedTables.rows.length, 11);
   assert.ok(protectedTables.rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
 });
 
