@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 abstract final class SafeAtHomeTheme {
-  static const ivory = Color(0xFFF8F5EE);
-  static const teal = Color(0xFF174E49);
-  static const ink = Color(0xFF233E3A);
-  static const mutedInk = Color(0xFF51655F);
-  static const coral = Color(0xFF9E4839);
-  static const line = Color(0xFFD9DFD6);
+  static const ivory = Color(0xFFF7F7F2);
+  static const teal = Color(0xFF204D43);
+  static const ink = Color(0xFF243C34);
+  static const mutedInk = Color(0xFF59675E);
+  static const coral = Color(0xFF965038);
+  static const line = Color(0xFFDFE4DA);
 
   static ThemeData light() {
     final scheme =
@@ -16,20 +16,20 @@ abstract final class SafeAtHomeTheme {
         ).copyWith(
           primary: teal,
           onPrimary: Colors.white,
-          primaryContainer: const Color(0xFFDCEBE3),
+          primaryContainer: const Color(0xFFE3EDDE),
           onPrimaryContainer: teal,
           secondary: const Color(0xFF526653),
-          secondaryContainer: const Color(0xFFE8EBDC),
+          secondaryContainer: const Color(0xFFECEEE0),
           onSecondaryContainer: ink,
           tertiary: coral,
-          tertiaryContainer: const Color(0xFFF7E4DC),
+          tertiaryContainer: const Color(0xFFF6E7D9),
           onTertiaryContainer: const Color(0xFF743326),
-          surface: const Color(0xFFFFFEFA),
+          surface: const Color(0xFFFFFFFC),
           onSurface: ink,
           onSurfaceVariant: mutedInk,
-          surfaceContainerLowest: const Color(0xFFFFFEFA),
-          surfaceContainerLow: const Color(0xFFF2F0E8),
-          surfaceContainer: const Color(0xFFECEEE5),
+          surfaceContainerLowest: const Color(0xFFFFFFFC),
+          surfaceContainerLow: const Color(0xFFF0F2E9),
+          surfaceContainer: const Color(0xFFE9EDE3),
           outline: const Color(0xFF77877E),
           outlineVariant: line,
           error: const Color(0xFF9B3028),
@@ -48,20 +48,20 @@ abstract final class SafeAtHomeTheme {
     return base.copyWith(
       textTheme: text.copyWith(
         headlineMedium: text.headlineMedium?.copyWith(
-          fontSize: 30,
-          fontWeight: FontWeight.w700,
+          fontSize: 32,
+          fontWeight: FontWeight.w600,
           height: 1.18,
-          letterSpacing: -.6,
+          letterSpacing: -.9,
         ),
         headlineSmall: text.headlineSmall?.copyWith(
           fontSize: 26,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
           height: 1.2,
           letterSpacing: -.4,
         ),
         titleLarge: text.titleLarge?.copyWith(
-          fontSize: 21,
-          fontWeight: FontWeight.w700,
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
           height: 1.3,
         ),
         titleMedium: text.titleMedium?.copyWith(
@@ -69,9 +69,9 @@ abstract final class SafeAtHomeTheme {
           fontWeight: FontWeight.w600,
           height: 1.35,
         ),
-        bodyLarge: text.bodyLarge?.copyWith(fontSize: 17, height: 1.45),
-        bodyMedium: text.bodyMedium?.copyWith(fontSize: 16, height: 1.45),
-        bodySmall: text.bodySmall?.copyWith(fontSize: 14, height: 1.45),
+        bodyLarge: text.bodyLarge?.copyWith(fontSize: 17, height: 1.5),
+        bodyMedium: text.bodyMedium?.copyWith(fontSize: 15, height: 1.5),
+        bodySmall: text.bodySmall?.copyWith(fontSize: 13, height: 1.5),
         labelLarge: text.labelLarge?.copyWith(
           fontSize: 16,
           fontWeight: FontWeight.w600,
@@ -84,6 +84,7 @@ abstract final class SafeAtHomeTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
+        titleSpacing: 20,
         titleTextStyle: text.titleMedium?.copyWith(
           color: teal,
           fontSize: 17,
@@ -95,7 +96,7 @@ abstract final class SafeAtHomeTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           side: const BorderSide(color: line),
         ),
         clipBehavior: Clip.antiAlias,
@@ -160,6 +161,22 @@ abstract final class SafeAtHomeTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(color: teal),
+      expansionTileTheme: ExpansionTileThemeData(
+        iconColor: teal,
+        collapsedIconColor: mutedInk,
+        textColor: ink,
+        collapsedTextColor: ink,
+        shape: const Border(),
+        collapsedShape: const Border(),
+        childrenPadding: const EdgeInsets.only(bottom: 16),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: scheme.surfaceContainerLow,
+        side: BorderSide.none,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        labelStyle: text.labelMedium?.copyWith(color: ink),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      ),
       dialogTheme: DialogThemeData(
         backgroundColor: scheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

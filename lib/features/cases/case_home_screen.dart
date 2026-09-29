@@ -119,7 +119,20 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Safe at Home'),
+      title: Row(
+        children: [
+          const SahBrandMark(size: 32),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Safe at Home',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+        ],
+      ),
       actions: [
         IconButton(
           tooltip: 'Settings',
@@ -141,17 +154,10 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
               const SahPageHeader(
+                eyebrow: 'YOUR WORKSPACE',
                 title: 'Your cases',
                 description:
-                    'Pick up where you left off, or begin a new home assessment.',
-              ),
-              FilledButton.icon(
-                key: const ValueKey('case-start'),
-                onPressed: !_isCurrent || _opening || _selectionBlocked
-                    ? null
-                    : () => _open(widget.services.coordinator.createDraft),
-                icon: const Icon(Icons.add),
-                label: const Text('Start a case'),
+                    'Pick up where you left off, or start a new assessment.',
               ),
               if (_selectionBlocked &&
                   widget.services.coordinator.draft != null) ...[
@@ -168,11 +174,30 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
                       : () => _open(() async {}, changesSelection: false),
                   child: const Text('Continue current case'),
                 ),
+                const SizedBox(height: 16),
               ],
-              const SizedBox(height: 12),
-              const SahNotice(
-                message: 'Private team beta · Fictional information only',
-                icon: Icons.lock_outline_rounded,
+              SahFeaturePanel(
+                eyebrow: 'HOME, WITH A LITTLE HELP',
+                title: 'Start with your home.',
+                description:
+                    'Add your home details, review your space and explore possible support.',
+                illustration: const SahHomeIllustration(),
+                action: FilledButton.icon(
+                  key: const ValueKey('case-start'),
+                  onPressed: !_isCurrent || _opening || _selectionBlocked
+                      ? null
+                      : () => _open(widget.services.coordinator.createDraft),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Start a case'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: SahStatusBadge(
+                  label: 'Private team beta · Fictional information only',
+                  icon: Icons.lock_outline_rounded,
+                ),
               ),
               if (_opening)
                 const Padding(
@@ -211,7 +236,10 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
                           ),
                   ),
               ],
-              const SahSectionHeading(title: 'Saved online'),
+              const SahSectionHeading(
+                title: 'Saved online',
+                description: 'Case revisions saved to your account.',
+              ),
               if (_discovering)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),

@@ -70,136 +70,193 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Safe at Home')),
-    body: SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final recovering = widget.session.recoveryRequired;
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            const SahBrandMark(size: 32),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Safe at Home',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleMedium,
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        child: SahContent(
+          maxWidth: 480,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Align(
+                const Align(
                   alignment: Alignment.centerLeft,
-                  child: Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: ExcludeSemantics(
-                      child: Icon(
-                        Icons.home_outlined,
-                        size: 30,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
+                  child: SahStatusBadge(
+                    label: 'Private team beta',
+                    icon: Icons.lock_outline_rounded,
                   ),
                 ),
-                SahPageHeader(
-                  title: widget.session.recoveryRequired
-                      ? 'Choose a new password'
-                      : 'Welcome back',
-                  description: widget.session.recoveryRequired
+                const SizedBox(height: 18),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final showIllustration =
+                        !recovering &&
+                        constraints.maxWidth >= 330 &&
+                        MediaQuery.textScalerOf(context).scale(16) <= 22.4;
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Semantics(
+                            header: true,
+                            child: Text(
+                              recovering
+                                  ? 'Choose a new password'
+                                  : 'Welcome back',
+                              style: theme.textTheme.headlineLarge,
+                            ),
+                          ),
+                        ),
+                        if (showIllustration) ...[
+                          const SizedBox(width: 12),
+                          const SizedBox(
+                            width: 80,
+                            child: SahHomeIllustration(height: 72),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  recovering
                       ? 'Set a new password to return to your private workspace.'
                       : 'Sign in to continue your home assessment and draft preparation.',
-                ),
-                const SahNotice(
-                  title: 'Private team beta',
-                  message:
-                      'Use fictional resident information during the team beta.',
-                  icon: Icons.lock_outline_rounded,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 24),
-                if (!widget.session.recoveryRequired)
-                  TextField(
-                    controller: _email,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autocorrect: false,
-                    textCapitalization: TextCapitalization.none,
-                    autofillHints: const [AutofillHints.username],
-                    enabled: !_busy,
-                    onChanged: _clearFeedback,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.alternate_email_rounded),
-                    ),
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
                   ),
-                if (!widget.session.recoveryRequired)
-                  const SizedBox(height: 20),
-                TextField(
-                  controller: _password,
-                  obscureText: !_passwordVisible,
-                  textInputAction: TextInputAction.done,
-                  enableSuggestions: false,
-                  autocorrect: false,
-                  autofillHints: [
-                    widget.session.recoveryRequired
-                        ? AutofillHints.newPassword
-                        : AutofillHints.password,
-                  ],
-                  enabled: !_busy,
-                  onChanged: _clearFeedback,
-                  decoration: InputDecoration(
-                    labelText: widget.session.recoveryRequired
-                        ? 'New password (12+ characters)'
-                        : 'Password',
-                    prefixIcon: const Icon(Icons.lock_outline_rounded),
-                    suffixIcon: IconButton(
-                      tooltip: _passwordVisible
-                          ? 'Hide password'
-                          : 'Show password',
-                      onPressed: _busy
-                          ? null
-                          : () => setState(
-                              () => _passwordVisible = !_passwordVisible,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (!recovering)
+                        TextField(
+                          controller: _email,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          autocorrect: false,
+                          textCapitalization: TextCapitalization.none,
+                          autofillHints: const [AutofillHints.username],
+                          enabled: !_busy,
+                          onChanged: _clearFeedback,
+                          decoration: const InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: Icon(Icons.alternate_email_rounded),
+                          ),
+                        ),
+                      if (!recovering) const SizedBox(height: 20),
+                      TextField(
+                        controller: _password,
+                        obscureText: !_passwordVisible,
+                        textInputAction: TextInputAction.done,
+                        enableSuggestions: false,
+                        autocorrect: false,
+                        autofillHints: [
+                          recovering
+                              ? AutofillHints.newPassword
+                              : AutofillHints.password,
+                        ],
+                        enabled: !_busy,
+                        onChanged: _clearFeedback,
+                        decoration: InputDecoration(
+                          labelText: recovering
+                              ? 'New password (12+ characters)'
+                              : 'Password',
+                          prefixIcon: const Icon(Icons.lock_outline_rounded),
+                          suffixIcon: IconButton(
+                            tooltip: _passwordVisible
+                                ? 'Hide password'
+                                : 'Show password',
+                            onPressed: _busy
+                                ? null
+                                : () => setState(
+                                    () => _passwordVisible = !_passwordVisible,
+                                  ),
+                            icon: Icon(
+                              _passwordVisible
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
                             ),
-                      icon: Icon(
-                        _passwordVisible
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
+                          ),
+                        ),
+                        onSubmitted: (_) => _submit(),
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton(
+                        key: const ValueKey('auth-sign-in'),
+                        onPressed: _busy ? null : () => _submit(),
+                        child: Text(
+                          _busy
+                              ? 'Please wait…'
+                              : recovering
+                              ? 'Save password'
+                              : 'Sign in',
+                        ),
+                      ),
+                      if (widget.emailDeliveryEnabled && !recovering)
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _submit(recovery: true),
+                          child: const Text('Forgot password'),
+                        ),
+                      if (_message != null)
+                        SahActionFeedback(
+                          key: const ValueKey('auth-action-feedback'),
+                          message: _message!,
+                          revealRevision: _feedbackRevision,
+                          tone: SahNoticeTone.warning,
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Use fictional resident information during the team beta.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (!widget.emailDeliveryEnabled)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      'Sign in with your provisioned team account. Email registration and recovery are not enabled for this beta.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
-                  onSubmitted: (_) => _submit(),
-                ),
-                const SizedBox(height: 24),
-                FilledButton(
-                  key: const ValueKey('auth-sign-in'),
-                  onPressed: _busy ? null : () => _submit(),
-                  child: Text(
-                    _busy
-                        ? 'Please wait…'
-                        : widget.session.recoveryRequired
-                        ? 'Save password'
-                        : 'Sign in',
-                  ),
-                ),
-                if (widget.emailDeliveryEnabled &&
-                    !widget.session.recoveryRequired)
-                  TextButton(
-                    onPressed: _busy ? null : () => _submit(recovery: true),
-                    child: const Text('Forgot password'),
-                  ),
-                if (_message != null)
-                  SahActionFeedback(
-                    key: const ValueKey('auth-action-feedback'),
-                    message: _message!,
-                    revealRevision: _feedbackRevision,
-                    tone: SahNoticeTone.warning,
-                  ),
-                if (!widget.emailDeliveryEnabled)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 16),
-                    child: Text(
-                      'Sign in with your provisioned team account. Email registration and recovery are not enabled for this beta.',
-                    ),
-                  ),
-                if (widget.deletionStatusScreen != null)
+                if (widget.deletionStatusScreen != null) ...[
+                  const SizedBox(height: 12),
                   TextButton(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -208,6 +265,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: const Text('Check pending account deletion'),
                   ),
+                ],
                 if (widget.session.callbackNotice != null)
                   SahNotice(
                     message: widget.session.callbackNotice!,
@@ -218,6 +276,6 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }

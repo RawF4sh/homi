@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'app/live_app.dart';
 import 'app/safe_at_home_app.dart';
 import 'app/theme.dart';
+import 'shared/presentation/sah_components.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,27 +21,37 @@ class _DemoEntry extends StatelessWidget {
       appBar: AppBar(title: const Text('Safe at Home')),
       body: SafeArea(
         child: Builder(
-          builder: (context) => ListView(
-            padding: const EdgeInsets.all(24),
-            children: [
-              const Text(
-                'Fictional demonstration',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Live account access is not enabled in this build. The examples below use bundled fictional information and do not send data to a server.',
-              ),
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const SafeAtHomeApp(),
-                  ),
+          builder: (context) => SahContent(
+            maxWidth: 600,
+            child: ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                const SahHomeIllustration(height: 160),
+                const SizedBox(height: 16),
+                const SahPageHeader(
+                  eyebrow: 'A LITTLE SUPPORT, AT HOME',
+                  title: 'A safer home starts here.',
+                  description:
+                      'Review your space, explore possible support, and prepare your next steps.',
                 ),
-                child: const Text('Open fictional examples'),
-              ),
-            ],
+                const SahNotice(
+                  title: 'Fictional demonstration',
+                  message:
+                      'Live account access is not enabled in this build. The examples below use bundled fictional information and do not send data to a server.',
+                  icon: Icons.science_outlined,
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SafeAtHomeApp(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: const Text('Open fictional examples'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

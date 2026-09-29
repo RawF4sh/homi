@@ -116,6 +116,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                 labels: ['Details', 'Home', 'Programs', 'Draft'],
               ),
               const SahPageHeader(
+                eyebrow: 'YOUR NEXT STEPS',
                 title: 'Explore possible assistance',
                 description:
                     'See what is known, what needs confirmation, and how to prepare each route.',
@@ -173,7 +174,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                       '${result.matches.length} ${result.matches.length == 1 ? 'program route' : 'program routes'} to review',
                 ),
               if (result != null)
-                for (final match in result.matches)
+                for (final (index, match) in result.matches.indexed)
                   Card(
                     key: ValueKey('program-${match.programId}'),
                     margin: const EdgeInsets.only(bottom: 24),
@@ -182,6 +183,17 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          Text(
+                            'ROUTE ${(index + 1).toString().padLeft(2, '0')}',
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                  letterSpacing: 1.4,
+                                ),
+                          ),
+                          const SizedBox(height: 12),
                           Semantics(
                             header: true,
                             child: Text(
@@ -190,20 +202,23 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Text(
-                            switch (match.status) {
-                              'meets_known_criteria' =>
-                                'Matches the known checks',
-                              'does_not_meet_criterion' =>
-                                'A known criterion is not met',
-                              _ => 'More information is needed',
-                            },
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  color: match.status == 'meets_known_criteria'
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context).colorScheme.tertiary,
-                                ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: SahStatusBadge(
+                              label: switch (match.status) {
+                                'meets_known_criteria' =>
+                                  'Matches the known checks',
+                                'does_not_meet_criterion' =>
+                                  'A known criterion is not met',
+                                _ => 'More information is needed',
+                              },
+                              icon: match.status == 'meets_known_criteria'
+                                  ? Icons.check_circle_outline_rounded
+                                  : Icons.info_outline_rounded,
+                              tone: match.status == 'meets_known_criteria'
+                                  ? SahNoticeTone.success
+                                  : SahNoticeTone.warning,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -212,8 +227,9 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                             '${match.checks.where((check) => check.status == 'unknown').length} need confirmation',
                           ),
                           const SizedBox(height: 8),
-                          const Text(
+                          Text(
                             'Open Eligibility checks to review every reason. Preparing a draft does not confirm eligibility.',
+                            style: Theme.of(context).textTheme.bodySmall,
                           ),
                           const SahSectionHeading(
                             title: 'Prepare this route',
@@ -222,6 +238,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                           ),
                           OutlinedButton(
                             key: ValueKey('program-${match.programId}-intake'),
+                            style: _preparationActionStyle(context),
                             onPressed: !same
                                 ? null
                                 : () => _open(
@@ -230,10 +247,14 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                       program: match,
                                     ),
                                   ),
-                            child: const Text('Review program questions'),
+                            child: const _PreparationActionLabel(
+                              number: '01',
+                              title: 'Review program questions',
+                            ),
                           ),
-                          const SizedBox(height: 10),
+                          const Divider(height: 1),
                           OutlinedButton(
+                            style: _preparationActionStyle(context),
                             onPressed: !same
                                 ? null
                                 : () => _open(
@@ -247,11 +268,15 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                       caseChanges: c,
                                     ),
                                   ),
-                            child: const Text('Draft checklist'),
+                            child: const _PreparationActionLabel(
+                              number: '02',
+                              title: 'Draft checklist',
+                            ),
                           ),
-                          const SizedBox(height: 10),
+                          const Divider(height: 1),
                           OutlinedButton(
                             key: ValueKey('program-${match.programId}-answers'),
+                            style: _preparationActionStyle(context),
                             onPressed: !same
                                 ? null
                                 : () => _open(
@@ -260,9 +285,9 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                       program: match,
                                     ),
                                   ),
-                            child: const Text(
-                              'Review administrative answers',
-                              textAlign: TextAlign.center,
+                            child: const _PreparationActionLabel(
+                              number: '03',
+                              title: 'Review administrative answers',
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -295,6 +320,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                             child: const Text('Manual request history'),
                           ),
                           const SizedBox(height: 16),
+                          const Divider(height: 1),
                           ExpansionTile(
                             key: ValueKey('program-${match.programId}-checks'),
                             tilePadding: EdgeInsets.zero,
@@ -341,6 +367,9 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                             tilePadding: EdgeInsets.zero,
                             title: const Text(
                               'Program sources and review dates',
+                            ),
+                            subtitle: const Text(
+                              'Official references and current availability',
                             ),
                             children: [
                               ListTile(
@@ -395,4 +424,42 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
       ),
     );
   }
+}
+
+ButtonStyle _preparationActionStyle(BuildContext context) =>
+    OutlinedButton.styleFrom(
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
+      side: BorderSide.none,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      foregroundColor: Theme.of(context).colorScheme.onSurface,
+    );
+
+class _PreparationActionLabel extends StatelessWidget {
+  const _PreparationActionLabel({required this.number, required this.title});
+  final String number, title;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.only(top: 3),
+        child: ExcludeSemantics(
+          child: Text(
+            number,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 14),
+      Expanded(child: Text(title)),
+      const SizedBox(width: 8),
+      const ExcludeSemantics(
+        child: Icon(Icons.arrow_forward_rounded, size: 19),
+      ),
+    ],
+  );
 }

@@ -45,10 +45,14 @@ Future<void> _tick(WidgetTester tester) async {
 }
 
 Future<void> _reveal(WidgetTester tester, Finder target) async {
+  final scrollable = find.byType(Scrollable).first;
+  final position = tester.state<ScrollableState>(scrollable).position;
+  position.jumpTo(position.minScrollExtent);
+  await _tick(tester);
   await tester.scrollUntilVisible(
     target,
     200,
-    scrollable: find.byType(Scrollable).first,
+    scrollable: scrollable,
     maxScrolls: 60,
   );
   await tester.ensureVisible(target);

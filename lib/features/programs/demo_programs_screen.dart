@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/models/contracts.dart';
+import '../../shared/presentation/sah_components.dart';
 import '../../shared/services/demo_scenario_service.dart';
 import '../../shared/services/packet_preparation_service.dart';
 import '../requests/draft_packet_screen.dart';
@@ -55,18 +56,16 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
                 !snapshot.hasData ||
                 snapshot.data!.isEmpty) {
               return Center(
-                child: Padding(
+                child: SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('The example cases could not be loaded.'),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        onPressed: _retry,
-                        child: const Text('Try again'),
-                      ),
-                    ],
+                  child: SahEmptyState(
+                    title: 'Examples unavailable',
+                    message: 'The example cases could not be loaded.',
+                    icon: Icons.cloud_off_outlined,
+                    action: FilledButton(
+                      onPressed: _retry,
+                      child: const Text('Try again'),
+                    ),
                   ),
                 ),
               );
@@ -84,21 +83,17 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        'Explore possible support',
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      const _Panel(
-                        child: Text(
-                          'Fictional demo · These saved examples show how results will work. '
-                          'They do not assess eligibility for a real program.',
-                        ),
+                      const SahFeaturePanel(
+                        eyebrow: 'EXPLORE THE APP',
+                        title: 'Explore possible support',
+                        description:
+                            'Fictional demo · These saved examples show how results will work. '
+                            'They do not assess eligibility for a real program.',
                       ),
                       const SizedBox(height: 24),
                       Text(
                         'Choose an example',
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
                       const SizedBox(height: 8),
                       Wrap(
@@ -118,7 +113,14 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
                       const SizedBox(height: 16),
                       Text(selected.description),
                       const SizedBox(height: 16),
-                      _Panel(
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -212,18 +214,12 @@ class _ProgramCard extends StatelessWidget {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-            ],
+          SahStatusBadge(
+            label: label,
+            icon: icon,
+            tone: match.status == 'meets_known_criteria'
+                ? SahNoticeTone.success
+                : SahNoticeTone.warning,
           ),
           const SizedBox(height: 16),
           const Divider(height: 1),
@@ -232,10 +228,16 @@ class _ProgramCard extends StatelessWidget {
             _CheckDetail(check: check),
           ],
           const SizedBox(height: 20),
-          OutlinedButton.icon(
-            onPressed: onOpenDraft,
-            icon: const Icon(Icons.checklist_outlined),
-            label: const Text('View draft checklist'),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onOpenDraft,
+              icon: const Icon(Icons.checklist_outlined),
+              label: const Text(
+                'View draft checklist',
+                textAlign: TextAlign.center,
+              ),
+            ),
           ),
         ],
       ),
@@ -258,7 +260,14 @@ class _CheckDetail extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.labelLarge),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: check.status == 'pass'
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.tertiary,
+          ),
+        ),
         const SizedBox(height: 4),
         Text(check.explanation),
         if (check.status == 'unknown') ...[
@@ -284,15 +293,9 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: child,
+    return Card(
+      margin: const EdgeInsets.only(bottom: 20),
+      child: Padding(padding: const EdgeInsets.all(20), child: child),
     );
   }
 }

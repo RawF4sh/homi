@@ -1,5 +1,297 @@
 import 'package:flutter/material.dart';
 
+class SahBrandMark extends StatelessWidget {
+  const SahBrandMark({super.key, this.size = 44});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primary,
+        borderRadius: BorderRadius.circular(size * .3),
+      ),
+      child: Icon(
+        Icons.cottage_outlined,
+        color: Theme.of(context).colorScheme.onPrimary,
+        size: size * .62,
+      ),
+    ),
+  );
+}
+
+class SahHomeIllustration extends StatelessWidget {
+  const SahHomeIllustration({super.key, this.height = 148});
+  final double height;
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: SizedBox(
+      height: height,
+      width: height * 1.45,
+      child: CustomPaint(painter: const _HomeIllustrationPainter()),
+    ),
+  );
+}
+
+class _HomeIllustrationPainter extends CustomPainter {
+  const _HomeIllustrationPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.scale(size.width / 240, size.height / 166);
+    final paint = Paint()..isAntiAlias = true;
+    void polygon(List<Offset> points, Color color) {
+      final path = Path()..addPolygon(points, true);
+      canvas.drawPath(path, paint..color = color);
+    }
+
+    const cream = Color(0xFFF8F4E4);
+    const forest = Color(0xFF355E4C);
+    const sage = Color(0xFFB9CEAC);
+    const apricot = Color(0xFFE9B892);
+    canvas.drawOval(
+      const Rect.fromLTWH(15, 111, 214, 49),
+      paint..color = const Color(0xFFCDDDC1),
+    );
+    polygon(const [
+      Offset(57, 77),
+      Offset(135, 91),
+      Offset(135, 140),
+      Offset(57, 122),
+    ], cream);
+    polygon(const [
+      Offset(135, 91),
+      Offset(181, 63),
+      Offset(181, 112),
+      Offset(135, 140),
+    ], const Color(0xFFE5E9D1));
+    polygon(const [
+      Offset(47, 77),
+      Offset(79, 23),
+      Offset(151, 38),
+      Offset(139, 95),
+    ], forest);
+    polygon(const [Offset(139, 95), Offset(151, 38), Offset(191, 66)], sage);
+    polygon(const [Offset(151, 38), Offset(181, 63), Offset(146, 84)], cream);
+    polygon(const [
+      Offset(91, 95),
+      Offset(114, 100),
+      Offset(114, 135),
+      Offset(91, 130),
+    ], apricot);
+    polygon(const [
+      Offset(66, 86),
+      Offset(81, 89),
+      Offset(81, 108),
+      Offset(66, 105),
+    ], sage);
+    polygon(const [
+      Offset(149, 98),
+      Offset(169, 86),
+      Offset(169, 106),
+      Offset(149, 119),
+    ], forest);
+    polygon(const [
+      Offset(102, 132),
+      Offset(118, 135),
+      Offset(100, 153),
+      Offset(78, 147),
+    ], const Color(0xFFEEEBD9));
+    canvas.drawCircle(const Offset(108, 116), 1.5, paint..color = forest);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(207, 89, 4, 43),
+        const Radius.circular(2),
+      ),
+      paint..color = forest,
+    );
+    canvas.drawOval(const Rect.fromLTWH(191, 55, 34, 52), paint..color = sage);
+    canvas.drawOval(
+      const Rect.fromLTWH(195, 68, 24, 34),
+      paint..color = const Color(0xFF9BB991),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(32, 116, 15, 16),
+        const Radius.circular(3),
+      ),
+      paint..color = apricot,
+    );
+    canvas.drawOval(
+      const Rect.fromLTWH(29, 100, 20, 22),
+      paint..color = forest,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_HomeIllustrationPainter oldDelegate) => false;
+}
+
+class SahStatusBadge extends StatelessWidget {
+  const SahStatusBadge({
+    super.key,
+    required this.label,
+    this.icon,
+    this.tone = SahNoticeTone.info,
+  });
+  final String label;
+  final IconData? icon;
+  final SahNoticeTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (background, foreground) = switch (tone) {
+      SahNoticeTone.info => (
+        scheme.surfaceContainerLow,
+        scheme.onSurfaceVariant,
+      ),
+      SahNoticeTone.success => (
+        scheme.primaryContainer,
+        scheme.onPrimaryContainer,
+      ),
+      SahNoticeTone.warning => (
+        scheme.tertiaryContainer,
+        scheme.onTertiaryContainer,
+      ),
+      SahNoticeTone.error => (scheme.errorContainer, scheme.onErrorContainer),
+    };
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (icon != null) ...[
+              ExcludeSemantics(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Icon(icon, size: 17, color: foreground),
+                ),
+              ),
+              const SizedBox(width: 7),
+            ],
+            Flexible(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: foreground,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SahFeaturePanel extends StatelessWidget {
+  const SahFeaturePanel({
+    super.key,
+    required this.eyebrow,
+    required this.title,
+    required this.description,
+    this.action,
+    this.illustration,
+  });
+  final String eyebrow, title, description;
+  final Widget? action, illustration;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        borderRadius: BorderRadius.circular(26),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final content = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                eyebrow,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onPrimary,
+                  letterSpacing: 1.3,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: scheme.onPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                description,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onPrimary,
+                ),
+              ),
+              if (action != null) ...[
+                const SizedBox(height: 20),
+                FilledButtonTheme(
+                  data: FilledButtonThemeData(
+                    style: FilledButton.styleFrom(
+                      foregroundColor: scheme.primary,
+                      backgroundColor: scheme.primaryContainer,
+                      disabledForegroundColor: scheme.onPrimary,
+                      disabledBackgroundColor: const Color(0xFF48695C),
+                      minimumSize: const Size(48, 52),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  child: action!,
+                ),
+              ],
+            ],
+          );
+          if (illustration == null ||
+              constraints.maxWidth < 512 ||
+              MediaQuery.textScalerOf(context).scale(14) > 20) {
+            return content;
+          }
+          return Row(
+            children: [
+              Expanded(child: content),
+              const SizedBox(width: 20),
+              SizedBox(width: 180, child: illustration!),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class SahContent extends StatelessWidget {
   const SahContent({super.key, required this.child, this.maxWidth = 760});
   final Widget child;
@@ -38,6 +330,9 @@ class SahPageHeader extends StatelessWidget {
               eyebrow!,
               style: theme.textTheme.labelLarge?.copyWith(
                 color: theme.colorScheme.primary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.3,
               ),
             ),
             const SizedBox(height: 10),
@@ -136,7 +431,7 @@ class SahNotice extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: background,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -246,6 +541,7 @@ class SahActionTile extends StatelessWidget {
   const SahActionTile({
     super.key,
     required this.title,
+    this.overline,
     this.subtitle,
     required this.icon,
     this.onTap,
@@ -253,6 +549,7 @@ class SahActionTile extends StatelessWidget {
     this.enabled = true,
   });
   final String title;
+  final String? overline;
   final String? subtitle;
   final IconData icon;
   final VoidCallback? onTap;
@@ -267,7 +564,7 @@ class SahActionTile extends StatelessWidget {
       child: Material(
         color: theme.colorScheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           side: BorderSide(color: theme.colorScheme.outlineVariant),
         ),
         clipBehavior: Clip.antiAlias,
@@ -284,8 +581,15 @@ class SahActionTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ExcludeSemantics(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 2),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: active
+                              ? theme.colorScheme.primaryContainer
+                              : theme.colorScheme.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                         child: Icon(
                           icon,
                           color: active
@@ -299,7 +603,25 @@ class SahActionTile extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(title, style: theme.textTheme.titleMedium),
+                          if (overline != null) ...[
+                            Text(
+                              overline!,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: .7,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                          ],
+                          Text(
+                            title,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: active
+                                  ? theme.colorScheme.onSurface
+                                  : theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                           if (subtitle != null) ...[
                             const SizedBox(height: 5),
                             Text(
@@ -359,25 +681,20 @@ class SahStepIndicator extends StatelessWidget {
               for (var i = 0; i < labels.length; i++)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
+                    horizontal: 10,
+                    vertical: 7,
                   ),
                   decoration: BoxDecoration(
                     color: i == currentStep
-                        ? theme.colorScheme.primaryContainer
-                        : Colors.transparent,
-                    border: Border.all(
-                      color: i == currentStep
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.outlineVariant,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   child: Text(
                     '${i + 1}  ${labels[i]}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: i == currentStep
-                          ? theme.colorScheme.onPrimaryContainer
+                          ? theme.colorScheme.onPrimary
                           : theme.colorScheme.onSurfaceVariant,
                       fontWeight: i == currentStep
                           ? FontWeight.w700

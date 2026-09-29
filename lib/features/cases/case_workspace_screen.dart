@@ -49,9 +49,10 @@ class CaseWorkspaceScreen extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               children: [
                 const SahPageHeader(
+                  eyebrow: 'YOUR HOME PLAN',
                   title: 'Build your case',
                   description:
-                      'Add the details you know, review your home, and explore possible assistance.',
+                      'Your details, your home, and a clearer path to possible assistance.',
                 ),
                 SahNotice(
                   key: const ValueKey('case-save-status'),
@@ -179,6 +180,7 @@ class CaseWorkspaceScreen extends StatelessWidget {
                 const SahSectionHeading(title: 'Your next steps'),
                 SahActionTile(
                   key: const ValueKey('case-profile'),
+                  overline: '01 · ABOUT YOU',
                   title: 'Resident details',
                   subtitle:
                       '${draft.profile.city ?? 'City not provided'} · ${draft.profile.healthPlan ?? 'Health plan not provided'}',
@@ -194,6 +196,7 @@ class CaseWorkspaceScreen extends StatelessWidget {
                 ),
                 SahActionTile(
                   key: const ValueKey('case-assessment'),
+                  overline: '02 · YOUR SPACE',
                   title: 'Home assessment',
                   subtitle: c.snapshot == null
                       ? 'Save this case online once to begin photos and measurements.'
@@ -222,6 +225,7 @@ class CaseWorkspaceScreen extends StatelessWidget {
                 ),
                 SahActionTile(
                   key: const ValueKey('case-programs'),
+                  overline: '03 · NEXT STEPS',
                   title: 'Possible assistance and drafts',
                   subtitle:
                       c.snapshot == null ||

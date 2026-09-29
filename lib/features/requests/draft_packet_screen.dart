@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../shared/models/contracts.dart';
 import '../../shared/models/draft_packet.dart';
+import '../../shared/presentation/sah_components.dart';
 import '../../shared/services/matching_api_client.dart';
 import '../../shared/services/packet_preparation_service.dart';
 
@@ -144,10 +145,12 @@ class _DraftPacketScreenState extends State<DraftPacketScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              error is MatchingApiException
+            SahNotice(
+              title: 'Checklist unavailable',
+              message: error is MatchingApiException
                   ? error.message
                   : 'The draft checklist could not be loaded. Please try again.',
+              tone: SahNoticeTone.warning,
             ),
             const SizedBox(height: 16),
             if (!stale)
@@ -241,23 +244,34 @@ class _Checklist extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(program.programName, style: theme.textTheme.headlineSmall),
-              const SizedBox(height: 16),
-              if (packet.isDemo)
-                Text(
-                  savedExample ? 'Fictional saved example' : 'Fictional demo',
-                  style: theme.textTheme.titleMedium,
+              SahFeaturePanel(
+                eyebrow: 'DRAFT CHECKLIST',
+                title: program.programName,
+                description: 'Draft only · Nothing has been submitted.',
+              ),
+              const SizedBox(height: 20),
+              if (packet.isDemo) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SahStatusBadge(
+                    label: savedExample
+                        ? 'Fictional saved example'
+                        : 'Fictional demo',
+                    icon: Icons.science_outlined,
+                  ),
                 ),
-              const SizedBox(height: 8),
-              const Text('Draft only · Nothing has been submitted.'),
-              const SizedBox(height: 16),
+                const SizedBox(height: 12),
+              ],
               if (savedExample)
-                const Text(
-                  'This saved checklist shows the next steps. It is not an application for a real program.',
+                const SahNotice(
+                  message:
+                      'This saved checklist shows the next steps. It is not an application for a real program.',
                 )
               else if (!fresh)
-                const Text(
-                  'This draft needs a fresh review before it can be used. Return to program results to check the latest information.',
+                const SahNotice(
+                  message:
+                      'This draft needs a fresh review before it can be used. Return to program results to check the latest information.',
+                  tone: SahNoticeTone.warning,
                 )
               else
                 const Text(
@@ -265,56 +279,116 @@ class _Checklist extends StatelessWidget {
                 ),
               const SizedBox(height: 16),
               if (program.status == 'does_not_meet_criterion')
-                const Text(
-                  'A requirement was not met. Review that result with the program before proceeding.',
+                const SahNotice(
+                  message:
+                      'A requirement was not met. Review that result with the program before proceeding.',
+                  tone: SahNoticeTone.warning,
                 )
               else if (program.status == 'needs_confirmation')
-                const Text('Some requirements still need confirmation.'),
-              const SizedBox(height: 16),
-              Text(
-                packet.formVersion == null ||
+                const SahNotice(
+                  message: 'Some requirements still need confirmation.',
+                  tone: SahNoticeTone.warning,
+                ),
+              const SahSectionHeading(title: 'Your draft materials'),
+              _MaterialSummary(
+                icon: Icons.description_outlined,
+                title: 'Application form',
+                message:
+                    packet.formVersion == null ||
                         packet.mappingVersion == null ||
                         packet.storageReference == null
                     ? 'Official form not prepared. The current form and its fields still need verification.'
                     : 'Any prepared form remains a draft for review. This preview does not open or submit files.',
               ),
-              const SizedBox(height: 8),
-              Text(
-                packet.attachments.isEmpty
+              const SizedBox(height: 16),
+              _MaterialSummary(
+                icon: Icons.photo_library_outlined,
+                title: 'Supporting evidence',
+                message: packet.attachments.isEmpty
                     ? 'No evidence files attached.'
                     : '${packet.attachments.length} evidence references recorded. Files are not shown here.',
               ),
-              const SizedBox(height: 24),
-              Text('What is needed next', style: theme.textTheme.titleLarge),
-              const SizedBox(height: 8),
+              const SahSectionHeading(
+                title: 'What is needed next',
+                description:
+                    'Work through each item with the person who can confirm it.',
+              ),
               if (packet.missingItems.isEmpty)
                 const Text(
                   'No checklist items were returned. The program must still review any application.',
                 ),
-              for (final item in packet.missingItems)
-                Card(
-                  margin: const EdgeInsets.symmetric(vertical: 6),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(item.description),
-                        const SizedBox(height: 8),
-                        Text(switch (item.resolvedBy) {
+              for (final (index, item) in packet.missingItems.indexed)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Divider(height: 1),
+                      const SizedBox(height: 16),
+                      Text(
+                        'ITEM ${(index + 1).toString().padLeft(2, '0')}',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(item.description, style: theme.textTheme.bodyLarge),
+                      const SizedBox(height: 12),
+                      SahStatusBadge(
+                        icon: switch (item.resolvedBy) {
+                          'resident' => Icons.person_outline_rounded,
+                          'professional' => Icons.badge_outlined,
+                          _ => Icons.groups_outlined,
+                        },
+                        label: switch (item.resolvedBy) {
                           'resident' => 'Who can help: resident',
                           'professional' =>
                             'Who can help: qualified professional',
                           _ => 'Who can help: program team',
-                        }, style: theme.textTheme.labelLarge),
-                      ],
-                    ),
+                        },
+                      ),
+                    ],
                   ),
                 ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _MaterialSummary extends StatelessWidget {
+  const _MaterialSummary({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+  final IconData icon;
+  final String title, message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ExcludeSemantics(
+          child: Icon(icon, color: theme.colorScheme.primary, size: 24),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 6),
+              Text(message),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
