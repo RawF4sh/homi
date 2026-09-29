@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'theme.dart';
 import 'private_content_cover.dart';
 import '../features/assessment/domain/capture/capture_adapter.dart';
+import '../features/assessment/application/bathroom_scan_adapter.dart';
 import '../features/auth/login_screen.dart';
 import '../features/cases/case_home_screen.dart';
 import '../features/settings/account_settings_screen.dart';
@@ -74,6 +75,7 @@ class AppServices {
     MatchingTransport? transport,
     this.pdfPreviewBuilder,
     this.captureAdapterFactory,
+    this.bathroomScanAdapter,
   }) : transport = transport ?? IoMatchingTransport() {
     Future<String?> token() async {
       final epoch = session.epoch;
@@ -166,6 +168,8 @@ class AppServices {
 
   final CaptureAdapter Function(BuildContext Function() context)?
   captureAdapterFactory;
+
+  final BathroomScanAdapter? bathroomScanAdapter;
 
   final Widget Function(Uint8List bytes)? pdfPreviewBuilder;
   late final CaseEvidenceApiClient cases;

@@ -10,8 +10,12 @@ flutter run -t lib/features/assessment/dev/main_assessment_demo.dart
 ```
 
 Observations and confirmations do not establish clinical need, legal
-compliance, structural safety, or benefits eligibility. LiDAR is outside this
-first beta; manual entries work on both mobile platforms.
+compliance, structural safety, or benefits eligibility. Optional iPhone RoomPlan
+and Android ARCore scanning now feed a local encrypted 3D review and explicitly
+confirmed observations into this assessment. See [bathroom scanning](../../../docs/bathroom-scanning.md)
+for capabilities, provenance, bounds and physical-device acceptance. Scan extents
+never become manual measurements; photo/manual entries remain available on both
+platforms.
 
 ## Implemented boundaries
 

@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import '../../../app/live_app.dart';
 import '../../../shared/services/matching_api_client.dart';
 import '../application/live_assessment_session.dart';
+import '../application/bathroom_scan_adapter.dart';
+import '../application/bathroom_scan_session.dart';
 import 'assessment_flow_screen.dart';
+import 'bathroom_scan_screen.dart';
 import 'save_status_card.dart';
 import 'recovery_photo_review_card.dart';
 
@@ -67,6 +70,35 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     if (!mounted) return;
     setState(() => canPop = true);
     Navigator.of(context).pop();
+  });
+
+  Future<void> openBathroomScan() => run(() async {
+    session.guard();
+    await session.flush();
+    session.guard();
+    if (!mounted) return;
+    final scanner = BathroomScanSession(
+      store: widget.services.store,
+      caseId: session.caseId,
+      isCurrent: () => session.isCurrent,
+      adapter:
+          widget.services.bathroomScanAdapter ??
+          const NativeBathroomScanAdapter(),
+    );
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BathroomScanScreen(
+          session: scanner,
+          scope: session,
+          importedFinding: (id) =>
+              session.localSaveFailed ? null : session.importedScanFinding(id),
+          activeImports: () => session.activeScanImports,
+          onImport: session.importScanObservation,
+        ),
+      ),
+    );
+    session.guard();
+    await session.flush();
   });
 
   @override
@@ -163,6 +195,38 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
             status: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'See your bathroom in 3D',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Optional LiDAR on iPhone or ARCore on Android. Review a partial model and add only observations you confirm.',
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          key: const ValueKey('open-bathroom-scan'),
+                          onPressed:
+                              busy ||
+                                  session.flow.isBusy ||
+                                  session.localConflict ||
+                                  !session.sync.canSave
+                              ? null
+                              : openBathroomScan,
+                          icon: const Icon(Icons.view_in_ar),
+                          label: const Text('Bathroom scan & 3D review'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 if (notice != null) Text(notice!, semanticsLabel: notice),
                 if (session.resumeNotice != null) Text(session.resumeNotice!),
                 if (session.caseWriteNotice != null)

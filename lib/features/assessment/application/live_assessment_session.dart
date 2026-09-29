@@ -16,7 +16,10 @@ import '../../../shared/services/evidence_annotations_api_client.dart';
 import '../../../shared/services/matching_api_client.dart';
 import '../domain/annotation/box_annotation.dart';
 import '../domain/capture/photo_capture_coordinator.dart';
+import '../domain/capture/capture_adapter.dart';
+import '../domain/scan/scan_suggestions.dart';
 import '../domain/ids/id_factory.dart';
+import '../domain/review/finding_review_state.dart';
 import 'assessment_controller.dart';
 import 'assessment_flow.dart';
 import 'assessment_sync.dart';
@@ -133,6 +136,16 @@ class LiveAssessmentSession extends ChangeNotifier {
   final LocalEvidenceIndex evidence = LocalEvidenceIndex();
   final Map<String, AnnotationState> _annotationStates = {};
   final Map<String, EvidenceDescriptor> _savedEvidence = {};
+  final Map<String, String> _scanImports = {};
+  String? importedScanFinding(String suggestionId) =>
+      _scanImports[suggestionId];
+
+  Set<String> get activeScanImports => {
+    for (final e in _scanImports.entries)
+      if (controller.draftOf(e.value) != null &&
+          controller.reviewOf(e.value)?.state != FindingReviewState.dismissed)
+        e.key,
+  };
   AssessmentState? state;
   String? annotationNotice;
   String? resumeNotice;
@@ -216,6 +229,21 @@ class LiveAssessmentSession extends ChangeNotifier {
       controller.restoreLocal(
         Map<String, Object?>.from(local['controller'] as Map),
       );
+      final scanImports = local['scanImports'] ?? <String, Object?>{};
+      if (scanImports is! Map ||
+          scanImports.length > 256 ||
+          scanImports.entries.any(
+            (e) =>
+                e.key is! String ||
+                !RegExp(
+                  r'^[a-zA-Z0-9_.:-]{1,128}$',
+                ).hasMatch(e.key as String) ||
+                e.value is! String ||
+                !isCaseUuidV4(e.value as String),
+          )) {
+        throw const FormatException('Invalid scan import journal');
+      }
+      _scanImports.addAll(Map<String, String>.from(scanImports));
       evidence.restoreLocal(
         Map<String, Object?>.from(local['evidence'] as Map),
       );
@@ -661,6 +689,56 @@ class LiveAssessmentSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String> importScanObservation(ScanSuggestion suggestion) async {
+    guard();
+    if (flow.isBusy ||
+        !sync.canSave ||
+        localConflict ||
+        pendingRequest != null ||
+        sync.recoveryConflict != null) {
+      throw StateError('Resolve the current assessment operation first.');
+    }
+    final existing = _scanImports[suggestion.id];
+    if (existing != null) {
+      await flush();
+      guard();
+      return existing;
+    }
+    if (_scanImports.length >= 256) {
+      throw StateError('This case has reached its scan review history limit.');
+    }
+    final before = controller.toLocalJson();
+    late String id;
+    _replacingLocal = true;
+    try {
+      id = controller.startFinding(AssessmentArea.bathroom);
+      controller.setObservation(id, suggestion.observation);
+      if (!controller.confirm(id).applied) {
+        throw StateError('The observation needs review.');
+      }
+      CaseDraft.fromJson({
+        ...CaseDraft.fromSnapshot(services.coordinator.currentCase()).toJson(),
+        'findings': sync.replacementFindings.map((e) => e.toJson()).toList(),
+      });
+      _scanImports[suggestion.id] = id;
+    } catch (_) {
+      controller.restoreLocal(before);
+      rethrow;
+    } finally {
+      _replacingLocal = false;
+    }
+    try {
+      await flush();
+    } catch (_) {
+      localSaveFailed = true;
+      notifyListeners();
+      rethrow;
+    }
+    guard();
+    notifyListeners();
+    return id;
+  }
+
   Future<void> flush() {
     if (!_ready) return Future.value();
     guard();
@@ -678,6 +756,7 @@ class LiveAssessmentSession extends ChangeNotifier {
       },
       'assessmentState': state?.toJson(),
       'pendingRequest': pendingRequest,
+      'scanImports': Map<String, String>.from(_scanImports),
     };
     final bytes = Uint8List.fromList(utf8.encode(jsonEncode(value)));
     if (bytes.length > 512 * 1024) {

@@ -30,6 +30,10 @@ import '../../../app/local_private_store_test.dart' show MemorySecrets;
 import '../../../contracts/draft_export_test.dart' as fixture;
 import '../fakes/image_bytes.dart';
 import '../fakes/fakes.dart';
+import '../domain/scan/scan_test_fixtures.dart';
+import 'package:safe_at_home/features/assessment/domain/scan/scan_suggestions.dart';
+import 'package:safe_at_home/features/assessment/application/bathroom_scan_adapter.dart';
+import 'package:safe_at_home/features/assessment/domain/scan/bathroom_scan_scene.dart';
 
 class _DraftFailStore extends LocalPrivateStore {
   _DraftFailStore({
@@ -148,6 +152,22 @@ class _DelayedSecrets extends MemorySecrets {
     }
     return super.read(key);
   }
+}
+
+class _FixtureScanner implements BathroomScanAdapter {
+  @override
+  Future<BathroomScanCapabilities> capabilities() async =>
+      const BathroomScanCapabilities(
+        supported: true,
+        source: 'roomplan',
+        reason: 'available',
+        depthSupported: true,
+      );
+  @override
+  Future<BathroomScanScene> start(String id) async =>
+      BathroomScanScene.fromJson(scanSceneJson()..['scanId'] = id);
+  @override
+  Future<void> cancel(String id) async {}
 }
 
 class _TokenSession extends FakeSession {
@@ -295,6 +315,7 @@ void main() {
       ),
       transport: transport,
       captureAdapterFactory: (_) => capture,
+      bathroomScanAdapter: _FixtureScanner(),
     );
     services.coordinator.snapshot = CaseSnapshot.fromJson(saved);
     services.coordinator.draft = CaseDraft.fromSnapshot(
@@ -311,6 +332,215 @@ void main() {
     services: services,
     context: () => throw UnimplementedError(),
     transport: transport,
+  );
+
+  ScanSuggestion scanSuggestion() => suggestBathroomImprovements(
+    scene: fictionalScanScene(),
+    reviewedElementIds: {'door-1'},
+    difficulties: {ScanDifficulty.enteringBathroom},
+  ).single;
+
+  test(
+    'confirmed scan import is atomic, idempotent and never a manual measurement',
+    () async {
+      final current = make();
+      await current.initialize();
+      final suggestion = scanSuggestion();
+      final id = await current.importScanObservation(suggestion);
+      final finding = current.controller.toFinding(id)!;
+      expect(finding.reviewState, 'confirmed');
+      expect(finding.room, 'bathroom');
+      expect(finding.measurements, isEmpty);
+      expect(finding.evidenceIds, isEmpty);
+      expect(finding.observation, contains('not a verified measurement'));
+      expect(current.sync.hasUnsavedWork, isTrue);
+      expect(await current.importScanObservation(suggestion), id);
+      expect(current.controller.findings, hasLength(1));
+      for (final bytes in (services.store as _DraftFailStore).acceptedDrafts) {
+        final record = jsonDecode(utf8.decode(bytes)) as Map;
+        final imports = record['scanImports'] as Map? ?? {};
+        final drafts = (record['controller'] as Map)['drafts'] as List;
+        expect(imports.isEmpty, drafts.isEmpty);
+        if (imports.isNotEmpty) {
+          expect(imports[suggestion.id], (drafts.single as Map)['id']);
+          expect((drafts.single as Map)['observation'], suggestion.observation);
+        }
+      }
+      current.dispose();
+      active = null;
+      final resumed = make();
+      await resumed.initialize();
+      expect(await resumed.importScanObservation(suggestion), id);
+      expect(resumed.controller.findings, hasLength(1));
+    },
+  );
+
+  test(
+    'scan observation saves through v2 and recovers a lost server response',
+    () async {
+      final current = make();
+      await current.initialize();
+      final suggestion = scanSuggestion();
+      final id = await current.importScanObservation(suggestion);
+      await current.save();
+      expect(current.sync.phase, SyncPhase.uncertain);
+      expect((saved['findings'] as List).single, containsPair('id', id));
+      expect(
+        (saved['findings'] as List).single,
+        containsPair('reviewState', 'confirmed'),
+      );
+      expect(
+        (saved['findings'] as List).single,
+        containsPair('observation', suggestion.observation),
+      );
+      expect(metadata['measurements'], isEmpty);
+      expect(metadata['reviews'], isNotEmpty);
+      current.dispose();
+      active = null;
+      final resumed = make();
+      await resumed.initialize();
+      expect(resumed.sync.phase, SyncPhase.idle);
+      expect(resumed.sync.hasUnsavedWork, isFalse);
+      expect(await resumed.importScanObservation(suggestion), id);
+      expect(
+        transport.requests.where(
+          (r) => r.endpoint.path == '/v2/save-assessment',
+        ),
+        hasLength(1),
+      );
+      expect(services.coordinator.currentCase().findings.single.id, id);
+    },
+  );
+
+  test(
+    'failed scan import device save retries same finding without duplicates',
+    () async {
+      final current = make();
+      await current.initialize();
+      final disk = services.store as _DraftFailStore;
+      disk.failDraftWrites = true;
+      final suggestion = scanSuggestion();
+      await expectLater(
+        current.importScanObservation(suggestion),
+        throwsStateError,
+      );
+      expect(current.localSaveFailed, isTrue);
+      final id = current.importedScanFinding(suggestion.id);
+      expect(id, isNotNull);
+      disk.failDraftWrites = false;
+      expect(await current.importScanObservation(suggestion), id);
+      expect(current.controller.findings, hasLength(1));
+      current.dispose();
+      active = null;
+      final resumed = make();
+      await resumed.initialize();
+      expect(resumed.controller.findings.single.id, id);
+    },
+  );
+
+  test(
+    'process loss after failed import does not retain a receipt without its finding',
+    () async {
+      final current = make();
+      await current.initialize();
+      final disk = services.store as _DraftFailStore;
+      disk.failDraftWrites = true;
+      final suggestion = scanSuggestion();
+      await expectLater(
+        current.importScanObservation(suggestion),
+        throwsStateError,
+      );
+      current.dispose();
+      active = null;
+      disk.failDraftWrites = false;
+      final resumed = make();
+      await resumed.initialize();
+      expect(resumed.importedScanFinding(suggestion.id), isNull);
+      expect(resumed.controller.findings, isEmpty);
+      await resumed.importScanObservation(suggestion);
+      expect(resumed.controller.findings, hasLength(1));
+    },
+  );
+
+  test(
+    'deleted scan finding is not recreated by retrying its import',
+    () async {
+      final current = make();
+      await current.initialize();
+      final suggestion = scanSuggestion();
+      final id = await current.importScanObservation(suggestion);
+      current.controller.removeFinding(id);
+      await current.flush();
+      expect(await current.importScanObservation(suggestion), id);
+      expect(current.controller.findings, isEmpty);
+    },
+  );
+
+  test(
+    'active scan imports follow dismissal, restore, correction and restart',
+    () async {
+      final current = make();
+      await current.initialize();
+      final suggestion = scanSuggestion();
+      final id = await current.importScanObservation(suggestion);
+      expect(current.activeScanImports, {suggestion.id});
+      current.controller.dismiss(id);
+      expect(current.activeScanImports, isEmpty);
+      current.controller.restore(id);
+      current.controller.setObservation(id, 'Resident corrected wording.');
+      expect(current.activeScanImports, {suggestion.id});
+      await current.flush();
+      current.dispose();
+      active = null;
+      final resumed = make();
+      await resumed.initialize();
+      expect(resumed.activeScanImports, {suggestion.id});
+      expect(
+        resumed.controller.draftOf(id)!.observation,
+        'Resident corrected wording.',
+      );
+      expect(
+        resumed.controller.reviewOf(id)!.state.wireValue,
+        'needs_review',
+        reason: 'A corrected observation needs confirmation again',
+      );
+      resumed.controller.removeFinding(id);
+      expect(resumed.activeScanImports, isEmpty);
+      expect(resumed.importedScanFinding(suggestion.id), id);
+    },
+  );
+
+  test(
+    'scan import cannot cross case scope or overwrite reconciliation',
+    () async {
+      final current = make();
+      await current.initialize();
+      current.localConflict = true;
+      await expectLater(
+        current.importScanObservation(scanSuggestion()),
+        throwsStateError,
+      );
+      expect(current.controller.findings, isEmpty);
+      current.localConflict = false;
+      await services.coordinator.clearSelected();
+      await expectLater(
+        current.importScanObservation(scanSuggestion()),
+        throwsA(isA<MatchingApiException>()),
+      );
+      expect(current.controller.findings, isEmpty);
+    },
+  );
+
+  test(
+    'case deletion clears the encrypted scan along with assessment records',
+    () async {
+      await services.store.writeJson(
+        'assessment:${saved['caseId']}:bathroom-scan',
+        {'fictional': true},
+      );
+      await services.coordinator.clearSelected();
+      expect(await services.store.keys(), isEmpty);
+    },
   );
 
   Future<String> stagePhoto(LiveAssessmentSession current) async {
@@ -1061,6 +1291,162 @@ void main() {
       );
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'confirmed scan observation reaches the saved case and reopens as added',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(home: LiveAssessmentScreen(services: services)),
+      );
+      Future<void> settleUntil(bool Function() done) async {
+        for (var attempt = 0; attempt < 400 && !done(); attempt++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(done(), isTrue, reason: 'Bounded private step completed');
+      }
+
+      bool enabled(Finder finder) =>
+          finder.evaluate().isNotEmpty &&
+          tester.widget<ButtonStyleButton>(finder.first).enabled;
+      Future<void> reveal(Finder finder) async {
+        final scrollable = find.byType(Scrollable).last;
+        for (var i = 0; i < 80 && finder.evaluate().isEmpty; i++) {
+          final bounds = tester.getRect(scrollable);
+          await tester.dragFrom(
+            Offset(bounds.left + 8, bounds.center.dy),
+            const Offset(0, -250),
+          );
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        await Scrollable.ensureVisible(
+          tester.element(finder.first),
+          alignment: .5,
+        );
+        await tester.pump();
+      }
+
+      final open = find.byKey(const ValueKey('open-bathroom-scan'));
+      final start = find.byKey(const ValueKey('bathroom-start-scan'));
+      Future<void> openScan() async {
+        await settleUntil(() => enabled(open));
+        await Scrollable.ensureVisible(tester.element(open), alignment: .5);
+        await tester.pump();
+        await tester.tap(open);
+        await settleUntil(
+          () => enabled(
+            find.byKey(
+              const ValueKey('bathroom-start-scan'),
+              skipOffstage: false,
+            ),
+          ),
+        );
+        await reveal(start);
+      }
+
+      Future<void> check(String label) async {
+        final tile = find.widgetWithText(CheckboxListTile, label);
+        final built = find.widgetWithText(
+          CheckboxListTile,
+          label,
+          skipOffstage: false,
+        );
+        await settleUntil(
+          () =>
+              built.evaluate().isNotEmpty &&
+              tester.widget<CheckboxListTile>(built).onChanged != null,
+        );
+        await reveal(tile);
+        final box = find.descendant(of: tile, matching: find.byType(Checkbox));
+        await Scrollable.ensureVisible(tester.element(box), alignment: .5);
+        await tester.pump();
+        await tester.tap(box);
+        await settleUntil(
+          () => tester.widget<CheckboxListTile>(built).value == true,
+        );
+      }
+
+      final added = find.text(
+        'Previously added. Review its current status in the assessment.',
+      );
+      await openScan();
+      await tester.tap(start);
+      await settleUntil(
+        () => find
+            .textContaining('Model saved privately', skipOffstage: false)
+            .evaluate()
+            .isNotEmpty,
+      );
+      await check(
+        'I reviewed this feature’s identity and position against the room',
+      );
+      await check(ScanDifficulty.enteringBathroom.label);
+      final add = find.text('Review and add observation');
+      await reveal(add);
+      await settleUntil(
+        () => enabled(
+          find.ancestor(of: add, matching: find.byType(FilledButton)),
+        ),
+      );
+      await tester.tap(add);
+      await tester.pump(const Duration(milliseconds: 300));
+      final confirm = find.text('Confirm and add');
+      await Scrollable.ensureVisible(tester.element(confirm), alignment: .5);
+      await tester.pump();
+      await tester.tap(confirm);
+      await settleUntil(
+        () => find
+            .text(
+              'Previously added. Review its current status in the assessment.',
+              skipOffstage: false,
+            )
+            .evaluate()
+            .isNotEmpty,
+      );
+
+      await tester.tap(find.byType(BackButton));
+      await settleUntil(() => find.text('Bathroom in 3D').evaluate().isEmpty);
+      await openScan();
+      await reveal(added);
+      expect(added, findsOneWidget);
+      expect(find.text('Review and add observation'), findsNothing);
+      await tester.tap(find.byType(BackButton));
+      await settleUntil(() => find.text('Bathroom in 3D').evaluate().isEmpty);
+
+      final save = find.text('Save to my case');
+      await settleUntil(() => save.evaluate().isNotEmpty);
+      await Scrollable.ensureVisible(tester.element(save), alignment: .5);
+      await tester.pump();
+      await tester.tap(save);
+      await settleUntil(
+        () => transport.requests.any(
+          (r) => r.endpoint.path == '/v2/save-assessment',
+        ),
+      );
+      await settleUntil(() => (saved['findings'] as List).isNotEmpty);
+      final finding = Map<String, Object?>.from(
+        (saved['findings'] as List).single as Map,
+      );
+      expect(finding['room'], 'bathroom');
+      expect(finding['reviewState'], 'confirmed');
+      expect(finding['measurements'], isEmpty);
+      expect(finding['evidenceIds'], isEmpty);
+      expect(
+        finding['observation'],
+        allOf(
+          contains('Rule bathroom.doorway_report v1'),
+          contains('not a verified measurement'),
+        ),
+      );
+      expect(metadata['measurements'], isEmpty);
+      final requests = transport.requests.map((r) => r.endpoint.path);
+      expect(requests.where((p) => p.contains('scan')), isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settleUntil(() => true);
     },
   );
 
