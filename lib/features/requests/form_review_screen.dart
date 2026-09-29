@@ -275,18 +275,14 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SahStepIndicator(
-                    currentStep: 3,
-                    labels: ['Details', 'Home', 'Programs', 'Draft'],
-                  ),
                   SahPageHeader(
                     title: widget.program.programName,
-                    description:
-                        'Review the administrative details that may appear in your draft.',
+                    description: 'Check details that may appear in your draft.',
                   ),
-                  const SahNotice(
-                    message:
-                        'These answers do not supply diagnoses, medical necessity, consent or signatures. Review each supplied value yourself.',
+                  const SahMoreInfo(
+                    details: [
+                      'These answers do not supply diagnoses, medical necessity, consent or signatures. Review each supplied value yourself.',
+                    ],
                   ),
                   if (_busy)
                     const Padding(
@@ -314,22 +310,22 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                     ),
                   ),
                   if (_answers != null) ...[
-                    SahNotice(
-                      message: _answers!.artifactKind == 'preparation_worksheet'
-                          ? 'Preparation worksheet · this is not an official application form.'
-                          : 'Official-form draft · incomplete and unsubmitted.',
+                    SahStatusBadge(
+                      label: _answers!.artifactKind == 'preparation_worksheet'
+                          ? 'Worksheet · not an official form'
+                          : 'Official-form draft · not submitted',
                       icon: Icons.description_outlined,
                     ),
                     if (!_answers!.isCurrent)
                       const SahNotice(
                         message:
-                            'The saved answer set needs review for the current case and form.',
+                            'Saved answers need review for the current case and form.',
                         tone: SahNoticeTone.warning,
                       ),
                     SahSectionHeading(
                       title: 'Review your answers',
                       description:
-                          '${_activeKeys.where((key) => _fields[key]!.text.trim().isNotEmpty && _reviewed[key] == true).length} of ${_activeKeys.where((key) => _fields[key]!.text.trim().isNotEmpty).length} supplied values reviewed. Blank values remain unknown.',
+                          '${_activeKeys.where((key) => _fields[key]!.text.trim().isNotEmpty && _reviewed[key] == true).length} of ${_activeKeys.where((key) => _fields[key]!.text.trim().isNotEmpty).length} checked · blank stays unknown',
                     ),
                     for (final key in _activeKeys)
                       Padding(
@@ -349,8 +345,8 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                               decoration: InputDecoration(
                                 labelText: _definition(key).label,
                                 helperText: _definition(key).kind == 'date'
-                                    ? 'YYYY-MM-DD; leave blank if unknown'
-                                    : 'Leave blank if unknown',
+                                    ? 'YYYY-MM-DD'
+                                    : null,
                                 counterText: '',
                               ),
                               maxLength: _definition(key).maxLength,

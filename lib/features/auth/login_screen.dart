@@ -140,8 +140,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 10),
                 Text(
                   recovering
-                      ? 'Set a new password to return to your private workspace.'
-                      : 'Sign in to continue your home assessment and draft preparation.',
+                      ? 'Choose a new password.'
+                      : 'Sign in to continue.',
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -240,7 +240,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Use fictional resident information during the team beta.',
+                  'Team beta: use fictional information only.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -249,7 +249,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
                     child: Text(
-                      'Sign in with your provisioned team account. Email registration and recovery are not enabled for this beta.',
+                      'Use your team account. Sign-up and password reset are off in this beta.',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),

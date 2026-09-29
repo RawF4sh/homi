@@ -14,6 +14,14 @@ class BathroomScanCapabilities {
   final String source, reason;
   final bool? depthSupported;
 
+  bool get canRequestCapture =>
+      supported ||
+      {
+        'services_missing',
+        'services_update_required',
+        'permission_denied',
+      }.contains(reason);
+
   factory BathroomScanCapabilities.fromJson(Object? raw) {
     if (raw is! Map ||
         raw['supported'] is! bool ||

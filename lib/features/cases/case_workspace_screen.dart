@@ -41,6 +41,41 @@ class CaseWorkspaceScreen extends StatelessWidget {
           ),
         );
       }
+      final profile = draft.profile.toJson();
+      final answered = profile.values.where((v) => v != null).length;
+      final saved = draft.findings
+          .where((f) => f.reviewState != 'dismissed')
+          .toList();
+      final toReview = saved
+          .where((f) => f.reviewState == 'needs_review')
+          .length;
+      final programsBlocked =
+          c.busy ||
+          c.snapshot == null ||
+          c.hasUnsavedChanges ||
+          c.uncertain ||
+          c.conflict;
+      final problem =
+          c.localSaveFailed ||
+          c.localWritePending ||
+          c.busy ||
+          c.conflict ||
+          c.uncertain;
+      void open(Widget screen) => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => screen));
+      final next = _nextStep(
+        context,
+        answered: answered,
+        unsaved: c.snapshot == null || c.hasUnsavedChanges,
+        neverSaved: c.snapshot == null,
+        savedFindings: saved.length,
+        toReview: toReview,
+        onProfile: () => open(ProfileEditorScreen(services: services)),
+        onSave: () => _run(context, c.save),
+        onAssessment: () => open(LiveAssessmentScreen(services: services)),
+        onPrograms: () => open(LiveProgramsScreen(services: services)),
+      );
       return Scaffold(
         appBar: AppBar(title: Text('Case ${shortCaseId(draft.caseId)}')),
         body: SafeArea(
@@ -48,159 +83,197 @@ class CaseWorkspaceScreen extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                const SahPageHeader(
-                  eyebrow: 'YOUR HOME PLAN',
-                  title: 'Build your case',
-                  description:
-                      'Your details, your home, and a clearer path to possible assistance.',
-                ),
-                SahNotice(
-                  key: const ValueKey('case-save-status'),
-                  title: c.localSaveFailed
-                      ? 'Not saved on this device'
-                      : c.localWritePending
-                      ? 'Saving on this device'
-                      : c.busy
-                      ? 'Case update in progress'
-                      : c.conflict
-                      ? 'Case versions need review'
-                      : c.uncertain
-                      ? 'Save confirmation needed'
-                      : c.snapshot == null
-                      ? 'Local draft'
-                      : 'Saved revision ${c.snapshot!.revision}',
-                  message: c.localSaveFailed
-                      ? 'The latest changes could not be kept on this device. Keep this case open and retry before leaving.'
-                      : c.localWritePending
-                      ? 'Wait for the private device save to finish before leaving this case.'
-                      : c.busy
-                      ? 'Wait for confirmation before continuing.'
-                      : c.conflict
-                      ? 'The saved case and this device differ. Compare the versions before choosing what to keep.'
-                      : c.uncertain
-                      ? 'A save may already have succeeded. Check saved state before another save.'
-                      : c.hasUnsavedChanges
-                      ? 'This device has changes not confirmed online.'
-                      : 'Your case matches the last saved version.',
-                  icon: c.localSaveFailed
-                      ? Icons.error_outline
-                      : c.localWritePending || c.busy
-                      ? Icons.sync_rounded
-                      : c.uncertain || c.conflict
-                      ? Icons.sync_problem_outlined
-                      : c.hasUnsavedChanges
-                      ? Icons.edit_note_rounded
-                      : Icons.cloud_done_outlined,
-                  tone: c.localSaveFailed
-                      ? SahNoticeTone.error
-                      : c.localWritePending
-                      ? SahNoticeTone.info
-                      : c.uncertain || c.conflict
-                      ? SahNoticeTone.warning
-                      : c.busy || c.hasUnsavedChanges
-                      ? SahNoticeTone.info
-                      : SahNoticeTone.success,
-                ),
-                if (c.notice != null)
-                  SahNotice(message: c.notice!, tone: SahNoticeTone.warning),
-                if (c.localSaveFailed)
-                  OutlinedButton.icon(
-                    key: const ValueKey('case-retry-device-save'),
-                    onPressed: c.busy || c.localWritePending
-                        ? null
-                        : () => _run(context, c.retryDeviceSave),
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Retry saving on this device'),
-                  ),
-                if (c.busy)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: LinearProgressIndicator(
-                      semanticsLabel: 'Updating saved case',
-                    ),
-                  ),
-                if (c.conflict) ...[
-                  const SahNotice(
-                    title: 'Choose which version to continue',
-                    message:
-                        'Compare saved content with local edits before choosing a version.',
-                    tone: SahNoticeTone.warning,
-                  ),
-                  ExpansionTile(
-                    title: const Text('Compare versions'),
+                if (!problem) ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      _CaseVersionSummary(
-                        title: 'Saved online',
-                        draft: c.snapshot == null
-                            ? null
-                            : CaseDraft.fromSnapshot(c.snapshot!),
+                      SahStatusBadge(
+                        key: const ValueKey('case-save-badge'),
+                        label: c.snapshot == null
+                            ? 'Not saved online yet'
+                            : c.hasUnsavedChanges
+                            ? 'Changes not saved online'
+                            : 'Saved online · revision ${c.snapshot!.revision}',
+                        icon: c.snapshot == null || c.hasUnsavedChanges
+                            ? Icons.phone_iphone_rounded
+                            : Icons.cloud_done_outlined,
+                        tone: c.snapshot == null || c.hasUnsavedChanges
+                            ? SahNoticeTone.info
+                            : SahNoticeTone.success,
                       ),
-                      _CaseVersionSummary(
-                        title: 'On this device',
-                        draft: draft,
+                      TextButton(
+                        key: const ValueKey('case-check-saved-state'),
+                        onPressed: () => _run(context, c.reconcile),
+                        child: const Text('Check saved state'),
                       ),
                     ],
                   ),
-                  OutlinedButton(
-                    onPressed: c.busy
-                        ? null
-                        : () => _run(
-                            context,
-                            () => c.resolveConflict(keepLocal: false),
-                          ),
-                    child: const Text('Use the saved version'),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton(
-                    onPressed: c.busy
-                        ? null
-                        : () => _run(
-                            context,
-                            () => c.resolveConflict(keepLocal: true),
-                          ),
-                    child: const Text('Keep my edits for another save'),
-                  ),
+                  if (c.notice != null && !c.notice!.startsWith('Saved'))
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        c.notice!,
+                        key: const ValueKey('case-latest-update'),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 16),
+                  next,
+                ] else ...[
+                  SahNotice(
+                    key: const ValueKey('case-save-status'),
+                    title: c.localSaveFailed
+                        ? 'Not saved on this device'
+                        : c.localWritePending
+                        ? 'Saving on this device'
+                        : c.busy
+                        ? 'Case update in progress'
+                        : c.conflict
+                        ? 'Case versions need review'
+                        : 'Save confirmation needed',
+                    message: c.localSaveFailed
+                        ? 'Keep this case open and retry.'
+                        : c.localWritePending
+                        ? 'Wait before leaving this case.'
+                        : c.busy
+                        ? 'Wait for confirmation.'
+                        : c.conflict
+                        ? 'The saved case and this device differ.'
+                        : 'A save may already have worked. Check before saving again.',
+                    icon: c.localSaveFailed
+                        ? Icons.error_outline
+                        : c.localWritePending || c.busy
+                        ? Icons.sync_rounded
+                        : Icons.sync_problem_outlined,
+                    tone: c.localSaveFailed
+                        ? SahNoticeTone.error
+                        : c.uncertain || c.conflict
+                        ? SahNoticeTone.warning
+                        : SahNoticeTone.info,
+                  ),
+                  if (c.notice != null)
+                    Text(
+                      c.notice!,
+                      key: const ValueKey('case-latest-update'),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  if (c.localSaveFailed)
+                    OutlinedButton.icon(
+                      key: const ValueKey('case-retry-device-save'),
+                      onPressed: c.busy || c.localWritePending
+                          ? null
+                          : () => _run(context, c.retryDeviceSave),
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('Retry saving on this device'),
+                    ),
+                  if (c.busy)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: LinearProgressIndicator(
+                        semanticsLabel: 'Updating saved case',
+                      ),
+                    ),
+                  if (c.conflict) ...[
+                    ExpansionTile(
+                      title: const Text('Compare versions'),
+                      children: [
+                        _CaseVersionSummary(
+                          title: 'Saved online',
+                          draft: c.snapshot == null
+                              ? null
+                              : CaseDraft.fromSnapshot(c.snapshot!),
+                        ),
+                        _CaseVersionSummary(
+                          title: 'On this device',
+                          draft: draft,
+                        ),
+                      ],
+                    ),
+                    OutlinedButton(
+                      onPressed: c.busy
+                          ? null
+                          : () => _run(
+                              context,
+                              () => c.resolveConflict(keepLocal: false),
+                            ),
+                      child: const Text('Use the saved version'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: c.busy
+                          ? null
+                          : () => _run(
+                              context,
+                              () => c.resolveConflict(keepLocal: true),
+                            ),
+                      child: const Text('Keep my edits for another save'),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  if (c.uncertain) ...[
+                    FilledButton(
+                      key: const ValueKey('case-check-saved-state'),
+                      onPressed: c.busy
+                          ? null
+                          : () => _run(context, c.reconcile),
+                      child: const Text('Check saved state'),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  FilledButton.icon(
+                    key: const ValueKey('case-save-online'),
+                    onPressed: c.busy || c.uncertain || c.conflict
+                        ? null
+                        : () => _run(context, c.save),
+                    icon: const Icon(Icons.cloud_upload_outlined),
+                    label: const Text('Save online'),
+                  ),
+                  if (!c.uncertain)
+                    TextButton(
+                      key: const ValueKey('case-check-saved-state'),
+                      onPressed: c.busy
+                          ? null
+                          : () => _run(context, c.reconcile),
+                      child: const Text('Check saved state'),
+                    ),
                 ],
-                const SizedBox(height: 8),
-                FilledButton.icon(
-                  key: const ValueKey('case-save-online'),
-                  onPressed: c.busy || c.uncertain || c.conflict
-                      ? null
-                      : () => _run(context, c.save),
-                  icon: const Icon(Icons.cloud_upload_outlined),
-                  label: const Text('Save online'),
-                ),
-                const SizedBox(height: 10),
-                OutlinedButton(
-                  key: const ValueKey('case-check-saved-state'),
-                  onPressed: c.busy ? null : () => _run(context, c.reconcile),
-                  child: const Text('Check saved state'),
-                ),
-                const SahSectionHeading(title: 'Your next steps'),
+                const SahSectionHeading(title: 'All parts'),
                 SahActionTile(
                   key: const ValueKey('case-profile'),
-                  overline: '01 · ABOUT YOU',
                   title: 'Resident details',
-                  subtitle:
-                      '${draft.profile.city ?? 'City not provided'} · ${draft.profile.healthPlan ?? 'Health plan not provided'}',
+                  subtitle: answered == 0
+                      ? null
+                      : '${draft.profile.city ?? 'City not provided'} · ${draft.profile.healthPlan ?? 'Health plan not provided'}',
+                  status: answered == 0
+                      ? 'Not started'
+                      : '$answered of ${profile.length} answered',
+                  statusIcon: answered == 0
+                      ? Icons.radio_button_unchecked_rounded
+                      : Icons.edit_note_rounded,
                   icon: Icons.person_outline_rounded,
                   onTap: c.busy
                       ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                ProfileEditorScreen(services: services),
-                          ),
-                        ),
+                      : () => open(ProfileEditorScreen(services: services)),
                 ),
                 SahActionTile(
                   key: const ValueKey('case-assessment'),
-                  overline: '02 · YOUR SPACE',
                   title: 'Home assessment',
-                  subtitle: c.snapshot == null
-                      ? 'Save this case online once to begin photos and measurements.'
-                      : '${draft.findings.length} findings · Bathroom and entrance',
+                  subtitle: c.snapshot == null ? 'Save online first.' : null,
+                  status: c.snapshot == null
+                      ? 'Cannot start yet'
+                      : saved.isEmpty
+                      ? 'No findings saved online yet'
+                      : '${saved.length} saved online · '
+                            '${toReview == 0 ? 'none to review' : '$toReview to review'}',
+                  statusIcon: c.snapshot == null
+                      ? Icons.lock_outline_rounded
+                      : saved.isEmpty
+                      ? Icons.radio_button_unchecked_rounded
+                      : Icons.cloud_done_outlined,
                   icon: Icons.home_outlined,
                   onTap: c.busy
                       ? null
@@ -209,52 +282,29 @@ class CaseWorkspaceScreen extends StatelessWidget {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(
-                                  'Save this new case online once before opening its assessment. You can then continue photos and measurements offline.',
+                                  'Save this case online once to start the assessment. After that it also works offline.',
                                 ),
                               ),
                             );
                             return;
                           }
-                          await Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  LiveAssessmentScreen(services: services),
-                            ),
-                          );
+                          open(LiveAssessmentScreen(services: services));
                         },
                 ),
                 SahActionTile(
                   key: const ValueKey('case-programs'),
-                  overline: '03 · NEXT STEPS',
                   title: 'Possible assistance and drafts',
-                  subtitle:
-                      c.snapshot == null ||
-                          c.hasUnsavedChanges ||
-                          c.uncertain ||
-                          c.conflict
-                      ? 'Save and confirm the current case to review program checks.'
-                      : 'Explained checks and unresolved next steps',
+                  subtitle: programsBlocked ? 'Save online first.' : null,
+                  status: programsBlocked
+                      ? 'Cannot start yet'
+                      : 'Ready to check',
+                  statusIcon: programsBlocked
+                      ? Icons.lock_outline_rounded
+                      : Icons.arrow_forward_rounded,
                   icon: Icons.article_outlined,
-                  onTap:
-                      c.busy ||
-                          c.snapshot == null ||
-                          c.hasUnsavedChanges ||
-                          c.uncertain ||
-                          c.conflict
+                  onTap: programsBlocked
                       ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                LiveProgramsScreen(services: services),
-                          ),
-                        ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'An observation is not a diagnosis or funding decision. Drafts are not submitted applications.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                      : () => open(LiveProgramsScreen(services: services)),
                 ),
               ],
             ),
@@ -262,6 +312,81 @@ class CaseWorkspaceScreen extends StatelessWidget {
         ),
       );
     },
+  );
+}
+
+Widget _nextStep(
+  BuildContext context, {
+  required int answered,
+  required bool unsaved,
+  required bool neverSaved,
+  required int savedFindings,
+  required int toReview,
+  required VoidCallback onProfile,
+  required VoidCallback onSave,
+  required VoidCallback onAssessment,
+  required VoidCallback onPrograms,
+}) {
+  final (String title, String description, Widget action) = switch (null) {
+    _ when neverSaved && answered == 0 => (
+      'Add resident details',
+      'Skip anything you don’t know.',
+      FilledButton.icon(
+        key: const ValueKey('case-next-profile'),
+        onPressed: onProfile,
+        icon: const Icon(Icons.person_outline_rounded),
+        label: const Text('Add details'),
+      ),
+    ),
+    _ when unsaved => (
+      'Save your case online',
+      neverSaved
+          ? 'Saving once unlocks the home assessment.'
+          : 'Some changes are only on this device.',
+      FilledButton.icon(
+        key: const ValueKey('case-save-online'),
+        onPressed: onSave,
+        icon: const Icon(Icons.cloud_upload_outlined),
+        label: const Text('Save online'),
+      ),
+    ),
+    _ when savedFindings == 0 => (
+      'Assess the home',
+      'Photos and measurements of the bathroom and entrance.',
+      FilledButton.icon(
+        key: const ValueKey('case-next-assessment'),
+        onPressed: onAssessment,
+        icon: const Icon(Icons.home_outlined),
+        label: const Text('Open assessment'),
+      ),
+    ),
+    _ when toReview > 0 => (
+      'Review your findings',
+      '$toReview saved ${toReview == 1 ? 'finding needs' : 'findings need'} your check.',
+      FilledButton.icon(
+        key: const ValueKey('case-next-assessment'),
+        onPressed: onAssessment,
+        icon: const Icon(Icons.rate_review_outlined),
+        label: const Text('Open assessment'),
+      ),
+    ),
+    _ => (
+      'Check possible assistance',
+      'See which programs may fit and what is still unknown.',
+      FilledButton.icon(
+        key: const ValueKey('case-next-programs'),
+        onPressed: onPrograms,
+        icon: const Icon(Icons.arrow_forward_rounded),
+        label: const Text('See programs'),
+      ),
+    ),
+  };
+  return SahFeaturePanel(
+    key: const ValueKey('case-next-step'),
+    eyebrow: 'NEXT STEP',
+    title: title,
+    description: description,
+    action: action,
   );
 }
 

@@ -140,6 +140,19 @@ class LiveAssessmentSession extends ChangeNotifier {
   String? importedScanFinding(String suggestionId) =>
       _scanImports[suggestionId];
 
+  bool? get photoMarksUnsaved {
+    var unknown = false;
+    for (final entry in _annotationStates.entries) {
+      final item = _savedEvidence[entry.key];
+      if (item == null) {
+        unknown = true;
+      } else if (_canonical(marksFor(item)) != _canonical(entry.value.marks)) {
+        return true;
+      }
+    }
+    return unknown ? null : false;
+  }
+
   Set<String> get activeScanImports => {
     for (final e in _scanImports.entries)
       if (controller.draftOf(e.value) != null &&

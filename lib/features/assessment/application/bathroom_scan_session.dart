@@ -178,12 +178,16 @@ class BathroomScanSession extends ChangeNotifier {
   Future<void> refreshCapabilities() async {
     guard();
     try {
-      final result = await adapter.capabilities();
+      final result = await adapter.capabilities().timeout(
+        const Duration(seconds: 5),
+      );
       guard();
       capabilities = result;
     } on ScanScopeExpired {
       rethrow;
     } catch (_) {
+      guard();
+      capabilities = null;
       notice =
           'Scanner availability could not be checked. You can still use photos and manual measurements.';
     }

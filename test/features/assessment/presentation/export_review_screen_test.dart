@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:safe_at_home/shared/presentation/sah_components.dart';
 import 'package:safe_at_home/features/assessment/application/assessment_sync.dart';
 import 'package:safe_at_home/features/assessment/application/export_review.dart';
 import 'package:safe_at_home/features/assessment/domain/capture/capture_adapter.dart';
@@ -153,6 +154,55 @@ void main() {
       fx.controller.setObservation(id, 'I notice a high step.');
       await tester.pump();
       expect(find.textContaining('Not saved yet'), findsOneWidget);
+    });
+
+    testWidgets('an undescribed new finding is never called saved', (
+      tester,
+    ) async {
+      late Fixture fx;
+      await tester.runAsync(() async {
+        fx = await Fixture.create();
+      });
+      fx.controller.startFinding(AssessmentArea.entrance);
+      expect(fx.sync.hasUnsavedWork, isFalse);
+      Widget card() => MaterialApp(
+        home: Scaffold(
+          body: SaveStatusCard(
+            sync: fx.sync,
+            durableLocal: true,
+            undescribedDraftOpen: fx.controller.incompleteFindingIds.isNotEmpty,
+          ),
+        ),
+      );
+      await tester.pumpWidget(card());
+      expect(find.text('Saved to your case.'), findsNothing);
+      expect(find.text('This finding is not saved online yet'), findsOneWidget);
+      expect(find.text('Save to my case'), findsNothing);
+      expect(find.textContaining('Earlier findings'), findsNothing);
+    });
+
+    testWidgets('saved findings with changed or unknown photo marks', (
+      tester,
+    ) async {
+      late Fixture fx;
+      await tester.runAsync(() async {
+        fx = await Fixture.create();
+      });
+      Widget card(bool? marks) => MaterialApp(
+        home: Scaffold(
+          body: SaveStatusCard(sync: fx.sync, photoMarksUnsaved: marks),
+        ),
+      );
+      SahNotice notice() => tester.widget<SahNotice>(find.byType(SahNotice));
+      await tester.pumpWidget(card(true));
+      expect(find.text('Photo marks not saved online'), findsOneWidget);
+      expect(find.text('Save findings and photo marks online'), findsOneWidget);
+      expect(find.text('Saved to your case.'), findsNothing);
+      await tester.pumpWidget(card(null));
+      expect(find.text('Saved to your case.'), findsOneWidget);
+      expect(notice().tone, isNot(SahNoticeTone.success));
+      await tester.pumpWidget(card(false));
+      expect(notice().tone, SahNoticeTone.success);
     });
 
     testWidgets('an uncertain save offers only a check', (tester) async {

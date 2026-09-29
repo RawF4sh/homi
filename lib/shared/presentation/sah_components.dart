@@ -201,13 +201,14 @@ class SahStatusBadge extends StatelessWidget {
 class SahFeaturePanel extends StatelessWidget {
   const SahFeaturePanel({
     super.key,
-    required this.eyebrow,
+    this.eyebrow,
     required this.title,
     required this.description,
     this.action,
     this.illustration,
   });
-  final String eyebrow, title, description;
+  final String? eyebrow;
+  final String title, description;
   final Widget? action, illustration;
 
   @override
@@ -225,15 +226,17 @@ class SahFeaturePanel extends StatelessWidget {
           final content = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                eyebrow,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: scheme.onPrimary,
-                  letterSpacing: 1.3,
-                  fontWeight: FontWeight.w600,
+              if (eyebrow != null) ...[
+                Text(
+                  eyebrow!,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onPrimary,
+                    letterSpacing: 1.3,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
               Semantics(
                 header: true,
                 child: Text(
@@ -288,6 +291,45 @@ class SahFeaturePanel extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class SahMoreInfo extends StatelessWidget {
+  const SahMoreInfo({
+    super.key,
+    required this.details,
+    this.label = 'More about this',
+  });
+  final List<String> details;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      dense: true,
+      leading: Icon(
+        Icons.info_outline_rounded,
+        color: theme.colorScheme.primary,
+      ),
+      title: Text(
+        label,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      expandedCrossAxisAlignment: CrossAxisAlignment.start,
+      childrenPadding: const EdgeInsets.only(bottom: 8),
+      children: [
+        for (final text in details)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(text, style: theme.textTheme.bodyMedium),
+          ),
+      ],
     );
   }
 }
@@ -394,11 +436,20 @@ class SahNotice extends StatelessWidget {
     this.title,
     this.icon,
     this.tone = SahNoticeTone.info,
+    this.messageKey,
+    this.action,
+    this.liveRegion = true,
   });
   final String message;
   final String? title;
   final IconData? icon;
   final SahNoticeTone tone;
+
+  final Key? messageKey;
+
+  final Widget? action;
+
+  final bool liveRegion;
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -425,7 +476,7 @@ class SahNotice extends StatelessWidget {
       ),
     };
     return Semantics(
-      liveRegion: true,
+      liveRegion: liveRegion,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 8),
         padding: const EdgeInsets.all(16),
@@ -455,10 +506,18 @@ class SahNotice extends StatelessWidget {
                   ],
                   Text(
                     message,
+                    key: messageKey,
                     style: Theme.of(
                       context,
                     ).textTheme.bodyMedium?.copyWith(color: foreground),
                   ),
+                  if (action != null) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: action,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -547,10 +606,15 @@ class SahActionTile extends StatelessWidget {
     this.onTap,
     this.trailing,
     this.enabled = true,
+    this.status,
+    this.statusIcon,
   });
   final String title;
   final String? overline;
   final String? subtitle;
+
+  final String? status;
+  final IconData? statusIcon;
   final IconData icon;
   final VoidCallback? onTap;
   final Widget? trailing;
@@ -559,6 +623,7 @@ class SahActionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final active = enabled && onTap != null;
+    final showIcon = MediaQuery.textScalerOf(context).scale(14) <= 20;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
@@ -580,25 +645,27 @@ class SahActionTile extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ExcludeSemantics(
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: active
-                              ? theme.colorScheme.primaryContainer
-                              : theme.colorScheme.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(
-                          icon,
-                          color: active
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurfaceVariant,
+                    if (showIcon) ...[
+                      ExcludeSemantics(
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: active
+                                ? theme.colorScheme.primaryContainer
+                                : theme.colorScheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            icon,
+                            color: active
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
+                      const SizedBox(width: 14),
+                    ],
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -631,6 +698,36 @@ class SahActionTile extends StatelessWidget {
                               ),
                             ),
                           ],
+                          if (status != null) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (statusIcon != null) ...[
+                                  ExcludeSemantics(
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(top: 1),
+                                      child: Icon(
+                                        statusIcon,
+                                        size: 18,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
+                                Flexible(
+                                  child: Text(
+                                    status!,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurface,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -649,60 +746,6 @@ class SahActionTile extends StatelessWidget {
                 ),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class SahStepIndicator extends StatelessWidget {
-  const SahStepIndicator({
-    super.key,
-    required this.currentStep,
-    required this.labels,
-  }) : assert(currentStep >= 0);
-  final int currentStep;
-  final List<String> labels;
-  @override
-  Widget build(BuildContext context) {
-    assert(currentStep < labels.length);
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Semantics(
-        label:
-            'Step ${currentStep + 1} of ${labels.length}: ${labels[currentStep]}',
-        child: ExcludeSemantics(
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (var i = 0; i < labels.length; i++)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: i == currentStep
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Text(
-                    '${i + 1}  ${labels[i]}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: i == currentStep
-                          ? theme.colorScheme.onPrimary
-                          : theme.colorScheme.onSurfaceVariant,
-                      fontWeight: i == currentStep
-                          ? FontWeight.w700
-                          : FontWeight.w400,
-                    ),
-                  ),
-                ),
-            ],
           ),
         ),
       ),

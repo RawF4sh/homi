@@ -5,10 +5,14 @@ import '../../../app/live_app.dart';
 import '../../../shared/services/matching_api_client.dart';
 import '../application/live_assessment_session.dart';
 import '../application/bathroom_scan_adapter.dart';
+import '../application/bathroom_scan_availability.dart';
+import 'assessment_scan_entry.dart';
 import '../application/bathroom_scan_session.dart';
 import 'assessment_flow_screen.dart';
 import 'bathroom_scan_screen.dart';
 import 'save_status_card.dart';
+import '../application/assessment_sync.dart';
+import '../../../shared/presentation/sah_components.dart';
 import 'recovery_photo_review_card.dart';
 
 class LiveAssessmentScreen extends StatefulWidget {
@@ -24,6 +28,13 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     services: widget.services,
     context: () => context,
   );
+  late final BathroomScanAvailability scanAvailability =
+      BathroomScanAvailability(
+        adapter:
+            widget.services.bathroomScanAdapter ??
+            const NativeBathroomScanAdapter(),
+        isCurrent: () => mounted && session.isCurrent,
+      );
   late final Future<void> ready;
   bool busy = false, canPop = false, initialized = false;
   String? notice;
@@ -35,6 +46,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     WidgetsBinding.instance.addObserver(this);
     ready = session.initialize().then((_) {
       initialized = true;
+      if (mounted) scanAvailability.refresh();
     });
   }
 
@@ -99,10 +111,17 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     );
     session.guard();
     await session.flush();
+    scanAvailability.refresh();
   });
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        initialized &&
+        !busy &&
+        ModalRoute.of(context)?.isCurrent == true) {
+      scanAvailability.refresh();
+    }
     if (initialized &&
         (state == AppLifecycleState.inactive ||
             state == AppLifecycleState.paused)) {
@@ -113,6 +132,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    scanAvailability.dispose();
     session.dispose();
     super.dispose();
   }
@@ -173,172 +193,192 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
           );
         }
         return ListenableBuilder(
-          listenable: session,
-          builder: (context, _) => AssessmentFlowScreen(
-            flow: session.flow,
-            enabled:
-                !busy &&
-                (!session.localConflict || session.caseWriteBlocked) &&
-                session.sync.recoveryConflict == null,
-            actions: [
-              IconButton(
-                onPressed: busy ? null : history,
-                tooltip: 'Saved review history',
-                icon: const Icon(Icons.history),
-              ),
-              IconButton(
-                onPressed: busy || session.flow.isBusy ? null : close,
-                tooltip: 'Save on device and close',
-                icon: const Icon(Icons.close),
-              ),
-            ],
-            status: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'See your bathroom in 3D',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Optional LiDAR on iPhone or ARCore on Android. Review a partial model and add only observations you confirm.',
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          key: const ValueKey('open-bathroom-scan'),
-                          onPressed:
-                              busy ||
-                                  session.flow.isBusy ||
-                                  session.localConflict ||
-                                  !session.sync.canSave
-                              ? null
-                              : openBathroomScan,
-                          icon: const Icon(Icons.view_in_ar),
-                          label: const Text('Bathroom scan & 3D review'),
-                        ),
-                      ],
-                    ),
-                  ),
+          listenable: Listenable.merge([session, scanAvailability]),
+          builder: (context, _) {
+            final bool? marksUnsaved =
+                session.annotationNotice != null ||
+                    session.annotationConflictId != null
+                ? null
+                : session.photoMarksUnsaved;
+            return AssessmentFlowScreen(
+              flow: session.flow,
+              keptOnDevice: !session.localSaveFailed,
+              enabled:
+                  !busy &&
+                  (!session.localConflict || session.caseWriteBlocked) &&
+                  session.sync.recoveryConflict == null,
+              actions: [
+                IconButton(
+                  onPressed: busy ? null : history,
+                  tooltip: 'Saved review history',
+                  icon: const Icon(Icons.history),
                 ),
-                const SizedBox(height: 12),
-                if (notice != null) Text(notice!, semanticsLabel: notice),
-                if (session.resumeNotice != null) Text(session.resumeNotice!),
-                if (session.caseWriteNotice != null)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(session.caseWriteNotice!),
+                IconButton(
+                  onPressed: busy || session.flow.isBusy ? null : close,
+                  tooltip: 'Save on device and close',
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+              areaToolsFirst: scanAvailability.prefersScan,
+              areaTools: AssessmentScanEntry(
+                availability: scanAvailability,
+                onCheck: busy || !session.isCurrent
+                    ? null
+                    : scanAvailability.refresh,
+                onOpen:
+                    busy ||
+                        session.flow.isBusy ||
+                        session.localConflict ||
+                        !session.sync.canSave
+                    ? null
+                    : openBathroomScan,
+              ),
+              status: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (notice != null)
+                    SahNotice(message: notice!, tone: SahNoticeTone.warning),
+                  if (session.resumeNotice != null)
+                    SahNotice(
+                      message: session.resumeNotice!,
+                      icon: Icons.cloud_off_outlined,
                     ),
-                  ),
-                if (session.localSaveFailed)
-                  const Text(
-                    'The private device save failed. Keep this screen open and free some device space before leaving.',
-                  ),
-                if (session.localConflict)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'This device and the saved assessment differ. Keeping this device’s findings will replace the saved assessment when you explicitly save. Other profile details stay from the latest saved case.',
-                          ),
-                          Text(
-                            'Device: ${session.controller.findings.length} findings. Saved: ${session.state?.caseSnapshot.findings.length ?? 0} findings.',
-                          ),
-                          OutlinedButton(
-                            onPressed:
-                                busy ||
-                                    session.flow.isBusy ||
-                                    session.caseWriteBlocked
-                                ? null
-                                : () => run(
-                                    () => session.resolveLocalConflict(
-                                      keepLocal: true,
-                                    ),
-                                  ),
-                            child: const Text(
-                              'Keep this device’s findings for review',
+                  if (session.caseWriteNotice != null)
+                    SahNotice(
+                      message: session.caseWriteNotice!,
+                      tone: SahNoticeTone.warning,
+                    ),
+                  if (session.localSaveFailed)
+                    const SahNotice(
+                      title: 'Not saved on this device',
+                      message:
+                          'The private device save failed. Keep this screen open and free some device space before leaving.',
+                      tone: SahNoticeTone.error,
+                    ),
+                  if (session.localConflict) ...[
+                    SahNotice(
+                      title: 'This device and the saved assessment differ',
+                      message:
+                          'Keeping this device’s findings will replace the saved assessment when you explicitly save. Other profile details stay from the latest saved case.\n\n'
+                          'Device: ${session.controller.findings.length} findings. Saved: ${session.state?.caseSnapshot.findings.length ?? 0} findings.',
+                      tone: SahNoticeTone.warning,
+                    ),
+                    OutlinedButton(
+                      onPressed:
+                          busy ||
+                              session.flow.isBusy ||
+                              session.caseWriteBlocked
+                          ? null
+                          : () => run(
+                              () =>
+                                  session.resolveLocalConflict(keepLocal: true),
                             ),
-                          ),
-                          TextButton(
-                            onPressed:
-                                busy ||
-                                    session.flow.isBusy ||
-                                    session.caseWriteBlocked
-                                ? null
-                                : () => run(
-                                    () => session.resolveLocalConflict(
-                                      keepLocal: false,
-                                    ),
-                                  ),
-                            child: const Text(
-                              'Discard device edits and use saved assessment',
-                            ),
-                          ),
-                        ],
+                      child: const Text(
+                        'Keep this device’s findings for review',
+                        textAlign: TextAlign.center,
                       ),
                     ),
-                  ),
-                if (session.sync.recoveryConflict != null)
-                  RecoveryPhotoReviewCard(
-                    bytes: recoveredPhoto,
-                    busy: busy,
-                    onShowSaved: () => run(() async {
-                      setState(() => recoveredPhoto = null);
-                      final bytes = await session.sync.showRecoveredEvidence();
-                      if (mounted) setState(() => recoveredPhoto = bytes);
-                    }),
-                    onKeepSaved: () => run(() async {
-                      await session.sync.acceptRecoveredEvidence();
-                      await session.flow.refreshSavedImages();
-                      await session.flush();
-                      recoveredPhoto = null;
-                    }),
-                    onKeepDevice: () => run(() async {
-                      session.sync.keepLocalEvidence();
-                      await session.flush();
-                      recoveredPhoto = null;
-                    }),
-                  )
-                else if (!session.localConflict && !session.caseWriteBlocked)
-                  SaveStatusCard(
-                    sync: session.sync,
-                    durableLocal: !session.localSaveFailed,
-                    enabled: !busy && !session.flow.isBusy,
-                    onSave: () => run(session.save),
-                    onRecover: () => run(session.recover),
-                  ),
-                if (session.annotationNotice != null)
-                  Text(session.annotationNotice!),
-                if (session.annotationConflictId != null)
-                  TextButton(
-                    onPressed: busy || session.flow.isBusy
-                        ? null
-                        : () => run(session.reloadConflictingMarks),
-                    child: const Text(
-                      'Discard device marks for this photo and reload saved marks',
+                    TextButton(
+                      onPressed:
+                          busy ||
+                              session.flow.isBusy ||
+                              session.caseWriteBlocked
+                          ? null
+                          : () => run(
+                              () => session.resolveLocalConflict(
+                                keepLocal: false,
+                              ),
+                            ),
+                      child: const Text(
+                        'Discard device edits and use saved assessment',
+                        textAlign: TextAlign.center,
+                      ),
                     ),
-                  ),
-                if (!session.localConflict &&
-                    session.sync.recoveryConflict == null)
-                  TextButton(
-                    onPressed:
-                        busy || session.flow.isBusy || session.caseWriteBlocked
-                        ? null
-                        : () => run(session.save),
-                    child: const Text('Save findings and photo marks online'),
-                  ),
-              ],
-            ),
-          ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (session.sync.recoveryConflict != null)
+                    RecoveryPhotoReviewCard(
+                      bytes: recoveredPhoto,
+                      busy: busy,
+                      onShowSaved: () => run(() async {
+                        setState(() => recoveredPhoto = null);
+                        final bytes = await session.sync
+                            .showRecoveredEvidence();
+                        if (mounted) setState(() => recoveredPhoto = bytes);
+                      }),
+                      onKeepSaved: () => run(() async {
+                        await session.sync.acceptRecoveredEvidence();
+                        await session.flow.refreshSavedImages();
+                        await session.flush();
+                        recoveredPhoto = null;
+                      }),
+                      onKeepDevice: () => run(() async {
+                        session.sync.keepLocalEvidence();
+                        await session.flush();
+                        recoveredPhoto = null;
+                      }),
+                    )
+                  else if (!session.localConflict && !session.caseWriteBlocked)
+                    SaveStatusCard(
+                      sync: session.sync,
+                      durableLocal: !session.localSaveFailed,
+                      undescribedDraftOpen: session
+                          .controller
+                          .incompleteFindingIds
+                          .any(
+                            (id) => !session.sync.savedCase.findings.any(
+                              (f) => f.id == id,
+                            ),
+                          ),
+                      photoMarksUnsaved: marksUnsaved,
+                      enabled: !busy && !session.flow.isBusy,
+                      onSave: () => run(session.save),
+                      onRecover: () => run(session.recover),
+                    ),
+                  if (session.annotationNotice != null)
+                    SahNotice(
+                      message: session.annotationNotice!,
+                      tone: SahNoticeTone.warning,
+                    ),
+                  if (session.annotationConflictId != null)
+                    TextButton(
+                      onPressed: busy || session.flow.isBusy
+                          ? null
+                          : () => run(session.reloadConflictingMarks),
+                      child: const Text(
+                        'Discard device marks for this photo and reload saved marks',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  if (!session.localConflict &&
+                      session.sync.recoveryConflict == null &&
+                      session.sync.phase == SyncPhase.idle &&
+                      !session.sync.hasUnsavedWork &&
+                      marksUnsaved != true &&
+                      session.controller.findings.any(
+                        (f) => f.evidenceIds.isNotEmpty,
+                      ))
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton.icon(
+                        key: const ValueKey('assessment-save-online'),
+                        onPressed:
+                            busy ||
+                                session.flow.isBusy ||
+                                session.caseWriteBlocked
+                            ? null
+                            : () => run(session.save),
+                        icon: const Icon(Icons.cloud_upload_outlined),
+                        label: const Text(
+                          'Save findings and photo marks online',
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            );
+          },
         );
       },
     ),

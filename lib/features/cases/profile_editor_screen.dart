@@ -455,18 +455,10 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const SahStepIndicator(
-                      currentStep: 0,
-                      labels: ['Details', 'Home', 'Programs', 'Draft'],
-                    ),
                     const SahPageHeader(
-                      title: 'Start with what you know',
+                      title: 'About the resident',
                       description:
-                          'These details help check which assistance programs may be relevant.',
-                    ),
-                    const SahNotice(
-                      message:
-                          'Leave an answer blank if you do not know. Zero and No are separate answers.',
+                          'All optional. Blank means unknown, which is different from 0 or No.',
                     ),
                     if (_notice != null) SahNotice(message: _notice!),
                     if (!_sameBase && !_restoring && !_saving)
@@ -487,11 +479,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       if (key == 'healthPlan')
                         const SahSectionHeading(title: 'Health coverage'),
                       if (key == 'ageYears')
-                        const SahSectionHeading(
-                          title: 'Household',
-                          description:
-                              'Only reported information belongs here.',
-                        ),
+                        const SahSectionHeading(title: 'Household'),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 16),
                         child: TextFormField(
@@ -517,8 +505,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                           decoration: InputDecoration(
                             labelText: labels[key],
                             helperText: key == 'annualIncomeUsd'
-                                ? 'Optional · yearly household total in US dollars'
-                                : 'Optional',
+                                ? 'Yearly household total, US dollars'
+                                : null,
                           ),
                           textInputAction: TextInputAction.next,
                           keyboardType:
@@ -572,6 +560,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       itemHeight: null,
                       decoration: const InputDecoration(
                         labelText: 'Owner permission reported?',
+                        helperText:
+                            'Reported only, not a signed authorization.',
                       ),
                       items: const [
                         DropdownMenuItem(value: null, child: Text('Not known')),
@@ -585,13 +575,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                               _stash();
                             }),
                     ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'A reported answer is not a signed owner authorization.',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
+                    const SizedBox(height: 24),
                     if (_errors.isNotEmpty)
                       SahActionFeedback(
                         key: const ValueKey('profile-validation-feedback'),
@@ -610,11 +594,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'You can save these edits online from the case overview.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                    const SizedBox(height: 72),
                   ],
                 ),
               ),

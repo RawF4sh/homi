@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/assessment/application/assessment_controller.dart';
 import 'package:safe_at_home/features/assessment/application/assessment_flow.dart';
 import 'package:safe_at_home/features/assessment/domain/annotation/box_annotation.dart';
@@ -72,6 +73,42 @@ void main() {
     await tap(tester, find.byKey(ValueKey('area-${area.name}')));
     adapter.enqueue(photo());
     await tapText(tester, 'Open camera');
+  }
+
+  for (final primary in [true, false]) {
+    testWidgets('scan entry is ${primary ? 'before' : 'after'} manual areas', (
+      tester,
+    ) async {
+      const scanKey = ValueKey('test-scan-entry');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AssessmentFlowScreen(
+            flow: flow,
+            areaToolsFirst: primary,
+            areaTools: const SizedBox(key: scanKey, height: 50),
+          ),
+        ),
+      );
+      final scanY = tester.getTopLeft(find.byKey(scanKey)).dy;
+      final manualY = tester
+          .getTopLeft(find.byKey(const ValueKey('area-bathroom')))
+          .dy;
+      expect(primary ? scanY < manualY : scanY > manualY, true);
+      expect(
+        find.text(
+          primary
+              ? 'Or use photos and measurements'
+              : 'Photos and measurements',
+        ),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.byKey(const ValueKey('area-bathroom')));
+      await tester.tap(find.byKey(const ValueKey('area-bathroom')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(scanKey), findsNothing);
+      await tapText(tester, 'Continue without a photo');
+      expect(find.byKey(const ValueKey('observation')), findsOneWidget);
+    });
   }
 
   testWidgets('a full bathroom finding: photo, details, confirm', (
@@ -281,6 +318,37 @@ void main() {
     expect(await staging.keys(), isEmpty);
   });
 
+  testWidgets('remove confirmation stays reachable at the largest text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: SafeAtHomeTheme.light(),
+        home: MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(3.2)),
+          child: AssessmentFlowScreen(flow: flow),
+        ),
+      ),
+    );
+    flow.chooseArea(AssessmentArea.entrance);
+    await tester.pumpAndSettle();
+    adapter.enqueue(photo());
+    await tapText(tester, 'Open camera');
+    await tapText(tester, 'Remove');
+    final confirm = find.widgetWithText(TextButton, 'Remove');
+    await tester.ensureVisible(confirm);
+    await tester.pumpAndSettle();
+    expect(confirm.hitTestable(), findsOneWidget);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    expect(controller.drafts.single.evidence, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('invalid measurements and a missing observation are shown', (
     tester,
   ) async {
@@ -402,6 +470,10 @@ void main() {
     });
 
     testWidgets('review', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final SemanticsHandle handle = tester.ensureSemantics();
       await toPreview(tester, AssessmentArea.entrance);
       await tapText(tester, 'Continue');
@@ -410,8 +482,22 @@ void main() {
         'I notice a raised threshold.',
       );
       await tapText(tester, 'Review');
+      final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
+      scroll.position.jumpTo(scroll.position.minScrollExtent);
+      await tester.pumpAndSettle();
+      final photo = find.bySemanticsLabel(
+        'Photo 1 of 1, open to retake or remove',
+      );
+      expect(
+        tester.getSemantics(photo).rect.size.height,
+        greaterThanOrEqualTo(96),
+      );
       await check(tester);
       expect(find.bySemanticsLabel('Step 5 of 5'), findsOneWidget);
+      scroll.position.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(find.text('Delete this finding').hitTestable(), findsOneWidget);
+      await check(tester);
       handle.dispose();
     });
   });

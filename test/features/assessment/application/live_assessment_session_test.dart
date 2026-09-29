@@ -1355,12 +1355,12 @@ void main() {
           label,
           skipOffstage: false,
         );
+        await reveal(tile);
         await settleUntil(
           () =>
               built.evaluate().isNotEmpty &&
               tester.widget<CheckboxListTile>(built).onChanged != null,
         );
-        await reveal(tile);
         final box = find.descendant(of: tile, matching: find.byType(Checkbox));
         await Scrollable.ensureVisible(tester.element(box), alignment: .5);
         await tester.pump();
@@ -1381,9 +1381,7 @@ void main() {
             .evaluate()
             .isNotEmpty,
       );
-      await check(
-        'I reviewed this feature’s identity and position against the room',
-      );
+      await check('I checked this against the room');
       await check(ScanDifficulty.enteringBathroom.label);
       final add = find.text('Review and add observation');
       await reveal(add);

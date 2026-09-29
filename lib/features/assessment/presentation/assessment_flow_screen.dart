@@ -9,6 +9,7 @@ import '../domain/measurement/length_unit.dart';
 import '../domain/measurement/measurement_fields.dart';
 import '../domain/review/finding_review_state.dart';
 import '../domain/review/finding_review_tracker.dart';
+import '../../../shared/presentation/sah_components.dart';
 import 'annotation_editor_screen.dart';
 import 'photo_privacy_screen.dart';
 import 'assessment_copy.dart';
@@ -20,12 +21,20 @@ class AssessmentFlowScreen extends StatelessWidget {
     this.status,
     this.actions = const [],
     this.enabled = true,
+    this.areaTools,
+    this.areaToolsFirst = false,
+    this.keptOnDevice = false,
   });
 
   final AssessmentFlow flow;
   final Widget? status;
   final List<Widget> actions;
   final bool enabled;
+
+  final Widget? areaTools;
+  final bool areaToolsFirst;
+
+  final bool keptOnDevice;
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +46,11 @@ class AssessmentFlowScreen extends StatelessWidget {
         return Scaffold(
           appBar: AppBar(
             actions: actions,
-            title: Text(_title(step)),
+            title: Text(
+              step == AssessmentStep.chooseArea && areaTools != null
+                  ? 'Home assessment'
+                  : _title(step),
+            ),
             leading: flow.canGoBack
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back),
@@ -48,6 +61,7 @@ class AssessmentFlowScreen extends StatelessWidget {
           ),
           body: SafeArea(
             child: SingleChildScrollView(
+              key: ValueKey('assessment-scroll-${step.name}'),
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -97,38 +111,42 @@ class AssessmentFlowScreen extends StatelessWidget {
   List<Widget> _chooseArea(BuildContext context) {
     final List<FindingDraft> drafts = flow.controller.drafts;
     return [
-      for (final AssessmentArea area in AssessmentArea.values)
-        Card(
-          child: ListTile(
-            key: ValueKey('area-${area.name}'),
-            minVerticalPadding: 16,
-            title: Text(AssessmentCopy.areaTitle(area)),
-            subtitle: Text(AssessmentCopy.areaExplanation(area)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => flow.chooseArea(area),
-          ),
+      if (areaToolsFirst) ?areaTools,
+      if (areaTools != null)
+        SahSectionHeading(
+          title: areaToolsFirst
+              ? 'Or use photos and measurements'
+              : 'Photos and measurements',
         ),
+      for (final AssessmentArea area in AssessmentArea.values)
+        SahActionTile(
+          key: ValueKey('area-${area.name}'),
+          title: AssessmentCopy.areaTitle(area),
+          subtitle: AssessmentCopy.areaExplanation(area),
+          icon: switch (area) {
+            AssessmentArea.bathroom => Icons.bathtub_outlined,
+            AssessmentArea.entrance => Icons.door_front_door_outlined,
+          },
+          onTap: () => flow.chooseArea(area),
+        ),
+      if (!areaToolsFirst) ?areaTools,
       if (drafts.isNotEmpty) ...[
-        const SizedBox(height: 16),
-        Text('Your findings', style: Theme.of(context).textTheme.titleMedium),
+        const SahSectionHeading(title: 'Your findings'),
         for (final FindingDraft d in drafts)
-          Card(
-            child: ListTile(
-              key: ValueKey('finding-${d.id}'),
-              minVerticalPadding: 12,
-              title: Text(
-                d.observation.trim().isEmpty
-                    ? 'No observation yet'
-                    : d.observation.trim(),
-              ),
-              subtitle: Text(
+          SahActionTile(
+            key: ValueKey('finding-${d.id}'),
+            title: d.observation.trim().isEmpty
+                ? 'No observation yet'
+                : d.observation.trim(),
+            subtitle:
                 '${AssessmentCopy.areaTitle(d.area)} · '
-                '${AssessmentCopy.reviewState(flow.controller.reviewOf(d.id)!.state)} · '
                 '${d.evidence.length} ${d.evidence.length == 1 ? 'photo' : 'photos'}',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => flow.openFinding(d.id),
+            status: AssessmentCopy.reviewState(
+              flow.controller.reviewOf(d.id)!.state,
             ),
+            statusIcon: _reviewIcon(flow.controller.reviewOf(d.id)!.state),
+            icon: Icons.sticky_note_2_outlined,
+            onTap: () => flow.openFinding(d.id),
           ),
       ],
     ];
@@ -137,28 +155,27 @@ class AssessmentFlowScreen extends StatelessWidget {
   List<Widget> _viewPrompt(BuildContext context) {
     final AssessmentArea area = flow.area!;
     return [
-      Text(
-        AssessmentCopy.viewPrompt(area, flow.view),
-        style: Theme.of(context).textTheme.titleMedium,
+      Semantics(
+        header: true,
+        child: Text(
+          AssessmentCopy.viewPrompt(area, flow.view),
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
       ),
       const SizedBox(height: 8),
-      Text(AssessmentCopy.safetyNote(area)),
-      const SizedBox(height: 8),
-      const Text(AssessmentCopy.noPhotoOption),
+      SahNotice(
+        title: 'Stay safe',
+        message: AssessmentCopy.safetyNote(area),
+        icon: Icons.health_and_safety_outlined,
+        liveRegion: false,
+      ),
       _NoticeCard(text: AssessmentCopy.notice(flow.notice)),
-      const SizedBox(height: 16),
+      const SizedBox(height: 8),
       if (flow.isBusy)
         const Center(
           child: CircularProgressIndicator(semanticsLabel: 'Opening camera'),
         )
       else ...[
-        _wide(
-          OutlinedButton.icon(
-            onPressed: () => flow.openCamera(source: CaptureSource.library),
-            icon: const Icon(Icons.photo_library_outlined),
-            label: const Text('Choose a photo'),
-          ),
-        ),
         if (flow.cameraBlocked)
           _wide(
             OutlinedButton(
@@ -174,6 +191,14 @@ class AssessmentFlowScreen extends StatelessWidget {
               label: const Text('Open camera'),
             ),
           ),
+        _wide(
+          OutlinedButton.icon(
+            onPressed: () => flow.openCamera(source: CaptureSource.library),
+            icon: const Icon(Icons.photo_library_outlined),
+            label: const Text('Choose a photo'),
+          ),
+        ),
+        const SizedBox(height: 8),
         _wide(
           OutlinedButton(
             onPressed: flow.continueWithoutPhoto,
@@ -195,8 +220,13 @@ class AssessmentFlowScreen extends StatelessWidget {
           label: 'The photo you just took',
         ),
       const SizedBox(height: 12),
-      const Text(AssessmentCopy.privacyCheck),
-      if (evidenceId != null) ..._markArea(context, evidenceId),
+      const SahNotice(
+        title: 'Hide private details',
+        message: AssessmentCopy.privacyCheck,
+        icon: Icons.privacy_tip_outlined,
+        liveRegion: false,
+      ),
+      const SahMoreInfo(details: [AssessmentCopy.privacyDetail]),
       if (evidenceId != null && flow.bytesFor(evidenceId) != null)
         _wide(
           OutlinedButton.icon(
@@ -238,6 +268,7 @@ class AssessmentFlowScreen extends StatelessWidget {
             label: const Text('Crop or cover private details'),
           ),
         ),
+      if (evidenceId != null) ..._markArea(context, evidenceId),
       _NoticeCard(text: AssessmentCopy.notice(flow.notice)),
       const SizedBox(height: 16),
       if (flow.isBusy)
@@ -261,7 +292,15 @@ class AssessmentFlowScreen extends StatelessWidget {
           ),
         ),
         _wide(
-          OutlinedButton.icon(
+          TextButton(
+            onPressed: flow.addCloseUp,
+            child: const Text('Add a closer photo'),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _wide(
+          _destructive(
+            context,
             onPressed: () async {
               if (await _confirm(
                 context,
@@ -271,14 +310,7 @@ class AssessmentFlowScreen extends StatelessWidget {
                 await flow.removePreviewPhoto();
               }
             },
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Remove'),
-          ),
-        ),
-        _wide(
-          TextButton(
-            onPressed: flow.addCloseUp,
-            child: const Text('Add a closer photo'),
+            label: 'Remove',
           ),
         ),
       ],
@@ -338,26 +370,45 @@ class AssessmentFlowScreen extends StatelessWidget {
             flow.controller.measurementHistoryOf(id, spec.type).isNotEmpty)
           spec.type,
     ];
+    Widget heading(String title) => Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 6),
+      child: Semantics(
+        header: true,
+        child: Text(title, style: text.titleMedium),
+      ),
+    );
 
     return [
       Semantics(
         liveRegion: true,
-        child: Text(
-          AssessmentCopy.reviewState(state),
-          key: const ValueKey('review-state'),
-          style: text.titleMedium,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ExcludeSemantics(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Icon(
+                  _reviewIcon(state),
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                AssessmentCopy.reviewState(state),
+                key: const ValueKey('review-state'),
+                style: text.titleLarge,
+              ),
+            ),
+          ],
         ),
       ),
       if (review.anotherViewRequested)
         const _NoticeCard(text: AssessmentCopy.anotherViewRequested),
-      const SizedBox(height: 12),
-      Text(
-        '${AssessmentCopy.areaTitle(draft.area)} · what you notice',
-        style: text.labelLarge,
-      ),
-      Text(draft.observation.trim()),
-      const SizedBox(height: 12),
-      Text('Photos', style: text.labelLarge),
+      heading('${AssessmentCopy.areaTitle(draft.area)} · what you notice'),
+      Text(draft.observation.trim(), style: text.bodyLarge),
+      heading('Photos'),
       if (draft.evidence.isEmpty)
         const Text(AssessmentCopy.noPhotos)
       else
@@ -376,8 +427,7 @@ class AssessmentFlowScreen extends StatelessWidget {
               ),
           ],
         ),
-      const SizedBox(height: 12),
-      Text('Measurements', style: text.labelLarge),
+      heading('Measurements'),
       if (draft.measurements.isEmpty && cleared.isEmpty)
         const Text('None recorded.'),
       for (final RecordedMeasurement m in draft.measurements)
@@ -392,10 +442,19 @@ class AssessmentFlowScreen extends StatelessWidget {
           history: flow.controller.measurementHistoryOf(id, type),
         ),
       const SizedBox(height: 16),
-      const Text(AssessmentCopy.confirmMeaning),
+      Text(
+        AssessmentCopy.confirmMeaning,
+        style: text.bodyMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+      if (!keptOnDevice)
+        const SahNotice(
+          message: AssessmentCopy.notSavedYet,
+          tone: SahNoticeTone.warning,
+          liveRegion: false,
+        ),
       const SizedBox(height: 8),
-      const Text(AssessmentCopy.notSavedYet),
-      const SizedBox(height: 16),
       if (state == FindingReviewState.needsReview)
         _wide(
           FilledButton(
@@ -403,36 +462,51 @@ class AssessmentFlowScreen extends StatelessWidget {
             child: const Text('Confirm this finding'),
           ),
         ),
-      _wide(OutlinedButton(onPressed: flow.edit, child: const Text('Edit'))),
-      if (state != FindingReviewState.dismissed)
-        _wide(
-          OutlinedButton(
-            onPressed: flow.requestAnotherView,
-            child: const Text('Request another photo'),
-          ),
-        ),
-      if (state == FindingReviewState.dismissed)
-        _wide(
-          OutlinedButton(
-            onPressed: () => flow.controller.restore(id),
-            child: const Text('Restore'),
-          ),
-        )
-      else
-        _wide(
-          OutlinedButton(
-            onPressed: () => flow.controller.dismiss(id),
-            child: const Text('Dismiss'),
-          ),
-        ),
       _wide(
-        TextButton(
-          onPressed: flow.startAnother,
-          child: const Text('Done, add another finding'),
-        ),
+        state == FindingReviewState.needsReview
+            ? OutlinedButton(
+                onPressed: flow.startAnother,
+                child: const Text('Done, add another finding'),
+              )
+            : FilledButton(
+                onPressed: flow.startAnother,
+                child: const Text('Done, add another finding'),
+              ),
       ),
+      heading('Other changes'),
+      Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          TextButton.icon(
+            onPressed: flow.edit,
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Edit'),
+          ),
+          if (state != FindingReviewState.dismissed)
+            TextButton.icon(
+              onPressed: flow.requestAnotherView,
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: const Text('Request another photo'),
+            ),
+          if (state == FindingReviewState.dismissed)
+            TextButton.icon(
+              onPressed: () => flow.controller.restore(id),
+              icon: const Icon(Icons.undo_rounded),
+              label: const Text('Restore'),
+            )
+          else
+            TextButton.icon(
+              onPressed: () => flow.controller.dismiss(id),
+              icon: const Icon(Icons.visibility_off_outlined),
+              label: const Text('Dismiss'),
+            ),
+        ],
+      ),
+      const Divider(height: 32),
       _wide(
-        TextButton(
+        _destructive(
+          context,
           onPressed: () async {
             if (await _confirm(
               context,
@@ -442,11 +516,34 @@ class AssessmentFlowScreen extends StatelessWidget {
               await flow.discardFinding();
             }
           },
-          child: const Text('Delete this finding'),
+          label: 'Delete this finding',
         ),
       ),
     ];
   }
+}
+
+IconData _reviewIcon(FindingReviewState state) => switch (state) {
+  FindingReviewState.needsReview => Icons.rate_review_outlined,
+  FindingReviewState.confirmed => Icons.task_alt_rounded,
+  FindingReviewState.dismissed => Icons.visibility_off_outlined,
+};
+
+Widget _destructive(
+  BuildContext context, {
+  required VoidCallback onPressed,
+  required String label,
+}) {
+  final Color color = Theme.of(context).colorScheme.error;
+  return OutlinedButton.icon(
+    style: OutlinedButton.styleFrom(
+      foregroundColor: color,
+      side: BorderSide(color: color),
+    ),
+    onPressed: onPressed,
+    icon: const Icon(Icons.delete_outline),
+    label: Text(label),
+  );
 }
 
 class _Progress extends StatelessWidget {
@@ -465,9 +562,21 @@ class _Progress extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Step $number of $total'),
-          const SizedBox(height: 4),
-          LinearProgressIndicator(value: number / total),
+          Text(
+            'Step $number of $total',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: number / total,
+              minHeight: 6,
+              backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+            ),
+          ),
         ],
       ),
     );
@@ -483,26 +592,7 @@ class _NoticeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final String? message = text;
     if (message == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Semantics(
-        liveRegion: true,
-        child: Card(
-          color: Theme.of(context).colorScheme.secondaryContainer,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.info_outline),
-                const SizedBox(width: 8),
-                Expanded(child: Text(message)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+    return SahNotice(message: message);
   }
 }
 
@@ -618,31 +708,32 @@ class _MeasurementSummary extends StatelessWidget {
     final String method = m.method == MeasurementMethod.estimated
         ? 'your estimate'
         : 'measured';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('$label: ${describeMeasurement(m)}'),
-            Text(
-              '${method[0].toUpperCase()}${method.substring(1)} · '
-              '${m.confirmed ? 'checked by you' : 'not checked yet'}',
-            ),
-            if (m.promptsZeroReview) const Text(AssessmentCopy.zeroCheck),
-            if (history.isNotEmpty)
-              Text('Earlier: ${describeHistory(history)}'),
-            if (!m.confirmed)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: onConfirm,
-                  child: Text('This $label is right'),
-                ),
-              ),
-          ],
+    final ThemeData theme = Theme.of(context);
+    return _Panel(
+      children: [
+        Text(
+          '$label: ${describeMeasurement(m)}',
+          style: theme.textTheme.bodyLarge,
         ),
-      ),
+        Text(
+          '${method[0].toUpperCase()}${method.substring(1)} · '
+          '${m.confirmed ? 'checked by you' : 'not checked yet'}',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        if (m.promptsZeroReview) const Text(AssessmentCopy.zeroCheck),
+        if (history.isNotEmpty) Text('Earlier: ${describeHistory(history)}'),
+        if (!m.confirmed)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              onPressed: onConfirm,
+              icon: const Icon(Icons.check_rounded),
+              label: Text('This ${_lowerFirst(label)} is right'),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -656,17 +747,11 @@ class _ClearedMeasurement extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String label = measurementFieldSpecFor(type)?.label ?? type;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('$label: not recorded now'),
-            Text('Earlier: ${describeHistory(history)}'),
-          ],
-        ),
-      ),
+    return _Panel(
+      children: [
+        Text('$label: not recorded now'),
+        Text('Earlier: ${describeHistory(history)}'),
+      ],
     );
   }
 }
@@ -725,11 +810,20 @@ class _DetailsStepState extends State<_DetailsStep> {
             border: const OutlineInputBorder(),
           ),
         ),
+        const SizedBox(height: 8),
         const SizedBox(height: 16),
+        Semantics(
+          header: true,
+          child: Text(
+            'Measurements',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        const SizedBox(height: 4),
         const Text(AssessmentCopy.measurementsIntro),
         for (final String type in flow.measurementTypes)
           _measurementField(context, type),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
         FilledButton(
           onPressed: widget.enabled ? flow.saveDetails : null,
           child: const Text('Review'),
@@ -743,76 +837,73 @@ class _DetailsStepState extends State<_DetailsStep> {
     final MeasurementFieldSpec spec = measurementFieldSpecFor(type)!;
     final MeasurementEntry entry = flow.entryFor(type);
     final error = flow.errors.measurements[type];
-    return Card(
-      margin: const EdgeInsets.only(top: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _Panel(
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
+            spec.label,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        SahMoreInfo(
+          label: 'How to measure',
+          details: [spec.definition, spec.howToMeasure],
+        ),
+        TextField(
+          key: ValueKey('measurement-$type'),
+          controller: _values[type],
+          enabled: widget.enabled,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (text) {
+            if (widget.enabled && !flow.isBusy) {
+              flow.setMeasurementText(type, text);
+            }
+          },
+          decoration: InputDecoration(
+            labelText: '${spec.label} (${entry.unit.symbol})',
+            errorText: error == null
+                ? null
+                : AssessmentCopy.measurementError(error),
+            errorMaxLines: 3,
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          key: ValueKey('unit-$type'),
+          spacing: 8,
+          runSpacing: 8,
           children: [
-            Text(spec.label, style: Theme.of(context).textTheme.titleSmall),
-            Text(spec.definition),
-            const SizedBox(height: 4),
-            Text('How to measure: ${spec.howToMeasure}'),
-            const SizedBox(height: 8),
-            TextField(
-              key: ValueKey('measurement-$type'),
-              controller: _values[type],
-              enabled: widget.enabled,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+            for (final LengthUnit unit in LengthUnit.values)
+              Tooltip(
+                message: _unitName(unit),
+                child: ChoiceChip(
+                  label: Text(unit.symbol, semanticsLabel: _unitName(unit)),
+                  selected: entry.unit == unit,
+                  materialTapTargetSize: MaterialTapTargetSize.padded,
+                  onSelected: widget.enabled
+                      ? (_) => flow.setMeasurementUnit(type, unit)
+                      : null,
+                ),
               ),
-              onChanged: (text) {
-                if (widget.enabled && !flow.isBusy) {
-                  flow.setMeasurementText(type, text);
-                }
-              },
-              decoration: InputDecoration(
-                labelText: '${spec.label} (${entry.unit.symbol})',
-                errorText: error == null
-                    ? null
-                    : AssessmentCopy.measurementError(error),
-                errorMaxLines: 3,
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              key: ValueKey('unit-$type'),
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final LengthUnit unit in LengthUnit.values)
-                  Tooltip(
-                    message: _unitName(unit),
-                    child: ChoiceChip(
-                      label: Text(unit.symbol, semanticsLabel: _unitName(unit)),
-                      selected: entry.unit == unit,
-                      materialTapTargetSize: MaterialTapTargetSize.padded,
-                      onSelected: widget.enabled
-                          ? (_) => flow.setMeasurementUnit(type, unit)
-                          : null,
-                    ),
-                  ),
-              ],
-            ),
-            CheckboxListTile(
-              key: ValueKey('estimate-$type'),
-              contentPadding: EdgeInsets.zero,
-              value: entry.method == MeasurementMethod.estimated,
-              title: const Text(AssessmentCopy.estimateLabel),
-              onChanged: widget.enabled
-                  ? (v) => flow.setMeasurementMethod(
-                      type,
-                      v == true
-                          ? MeasurementMethod.estimated
-                          : MeasurementMethod.manual,
-                    )
-                  : null,
-            ),
           ],
         ),
-      ),
+        CheckboxListTile(
+          key: ValueKey('estimate-$type'),
+          contentPadding: EdgeInsets.zero,
+          value: entry.method == MeasurementMethod.estimated,
+          title: const Text(AssessmentCopy.estimateLabel),
+          onChanged: widget.enabled
+              ? (v) => flow.setMeasurementMethod(
+                  type,
+                  v == true
+                      ? MeasurementMethod.estimated
+                      : MeasurementMethod.manual,
+                )
+              : null,
+        ),
+      ],
     );
   }
 
@@ -823,6 +914,29 @@ class _DetailsStepState extends State<_DetailsStep> {
     LengthUnit.metre => 'metres',
     LengthUnit.foot => 'feet',
   };
+}
+
+String _lowerFirst(String text) =>
+    text.isEmpty ? text : '${text[0].toLowerCase()}${text.substring(1)}';
+
+class _Panel extends StatelessWidget {
+  const _Panel({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(top: 12),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    ),
+  );
 }
 
 Widget _wide(Widget button) => Padding(
@@ -838,6 +952,7 @@ Future<bool> _confirm(
     await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: Text(title),
         actions: [
           TextButton(
@@ -845,6 +960,9 @@ Future<bool> _confirm(
             child: const Text('Cancel'),
           ),
           TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: Text(action),
           ),

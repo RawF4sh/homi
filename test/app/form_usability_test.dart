@@ -359,11 +359,11 @@ void main() {
         final field = tester.widget<TextField>(
           input('Date it happened (YYYY-MM-DD)'),
         );
-        expect(field.decoration!.helperText, contains('Use YYYY-MM-DD'));
+        expect(field.decoration!.helperText, contains('2026-10-23'));
         final follow = tester.widget<TextField>(
           input('Optional follow-up date (YYYY-MM-DD)'),
         );
-        expect(follow.decoration!.helperText, contains('Add a next action'));
+        expect(follow.decoration!.helperText, contains('next action'));
         await _tap(tester, find.byKey(const ValueKey('history-save')));
         final message = tester
             .widget<SahActionFeedback>(

@@ -326,9 +326,9 @@ void main() {
         ),
       );
       await tap('Review');
-      await tap('This Threshold height is right');
+      await tap('This threshold height is right');
       await tap('Confirm this finding');
-      await tap('Save findings and photo marks online');
+      await tap('Save to my case');
       await until(
         () => find.text('Saved to your case.').evaluate().isNotEmpty,
         'assessment and photo saved',
@@ -359,7 +359,11 @@ void main() {
         'Fictional step marker',
       );
       await tap('Done', direction: -260);
-      await tap('Save findings and photo marks online');
+      await tap(
+        find.text('Save to my case').evaluate().isNotEmpty
+            ? 'Save to my case'
+            : 'Save findings and photo marks online',
+      );
       await until(
         () =>
             h.transport.responseBodies['/v2/save-evidence-annotations'] !=

@@ -318,12 +318,10 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                 SahPageHeader(
                   title: widget.program.programName,
                   description:
-                      'Keep a record of conversations, documents, and your next action.',
+                      'Your own notes on calls, documents and next steps.',
                 ),
-                const SahNotice(
-                  title: 'Reported by you',
-                  message:
-                      'These are your reports. The app does not submit applications, verify receipt or approve funding.',
+                const SahStatusBadge(
+                  label: 'Reported by you · not agency status',
                   icon: Icons.edit_note_rounded,
                 ),
                 if (_busy)
@@ -347,9 +345,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                 if (_history != null)
                   const SahSectionHeading(title: 'Saved updates'),
                 if (_history?.events.isEmpty == true)
-                  const Text(
-                    'No reported updates yet. Add one when you have something to record.',
-                  ),
+                  const Text('No updates yet.'),
                 for (final event in _history?.events ?? <RequestEvent>[])
                   ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -446,7 +442,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
                       labelText: 'Date it happened (YYYY-MM-DD)',
-                      helperText: 'Use YYYY-MM-DD, for example 2026-10-23.',
+                      helperText: 'For example 2026-10-23',
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -542,8 +538,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                     keyboardType: TextInputType.datetime,
                     decoration: const InputDecoration(
                       labelText: 'Optional follow-up date (YYYY-MM-DD)',
-                      helperText:
-                          'Use YYYY-MM-DD, for example 2026-10-23. Add a next action when setting a follow-up date.',
+                      helperText: 'Needs a next action too',
                     ),
                   ),
                   const SizedBox(height: 24),

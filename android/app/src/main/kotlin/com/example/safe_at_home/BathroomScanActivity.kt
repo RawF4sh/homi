@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class BathroomScanActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
+    private val availability by lazy { bathroomScanAvailabilityLookup(this, handler) }
     private var session: Session? = null
     private var surface: GLSurfaceView? = null
     private var renderer: BathroomScanRenderer? = null
@@ -46,6 +47,8 @@ class BathroomScanActivity : ComponentActivity() {
     private var reviewButton: Button? = null
     private var scanId: String = ""
     private var startRequested = false
+    private var checkingAvailability = false
+    private var availabilityConfirmed = false
     private var permissionRequested = false
     private var installRequested = false
     private var resumed = false
@@ -107,6 +110,22 @@ class BathroomScanActivity : ComponentActivity() {
 
     private fun startIfReady() {
         if (!resumed || completed || active) return
+        if (!availabilityConfirmed) {
+            if (checkingAvailability) return
+            checkingAvailability = true
+            availability.check { result ->
+                checkingAvailability = false
+                if (!completed) {
+                    if (result?.isSupported == true) {
+                        availabilityConfirmed = true
+                        startIfReady()
+                    } else {
+                        fail("scan_unavailable")
+                    }
+                }
+            }
+            return
+        }
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             if (permissionRequested) return
             permissionRequested = true
@@ -114,7 +133,12 @@ class BathroomScanActivity : ComponentActivity() {
             return
         }
         try {
-            when (ArCoreApk.getInstance().requestInstall(this, !installRequested)) {
+            when (ArCoreApk.getInstance().requestInstall(
+                this,
+                !installRequested,
+                ArCoreApk.InstallBehavior.OPTIONAL,
+                ArCoreApk.UserMessageType.FEATURE,
+            )) {
                 ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
                     installRequested = true
                     return
@@ -287,6 +311,8 @@ class BathroomScanActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        completed = true
+        availability.close()
         stopCapture()
         renderer = null
         surface = null

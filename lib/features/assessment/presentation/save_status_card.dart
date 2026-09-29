@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/presentation/sah_components.dart';
 import '../application/assessment_sync.dart';
 
 class SaveStatusCard extends StatelessWidget {
@@ -10,12 +11,18 @@ class SaveStatusCard extends StatelessWidget {
     this.onRecover,
     this.durableLocal = false,
     this.enabled = true,
+    this.undescribedDraftOpen = false,
+    this.photoMarksUnsaved = false,
   });
 
   final AssessmentSync sync;
   final VoidCallback? onSave, onRecover;
   final bool durableLocal;
   final bool enabled;
+
+  final bool undescribedDraftOpen;
+
+  final bool? photoMarksUnsaved;
 
   @override
   Widget build(BuildContext context) {
@@ -29,59 +36,119 @@ class SaveStatusCard extends StatelessWidget {
         ) = switch (sync.phase) {
           SyncPhase.working => ('Saving…', null, null),
           SyncPhase.uncertain => (
-            'We could not confirm whether your last change was saved. '
-                'Check what is saved before changing anything else.',
+            'We couldn’t confirm the last save. Check before changing '
+                'anything.',
             'Check what is saved',
             onRecover ?? sync.recover,
           ),
           SyncPhase.needsReload => (
-            'Your case changed somewhere else. Reload it, then review '
-                'your findings.',
+            'Your case changed elsewhere. Reload, then review your findings.',
             'Reload',
             onRecover ?? sync.recover,
           ),
           SyncPhase.signInNeeded => (
-            'Your session ended. Sign in again to save. Your findings '
-                'are still on this screen.',
+            'Sign in again to save. Your findings are still here.',
             null,
             null,
           ),
           SyncPhase.failed => (
             '${sync.errorMessage ?? 'Saving failed.'} Your findings are '
-                'still on this screen.',
+                'still here.',
             'Try saving again',
             onSave ?? sync.save,
           ),
           SyncPhase.idle when sync.hasUnsavedWork => (
             durableLocal
-                ? 'Saved privately on this device. Save online to continue on another device.'
-                : 'Not saved yet. These findings and photos are only on this screen and are lost if the app closes.',
+                ? 'Kept privately here. Save to store it in your case online.'
+                : 'Not saved yet. Lost if the app closes.',
             'Save to my case',
+            onSave ?? sync.save,
+          ),
+          SyncPhase.idle when undescribedDraftOpen => (
+            '${sync.savedCase.findings.isEmpty ? '' : 'Earlier findings are saved. '}'
+                '${durableLocal ? 'This one stays on this device' : 'This one stays on this screen'}'
+                ' until you describe and save it.',
+            null,
+            null,
+          ),
+          SyncPhase.idle when photoMarksUnsaved == true => (
+            'Findings are saved. Changed photo marks are only on this device.',
+            'Save findings and photo marks online',
             onSave ?? sync.save,
           ),
           SyncPhase.idle => ('Saved to your case.', null, null),
         };
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Semantics(
-                  liveRegion: true,
-                  child: Text(message, key: const ValueKey('save-status')),
-                ),
-                if (action != null)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton(
-                      onPressed: enabled ? onAction : null,
-                      child: Text(action),
-                    ),
-                  ),
-              ],
-            ),
+        final (
+          String? title,
+          SahNoticeTone tone,
+          IconData icon,
+        ) = switch (sync.phase) {
+          SyncPhase.working => (null, SahNoticeTone.info, Icons.sync_rounded),
+          SyncPhase.uncertain || SyncPhase.needsReload => (
+            'Save needs checking',
+            SahNoticeTone.warning,
+            Icons.sync_problem_outlined,
           ),
+          SyncPhase.signInNeeded => (
+            'Sign in to save',
+            SahNoticeTone.warning,
+            Icons.lock_clock_outlined,
+          ),
+          SyncPhase.failed => (
+            'Not saved online',
+            SahNoticeTone.error,
+            Icons.error_outline,
+          ),
+          SyncPhase.idle when sync.hasUnsavedWork =>
+            durableLocal
+                ? (
+                    'On this device only',
+                    SahNoticeTone.info,
+                    Icons.phone_iphone_rounded,
+                  )
+                : (
+                    'Only on this screen',
+                    SahNoticeTone.warning,
+                    Icons.warning_amber_rounded,
+                  ),
+          SyncPhase.idle when undescribedDraftOpen => (
+            'This finding is not saved online yet',
+            SahNoticeTone.info,
+            Icons.edit_note_rounded,
+          ),
+          SyncPhase.idle when photoMarksUnsaved == true => (
+            'Photo marks not saved online',
+            SahNoticeTone.info,
+            Icons.edit_note_rounded,
+          ),
+          SyncPhase.idle when photoMarksUnsaved == null => (
+            null,
+            SahNoticeTone.info,
+            Icons.cloud_done_outlined,
+          ),
+          SyncPhase.idle => (
+            null,
+            SahNoticeTone.success,
+            Icons.cloud_done_outlined,
+          ),
+        };
+        return SahNotice(
+          title: title,
+          message: message,
+          messageKey: const ValueKey('save-status'),
+          tone: tone,
+          icon: icon,
+          action: action == null
+              ? null
+              : OutlinedButton.icon(
+                  onPressed: enabled ? onAction : null,
+                  icon: Icon(
+                    sync.phase == SyncPhase.idle
+                        ? Icons.cloud_upload_outlined
+                        : Icons.refresh_rounded,
+                  ),
+                  label: Text(action, textAlign: TextAlign.center),
+                ),
         );
       },
     );

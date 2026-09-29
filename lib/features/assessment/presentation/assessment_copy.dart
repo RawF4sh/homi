@@ -6,8 +6,7 @@ import '../domain/review/finding_review_state.dart';
 
 abstract final class AssessmentCopy {
   static const String notSavedYet =
-      'Not saved yet. This stays on this screen until your case is saved, '
-      'and is lost if the app closes.';
+      'Not saved yet. Lost if the app closes before you save.';
 
   static String areaTitle(AssessmentArea area) => switch (area) {
     AssessmentArea.bathroom => 'Bathroom',
@@ -15,48 +14,38 @@ abstract final class AssessmentCopy {
   };
 
   static String areaExplanation(AssessmentArea area) => switch (area) {
-    AssessmentArea.bathroom =>
-      'A photo of the route to the tub, shower or toilet you are concerned '
-          'about, what you notice, and any measurements you take.',
-    AssessmentArea.entrance =>
-      'A photo of the approach, doorway or threshold you are concerned '
-          'about, what you notice, and any measurements you take.',
+    AssessmentArea.bathroom => 'Route to the tub, shower or toilet.',
+    AssessmentArea.entrance => 'Approach, doorway or threshold.',
   };
 
   static String viewPrompt(AssessmentArea area, CaptureView view) =>
       switch ((area, view)) {
         (AssessmentArea.bathroom, CaptureView.overview) =>
-          'Take a wide photo that shows the route to the fixture you are '
-              'concerned about.',
+          'Take a wide photo of the route to the tub, shower or toilet.',
         (AssessmentArea.bathroom, CaptureView.closeUp) =>
-          'Take a closer photo of the part that was hard to see.',
+          'Take a closer photo of the hard-to-see part.',
         (AssessmentArea.entrance, CaptureView.overview) =>
-          'Take a photo that shows the approach and the doorway or threshold '
-              'you are concerned about.',
+          'Take a photo of the approach and doorway.',
         (AssessmentArea.entrance, CaptureView.closeUp) =>
           'Take a closer photo of the threshold or doorway edge.',
       };
 
   static String safetyNote(AssessmentArea area) => switch (area) {
     AssessmentArea.bathroom =>
-      'Stay on a dry floor. Do not climb, stand in the tub or shower, or move '
-          'heavy things to take this photo.',
-    AssessmentArea.entrance =>
-      'Do not climb or move heavy things to take this photo.',
+      'Stay on a dry floor. Don’t climb, stand in the tub or move heavy things.',
+    AssessmentArea.entrance => 'Don’t climb or move heavy things.',
   };
 
   static const String privacyCheck =
-      'Before you continue, check the photo. Does it show faces, mail, '
-      'addresses, medicine labels or rooms you do not want to share? If so, '
-      'remove it and take another. Removing hidden photo data does not hide '
-      'what is visible in the picture.';
+      'Cover or retake if it shows faces, mail, addresses, medicine labels or '
+      'rooms you don’t want to share.';
+
+  static const String privacyDetail =
+      'Removing hidden photo data does not hide what is visible in the '
+      'picture.';
 
   static const String markAfterSaving =
-      'You can mark the area on this photo after it is saved, when its '
-      'final orientation is known.';
-
-  static const String noPhotoOption =
-      'You can also continue without a photo and describe what you notice.';
+      'You can mark the area after the photo is saved.';
 
   static String? notice(FlowNotice? notice) => switch (notice) {
     null => null,
@@ -113,14 +102,13 @@ abstract final class AssessmentCopy {
 
   static const String observationLabel = 'What do you notice?';
   static const String observationHint =
-      'For example: "I notice a raised threshold." Say what is hard to see '
-      'or unknown, too.';
+      'For example, “a raised threshold”. Note anything unknown too.';
   static const String observationRequired =
       'Describe what you notice before continuing.';
 
   static const String measurementsIntro =
-      'Measurements are optional. Leave a field empty if you did not measure '
-      'it. Enter 0 only if you measured and found nothing.';
+      'Optional. Leave blank if not measured. Enter 0 only if you measured '
+      'and found nothing.';
 
   static String measurementError(LengthParseError error) => switch (error) {
     LengthParseError.empty => 'Enter a number or leave it empty.',
@@ -141,9 +129,8 @@ abstract final class AssessmentCopy {
   };
 
   static const String confirmMeaning =
-      'Confirming means you checked that this description, these photos and '
-      'these measurements are right. It is not a safety inspection, a '
-      'diagnosis or a decision about any program.';
+      'Confirming means you checked this record. It is not an inspection, '
+      'diagnosis or program decision.';
 
   static const String anotherViewRequested =
       'You asked for another photo of this finding.';

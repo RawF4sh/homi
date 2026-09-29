@@ -51,7 +51,21 @@ class _WidgetScanner implements BathroomScanAdapter {
   Future<BathroomScanScene> start(String id) async {
     starts.add(id);
     return capture == null
-        ? BathroomScanScene.fromJson(scanSceneJson()..['scanId'] = id)
+        ? BathroomScanScene.fromJson(
+            scanSceneJson(
+              source: capability.source,
+              elements: capability.source == 'arcore'
+                  ? [
+                      scanElementJson(
+                        kind: 'unknown',
+                        nativeCategory: 'horizontal_upward',
+                        dimensions: [2, 0, 3],
+                        confidence: 'unknown',
+                      ),
+                    ]
+                  : null,
+            )..['scanId'] = id,
+          )
         : await capture!(id);
   }
 
@@ -236,6 +250,149 @@ void main() {
       await Directory.systemTemp.createTemp('sah-scan-widget-'),
     ),
   );
+  for (final readiness in {
+    'permission_denied': 'Camera access is needed for 3D scanning.',
+    'services_missing': 'This phone supports ARCore.',
+    'services_update_required': 'Google Play Services for AR needs an update.',
+  }.entries) {
+    testWidgets(
+      'Android ${readiness.key} offers deliberate setup and a manual fallback',
+      (tester) async {
+        harness.scanner.capability = BathroomScanCapabilities(
+          supported: true,
+          source: 'arcore',
+          reason: readiness.key,
+        );
+        await _open(tester, harness);
+        await _reveal(tester, find.textContaining(readiness.value));
+        expect(harness.scanner.starts, isEmpty);
+        final start = find.byKey(const ValueKey('bathroom-start-scan'));
+        await _reveal(tester, start);
+        expect(tester.widget<FilledButton>(start).onPressed, isNotNull);
+        expect(find.text('Set up 3D scanning'), findsOneWidget);
+        final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
+        await _reveal(tester, fallback);
+        expect(tester.widget<OutlinedButton>(fallback).onPressed, isNotNull);
+        await _reveal(tester, start);
+        await tester.tap(start);
+        await _idle(tester, harness);
+        expect(harness.scanner.starts, hasLength(1));
+        expect(harness.session.review.scene!.source, ScanSource.arcore);
+      },
+    );
+  }
+
+  testWidgets(
+    'supported LiDAR device explains readiness without starting capture',
+    (tester) async {
+      await _open(tester, harness);
+      await _reveal(
+        tester,
+        find.textContaining('LiDAR scanning is ready on this iPhone.'),
+      );
+      expect(harness.scanner.starts, isEmpty);
+      final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
+      await _reveal(tester, fallback);
+      await tester.tap(fallback);
+      await tester.pumpAndSettle();
+      expect(find.text('Open scan review'), findsOneWidget);
+      expect(harness.scanner.starts, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'iPhone blocked camera points to Settings without promising another prompt',
+    (tester) async {
+      harness.scanner.capability = const BathroomScanCapabilities(
+        supported: true,
+        source: 'roomplan',
+        reason: 'permission_denied',
+      );
+      await _open(tester, harness);
+      await _reveal(tester, find.textContaining('Camera access is blocked.'));
+      expect(find.textContaining('iPhone Settings'), findsOneWidget);
+      expect(find.text('Set up 3D scanning'), findsNothing);
+      expect(harness.scanner.starts, isEmpty);
+      final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
+      await _reveal(tester, fallback);
+      await tester.tap(fallback);
+      await tester.pumpAndSettle();
+      expect(find.text('Open scan review'), findsOneWidget);
+      expect(harness.scanner.starts, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'unsupported phone can review its saved model and leave without erasing it',
+    (tester) async {
+      final original = BathroomScanReview(
+        scene: fictionalScanScene(),
+        reviewed: {'door-1'},
+      );
+      await tester.runAsync(() => harness.seed(original));
+      harness.scanner.capability = const BathroomScanCapabilities(
+        supported: false,
+        source: 'arcore',
+        reason: 'unsupported_device',
+      );
+      await _open(tester, harness);
+      await _reveal(
+        tester,
+        find.textContaining('Your saved model is still available to review.'),
+      );
+      await _reveal(tester, find.byType(BathroomModelView));
+      final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
+      await _reveal(tester, fallback);
+      await tester.tap(fallback);
+      await tester.pumpAndSettle();
+      expect(find.text('Open scan review'), findsOneWidget);
+      final bytes = await tester.runAsync(
+        () => harness.store.readBytes(harness.session.key),
+      );
+      expect(jsonDecode(utf8.decode(bytes!)), original.toJson(_Harness.caseId));
+      expect(harness.scanner.starts, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'manual fallback requires explicit discard after an unsaved review change',
+    (tester) async {
+      final original = BathroomScanReview(scene: fictionalScanScene());
+      await tester.runAsync(() => harness.seed(original));
+      await _open(tester, harness);
+      harness.store.failNextWrite = true;
+      await _check(tester, harness, 'I checked this against the room');
+      expect(harness.session.dirty, isTrue);
+      expect(harness.session.review.reviewed, {'door-1'});
+
+      final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
+      await _reveal(tester, fallback);
+      await tester.tap(fallback);
+      await tester.pumpAndSettle();
+      expect(find.text('Device changes are not saved'), findsOneWidget);
+      await _tapDialogAction(tester, 'Cancel');
+      await tester.pumpAndSettle();
+      expect(harness.session.dirty, isTrue);
+      expect(harness.session.review.reviewed, {'door-1'});
+      expect(find.text('Open scan review'), findsNothing);
+
+      await _reveal(tester, fallback);
+      await tester.tap(fallback);
+      await tester.pumpAndSettle();
+      await _tapDialogAction(tester, 'Discard unsaved changes');
+      await _until(
+        tester,
+        () => find.text('Open scan review').evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+      final bytes = await tester.runAsync(
+        () => harness.store.readBytes(harness.session.key),
+      );
+      expect(jsonDecode(utf8.decode(bytes!)), original.toJson(_Harness.caseId));
+      expect(harness.scanner.starts, isEmpty);
+    },
+  );
+
   testWidgets(
     'a saved model can recheck pending ARCore availability without losing review',
     (tester) async {
@@ -282,11 +439,7 @@ void main() {
       await _idle(tester, harness);
       expect(harness.session.review.scene, isNotNull);
       expect(harness.imports, isEmpty);
-      await _check(
-        tester,
-        harness,
-        'I reviewed this feature’s identity and position against the room',
-      );
+      await _check(tester, harness, 'I checked this against the room');
       expect(harness.imports, isEmpty);
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);
       expect(harness.imports, isEmpty);
@@ -345,8 +498,9 @@ void main() {
         findsOneWidget,
       );
       expect(harness.scanner.starts, isEmpty);
-      await _reveal(tester, find.text('Back to assessment'));
-      await tester.tap(find.text('Back to assessment'));
+      final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
+      await _reveal(tester, fallback);
+      await tester.tap(fallback);
       await tester.pumpAndSettle();
       expect(find.text('Open scan review'), findsOneWidget);
       expect(harness.scanner.starts, isEmpty);
@@ -474,7 +628,7 @@ void main() {
       await _reveal(
         tester,
         find.textContaining(
-          'Review a feature and select a reported difficulty',
+          'Check a feature and tick a difficulty to see prompts.',
         ),
       );
       expect(find.text('Review and add observation'), findsNothing);
@@ -570,6 +724,7 @@ void main() {
       final semantics = tester.ensureSemantics();
       await tester.runAsync(() => harness.seed(doorReview()));
       await _open(tester, harness);
+      await _reveal(tester, find.byType(BathroomModelView));
       final model = find.bySemanticsLabel(RegExp('^Partial bathroom model'));
       expect(model, findsOneWidget);
       final scene = fictionalScanScene();
@@ -601,15 +756,15 @@ void main() {
         () => harness.seed(BathroomScanReview(scene: fictionalScanScene())),
       );
       await _open(tester, harness, textScale: 3.2);
+      final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
+      await _reveal(tester, fallback);
+      expect(tester.widget<OutlinedButton>(fallback).onPressed, isNotNull);
+      expect(tester.takeException(), isNull);
       await _reveal(tester, find.byTooltip('Rotate model right'));
       await tester.tap(find.byTooltip('Rotate model right'));
       await tester.pump();
       expect(tester.takeException(), isNull);
-      await _check(
-        tester,
-        harness,
-        'I reviewed this feature’s identity and position against the room',
-      );
+      await _check(tester, harness, 'I checked this against the room');
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);
       await _reveal(tester, find.text('Review and add observation'));
       await tester.tap(find.text('Review and add observation'));

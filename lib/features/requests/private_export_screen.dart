@@ -534,20 +534,14 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            const SahStepIndicator(
-              currentStep: 3,
-              labels: ['Details', 'Home', 'Programs', 'Draft'],
-            ),
             SahPageHeader(
               title: 'Review your draft',
               eyebrow: widget.program.programName,
-              description:
-                  'Choose the photos to include, check the draft, then save or share a copy.',
+              description: 'Pick photos, prepare the draft, then check it.',
             ),
-            const SahNotice(
-              title: 'Incomplete draft',
-              message:
-                  'Nothing is submitted. Review the administrative answers and each selected photo.',
+            const SahStatusBadge(
+              label: 'Incomplete draft · nothing is submitted',
+              icon: Icons.info_outline_rounded,
               tone: SahNoticeTone.warning,
             ),
             if (_busy)
@@ -559,13 +553,12 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
             if (_notice != null) SahNotice(message: _notice!),
             const SahSectionHeading(
               title: 'Photo attachments',
-              description:
-                  'Only photos you review and select will appear in this draft.',
+              description: 'Only photos you select are included.',
             ),
             if (_catalog != null && _catalog!.evidence.isEmpty)
               const SahNotice(
                 message:
-                    'No saved photos yet. You can prepare a draft without photos, or return to the home assessment to add them.',
+                    'No saved photos. You can prepare a draft without them.',
                 icon: Icons.photo_outlined,
               ),
             if (_catalog != null)
@@ -584,9 +577,7 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
             if (_selected.length > 1)
               const Padding(
                 padding: EdgeInsets.only(bottom: 12),
-                child: Text(
-                  'Photos appear in selection order. Remove and reselect a photo to change its position.',
-                ),
+                child: Text('Photos appear in the order you select them.'),
               ),
             OutlinedButton.icon(
               onPressed: _busy || _sharing ? null : _load,

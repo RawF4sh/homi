@@ -270,13 +270,11 @@ class _Checklist extends StatelessWidget {
               else if (!fresh)
                 const SahNotice(
                   message:
-                      'This draft needs a fresh review before it can be used. Return to program results to check the latest information.',
+                      'This draft needs a fresh review. Refresh program results first.',
                   tone: SahNoticeTone.warning,
                 )
               else
-                const Text(
-                  'Review this checklist against the latest case and program information before using it.',
-                ),
+                const SizedBox.shrink(),
               const SizedBox(height: 16),
               if (program.status == 'does_not_meet_criterion')
                 const SahNotice(
@@ -297,8 +295,8 @@ class _Checklist extends StatelessWidget {
                     packet.formVersion == null ||
                         packet.mappingVersion == null ||
                         packet.storageReference == null
-                    ? 'Official form not prepared. The current form and its fields still need verification.'
-                    : 'Any prepared form remains a draft for review. This preview does not open or submit files.',
+                    ? 'Official form not prepared. Its fields are unverified.'
+                    : 'Still a draft. Nothing is opened or submitted here.',
               ),
               const SizedBox(height: 16),
               _MaterialSummary(
@@ -308,16 +306,12 @@ class _Checklist extends StatelessWidget {
                     ? 'No evidence files attached.'
                     : '${packet.attachments.length} evidence references recorded. Files are not shown here.',
               ),
-              const SahSectionHeading(
-                title: 'What is needed next',
-                description:
-                    'Work through each item with the person who can confirm it.',
-              ),
+              const SahSectionHeading(title: 'What is needed next'),
               if (packet.missingItems.isEmpty)
                 const Text(
                   'No checklist items were returned. The program must still review any application.',
                 ),
-              for (final (index, item) in packet.missingItems.indexed)
+              for (final item in packet.missingItems)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Column(
@@ -325,14 +319,6 @@ class _Checklist extends StatelessWidget {
                     children: [
                       const Divider(height: 1),
                       const SizedBox(height: 16),
-                      Text(
-                        'ITEM ${(index + 1).toString().padLeft(2, '0')}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
                       Text(item.description, style: theme.textTheme.bodyLarge),
                       const SizedBox(height: 12),
                       SahStatusBadge(

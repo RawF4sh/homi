@@ -4,6 +4,21 @@ The Flutter app uses a small native ARCore bridge through
 `safe_at_home/bathroom_scan`. The app remains **AR Optional** and supports API 24+.
 Photos and manual assessment continue to work on unsupported devices.
 
+The assessment now makes 3D scanning the main option on ARCore-capable phones.
+The native availability lookup uses ARCore's asynchronous API, coalesces
+overlapping requests, and returns an unresolved result after three seconds if
+the platform has not responded. A timed-out or failed check is not evidence
+that the hardware is unsupported; the app can retry. Late replies cannot replace
+a newer check. No camera session, permission request or installation is started
+by this lookup, and depth support remains unknown until actual capture.
+
+Capable phones with missing/outdated Google Play Services for AR or no camera
+permission retain the scan setup option. Native capture checks compatibility
+again after the user chooses Start, then offers camera permission and an
+optional, dismissible service install/update flow. Phones without depth still
+use planes and feature points; saved models and the photo/manual route remain
+usable when capture is unavailable.
+
 The pinned dependency is `com.google.ar:core:1.57.0`. There is no Google Cloud
 project, API key, Cloud Anchor, Geospatial session, subscription or paid capture
 service. The native activity presents the Google Play Services for AR notice and
@@ -60,7 +75,8 @@ ANDROID_HOME=/Users/david/Library/Android/sdk \
 
 The pure Kotlin tests verify filtering, bounded retention, correct coordinate
 projection, unchanged unknown semantics, transform validation, depth-buffer
-strides, export thinning, request validation and warning behavior. They do not
+strides, export thinning, request validation, warning behavior, readiness
+timeouts, overlapping checks and stale-reply rejection. They do not
 open a camera or establish physical scanning accuracy.
 The standard Flutter Android debug build and `tool/check_android_apk.py` remain
 the packaging/privacy checks. The merged manifest must retain optional camera
@@ -74,7 +90,7 @@ Use fictional cases on a supported Android phone. No paid service is needed.
 An emulator's unsupported-device result is useful fallback coverage, but it
 cannot establish real Depth API behavior or room reconstruction accuracy.
 
-1. Open **Home assessment → Bathroom scan & 3D review**. Check that camera denial and
+1. Open **Home assessment → Scan bathroom in 3D** on a supported phone. Check that camera denial and
    unavailable AR services leave the photo/manual route usable. On a device
    needing Google Play Services for AR, verify the install/update prompt can be
    declined without losing the previous saved model.
@@ -107,6 +123,7 @@ still need real-device acceptance before resident use.
 ## Official references
 
 - [AR Optional setup and installation](https://developers.google.com/ar/develop/java/enable-arcore)
+- [Asynchronous availability and optional installation](https://developers.google.com/ar/reference/java/com/google/ar/core/ArCoreApk)
 - [Session configuration and explicit native cleanup](https://developers.google.com/ar/develop/java/session-config)
 - [Raw depth and confidence images](https://developers.google.com/ar/develop/java/depth/raw-depth)
 - [Camera/depth projection](https://codelabs.developers.google.com/codelabs/arcore-rawdepthapi)

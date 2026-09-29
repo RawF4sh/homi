@@ -4,7 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import com.google.ar.core.ArCoreApk
+import android.os.Handler
+import android.os.Looper
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
@@ -17,11 +18,17 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
     private var pendingRequestCode: Int? = null
     private var nextRequestCode = REQUEST_CODE
     private var detached = false
+    private val availability = bathroomScanAvailabilityLookup(activity, Handler(Looper.getMainLooper()))
 
     fun register() {
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
-                "capabilities" -> result.success(capabilities())
+                "capabilities" -> availability.check { supported ->
+                    result.success(bathroomScanCapabilities(
+                        supported,
+                        activity.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED,
+                    ))
+                }
                 "start" -> {
                     val id = bathroomScanRequestId(call.arguments)
                     if (id == null) {
@@ -58,29 +65,6 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
         }
     }
 
-    private fun capabilities(): Map<String, Any?> {
-        val availability = try {
-            ArCoreApk.getInstance().checkAvailability(activity)
-        } catch (_: Exception) {
-            null
-        }
-        val reason = when (availability) {
-            ArCoreApk.Availability.SUPPORTED_INSTALLED -> if (
-                activity.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-            ) "available" else "permission_denied"
-            ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> "services_missing"
-            ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD -> "services_update_required"
-            ArCoreApk.Availability.UNSUPPORTED_DEVICE_NOT_CAPABLE -> "unsupported_device"
-            else -> "checking"
-        }
-        return mapOf(
-            "supported" to (availability?.isSupported == true),
-            "source" to "arcore",
-            "reason" to reason,
-            "depthSupported" to null,
-        )
-    }
-
     fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
         if (requestCode !in REQUEST_CODE..LAST_REQUEST_CODE) return false
         if (requestCode != pendingRequestCode) return true
@@ -111,6 +95,7 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
     fun detach() {
         detached = true
         channel.setMethodCallHandler(null)
+        availability.close()
         finishPendingActivity("scan_interrupted", "The scan was interrupted. Please scan again.")
     }
 

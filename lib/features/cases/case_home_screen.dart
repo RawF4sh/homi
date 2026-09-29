@@ -153,18 +153,12 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
             padding: const EdgeInsets.all(20),
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
-              const SahPageHeader(
-                eyebrow: 'YOUR WORKSPACE',
-                title: 'Your cases',
-                description:
-                    'Pick up where you left off, or start a new assessment.',
-              ),
+              const SahPageHeader(title: 'Your cases'),
               if (_selectionBlocked &&
                   widget.services.coordinator.draft != null) ...[
                 const SahNotice(
-                  title: 'Keep your current work',
-                  message:
-                      'The current case has a device save that is pending or failed. Return to it before opening another case.',
+                  title: 'Finish saving your current case',
+                  message: 'Its device save is pending or failed.',
                   tone: SahNoticeTone.warning,
                 ),
                 OutlinedButton(
@@ -177,10 +171,9 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
                 const SizedBox(height: 16),
               ],
               SahFeaturePanel(
-                eyebrow: 'HOME, WITH A LITTLE HELP',
-                title: 'Start with your home.',
+                title: 'New home check',
                 description:
-                    'Add your home details, review your space and explore possible support.',
+                    'Check your home with a 3D scan or photos, then explore possible support.',
                 illustration: const SahHomeIllustration(),
                 action: FilledButton.icon(
                   key: const ValueKey('case-start'),
@@ -218,16 +211,12 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
                 ),
               ],
               if (_local.isNotEmpty) ...[
-                const SahSectionHeading(
-                  title: 'On this device',
-                  description: 'Private local work you can resume here.',
-                ),
+                const SahSectionHeading(title: 'On this device'),
                 for (final id in _local)
                   SahActionTile(
                     key: ValueKey('local-case-$id'),
                     title: 'Case ${shortCaseId(id)}',
-                    subtitle:
-                        'Local draft · Check saved state before continuing',
+                    subtitle: 'Not saved online · check before continuing',
                     icon: Icons.phone_iphone_rounded,
                     onTap: !_isCurrent || _opening || _selectionBlocked
                         ? null
@@ -236,10 +225,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
                           ),
                   ),
               ],
-              const SahSectionHeading(
-                title: 'Saved online',
-                description: 'Case revisions saved to your account.',
-              ),
+              const SahSectionHeading(title: 'Saved online'),
               if (_discovering)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
@@ -250,8 +236,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
               if (_loaded && !_discovering && _error == null && _cases.isEmpty)
                 const SahEmptyState(
                   title: 'No saved cases yet.',
-                  message:
-                      'Start with the details you know. You can add photos and review assistance programs as you go.',
+                  message: 'Cases you save online appear here.',
                   icon: Icons.cottage_outlined,
                 ),
               for (final item in _cases)

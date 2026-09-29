@@ -338,18 +338,15 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const SahStepIndicator(
-                      currentStep: 2,
-                      labels: ['Details', 'Home', 'Programs', 'Draft'],
-                    ),
                     SahPageHeader(
                       title: widget.program.programName,
                       description:
-                          'Review the reported facts for this program. Leave anything you do not know unanswered.',
+                          'Answer what you know. Unknown is different from No or 0.',
                     ),
-                    const SahNotice(
-                      message:
-                          'These are reported facts, not a diagnosis, professional determination or funding decision. Unknown is different from No or zero.',
+                    const SahMoreInfo(
+                      details: [
+                        'These are reported facts, not a diagnosis, professional determination or funding decision.',
+                      ],
                     ),
                     if (_busy)
                       const Padding(
@@ -388,11 +385,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                         ],
                       ),
                     if (_response != null)
-                      SahSectionHeading(
-                        title: 'Reported answers',
-                        description:
-                            '${_response!.definition.questions.length} questions · Unknown answers can be saved.',
-                      ),
+                      const SahSectionHeading(title: 'Reported answers'),
                     for (final q
                         in _response?.definition.questions ??
                             <IntakeQuestion>[])
@@ -408,17 +401,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              q.description,
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                            const SizedBox(height: 12),
+                            if (q.description.isNotEmpty)
+                              SahMoreInfo(
+                                label: 'About this question',
+                                details: [q.description],
+                              )
+                            else
+                              const SizedBox(height: 12),
                             if (q.kind == 'boolean')
                               DropdownButtonFormField<String>(
                                 key: ValueKey('${q.key}-$_restoring'),

@@ -159,9 +159,6 @@ void main() {
       await reveal(tester, find.byKey(const ValueKey('case-profile')));
       await tester.tap(find.byKey(const ValueKey('case-profile')));
       await tester.pumpAndSettle();
-      final semantics = tester.ensureSemantics();
-      expect(find.bySemanticsLabel('Step 1 of 4: Details'), findsOneWidget);
-      semantics.dispose();
       final city = find.widgetWithText(TextFormField, 'City');
       await reveal(tester, city);
       await tester.enterText(city, 'Fictional City');
@@ -171,10 +168,27 @@ void main() {
       expect(app.coordinator.draft!.profile.city, 'Fictional City');
       expect(app.coordinator.draft!.profile.annualIncomeUsd, isNull);
       expect(app.coordinator.snapshot, isNull);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('case-next-step')),
+        -200,
+        scrollable: find.byType(Scrollable).first,
+        maxScrolls: 100,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('case-next-step')),
+          matching: find.byKey(const ValueKey('case-save-online')),
+        ),
+        findsOneWidget,
+      );
+      await reveal(tester, find.text('1 of 8 answered'));
+      expect(find.text('1 of 8 answered'), findsOneWidget);
+
       await reveal(tester, find.byKey(const ValueKey('case-programs')));
       expect(
-        find.text(
-          'Save and confirm the current case to review program checks.',
+        find.descendant(
+          of: find.byKey(const ValueKey('case-programs')),
+          matching: find.text('Save online first.'),
         ),
         findsOneWidget,
       );
@@ -183,6 +197,12 @@ void main() {
             .widget<SahActionTile>(find.byKey(const ValueKey('case-programs')))
             .onTap,
         isNull,
+      );
+      expect(
+        tester
+            .widget<SahActionTile>(find.byKey(const ValueKey('case-programs')))
+            .status,
+        'Cannot start yet',
       );
       expect(transport.requests.length, 1);
       expect(tester.takeException(), isNull);

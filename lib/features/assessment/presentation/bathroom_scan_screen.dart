@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+import '../../../shared/presentation/sah_components.dart';
+
+import '../application/bathroom_scan_adapter.dart';
 import '../application/bathroom_scan_session.dart';
 import '../domain/scan/bathroom_scan_scene.dart';
 import '../domain/scan/scan_suggestions.dart';
@@ -273,27 +276,24 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     final capability = scan.capabilities;
     final selected =
         scene?.elementById(selectedId ?? '') ?? scene?.elements.firstOrNull;
-    final canStart =
-        enabled &&
-        !scan.dirty &&
-        capability != null &&
-        (capability.supported ||
-            {
-              'services_missing',
-              'services_update_required',
-              'permission_denied',
-            }.contains(capability.reason));
+    final scanSupported = capability?.canRequestCapture == true;
+    final canStart = enabled && !scan.dirty && scanSupported;
+    final needsSetup =
+        capability?.source == 'arcore' &&
+        {
+          'services_missing',
+          'services_update_required',
+          'permission_denied',
+        }.contains(capability?.reason);
     return [
       Text(
-        scene == null
-            ? 'Understand your bathroom.'
-            : 'Review what was captured.',
+        scene == null ? 'Scan your bathroom' : 'Review the scan',
         style: Theme.of(context).textTheme.headlineMedium,
       ),
       Text(
         scene == null
-            ? 'Walk slowly around one bathroom to build a partial model. Review its features, tell us what is difficult, and choose which observations to add.'
-            : 'This is an approximate model of visible surfaces and objects. Review the identification and position of each feature you want to use.',
+            ? 'Walk slowly around one bathroom, then check what it found.'
+            : 'An approximate model. Check each feature before you use it.',
       ),
       if (!scan.isCurrent())
         const Text(
@@ -315,33 +315,32 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
         ),
       if (scan.busy || busy)
         const LinearProgressIndicator(semanticsLabel: 'Processing scan step'),
+      if (!scan.busy && !busy)
+        Semantics(liveRegion: true, child: Text(_readiness(capability))),
+      if (scene != null && !scanSupported)
+        const Text(
+          'Your saved model is still available to review. You can also continue with photos and measurements.',
+        ),
       if (scene == null)
         _card([
           Text(
             'Before you scan',
             style: Theme.of(context).textTheme.titleLarge,
           ),
+          const Text('Lights on, clear path, move slowly. Up to 3 minutes.'),
           const Text(
-            'Turn on the lights. Keep a clear path and move slowly. Include the entry, floor, bath, toilet and sink from several angles. Stay on dry, stable ground.',
+            'Stop if moving feels unsafe. Someone else can scan for you.',
           ),
-          const Text(
-            'Only one bathroom, up to 3 minutes. Mirrors, glass, small fittings and hidden areas may be missed. Stop if moving around feels unsafe; someone else can capture for you.',
-          ),
-          Text(
-            capability?.source == 'arcore'
-                ? 'Android uses ARCore surfaces and available depth samples. You identify what a surface represents; the scanner does not recognize bathroom fixtures.'
-                : 'iPhone uses RoomPlan on supported LiDAR devices with iOS 16 or later. Other devices keep the photo and manual assessment flow.',
+          SahMoreInfo(
+            details: [
+              'Include the entry, floor, bath, toilet and sink from several angles. Stay on dry, stable ground.',
+              'Mirrors, glass, small fittings and hidden areas may be missed.',
+              capability?.source == 'arcore'
+                  ? 'Android uses ARCore surfaces and available depth samples. You identify what a surface represents; the scanner does not recognize bathroom fixtures.'
+                  : 'iPhone uses RoomPlan on supported LiDAR devices with iOS 16 or later. Other devices keep the photo and manual assessment flow.',
+            ],
           ),
         ]),
-      if (capability != null && !canStart && !scan.busy && !busy && !scan.dirty)
-        Text(switch (capability.reason) {
-          'simulator' =>
-            'The simulator cannot capture LiDAR. Use a supported physical iPhone to scan.',
-          'checking' =>
-            'Device support is still being checked. Try checking again.',
-          _ =>
-            'Scanning is unavailable here. Photos and manual measurements are still available in the assessment.',
-        }),
       Wrap(
         spacing: 12,
         runSpacing: 8,
@@ -350,7 +349,19 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
             key: const ValueKey('bathroom-start-scan'),
             onPressed: canStart ? capture : null,
             icon: const Icon(Icons.view_in_ar),
-            label: Text(scene == null ? 'Scan bathroom' : 'Scan again'),
+            label: Text(
+              needsSetup
+                  ? 'Set up 3D scanning'
+                  : scene == null
+                  ? 'Scan bathroom'
+                  : 'Scan again',
+            ),
+          ),
+          OutlinedButton.icon(
+            key: const ValueKey('bathroom-use-manual'),
+            onPressed: busy || scan.busy ? null : close,
+            icon: const Icon(Icons.photo_camera_outlined),
+            label: const Text('Use photos and measurements'),
           ),
           OutlinedButton(
             onPressed: enabled ? () => run(scan.refreshCapabilities) : null,
@@ -411,7 +422,7 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const Text(
-          'Select only difficulties the resident reports. Unselected items remain unanswered.',
+          'Tick only what the resident reports. Unticked means unanswered.',
         ),
         for (final difficulty in ScanDifficulty.values)
           CheckboxListTile(
@@ -428,14 +439,15 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const Text(
-          'These are prompts for review, not a safety certification or a benefits decision. No observation is added automatically.',
+          'Prompts to review, not a safety or benefits decision. Nothing is added automatically.',
         ),
-        const Text(
-          'Up to 20 review prompts are shown. Focus on fewer features to review other parts of the model.',
-        ),
+        if (prompts.length >= 20)
+          const Text(
+            'Showing 20 prompts. Review fewer features to see others.',
+          ),
         if (prompts.isEmpty)
           const Text(
-            'Review a feature and select a reported difficulty to see relevant next steps. No suggestion does not mean the room is safe.',
+            'Check a feature and tick a difficulty to see prompts. No prompt does not mean the room is safe.',
           ),
         for (final suggestion in prompts) _suggestion(context, suggestion),
         OutlinedButton.icon(
@@ -455,18 +467,14 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           label: const Text('Remove device model'),
         ),
       ],
-      _card([
-        const Text(
-          'Private on this device',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-        const Text(
-          'The app stores this model and review encrypted on this device. The scanner does not save or upload raw video. Added observations use the assessment’s normal Save to my case step; the 3D model is not included in cloud backups, cross-device resume or draft PDFs.',
-        ),
-        const Text(
-          'Use the existing photo and measurement tools for close-up evidence and verified dimensions.',
-        ),
-      ]),
+      const Text('The 3D model stays encrypted on this device.'),
+      const SahMoreInfo(
+        label: 'Privacy and saving',
+        details: [
+          'The scanner does not save or upload raw video. Added observations use the assessment’s normal Save to my case step; the 3D model is not included in cloud backups, cross-device resume or draft PDFs.',
+          'Use the photo and measurement tools for close-up evidence and verified dimensions.',
+        ],
+      ),
       OutlinedButton(
         onPressed: busy || scan.busy ? null : close,
         child: const Text('Back to assessment'),
@@ -499,18 +507,22 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
             : null,
       ),
       Text(
-        'Scanner identification: ${element.kind.label}. Classification confidence: ${element.classificationConfidence.name}. Confidence is not measurement accuracy.',
+        'Scanner says: ${element.kind.label} (${element.classificationConfidence.name} confidence)',
       ),
       Text(
-        'Approximate model extents: ${dims.x.toStringAsFixed(2)} × ${dims.y.toStringAsFixed(2)} × ${dims.z.toStringAsFixed(2)} m. These are local-axis bounds, not verified height or clear opening. A zero axis means a flat surface with unknown thickness.',
+        'About ${dims.x.toStringAsFixed(2)} × ${dims.y.toStringAsFixed(2)} × ${dims.z.toStringAsFixed(2)} m · not a verified measurement',
+      ),
+      const SahMoreInfo(
+        details: [
+          'Confidence is about the label, not measurement accuracy.',
+          'Sizes are local-axis bounds, not verified height or clear opening. A zero axis means a flat surface with unknown thickness.',
+        ],
       ),
       CheckboxListTile(
         contentPadding: EdgeInsets.zero,
         controlAffinity: ListTileControlAffinity.leading,
         value: reviewed,
-        title: const Text(
-          'I reviewed this feature’s identity and position against the room',
-        ),
+        title: const Text('I checked this against the room'),
         onChanged: enabled
             ? (value) =>
                   run(() => scan.reviewElement(element.id, confirmed: value!))
@@ -587,6 +599,34 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
   );
   Widget _notice(String text) =>
       Semantics(liveRegion: true, child: _card([Text(text)]));
+}
+
+String _readiness(BathroomScanCapabilities? capability) {
+  if (capability == null) {
+    return 'Scanner availability could not be confirmed. Check device, or use photos and measurements.';
+  }
+  return switch (capability.reason) {
+    'available' when capability.supported =>
+      capability.source == 'roomplan'
+          ? 'LiDAR scanning is ready on this iPhone. RoomPlan builds an approximate model for you to review.'
+          : 'ARCore scanning is ready on this phone. It maps surfaces; you identify the bathroom features during review.',
+    'permission_denied' when capability.source == 'roomplan' =>
+      'Camera access is blocked. Review Camera access for Safe at Home in iPhone Settings, then return and choose Check device. Photos and manual measurements remain available.',
+    'permission_denied' =>
+      'Camera access is needed for 3D scanning. Choose Set up 3D scanning to continue. If access is blocked, allow Camera for Safe at Home in Settings, then check device again.',
+    'services_missing' =>
+      'This phone supports ARCore. Choose Set up 3D scanning to review the Google Play Services for AR installation prompt.',
+    'services_update_required' =>
+      'Google Play Services for AR needs an update. Choose Set up 3D scanning to review the update prompt.',
+    'simulator' =>
+      'The simulator cannot capture LiDAR. Use a supported physical iPhone to scan, or continue with photos and measurements.',
+    'checking' =>
+      'Device support is still being checked. Try Check device again, or continue with photos and measurements.',
+    'unsupported_os' when capability.source == 'roomplan' =>
+      'Room scanning requires iOS 16 or later on a supported LiDAR device. Photos and measurements are available here.',
+    _ =>
+      '3D scanning is unavailable on this phone. Continue with photos and manual measurements.',
+  };
 }
 
 String _warning(String code) => switch (code) {

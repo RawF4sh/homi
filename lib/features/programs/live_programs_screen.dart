@@ -111,19 +111,10 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              const SahStepIndicator(
-                currentStep: 2,
-                labels: ['Details', 'Home', 'Programs', 'Draft'],
-              ),
               const SahPageHeader(
-                eyebrow: 'YOUR NEXT STEPS',
-                title: 'Explore possible assistance',
+                title: 'Possible assistance',
                 description:
-                    'See what is known, what needs confirmation, and how to prepare each route.',
-              ),
-              const SahNotice(
-                message:
-                    'Program review is still required. These checks do not promise funding or approval.',
+                    'Checks, not decisions. Each program still reviews the case.',
               ),
               if (_busy)
                 const Padding(
@@ -134,16 +125,6 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                 ),
               if (_error != null)
                 SahNotice(message: _error!, tone: SahNoticeTone.warning),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                key: const ValueKey('program-refresh'),
-                onPressed: _busy ? null : _load,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text(
-                  'Refresh program checks',
-                  textAlign: TextAlign.center,
-                ),
-              ),
               if (result != null && !same)
                 const SahNotice(
                   message:
@@ -156,11 +137,21 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                     c.currentCase(),
                     now: DateTime.now().toUtc(),
                   ))
-                const SahNotice(
-                  message:
-                      'Some policy details or deadlines still need confirmation. Review each unresolved requirement.',
+                const SahStatusBadge(
+                  label: 'Some policy details are unconfirmed',
+                  icon: Icons.info_outline_rounded,
                   tone: SahNoticeTone.warning,
                 ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('program-refresh'),
+                onPressed: _busy ? null : _load,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text(
+                  'Refresh program checks',
+                  textAlign: TextAlign.center,
+                ),
+              ),
               if (result != null && result.matches.isEmpty)
                 const SahEmptyState(
                   title: 'No routes to review yet',
@@ -174,7 +165,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                       '${result.matches.length} ${result.matches.length == 1 ? 'program route' : 'program routes'} to review',
                 ),
               if (result != null)
-                for (final (index, match) in result.matches.indexed)
+                for (final match in result.matches)
                   Card(
                     key: ValueKey('program-${match.programId}'),
                     margin: const EdgeInsets.only(bottom: 24),
@@ -183,17 +174,6 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            'ROUTE ${(index + 1).toString().padLeft(2, '0')}',
-                            style: Theme.of(context).textTheme.labelMedium
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                  letterSpacing: 1.4,
-                                ),
-                          ),
-                          const SizedBox(height: 12),
                           Semantics(
                             header: true,
                             child: Text(
@@ -226,16 +206,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                             '${match.checks.where((check) => check.status == 'fail').length} not met · '
                             '${match.checks.where((check) => check.status == 'unknown').length} need confirmation',
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Open Eligibility checks to review every reason. Preparing a draft does not confirm eligibility.',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          const SahSectionHeading(
-                            title: 'Prepare this route',
-                            description:
-                                'Review reported facts and required documents before making a draft.',
-                          ),
+                          const SahSectionHeading(title: 'Prepare a draft'),
                           OutlinedButton(
                             key: ValueKey('program-${match.programId}-intake'),
                             style: _preparationActionStyle(context),
