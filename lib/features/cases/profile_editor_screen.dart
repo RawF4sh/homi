@@ -507,25 +507,47 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     try {
       final replace = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          scrollable: true,
-          title: const Text('Update county?'),
-          content: Text(
-            '${suggestion.value} is in $county County. '
-            'Replace your current county, “$currentCounty”, with “$county”?',
+        builder: (context) => Dialog(
+          insetPadding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Semantics(
+                    header: true,
+                    child: Text(
+                      'Update county?',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '${suggestion.value} is in $county County. '
+                    'Replace your current county, “$currentCounty”, with “$county”?',
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    key: const ValueKey('profile-use-city-county'),
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text('Use $county', textAlign: TextAlign.center),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    key: const ValueKey('profile-keep-existing-county'),
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text(
+                      'Keep current county',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          actions: [
-            TextButton(
-              key: const ValueKey('profile-keep-existing-county'),
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Keep current county'),
-            ),
-            FilledButton(
-              key: const ValueKey('profile-use-city-county'),
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text('Use $county'),
-            ),
-          ],
         ),
       );
       if (replace == true &&

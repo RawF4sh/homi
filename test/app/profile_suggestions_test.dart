@@ -29,7 +29,7 @@ Future<void> choose(WidgetTester tester, String key, String value) async {
 
 void main() {
   testWidgets(
-    'typing and choosing stays offline, saves, and does not infer another field',
+    'choosing a city autofills county and saves both fields offline',
     (tester) async {
       final store = ProfileTestStore();
       final app = await appFor(store);
@@ -43,14 +43,16 @@ void main() {
       );
       expect(
         tester.widget<TextFormField>(field('County')).controller!.text,
-        '',
+        'Santa Clara',
       );
       expect(
         find.byKey(const ValueKey('profile-suggestions-city')),
         findsNothing,
       );
-      await type(tester, 'County', 'santa');
-      await choose(tester, 'county', 'Santa Clara');
+      expect(
+        find.text('Filled from San José. You can change it.'),
+        findsOneWidget,
+      );
       await type(tester, 'Health plan', 'scfhp');
       await choose(tester, 'healthPlan', 'Santa Clara Family Health Plan');
       final id = app.coordinator.currentDraft().caseId;
@@ -99,6 +101,131 @@ void main() {
       expect(
         app.coordinator.currentDraft().profile.healthPlan,
         'Fictional unlisted plan',
+      );
+    },
+  );
+
+  testWidgets(
+    'autofilled city and county recover together and county remains editable',
+    (tester) async {
+      final store = ProfileTestStore();
+      final app = await appFor(store);
+      await showProfile(tester, app);
+      await type(tester, 'City', 'san jo');
+      await choose(tester, 'city', 'San José');
+      await tester.pumpWidget(const SizedBox.shrink());
+      await showProfile(tester, app);
+      expect(
+        tester.widget<TextFormField>(field('City')).controller!.text,
+        'San José',
+      );
+      expect(
+        tester.widget<TextFormField>(field('County')).controller!.text,
+        'Santa Clara',
+      );
+      await type(tester, 'County', 'Fictional custom county');
+      FocusManager.instance.primaryFocus?.unfocus();
+      await press(tester, 'profile-keep-edits');
+      expect(
+        app.coordinator.currentDraft().profile.county,
+        'Fictional custom county',
+      );
+    },
+  );
+
+  for (final replace in [false, true]) {
+    testWidgets(
+      'a different existing county is ${replace ? 'replaced only after confirmation' : 'kept when replacement is declined'}',
+      (tester) async {
+        if (replace) narrowLargeText(tester, scale: 3.2);
+        final store = ProfileTestStore();
+        final app = await appFor(store);
+        await showProfile(tester, app);
+        await type(tester, 'County', 'San Mateo');
+        await type(tester, 'City', 'san jo');
+        await choose(tester, 'city', 'San José');
+        expect(find.text('Update county?'), findsOneWidget);
+        expect(
+          tester.widget<TextFormField>(field('County')).controller!.text,
+          'San Mateo',
+        );
+        final decision = find.byKey(
+          ValueKey(
+            replace
+                ? 'profile-use-city-county'
+                : 'profile-keep-existing-county',
+          ),
+        );
+        await tester.ensureVisible(decision);
+        await tester.pumpAndSettle();
+        await tester.tap(decision);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<TextFormField>(field('City')).controller!.text,
+          'San José',
+        );
+        expect(
+          tester.widget<TextFormField>(field('County')).controller!.text,
+          replace ? 'Santa Clara' : 'San Mateo',
+        );
+        final journal =
+            store.records['profile-edit.${app.coordinator.currentDraft().caseId}']!['values']
+                as Map;
+        expect(journal['city'], 'San José');
+        expect(journal['county'], replace ? 'Santa Clara' : 'San Mateo');
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'an equivalent manually entered county is retained without a prompt',
+    (tester) async {
+      final app = await appFor(ProfileTestStore());
+      await showProfile(tester, app);
+      await type(tester, 'County', '  Santa Clara County  ');
+      await type(tester, 'City', 'san jo');
+      await choose(tester, 'city', 'San José');
+      expect(find.text('Update county?'), findsNothing);
+      expect(
+        tester.widget<TextFormField>(field('County')).controller!.text,
+        '  Santa Clara County  ',
+      );
+    },
+  );
+
+  testWidgets('typing a city name alone never guesses a county', (
+    tester,
+  ) async {
+    final app = await appFor(ProfileTestStore());
+    await showProfile(tester, app);
+    await type(tester, 'City', 'San José');
+    expect(tester.widget<TextFormField>(field('County')).controller!.text, '');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await press(tester, 'profile-keep-edits');
+    expect(app.coordinator.currentDraft().profile.county, isNull);
+  });
+
+  testWidgets(
+    'late county confirmation cannot change a new case or old journal',
+    (tester) async {
+      final store = ProfileTestStore();
+      final app = await appFor(store);
+      await showProfile(tester, app);
+      final id = app.coordinator.currentDraft().caseId;
+      await type(tester, 'County', 'San Mateo');
+      await type(tester, 'City', 'san jo');
+      await choose(tester, 'city', 'San José');
+      await app.coordinator.createDraft();
+      await tester.tap(find.byKey(const ValueKey('profile-use-city-county')));
+      await tester.pumpAndSettle();
+      expect(app.coordinator.currentDraft().profile.city, isNull);
+      expect(app.coordinator.currentDraft().profile.county, isNull);
+      final journal = store.records['profile-edit.$id']!['values'] as Map;
+      expect(journal['county'], 'San Mateo');
+      expect(
+        tester.widget<TextFormField>(field('County')).controller!.text,
+        'San Mateo',
       );
     },
   );
