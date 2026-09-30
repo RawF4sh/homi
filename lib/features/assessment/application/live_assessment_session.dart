@@ -233,7 +233,7 @@ class LiveAssessmentSession extends ChangeNotifier {
           : AssessmentState.fromJson(local!['assessmentState']);
       online = false;
       resumeNotice =
-          'Working from this device’s saved case. Photos and measurements stay encrypted here until you connect and save online. Previously saved photos need a connection to open.';
+          'Offline: new work stays encrypted on this device until you save online. Earlier saved photos need a connection.';
     }
     if (local != null && local['version'] == 1 && local['caseId'] == caseId) {
       pendingRequest = local['pendingRequest'] == null

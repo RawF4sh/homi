@@ -303,10 +303,11 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
       if (scan.notice != null) _notice(scan.notice!),
       if (earlier.isNotEmpty)
         _notice(
-          'Observations added from an earlier model review: ${earlier.length}. '
-          'They are not among this review\'s current suggestions and stay '
-          'unchanged in the assessment. Review, correct or remove them there '
-          'before saving to your case.',
+          earlier.length == 1
+              ? '1 earlier scan observation is still in the assessment, '
+                    'unchanged. Review it there.'
+              : '${earlier.length} earlier scan observations are still in the '
+                    'assessment, unchanged. Review them there.',
         ),
       if (scan.dirty)
         FilledButton(
@@ -547,8 +548,11 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
       else if (dismissed)
         const Text('Dismissed for this review.')
       else ...[
-        Text(suggestion.basis),
         Text(suggestion.nextAction),
+        SahMoreInfo(
+          label: 'Why this is suggested',
+          details: [suggestion.basis],
+        ),
         ExpansionTile(
           tilePadding: EdgeInsets.zero,
           title: const Text('Observation to add'),

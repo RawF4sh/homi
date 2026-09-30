@@ -647,7 +647,7 @@ void main() {
     difficulties: {ScanDifficulty.enteringBathroom},
   ).single;
   final earlierNotice = find.textContaining(
-    'Observations added from an earlier model review: 1.',
+    '1 earlier scan observation is still in the assessment',
   );
 
   testWidgets(

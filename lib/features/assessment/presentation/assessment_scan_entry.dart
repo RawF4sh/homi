@@ -38,8 +38,8 @@ class AssessmentScanEntry extends StatelessWidget {
                   : 'Allow camera access when prompted, or in Settings if permission was previously blocked.',
             'available' when primary =>
               capability?.source == 'arcore'
-                  ? 'Walk around the bathroom with ARCore, then review the surfaces and label what they represent.'
-                  : 'Use LiDAR to capture the room, review its 3D model and confirm observations.',
+                  ? 'Scan with ARCore, label the surfaces, then confirm what to add.'
+                  : 'Scan with LiDAR, then confirm what to add.',
             'checking' =>
               'Device support is not confirmed yet. Check again, or use photos and measurements.',
             'unsupported_os' =>
@@ -67,12 +67,6 @@ class AssessmentScanEntry extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(description),
-          if (primary) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Only observations you confirm are added to your assessment.',
-            ),
-          ],
           const SizedBox(height: 16),
           if (primary)
             FilledButton.icon(
