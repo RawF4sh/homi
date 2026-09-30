@@ -19,6 +19,7 @@
     "bootstrap:runtime": "node tool/bootstrap-runtime.ts",
     "verify:live-sessions": "node tool/verify-live-sessions.ts",
     "verify:hosted-api": "node tool/verify-hosted-api.ts",
+    "verify:hosted-cases": "node tool/verify-hosted-cases.ts",
     "verify:hosted-draft": "node tool/verify-hosted-draft.ts",
     "test:postgres": "node --test test/postgres/*.test.ts",
     "research:scfhp": "node src/research-scfhp.ts"
