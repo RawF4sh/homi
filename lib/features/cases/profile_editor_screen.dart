@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import '../../app/live_app.dart';
+import 'profile_suggestion_field.dart';
+import 'profile_suggestions.dart';
 import '../../shared/models/case_draft.dart';
 import '../../shared/presentation/draft_exit_guard.dart';
 import '../../shared/presentation/sah_components.dart';
@@ -31,6 +33,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   late final DraftSaveTracker _draftSaves;
   VoidCallback? _requestExit;
   String? _notice;
+  String? _countyAutofillNote;
+  bool _confirmingCounty = false;
   late final String _caseId;
   late final int _generation;
   late final int? _baseRevision;
@@ -432,6 +436,146 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     );
   }
 
+  void _fieldChanged(String key) {
+    if (!_editable) return;
+    if (_errors.containsKey(key) ||
+        (_countyAutofillNote != null && (key == 'city' || key == 'county'))) {
+      setState(() {
+        if (key == 'city' || key == 'county') _countyAutofillNote = null;
+        final error = _validateField(key);
+        if (error == null) {
+          _errors.remove(key);
+        } else {
+          _errors[key] = error;
+        }
+      });
+    }
+    _stash();
+  }
+
+  void _applySuggestionValues(
+    Map<String, String> values, {
+    String? countyCity,
+  }) {
+    if (!_editable) return;
+    for (final entry in values.entries) {
+      _fields[entry.key]!.value = TextEditingValue(
+        text: entry.value,
+        selection: TextSelection.collapsed(offset: entry.value.length),
+      );
+    }
+    setState(() {
+      if (values.containsKey('city') || values.containsKey('county')) {
+        _countyAutofillNote = countyCity == null
+            ? null
+            : 'Filled from $countyCity. You can change it.';
+      }
+      for (final key in values.keys) {
+        if (!_errors.containsKey(key)) continue;
+        final error = _validateField(key);
+        if (error == null) {
+          _errors.remove(key);
+        } else {
+          _errors[key] = error;
+        }
+      }
+    });
+    _stash();
+  }
+
+  Future<void> _selectSuggestion(
+    String key,
+    ProfileSuggestion suggestion,
+  ) async {
+    if (!_editable || _confirmingCounty) return;
+    final county = key == 'city' ? suggestion.county : null;
+    final currentCounty = _fields['county']!.text;
+    if (county == null) {
+      _applySuggestionValues({key: suggestion.value});
+      return;
+    }
+    if (currentCounty.trim().isEmpty) {
+      _applySuggestionValues({
+        'city': suggestion.value,
+        'county': county,
+      }, countyCity: suggestion.value);
+      return;
+    }
+    _applySuggestionValues({'city': suggestion.value});
+    if (canonicalProfileCounty(currentCounty) == county) return;
+    _confirmingCounty = true;
+    try {
+      final replace = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          scrollable: true,
+          title: const Text('Update county?'),
+          content: Text(
+            '${suggestion.value} is in $county County. '
+            'Replace your current county, “$currentCounty”, with “$county”?',
+          ),
+          actions: [
+            TextButton(
+              key: const ValueKey('profile-keep-existing-county'),
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep current county'),
+            ),
+            FilledButton(
+              key: const ValueKey('profile-use-city-county'),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text('Use $county'),
+            ),
+          ],
+        ),
+      );
+      if (replace == true &&
+          _editable &&
+          _fields['city']!.text == suggestion.value &&
+          _fields['county']!.text == currentCounty) {
+        _applySuggestionValues({
+          'county': county,
+        }, countyCity: suggestion.value);
+      }
+    } finally {
+      _confirmingCounty = false;
+    }
+  }
+
+  Widget _profileField(String key) {
+    final field = TextFormField(
+      key: _fieldAnchors[key],
+      controller: _fields[key],
+      focusNode: _fieldFocus[key],
+      forceErrorText: _errors[key],
+      enabled: _editable,
+      onChanged: (_) => _fieldChanged(key),
+      decoration: InputDecoration(
+        labelText: labels[key],
+        helperMaxLines: 4,
+        helperText: key == 'county' && _countyAutofillNote != null
+            ? _countyAutofillNote
+            : key == 'annualIncomeUsd'
+            ? 'Yearly household total, US dollars'
+            : ['city', 'county', 'healthPlan'].contains(key)
+            ? 'Type for suggestions, or enter another name.'
+            : null,
+      ),
+      textInputAction: TextInputAction.next,
+      keyboardType:
+          ['ageYears', 'householdSize', 'annualIncomeUsd'].contains(key)
+          ? TextInputType.numberWithOptions(decimal: key == 'annualIncomeUsd')
+          : TextInputType.text,
+    );
+    if (!['city', 'county', 'healthPlan'].contains(key)) return field;
+    return ProfileSuggestionField(
+      field: key,
+      controller: _fields[key]!,
+      enabled: _editable,
+      onSelected: (suggestion) => _selectSuggestion(key, suggestion),
+      child: field,
+    );
+  }
+
   @override
   Widget build(BuildContext context) => DraftExitGuard(
     tracker: _draftSaves,
@@ -482,44 +626,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                         const SahSectionHeading(title: 'Household'),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 16),
-                        child: TextFormField(
-                          key: _fieldAnchors[key],
-                          controller: _fields[key],
-                          focusNode: _fieldFocus[key],
-                          forceErrorText: _errors[key],
-                          enabled: _editable,
-                          onChanged: (_) {
-                            if (!_editable) return;
-                            if (_errors.containsKey(key)) {
-                              setState(() {
-                                final error = _validateField(key);
-                                if (error == null) {
-                                  _errors.remove(key);
-                                } else {
-                                  _errors[key] = error;
-                                }
-                              });
-                            }
-                            _stash();
-                          },
-                          decoration: InputDecoration(
-                            labelText: labels[key],
-                            helperText: key == 'annualIncomeUsd'
-                                ? 'Yearly household total, US dollars'
-                                : null,
-                          ),
-                          textInputAction: TextInputAction.next,
-                          keyboardType:
-                              [
-                                'ageYears',
-                                'householdSize',
-                                'annualIncomeUsd',
-                              ].contains(key)
-                              ? TextInputType.numberWithOptions(
-                                  decimal: key == 'annualIncomeUsd',
-                                )
-                              : TextInputType.text,
-                        ),
+                        child: _profileField(key),
                       ),
                     ],
                     const SahSectionHeading(title: 'Housing'),
