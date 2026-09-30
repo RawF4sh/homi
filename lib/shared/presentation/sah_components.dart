@@ -215,8 +215,9 @@ class SahFeaturePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final enlarged = MediaQuery.textScalerOf(context).scale(14) > 20;
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(enlarged ? 16 : 24),
       decoration: BoxDecoration(
         color: scheme.primary,
         borderRadius: BorderRadius.circular(26),

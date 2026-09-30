@@ -66,8 +66,7 @@ class SaveStatusCard extends StatelessWidget {
           ),
           SyncPhase.idle when undescribedDraftOpen => (
             '${sync.savedCase.findings.isEmpty ? '' : 'Earlier findings are saved. '}'
-                '${durableLocal ? 'This one stays on this device' : 'This one stays on this screen'}'
-                ' until you describe and save it.',
+                '${durableLocal ? 'Kept on this device until you save.' : 'Only on this screen until you save.'}',
             null,
             null,
           ),
