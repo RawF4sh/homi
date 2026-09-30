@@ -9,6 +9,7 @@ export interface HostedVerificationOptions {
   warmupTimeoutMs?: number;
   healthRequestTimeoutMs?: number;
   pollIntervalMs?: number;
+  verifyCaseDiscovery?: boolean;
 }
 export interface HostedApiReport extends LiveSessionReport {
   healthReady: true; healthHeadVerified: true; healthAttempts: number;
@@ -38,11 +39,13 @@ function configuration(input: HostedApiConfiguration, options: HostedVerificatio
     const warmupTimeoutMs = options.warmupTimeoutMs ?? 90_000;
     const healthRequestTimeoutMs = options.healthRequestTimeoutMs ?? 10_000;
     const pollIntervalMs = options.pollIntervalMs ?? 2000;
+    const verifyCaseDiscovery = options.verifyCaseDiscovery ?? false;
     if (typeof fetchImpl !== 'function' || !Number.isInteger(warmupTimeoutMs) || warmupTimeoutMs < 1 || warmupTimeoutMs > 90_000
       || !Number.isInteger(healthRequestTimeoutMs) || healthRequestTimeoutMs < 1 || healthRequestTimeoutMs > 10_000
-      || !Number.isInteger(pollIntervalMs) || pollIntervalMs < 1 || pollIntervalMs > 5000) return fail('configuration');
+      || !Number.isInteger(pollIntervalMs) || pollIntervalMs < 1 || pollIntervalMs > 5000
+      || (options.verifyCaseDiscovery !== undefined && typeof options.verifyCaseDiscovery !== 'boolean')) return fail('configuration');
     return { input: { apiOrigin, auth, accounts, caseIds: [...input.caseIds] as [string, string] },
-      fetchImpl, warmupTimeoutMs, healthRequestTimeoutMs, pollIntervalMs };
+      fetchImpl, warmupTimeoutMs, healthRequestTimeoutMs, pollIntervalMs, verifyCaseDiscovery };
   } catch { return fail('configuration'); }
 }
 
@@ -120,6 +123,6 @@ export async function verifyHostedApi(
   const remaining = expiresAt - performance.now();
   if (remaining <= 0 || !await healthRequest(endpoint, 'HEAD', Math.min(config.healthRequestTimeoutMs, remaining), config.fetchImpl)) return fail('health');
   const sessions = await verifyLiveSessions({ ...config.input, createFixtures: false },
-    { fetchImpl: config.fetchImpl, allowRemoteHttps: true });
+    { fetchImpl: config.fetchImpl, allowRemoteHttps: true, verifyCaseDiscovery: config.verifyCaseDiscovery });
   return Object.freeze({ ...sessions, healthReady: true, healthHeadVerified: true, healthAttempts });
 }

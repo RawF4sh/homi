@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
 import { isNewCaseId } from '../cases/validation.ts';
+import { parseCaseListPage, type CaseListSummary } from '../cases/discovery.ts';
 import { matchPrograms } from '../matcher.ts';
 import { createSupabaseAuthenticator, MAX_AUTH_RESPONSE_BYTES, type SupabaseAuthConfig } from './supabase-auth.ts';
 
@@ -13,7 +14,7 @@ export interface LiveSessionConfiguration {
   createFixtures: boolean;
 }
 export type VerificationStage = 'configuration' | 'sign_in_a' | 'sign_in_b' | 'identity'
-  | 'refresh' | 'fixture_a' | 'fixture_b' | 'ownership' | 'invalid_token'
+  | 'refresh' | 'fixture_a' | 'fixture_b' | 'ownership' | 'invalid_token' | 'case_discovery'
   | 'local_sign_out' | 'refresh_denial';
 
 export class LiveSessionVerificationError extends Error {
@@ -151,12 +152,70 @@ export interface LiveSessionReport {
   status: 'passed'; signedInUsers: 2; distinctVerifiedUsers: true; refreshVerified: true;
   ownerReads: 2; crossOwnerDenials: 2; invalidTokenDenied: true;
   localSignOuts: 2; latestRefreshDeniedAfterSignOut: true; fixturesCreated: number;
+  caseDiscovery?: CaseDiscoveryReport;
+}
+
+export interface CaseDiscoveryReport {
+  pageSize: 1; pagesRead: number; userACaseCount: number; userBCaseCount: number;
+  ownerFixturesFound: 2; crossOwnerFixturesExcluded: true; disjointOwnerLists: true;
+  resumedCases: 2; resumedRevisionsCurrent: true; invalidTokenDenied: true;
+}
+
+type ApiRequest = (path: string, token: string, body: unknown, stage: VerificationStage) => Promise<JsonResponse>;
+
+async function verifyCaseDiscovery(
+  api: ApiRequest, sessions: readonly Session[], caseIds: readonly string[],
+): Promise<CaseDiscoveryReport> {
+  const stage = 'case_discovery';
+  const lists: CaseListSummary[][] = [];
+  let pagesRead = 0;
+  for (let index = 0; index < 2; index++) {
+    let afterCaseId: string | null = null;
+    let complete = false;
+    const summaries: CaseListSummary[] = [];
+    for (let step = 0; step < 64; step++) {
+      const query = { limit: 1, afterCaseId };
+      const response = await api('list-cases', sessions[index].accessToken,
+        { schemaVersion: '1', ...query }, stage);
+      if (response.status !== 200 || !record(response.body) || response.body.schemaVersion !== '1'
+        || Object.keys(response.body).length !== 3 || !Object.hasOwn(response.body, 'cases')
+        || !Object.hasOwn(response.body, 'nextAfterCaseId')) return fail(stage);
+      let page;
+      try { page = parseCaseListPage({ cases: response.body.cases, nextAfterCaseId: response.body.nextAfterCaseId }, query); }
+      catch { return fail(stage); }
+      pagesRead++;
+      summaries.push(...page.cases);
+      afterCaseId = page.nextAfterCaseId;
+      if (afterCaseId === null) { complete = true; break; }
+    }
+    if (!complete || !summaries.some(item => item.caseId === caseIds[index])
+      || summaries.some(item => item.caseId === caseIds[1 - index])) return fail(stage);
+    lists.push(summaries);
+  }
+  const firstIds = new Set(lists[0].map(item => item.caseId));
+  if (lists[1].some(item => firstIds.has(item.caseId))) return fail(stage);
+  for (let index = 0; index < 2; index++) {
+    const caseId = caseIds[index];
+    const listed = lists[index].find(item => item.caseId === caseId)!;
+    const response = await api('read-case', sessions[index].accessToken, { schemaVersion: '1', caseId }, stage);
+    snapshot(response, caseId, stage);
+    if (!record(response.body) || typeof response.body.revision !== 'number'
+      || response.body.revision < listed.caseRevision) return fail(stage);
+  }
+  if (!apiError(await api('list-cases', `invalid-session-check-${randomUUID()}`,
+    { schemaVersion: '1', limit: 1, afterCaseId: null }, stage), 401, 'UNAUTHENTICATED')) return fail(stage);
+  return Object.freeze({ pageSize: 1, pagesRead, userACaseCount: lists[0].length,
+    userBCaseCount: lists[1].length, ownerFixturesFound: 2, crossOwnerFixturesExcluded: true,
+    disjointOwnerLists: true, resumedCases: 2, resumedRevisionsCurrent: true, invalidTokenDenied: true });
 }
 
 export async function verifyLiveSessions(
-  input: LiveSessionConfiguration, options: { fetchImpl?: typeof fetch; allowRemoteHttps?: boolean } = {},
+  input: LiveSessionConfiguration,
+  options: { fetchImpl?: typeof fetch; allowRemoteHttps?: boolean; verifyCaseDiscovery?: boolean } = {},
 ): Promise<LiveSessionReport> {
-  if (options.allowRemoteHttps !== undefined && typeof options.allowRemoteHttps !== 'boolean') return fail('configuration');
+  if ((options.allowRemoteHttps !== undefined && typeof options.allowRemoteHttps !== 'boolean')
+    || (options.verifyCaseDiscovery !== undefined && typeof options.verifyCaseDiscovery !== 'boolean')) return fail('configuration');
+  const checkCaseDiscovery = options.verifyCaseDiscovery ?? false;
   const config = configuration(input, options.allowRemoteHttps ?? false);
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== 'function') return fail('configuration');
@@ -173,6 +232,7 @@ export async function verifyLiveSessions(
   let cleanupFailed = false;
   let unresolvedSignIn = false;
   let fixturesCreated = 0;
+  let caseDiscovery: CaseDiscoveryReport | undefined;
   try {
     for (let index = 0; index < 2; index++) {
       stage = index === 0 ? 'sign_in_a' : 'sign_in_b';
@@ -210,6 +270,10 @@ export async function verifyLiveSessions(
     stage = 'invalid_token';
     if (!apiError(await api('read-case', `invalid-session-check-${randomUUID()}`,
       { schemaVersion: '1', caseId: config.caseIds[0] }, stage), 401, 'UNAUTHENTICATED')) fail(stage);
+    if (checkCaseDiscovery) {
+      stage = 'case_discovery';
+      caseDiscovery = await verifyCaseDiscovery(api, sessions, config.caseIds);
+    }
   } catch { failed = stage; }
   finally {
     cleanupFailed = unresolvedSignIn;
@@ -232,7 +296,7 @@ export async function verifyLiveSessions(
       && ['refresh_token_not_found', 'session_not_found', 'session_expired'].includes(response.body.error_code)) {
       return Object.freeze({ status: 'passed', signedInUsers: 2, distinctVerifiedUsers: true, refreshVerified: true,
         ownerReads: 2, crossOwnerDenials: 2, invalidTokenDenied: true, localSignOuts: 2,
-        latestRefreshDeniedAfterSignOut: true, fixturesCreated });
+        latestRefreshDeniedAfterSignOut: true, fixturesCreated, ...(caseDiscovery ? { caseDiscovery } : {}) });
     }
     if (response.status === 200) {
       try {

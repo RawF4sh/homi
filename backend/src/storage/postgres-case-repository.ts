@@ -6,6 +6,8 @@ import type { CreatePacketInput, CreatePacketResult, PacketCaseRepository } from
 import type { FormAnswerCaseRepository, FormAnswerReadInput, FormAnswerReadResult,
   FormAnswerSaveInput, FormAnswerSaveResult } from '../api/form-answers.ts';
 import type { CaseWriteRepository, CaseWriteResult } from '../cases/repository.ts';
+import { parseCaseListPage, parseCaseListQuery, type CaseListPage, type CaseListQuery,
+  type CaseListRepository } from '../cases/discovery.ts';
 import type { CaseDraft } from '../cases/types.ts';
 import { parseCaseDraft } from '../cases/validation.ts';
 import { parseSavedFormAnswers, type SavedFormAnswerSet } from '../forms/form-answers.ts';
@@ -70,7 +72,7 @@ function validatePdf(bytes: Uint8Array, metadata: ExportArtifactMetadata): void 
 }
 
 export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRepository,
-  FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, LifecycleRepository {
+  FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository, LifecycleRepository {
   private readonly pool: Pool;
   constructor(pool: Pool) { this.pool = pool; }
 
@@ -308,6 +310,20 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
 
   async loadForUser(userId: string, caseId: string): Promise<CaseSnapshot | null> {
     return this.transaction(userId, false, async tx => (await this.caseRow(tx, userId, caseId))?.snapshot ?? null);
+  }
+  async listForUser(userId: string, query: CaseListQuery): Promise<CaseListPage> {
+    const captured = parseCaseListQuery(query);
+    return this.transaction(userId, false, async tx => {
+      const rows = (await tx.client.query(`SELECT case_id, revision FROM ${S}.cases
+        WHERE owner_id=$1 AND ($2::text IS NULL OR case_id COLLATE "C" > $2::text COLLATE "C")
+        ORDER BY case_id COLLATE "C" ASC LIMIT $3`,
+      [userId, captured.afterCaseId, captured.limit + 1])).rows;
+      const cases = rows.slice(0, captured.limit).map(row => ({
+        caseId: row.case_id, caseRevision: integer(row.revision),
+      }));
+      return parseCaseListPage({ cases, nextAfterCaseId: rows.length > captured.limit
+        ? cases[cases.length - 1]!.caseId : null }, captured);
+    });
   }
   async createForUser(userId: string, draft: CaseDraft): Promise<CaseWriteResult> {
     if (!evidenceIdentifier(userId)) return { status: 'invalid_input' };
