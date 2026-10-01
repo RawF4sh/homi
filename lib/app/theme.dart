@@ -8,43 +8,86 @@ abstract final class SafeAtHomeTheme {
   static const coral = Color(0xFF965038);
   static const line = Color(0xFFDFE4DA);
 
-  static ThemeData light() {
-    final scheme =
-        ColorScheme.fromSeed(
-          seedColor: teal,
-          brightness: Brightness.light,
-        ).copyWith(
-          primary: teal,
-          onPrimary: Colors.white,
-          primaryContainer: const Color(0xFFE3EDDE),
-          onPrimaryContainer: teal,
-          secondary: const Color(0xFF526653),
-          secondaryContainer: const Color(0xFFECEEE0),
-          onSecondaryContainer: ink,
-          tertiary: coral,
-          tertiaryContainer: const Color(0xFFF6E7D9),
-          onTertiaryContainer: const Color(0xFF743326),
-          surface: const Color(0xFFFFFFFC),
-          onSurface: ink,
-          onSurfaceVariant: mutedInk,
-          surfaceContainerLowest: const Color(0xFFFFFFFC),
-          surfaceContainerLow: const Color(0xFFF0F2E9),
-          surfaceContainer: const Color(0xFFE9EDE3),
-          outline: const Color(0xFF77877E),
-          outlineVariant: line,
-          error: const Color(0xFF9B3028),
-          onError: Colors.white,
-          errorContainer: const Color(0xFFF9E3DF),
-          onErrorContainer: const Color(0xFF74231D),
-        );
+  static const darkBackground = Color(0xFF0F1714);
+
+  static ThemeData light() => _build(_lightScheme(), background: ivory);
+
+  static ThemeData dark() => _build(_darkScheme(), background: darkBackground);
+
+  static ColorScheme _lightScheme() =>
+      ColorScheme.fromSeed(
+        seedColor: teal,
+        brightness: Brightness.light,
+      ).copyWith(
+        primary: teal,
+        onPrimary: Colors.white,
+        primaryContainer: const Color(0xFFE3EDDE),
+        onPrimaryContainer: teal,
+        secondary: const Color(0xFF526653),
+        secondaryContainer: const Color(0xFFECEEE0),
+        onSecondaryContainer: ink,
+        tertiary: coral,
+        tertiaryContainer: const Color(0xFFF6E7D9),
+        onTertiaryContainer: const Color(0xFF743326),
+        surface: const Color(0xFFFFFFFC),
+        onSurface: ink,
+        onSurfaceVariant: mutedInk,
+        surfaceContainerLowest: const Color(0xFFFFFFFC),
+        surfaceContainerLow: const Color(0xFFF0F2E9),
+        surfaceContainer: const Color(0xFFE9EDE3),
+        outline: const Color(0xFF77877E),
+        outlineVariant: line,
+        error: const Color(0xFF9B3028),
+        onError: Colors.white,
+        errorContainer: const Color(0xFFF9E3DF),
+        onErrorContainer: const Color(0xFF74231D),
+        inverseSurface: ink,
+        onInverseSurface: Colors.white,
+      );
+
+  static ColorScheme _darkScheme() =>
+      ColorScheme.fromSeed(
+        seedColor: teal,
+        brightness: Brightness.dark,
+      ).copyWith(
+        primary: const Color(0xFF8CCFB3),
+        onPrimary: const Color(0xFF04261C),
+        primaryContainer: const Color(0xFF1E4A3F),
+        onPrimaryContainer: const Color(0xFFB9EBD5),
+        secondary: const Color(0xFFB4CBB6),
+        secondaryContainer: const Color(0xFF2B3B31),
+        onSecondaryContainer: const Color(0xFFD2E7D5),
+        tertiary: const Color(0xFFEFAA90),
+        tertiaryContainer: const Color(0xFF4F271B),
+        onTertiaryContainer: const Color(0xFFFFD8C8),
+        surface: const Color(0xFF16201C),
+        onSurface: const Color(0xFFE2EBE6),
+        onSurfaceVariant: const Color(0xFFA8B7AF),
+        surfaceContainerLowest: const Color(0xFF16201C),
+        surfaceContainerLow: const Color(0xFF1C2722),
+        surfaceContainer: const Color(0xFF22302A),
+        outline: const Color(0xFF82938B),
+        outlineVariant: const Color(0xFF2E3B35),
+        error: const Color(0xFFFFB4A8),
+        onError: const Color(0xFF5C130C),
+        errorContainer: const Color(0xFF5F1E17),
+        onErrorContainer: const Color(0xFFFFDAD4),
+        inverseSurface: const Color(0xFFDDE6E1),
+        onInverseSurface: const Color(0xFF1B2420),
+      );
+
+  static ThemeData _build(ColorScheme scheme, {required Color background}) {
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      scaffoldBackgroundColor: ivory,
+      scaffoldBackgroundColor: background,
       materialTapTargetSize: MaterialTapTargetSize.padded,
       visualDensity: VisualDensity.standard,
     );
-    final text = base.textTheme.apply(bodyColor: ink, displayColor: ink);
+    final text = base.textTheme.apply(
+      bodyColor: scheme.onSurface,
+      displayColor: scheme.onSurface,
+    );
     return base.copyWith(
       textTheme: text.copyWith(
         headlineMedium: text.headlineMedium?.copyWith(
@@ -79,14 +122,14 @@ abstract final class SafeAtHomeTheme {
         ),
       ),
       appBarTheme: AppBarTheme(
-        backgroundColor: ivory,
-        foregroundColor: teal,
+        backgroundColor: background,
+        foregroundColor: scheme.primary,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleSpacing: 20,
         titleTextStyle: text.titleMedium?.copyWith(
-          color: teal,
+          color: scheme.primary,
           fontSize: 17,
           fontWeight: FontWeight.w700,
         ),
@@ -97,7 +140,7 @@ abstract final class SafeAtHomeTheme {
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: line),
+          side: BorderSide(color: scheme.outlineVariant),
         ),
         clipBehavior: Clip.antiAlias,
       ),
@@ -118,7 +161,7 @@ abstract final class SafeAtHomeTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: teal, width: 2),
+          borderSide: BorderSide(color: scheme.primary, width: 2),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -149,23 +192,25 @@ abstract final class SafeAtHomeTheme {
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
       ),
-      dividerTheme: const DividerThemeData(color: line, space: 32),
+      dividerTheme: DividerThemeData(color: scheme.outlineVariant, space: 32),
       listTileTheme: const ListTileThemeData(
         minVerticalPadding: 16,
         contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: ink,
-        contentTextStyle: text.bodyMedium?.copyWith(color: Colors.white),
+        backgroundColor: scheme.inverseSurface,
+        contentTextStyle: text.bodyMedium?.copyWith(
+          color: scheme.onInverseSurface,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(color: teal),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: scheme.primary),
       expansionTileTheme: ExpansionTileThemeData(
-        iconColor: teal,
-        collapsedIconColor: mutedInk,
-        textColor: ink,
-        collapsedTextColor: ink,
+        iconColor: scheme.primary,
+        collapsedIconColor: scheme.onSurfaceVariant,
+        textColor: scheme.onSurface,
+        collapsedTextColor: scheme.onSurface,
         shape: const Border(),
         collapsedShape: const Border(),
         childrenPadding: const EdgeInsets.only(bottom: 16),
@@ -174,7 +219,7 @@ abstract final class SafeAtHomeTheme {
         backgroundColor: scheme.surfaceContainerLow,
         side: BorderSide.none,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        labelStyle: text.labelMedium?.copyWith(color: ink),
+        labelStyle: text.labelMedium?.copyWith(color: scheme.onSurface),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       ),
       dialogTheme: DialogThemeData(

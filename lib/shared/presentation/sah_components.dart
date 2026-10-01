@@ -31,13 +31,19 @@ class SahHomeIllustration extends StatelessWidget {
     child: SizedBox(
       height: height,
       width: height * 1.45,
-      child: CustomPaint(painter: const _HomeIllustrationPainter()),
+      child: CustomPaint(
+        painter: _HomeIllustrationPainter(
+          dark: Theme.of(context).brightness == Brightness.dark,
+        ),
+      ),
     ),
   );
 }
 
 class _HomeIllustrationPainter extends CustomPainter {
-  const _HomeIllustrationPainter();
+  const _HomeIllustrationPainter({required this.dark});
+
+  final bool dark;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -55,7 +61,7 @@ class _HomeIllustrationPainter extends CustomPainter {
     const apricot = Color(0xFFE9B892);
     canvas.drawOval(
       const Rect.fromLTWH(15, 111, 214, 49),
-      paint..color = const Color(0xFFCDDDC1),
+      paint..color = dark ? const Color(0xFF2B3D33) : const Color(0xFFCDDDC1),
     );
     polygon(const [
       Offset(57, 77),
@@ -129,7 +135,8 @@ class _HomeIllustrationPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_HomeIllustrationPainter oldDelegate) => false;
+  bool shouldRepaint(_HomeIllustrationPainter oldDelegate) =>
+      oldDelegate.dark != dark;
 }
 
 class SahStatusBadge extends StatelessWidget {
@@ -216,10 +223,13 @@ class SahFeaturePanel extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final enlarged = MediaQuery.textScalerOf(context).scale(14) > 20;
+    final dark = theme.brightness == Brightness.dark;
+    final panel = dark ? scheme.primaryContainer : scheme.primary;
+    final onPanel = dark ? scheme.onPrimaryContainer : scheme.onPrimary;
     return Container(
       padding: EdgeInsets.all(enlarged ? 16 : 24),
       decoration: BoxDecoration(
-        color: scheme.primary,
+        color: panel,
         borderRadius: BorderRadius.circular(26),
       ),
       child: LayoutBuilder(
@@ -231,7 +241,7 @@ class SahFeaturePanel extends StatelessWidget {
                 Text(
                   eyebrow!,
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onPrimary,
+                    color: onPanel,
                     letterSpacing: 1.3,
                     fontWeight: FontWeight.w600,
                   ),
@@ -243,26 +253,30 @@ class SahFeaturePanel extends StatelessWidget {
                 child: Text(
                   title,
                   style: theme.textTheme.headlineSmall?.copyWith(
-                    color: scheme.onPrimary,
+                    color: onPanel,
                   ),
                 ),
               ),
               const SizedBox(height: 10),
               Text(
                 description,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: scheme.onPrimary,
-                ),
+                style: theme.textTheme.bodyMedium?.copyWith(color: onPanel),
               ),
               if (action != null) ...[
                 const SizedBox(height: 20),
                 FilledButtonTheme(
                   data: FilledButtonThemeData(
                     style: FilledButton.styleFrom(
-                      foregroundColor: scheme.primary,
-                      backgroundColor: scheme.primaryContainer,
-                      disabledForegroundColor: scheme.onPrimary,
-                      disabledBackgroundColor: const Color(0xFF48695C),
+                      foregroundColor: dark ? scheme.onPrimary : scheme.primary,
+                      backgroundColor: dark
+                          ? scheme.primary
+                          : scheme.primaryContainer,
+                      disabledForegroundColor: dark
+                          ? scheme.onSurfaceVariant
+                          : scheme.onPrimary,
+                      disabledBackgroundColor: dark
+                          ? scheme.surfaceContainer
+                          : const Color(0xFF48695C),
                       minimumSize: const Size(48, 52),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 20,

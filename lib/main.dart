@@ -16,6 +16,7 @@ class _DemoEntry extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Safe at Home',
     theme: SafeAtHomeTheme.light(),
+    darkTheme: SafeAtHomeTheme.dark(),
     debugShowCheckedModeBanner: false,
     home: Scaffold(
       appBar: AppBar(title: const Text('Safe at Home')),

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'theme.dart';
 
 class PrivateContentCover extends StatefulWidget {
   const PrivateContentCover({super.key, required this.child});
@@ -40,11 +39,11 @@ class _PrivateContentCoverState extends State<PrivateContentCover>
         child: IgnorePointer(ignoring: _covered, child: widget.child),
       ),
       if (_covered)
-        const Positioned.fill(
+        Positioned.fill(
           child: BlockSemantics(
             child: ColoredBox(
-              color: SafeAtHomeTheme.ivory,
-              child: Center(child: Text('Safe at Home')),
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: const Center(child: Text('Safe at Home')),
             ),
           ),
         ),

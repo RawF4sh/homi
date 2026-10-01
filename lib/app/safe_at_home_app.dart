@@ -17,6 +17,7 @@ class SafeAtHomeApp extends StatelessWidget {
       title: 'Safe at Home',
       debugShowCheckedModeBanner: false,
       theme: SafeAtHomeTheme.light(),
+      darkTheme: SafeAtHomeTheme.dark(),
       home: DemoProgramsScreen(
         service: scenarioService ?? AssetDemoScenarioService(),
         packetService: packetService ?? AssetDemoPacketService(),
