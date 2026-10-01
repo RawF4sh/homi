@@ -1,3 +1,5 @@
+import { emptyPlanName, changePlanName, parseStoredPlanName, parseSavePlanNameRequest, parseNamedCaseListPage,
+  type PlanNameState, type PlanNameRepository, type SavePlanNameRequest, type SavePlanNameResult, type NamedCaseListPage } from '../cases/plan-name.ts';
 import { parseSavedProgramIntake, type SavedProgramIntake } from '../programs/intake.ts';
 import type { ProgramIntakeRepository, ProgramIntakeReadInput, ProgramIntakeReadResult, ProgramIntakeSaveInput, ProgramIntakeSaveResult } from '../api/program-intake.ts';
 import { appendAssessment, assessmentState, emptyAssessment, hash as assessmentHash, parseAssessmentRecord, parseAssessmentSave,
@@ -85,7 +87,7 @@ function validatePdf(bytes: Uint8Array, metadata: ExportArtifactMetadata): void 
 }
 
 export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRepository,
-  FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository, LifecycleRepository, RequestHistoryRepository {
+  FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository, LifecycleRepository, RequestHistoryRepository, PlanNameRepository {
   private readonly pool: Pool;
   constructor(pool: Pool) { this.pool = pool; }
 
@@ -263,10 +265,12 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
   private async deletionSnapshot(tx: Tx, userId: string): Promise<{
     ids: string[]; counts: DeletionCounts; fingerprint: string;
   }> {
-    const rows = (await tx.client.query(`SELECT case_id,revision,catalog_revision FROM ${S}.cases
+    const rows = (await tx.client.query(`SELECT case_id,revision,catalog_revision,
+      encode(sha256(convert_to(COALESCE(plan_name::text,'null'),'UTF8')),'hex') AS name_fingerprint FROM ${S}.cases
       WHERE owner_id=$1 ORDER BY case_id FOR UPDATE`, [userId])).rows;
     const ids = rows.map(row => String(row.case_id));
-    const cases = rows.map(row => ({ id: row.case_id, revision: integer(row.revision), catalog: integer(row.catalog_revision, true) }));
+    const cases = rows.map(row => ({ id: row.case_id, revision: integer(row.revision), catalog: integer(row.catalog_revision, true),
+      nameFingerprint: row.name_fingerprint }));
     const inventory: Record<string, { total: number; active: number; bytes: number; fingerprint: string }> = {};
     const content: Record<string, string> = {
       matches: 'jsonb_build_array(case_id,response)::text',
@@ -451,6 +455,47 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
         SET request_revision=EXCLUDED.request_revision,record=EXCLUDED.record`,
       [input.caseId, input.programId, result.history.requestRevision, JSON.stringify(result.history)]);
       return result;
+    });
+  }
+  async readPlanNameForUser(userId: string, caseId: string): Promise<PlanNameState | null> {
+    check(evidenceIdentifier(caseId));
+    return this.transaction(userId, false, async tx => {
+      const row = (await tx.client.query(`SELECT plan_name FROM ${S}.cases WHERE owner_id=$1 AND case_id=$2`, [userId, caseId])).rows[0];
+      if (!row) return null;
+      const state = row.plan_name === null ? emptyPlanName(caseId) : parseStoredPlanName(row.plan_name);
+      check(state.caseId === caseId);
+      return state;
+    });
+  }
+  async savePlanNameForUser(userId: string, request: SavePlanNameRequest): Promise<SavePlanNameResult> {
+    const input = parseSavePlanNameRequest(request);
+    return this.transaction(userId, true, async tx => {
+      const row = (await tx.client.query(`SELECT plan_name FROM ${S}.cases
+        WHERE owner_id=$1 AND case_id=$2 FOR UPDATE`, [userId, input.caseId])).rows[0];
+      if (!row) return { status: 'not_found' };
+      const prior = row.plan_name === null ? emptyPlanName(input.caseId) : parseStoredPlanName(row.plan_name);
+      const state = changePlanName(prior, input);
+      if (state === null) return { status: 'conflict' };
+      if (state.nameRevision !== prior.nameRevision) {
+        const result = await tx.client.query(`UPDATE ${S}.cases SET plan_name=$3::jsonb WHERE owner_id=$1 AND case_id=$2`,
+          [userId, input.caseId, JSON.stringify(state)]);
+        check(result.rowCount === 1);
+      }
+      return { status: 'saved', state };
+    });
+  }
+  async listNamedForUser(userId: string, query: CaseListQuery): Promise<NamedCaseListPage> {
+    const captured = parseCaseListQuery(query);
+    return this.transaction(userId, false, async tx => {
+      const rows = (await tx.client.query(`SELECT case_id,revision,plan_name FROM ${S}.cases
+        WHERE owner_id=$1 AND ($2::text IS NULL OR case_id COLLATE "C" > $2::text COLLATE "C")
+        ORDER BY case_id COLLATE "C" ASC LIMIT $3`, [userId, captured.afterCaseId, captured.limit + 1])).rows;
+      const cases = rows.slice(0, captured.limit).map(row => {
+        const { schemaVersion: _, ...name } = row.plan_name === null ? emptyPlanName(row.case_id) : parseStoredPlanName(row.plan_name);
+        check(name.caseId === row.case_id);
+        return { ...name, caseRevision: integer(row.revision) };
+      });
+      return parseNamedCaseListPage({ cases, nextAfterCaseId: rows.length > captured.limit ? cases.at(-1)!.caseId : null }, captured);
     });
   }
   async listForUser(userId: string, query: CaseListQuery): Promise<CaseListPage> {

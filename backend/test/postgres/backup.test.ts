@@ -117,6 +117,48 @@ test('empty database is a legitimate complete archive and restore target cannot 
   assert.equal((await targetAdmin.query('SELECT count(*) AS count FROM safeathome_private.cases')).rows[0].count, '1');
 });
 
+test('account plan names survive quarantine restore with independent revision and owner isolation', async () => {
+  const named = await create(repo), cleared = await create(repo, OTHER);
+  const state = { schemaVersion: '2', caseId: named.caseId, name: 'Fictional upstairs plan',
+    nameRevision: 4, lastMutationId: 'fictional-backup-name' };
+  const clearedState = { ...state, caseId: cleared.caseId, name: null, nameRevision: 7, lastMutationId: 'fictional-backup-clear' };
+  await sourceAdmin.query('UPDATE safeathome_private.cases SET plan_name=$2 WHERE case_id=$1', [named.caseId, state]);
+  await sourceAdmin.query('UPDATE safeathome_private.cases SET plan_name=$2 WHERE case_id=$1', [cleared.caseId, clearedState]);
+  const archive = await captureDatabaseBackup(sourceAdmin, ORIGIN);
+  const encoded = JSON.parse(archive.toString('utf8'));
+  assert.deepEqual(encoded.migrations.map((entry: { version: string }) => entry.version), ['001', '002', '003', '004', '005', '006']);
+  assert.deepEqual(encoded.tables.cases.find((row: { case_id: string }) => row.case_id === named.caseId).plan_name, state);
+  await restoreDatabaseBackup(targetAdmin, archive, ORIGIN);
+  const restored = new PostgresCaseRepository(targetRuntime);
+  assert.deepEqual(await restored.readPlanNameForUser(OWNER, named.caseId), state);
+  assert.equal(await restored.readPlanNameForUser(OTHER, named.caseId), null);
+  assert.deepEqual(await restored.readPlanNameForUser(OTHER, cleared.caseId), clearedState);
+  assert.equal(await restored.readPlanNameForUser(OWNER, cleared.caseId), null);
+  assert.deepEqual(await restored.loadForUser(OWNER, named.caseId), named);
+  assert.deepEqual(await restored.loadForUser(OTHER, cleared.caseId), cleared);
+});
+
+test('verified five-migration legacy backup restores into current quarantine with absent name metadata', async () => {
+  const snapshot = await create(repo);
+  const name = { schemaVersion: '2', caseId: snapshot.caseId, name: 'Fictional current-only name',
+    nameRevision: 1, lastMutationId: 'fictional-current-only-mutation' };
+  await sourceAdmin.query('UPDATE safeathome_private.cases SET plan_name=$2 WHERE case_id=$1', [snapshot.caseId, name]);
+  const legacy = change(await captureDatabaseBackup(sourceAdmin, ORIGIN), archive => {
+    archive.migrations = archive.migrations.slice(0, 5);
+    for (const row of archive.tables.cases) delete row.plan_name;
+  });
+  const before = Buffer.from(legacy);
+  assert.equal((await validateDatabaseBackup(legacy, ORIGIN)).sourceRows.cases, 1);
+  const report = await restoreDatabaseBackup(targetAdmin, legacy, ORIGIN);
+  assert.equal(report.quarantined, true);
+  assert.deepEqual(legacy, before);
+  assert.deepEqual((await targetAdmin.query('SELECT case_id,owner_id,plan_name FROM safeathome_private.cases')).rows,
+    [{ case_id: snapshot.caseId, owner_id: OWNER, plan_name: null }]);
+  assert.deepEqual(await new PostgresCaseRepository(targetRuntime).loadForUser(OWNER, snapshot.caseId), snapshot);
+  assert.equal((await targetAdmin.query("SELECT count(*) AS count FROM safeathome_migrations.versions WHERE version='006'")).rows[0].count, '1');
+  assert.deepEqual((await sourceAdmin.query('SELECT plan_name FROM safeathome_private.cases')).rows[0].plan_name, name);
+});
+
 test('runtime role cannot produce a misleading RLS-filtered empty backup', async () => {
   await create(repo);
   await assert.rejects(captureDatabaseBackup(sourceRuntime, ORIGIN), DatabaseBackupError);
@@ -188,6 +230,8 @@ test('binary, quota and supposedly discardable derived records are validated', a
     change(archive, value => { value.tables.exports[0].bindings.userId = OTHER; }),
     change(archive, value => { value.tables.auth_deletion_jobs[0].raw_user_id = OTHER; }),
     change(archive, value => { value.tables.request_history[0].record.events[0].updateId = 'not a valid update ID'; }),
+    change(archive, value => { value.tables.cases[0].plan_name = { schemaVersion: '2', caseId: value.tables.cases[1].case_id,
+      name: 'Fictional foreign name', nameRevision: 1, lastMutationId: 'fictional-foreign-name' }; }),
   ];
   for (const invalid of variants) await assert.rejects(restoreDatabaseBackup(targetAdmin, invalid, ORIGIN), DatabaseBackupError);
   await assertEmpty();

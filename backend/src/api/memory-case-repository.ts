@@ -1,3 +1,5 @@
+import { emptyPlanName, changePlanName, parseSavePlanNameRequest, parseNamedCaseListPage,
+  type PlanNameState, type PlanNameRepository, type SavePlanNameRequest, type SavePlanNameResult, type NamedCaseListPage } from '../cases/plan-name.ts';
 import { parseSavedProgramIntake, type SavedProgramIntake } from '../programs/intake.ts';
 import type { ProgramIntakeRepository, ProgramIntakeReadInput, ProgramIntakeReadResult, ProgramIntakeSaveInput, ProgramIntakeSaveResult } from '../api/program-intake.ts';
 import { appendAssessment, assessmentState, emptyAssessment, hash as assessmentHash, parseAssessmentRecord, parseAssessmentSave,
@@ -57,11 +59,12 @@ export interface OwnedCase {
   snapshot: CaseSnapshot;
 }
 
-export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepository, FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository, RequestHistoryRepository {
+export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepository, FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository, RequestHistoryRepository, PlanNameRepository {
   private readonly programIntake = new Map<string,SavedProgramIntake>();
   private readonly assessments = new Map<string, AssessmentRecord>();
   private readonly annotations = new Map<string, AnnotationRecord>();
   private readonly cases = new Map<string, OwnedCase>();
+  private readonly planNames = new Map<string, PlanNameState>();
   private readonly matches = new Map<string, MatchResponse>();
   private readonly packets = new Map<string, { caseId: string; contextFingerprint: string; packet: DraftPacket | null }>();
   private readonly packetIds = new Set<string>();
@@ -157,6 +160,33 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     return entry?.userId === userId ? structuredClone(entry.snapshot) : null;
   }
 
+  async readPlanNameForUser(userId: string, caseId: string): Promise<PlanNameState | null> {
+    if (!evidenceIdentifier(userId) || !evidenceIdentifier(caseId)) throw new Error('Invalid plan name owner.');
+    const entry = this.cases.get(caseId);
+    if (!entry || entry.userId !== userId) return null;
+    return structuredClone(this.planNames.get(caseId) ?? emptyPlanName(caseId));
+  }
+  async savePlanNameForUser(userId: string, request: SavePlanNameRequest): Promise<SavePlanNameResult> {
+    if (!evidenceIdentifier(userId)) throw new Error('Invalid plan name owner.');
+    const input = parseSavePlanNameRequest(request), entry = this.cases.get(input.caseId);
+    if (!entry || entry.userId !== userId) return { status: 'not_found' };
+    const state = changePlanName(this.planNames.get(input.caseId) ?? emptyPlanName(input.caseId), input);
+    if (state === null) return { status: 'conflict' };
+    this.planNames.set(input.caseId, state);
+    return { status: 'saved', state: structuredClone(state) };
+  }
+  async listNamedForUser(userId: string, query: CaseListQuery): Promise<NamedCaseListPage> {
+    if (!evidenceIdentifier(userId)) throw new Error('Invalid plan name owner.');
+    const captured = parseCaseListQuery(query);
+    const rows = [...this.cases.values()].filter(entry => entry.userId === userId
+      && (captured.afterCaseId === null || compareCaseIds(entry.snapshot.caseId, captured.afterCaseId) > 0))
+      .sort((a, b) => compareCaseIds(a.snapshot.caseId, b.snapshot.caseId)).slice(0, captured.limit + 1);
+    const cases = rows.slice(0, captured.limit).map(({ snapshot }) => {
+      const { schemaVersion: _, ...name } = this.planNames.get(snapshot.caseId) ?? emptyPlanName(snapshot.caseId);
+      return { ...name, caseRevision: snapshot.revision };
+    });
+    return parseNamedCaseListPage({ cases, nextAfterCaseId: rows.length > captured.limit ? cases.at(-1)!.caseId : null }, captured);
+  }
   async listForUser(userId: string, input: CaseListQuery): Promise<CaseListPage> {
     if (!evidenceIdentifier(userId)) throw new Error('Invalid case discovery identity.');
     const query = parseCaseListQuery(input);

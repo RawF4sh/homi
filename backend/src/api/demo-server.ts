@@ -52,7 +52,7 @@ export async function createDemoServer(fixturePath?: string, options: { formAnsw
     loadFormTemplate: async (programId: string) => programId === program.programId ? form : null };
   const server = createMatchingServer(dependencies, formDependencies ?? dependencies, formDependencies,
     options.exports ? formDependencies : undefined, dependencies, options.exports ? dependencies : undefined,
-    { caseListDependencies: dependencies, requestTrackingDependencies: dependencies, assessmentDependencies: dependencies, programIntakeDependencies: dependencies });
+    { caseListDependencies: dependencies, requestTrackingDependencies: dependencies, assessmentDependencies: dependencies, programIntakeDependencies: dependencies, planNameDependencies: dependencies });
   return { server, cases, sessions: { alice: aliceToken, bob: bobToken },
     caseIds: { alice: scenarios.map(scenario => scenario.case.caseId), bob: bobCase.caseId } };
 }

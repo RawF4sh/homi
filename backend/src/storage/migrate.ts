@@ -10,6 +10,7 @@ const migrations = [
   { version: '003', file: new URL('../../migrations/003_request_tracking.sql', import.meta.url) },
   { version: '004', file: new URL('../../migrations/004_assessment_annotations.sql', import.meta.url) },
   { version: '005', file: new URL('../../migrations/005_program_intake.sql', import.meta.url) },
+  { version: '006', file: new URL('../../migrations/006_plan_names.sql', import.meta.url) },
 ];
 export class MigrationError extends Error {
   constructor() { super('Database migrations are missing, changed, or could not be applied.'); this.name = 'MigrationError'; }

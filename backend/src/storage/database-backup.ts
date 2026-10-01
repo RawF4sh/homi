@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Pool, PoolClient } from 'pg';
 import { parseCaseDraft } from '../cases/validation.ts';
+import { parseStoredPlanName } from '../cases/plan-name.ts';
 import { evidenceIdentifier, evidenceInstant, parseEvidenceDescriptor, parseEvidenceAsset, parseEvidenceSelections } from '../evidence/validation.ts';
 import { parseStoredExportArtifactMetadata as parseExportArtifactMetadata } from '../exports/validation.ts';
 import { parseSavedFormAnswers } from '../forms/form-answers.ts';
@@ -25,7 +26,7 @@ type ColumnType = 'text' | 'integer' | 'boolean' | 'json' | 'bytes' | 'time';
 interface Table { columns: Record<string, ColumnType>; key: string[] }
 const TABLES = {
   repository_quota: { columns: { singleton: 'boolean', case_count: 'integer', asset_count: 'integer', artifact_count: 'integer', stored_bytes: 'integer' }, key: ['singleton'] },
-  cases: { columns: { case_id: 'text', owner_id: 'text', revision: 'integer', catalog_revision: 'integer', snapshot: 'json' }, key: ['case_id'] },
+  cases: { columns: { case_id: 'text', owner_id: 'text', revision: 'integer', catalog_revision: 'integer', snapshot: 'json', plan_name: 'json' }, key: ['case_id'] },
   matches: { columns: { case_id: 'text', response: 'json' }, key: ['case_id'] },
   packets: { columns: { case_id: 'text', generation_key: 'text', packet_id: 'text', context_fingerprint: 'text', packet: 'json' }, key: ['case_id', 'generation_key'] },
   form_answers: { columns: { case_id: 'text', program_id: 'text', answer_revision: 'integer', record: 'json' }, key: ['case_id', 'program_id'] },
@@ -89,9 +90,13 @@ function bytes(value: unknown, maximum: number): Buffer {
 }
 async function manifest(): Promise<ManifestEntry[]> {
   return Promise.all([
-    ['001', '001_private_repository.sql'], ['002', '002_retention_deletion.sql'], ['003', '003_request_tracking.sql'], ['004','004_assessment_annotations.sql'], ['005','005_program_intake.sql'],
+    ['001', '001_private_repository.sql'], ['002', '002_retention_deletion.sql'], ['003', '003_request_tracking.sql'], ['004','004_assessment_annotations.sql'], ['005','005_program_intake.sql'], ['006', '006_plan_names.sql'],
   ].map(async ([version, filename]) => ({ version,
     checksum: createHash('sha256').update(await readFile(new URL(`../../migrations/${filename}`, import.meta.url))).digest('hex') })));
+}
+function matchesManifest(value: unknown, expected: ManifestEntry[]): boolean {
+  return Array.isArray(value) && value.length === expected.length && value.every((entry, index) =>
+    exact(entry, ['version', 'checksum']) && entry.version === expected[index].version && entry.checksum === expected[index].checksum);
 }
 function counts(tables: Archive['tables']): RowCounts {
   return Object.fromEntries(NAMES.map(name => [name, tables[name].length])) as RowCounts;
@@ -105,15 +110,17 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
     && raw.projectOrigin === expectedProjectOrigin);
   time(raw.capturedAt);
   const expected = await manifest();
-  check(Array.isArray(raw.migrations) && raw.migrations.length === expected.length && raw.migrations.every((entry, index) =>
-    exact(entry, ['version', 'checksum']) && entry.version === expected[index].version && entry.checksum === expected[index].checksum));
+  const legacyPlanNames = matchesManifest(raw.migrations, expected.slice(0, 5));
+  check(legacyPlanNames || matchesManifest(raw.migrations, expected));
   check(exact(raw.tables, NAMES));
   const tables = raw.tables as Archive['tables'];
   for (const name of NAMES) {
     const table: Table = TABLES[name]; const rows = tables[name];
     check(Array.isArray(rows) && rows.length <= MAX_DATABASE_BACKUP_ROWS_PER_TABLE);
     for (const row of rows) {
-      check(exact(row, Object.keys(table.columns)));
+      const keys = Object.keys(table.columns);
+      check(exact(row, legacyPlanNames && name === 'cases' ? keys.filter(key => key !== 'plan_name') : keys));
+      if (legacyPlanNames && name === 'cases') row.plan_name = null;
       for (const [column, kind] of Object.entries(table.columns)) {
         const value = row[column];
         if (value === null) continue;
@@ -133,7 +140,12 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
     identifier(row.case_id); identifier(row.owner_id); const rev = integer(row.revision, 1); integer(row.catalog_revision);
     check(object(row.snapshot)); const { revision, ...draft } = row.snapshot;
     const parsed = parseCaseDraft(draft, false, 1);
-    check(revision === rev && parsed.caseId === row.case_id); cases.set(row.case_id, row);
+    check(revision === rev && parsed.caseId === row.case_id);
+    if (row.plan_name !== null) {
+      const planName = parseStoredPlanName(row.plan_name);
+      check(planName.caseId === row.case_id);
+    }
+    cases.set(row.case_id, row);
   }
   for (const name of ['matches', 'packets', 'form_answers', 'evidence', 'exports', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake'] as const) {
     for (const row of tables[name]) { identifier(row.case_id); check(cases.has(row.case_id)); }

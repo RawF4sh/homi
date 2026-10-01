@@ -14,7 +14,7 @@ const names = ['repository_quota', 'cases', 'matches', 'packets', 'form_answers'
   'assessment_metadata', 'evidence_annotations', 'exports', 'deleted_cases', 'closed_accounts',
   'account_deletion_previews', 'auth_deletion_jobs', 'request_history'];
 const manifest = Promise.all(['001_private_repository.sql', '002_retention_deletion.sql', '003_request_tracking.sql',
-  '004_assessment_annotations.sql', '005_program_intake.sql'].map(async file => ({ version: file.slice(0, 3),
+  '004_assessment_annotations.sql', '005_program_intake.sql', '006_plan_names.sql'].map(async file => ({ version: file.slice(0, 3),
     checksum: createHash('sha256').update(await readFile(new URL(`../migrations/${file}`, import.meta.url))).digest('hex') })));
 
 async function fixture() {
@@ -33,7 +33,7 @@ async function fixture() {
     expectedAssessmentRevision: 0, mutationId: 'fictional-backup-assessment', draft, metadata }, owner, at)!;
   const tables: Record<string, unknown[]> = Object.fromEntries(names.map(name => [name, []]));
   tables.repository_quota = [{ singleton: true, case_count: '1', asset_count: '0', artifact_count: '0', stored_bytes: '0' }];
-  tables.cases = [{ case_id: caseId, owner_id: owner, revision: '2', catalog_revision: '0', snapshot }];
+  tables.cases = [{ case_id: caseId, owner_id: owner, revision: '2', catalog_revision: '0', snapshot, plan_name: null }];
   tables.assessment_metadata = [{ case_id: caseId, record }];
   const archive = { format: 'safeathome-app-data-v1', projectOrigin: origin, capturedAt: at, migrations: await manifest, tables };
   return { record, snapshot, metadata: record.metadata, archive, bytes: () => Buffer.from(JSON.stringify(archive)) };

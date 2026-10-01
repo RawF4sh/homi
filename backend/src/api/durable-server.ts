@@ -34,7 +34,7 @@ export async function createDurableServer(options: DurableServerOptions) {
     loadFormTemplate: options.loadFormTemplate ?? (async () => null),
   };
   const server = createMatchingServer(dependencies, dependencies, dependencies,
-    dependencies, dependencies, dependencies, { hosted: true, lifecycleDependencies, caseListDependencies: dependencies, requestTrackingDependencies: dependencies, assessmentDependencies: dependencies, programIntakeDependencies: dependencies });
+    dependencies, dependencies, dependencies, { hosted: true, lifecycleDependencies, caseListDependencies: dependencies, requestTrackingDependencies: dependencies, assessmentDependencies: dependencies, programIntakeDependencies: dependencies, planNameDependencies: dependencies });
   return { server, cases };
 }
 

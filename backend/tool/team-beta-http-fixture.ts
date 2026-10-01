@@ -15,7 +15,7 @@ async function main() {
     loadRegistry: bundle.loadRegistry, loadFormTemplate: bundle.loadFormTemplate, now: () => new Date() };
   const server = createMatchingServer(dependencies, dependencies, dependencies, dependencies, dependencies, dependencies,
     { assessmentDependencies: dependencies, programIntakeDependencies: dependencies,
-      caseListDependencies: dependencies, requestTrackingDependencies: dependencies });
+      caseListDependencies: dependencies, planNameDependencies: dependencies, requestTrackingDependencies: dependencies });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const address = server.address(); if (!address || typeof address === 'string') throw new Error('Local listener unavailable.');
   console.log(JSON.stringify({ type: 'team-beta-ready', baseUri: `http://127.0.0.1:${address.port}`,
