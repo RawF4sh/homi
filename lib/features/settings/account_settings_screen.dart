@@ -149,7 +149,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     final owner = session.userId, epoch = session.epoch;
     if (!await _confirm(
       'Sign out and clear this device?',
-      'Local drafts and staged photos will be removed. Save any work you want to keep online first.',
+      'Names saved to your account will stay available on your other devices. Local drafts and staged photos will be removed. Unsynced names must finish syncing first.',
     )) {
       return;
     }
@@ -161,6 +161,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     }
     _beginAction(_SettingsAction.device);
     try {
+      await widget.services.coordinator.nameSync?.requireSyncedBeforeSignOut();
+      if (!mounted || session.userId != owner || session.epoch != epoch) return;
       await widget.services.signOut();
     } catch (error) {
       if (mounted) setState(() => _error = safeOperationMessage(error));
@@ -285,7 +287,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       );
       if (!current()) return;
       if (state.applicationDataDeleted) {
-        await widget.services.signOut();
+        await widget.services.signOutAfterAccountDeletion();
       } else if (mounted) {
         setState(
           () => _error =
@@ -604,7 +606,7 @@ class _DeletionReceiptScreenState extends State<DeletionReceiptScreen> {
       );
       if (mounted) setState(() => _state = state);
       if (state.applicationDataDeleted && mayClearAccount(receiptOwner)) {
-        await services!.signOut();
+        await services!.signOutAfterAccountDeletion();
       }
     } catch (error) {
       if (mounted) setState(() => _message = safeOperationMessage(error));

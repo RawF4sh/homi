@@ -9,6 +9,7 @@ import 'case_workspace_screen.dart';
 import 'home_plan_journey.dart';
 import 'plan_deletion_action.dart';
 import 'plan_deletion_dialog.dart';
+import 'plan_name_dialog.dart';
 
 class CaseHomeScreen extends StatefulWidget {
   const CaseHomeScreen({super.key, required this.services});
@@ -17,7 +18,8 @@ class CaseHomeScreen extends StatefulWidget {
   State<CaseHomeScreen> createState() => _CaseHomeScreenState();
 }
 
-class _CaseHomeScreenState extends State<CaseHomeScreen> {
+class _CaseHomeScreenState extends State<CaseHomeScreen>
+    with WidgetsBindingObserver {
   final _cases = <CaseSummary>[];
   List<String> _local = [];
   final _details = <String, CaseDisplayDetails>{};
@@ -51,6 +53,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _rememberCurrentDetails();
     widget.services.coordinator.addListener(_caseChanged);
     _load();
@@ -58,8 +61,14 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.services.coordinator.removeListener(_caseChanged);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isCurrent) unawaited(_load());
   }
 
   Future<void> _refreshLocal() async {
@@ -92,8 +101,17 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
   Future<void> _loadLocalDetails(List<String> ids, int request) async {
     for (final id in ids) {
       if (!_isCurrent || request != _localRequest) return;
-      if (widget.services.coordinator.draft?.caseId == id) continue;
+      if (widget.services.coordinator.draft?.caseId == id) {
+        try {
+          await widget.services.coordinator.loadPlanName(id);
+        } catch (_) {
+          // ignore: empty_catches
+        }
+        continue;
+      }
       try {
+        await widget.services.coordinator.loadPlanName(id);
+        if (!_isCurrent || request != _localRequest) return;
         final record = await widget.services.store.readJson('case.$id');
         if (!_isCurrent || request != _localRequest) return;
         if (record == null) continue;
@@ -122,19 +140,26 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
       _error = null;
     });
     try {
-      final page = await widget.services.discovery.listCases(
+      final page = await widget.services.planNames.listCases(
         afterCaseId: more ? _cursor : null,
         isCurrent: current,
       );
       if (!current()) return;
+      final summaries = page.cases.map((item) => item.summary).toList();
+      widget.services.coordinator.rememberListedCases(summaries);
+      await widget.services.coordinator.acceptPlanNames(
+        page.cases.map((item) => item.planName),
+      );
+      if (!current()) return;
       setState(() {
         if (!more) _cases.clear();
-        for (final item in page.cases) {
+        for (final item in summaries) {
           if (!_cases.any((c) => c.caseId == item.caseId)) _cases.add(item);
         }
         _cursor = page.nextAfterCaseId;
         _loaded = true;
       });
+      unawaited(_loadOnlineNames(summaries, request));
     } catch (error) {
       if (current()) setState(() => _error = safeOperationMessage(error));
     } finally {
@@ -200,7 +225,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
         context: context,
         services: widget.services,
         caseId: id,
-        title: _details[id]?.title ?? homePlanTitle(null),
+        title: _title(id),
         minimumCaseRevision: revision,
       );
       if (!_isCurrent) return;
@@ -223,6 +248,86 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
     }
   }
 
+  String _title(String id) =>
+      widget.services.coordinator.planNameFor(id) ??
+      _details[id]?.title ??
+      homePlanTitle(null);
+
+  Future<void> _loadOnlineNames(List<CaseSummary> cases, int request) async {
+    for (final item in cases) {
+      if (!_isCurrent || request != _request) return;
+      try {
+        await widget.services.coordinator.loadPlanName(item.caseId);
+        if (widget.services.coordinator.nameSync?.pendingFor(item.caseId) ==
+            true) {
+          await widget.services.coordinator.syncPlanName(item.caseId);
+        }
+      } catch (_) {
+        // ignore: empty_catches
+      }
+    }
+  }
+
+  Future<void> _create() async {
+    if (!_canChoose) return;
+    final generation = widget.services.coordinator.generation;
+    setState(() => _opening = true);
+    final name = await showPlanNameDialog(
+      context: context,
+      creating: true,
+      defaultName: homePlanTitle(null),
+    );
+    if (!_isCurrent) return;
+    setState(() => _opening = false);
+    if (name == null || generation != widget.services.coordinator.generation) {
+      return;
+    }
+    await _open(() async {
+      final c = widget.services.coordinator;
+      await c.createDraft(name: name);
+      try {
+        await c.save();
+      } catch (_) {
+        if (!c.isCurrent) rethrow;
+      }
+    });
+  }
+
+  Future<void> _rename(String id) async {
+    if (!_canChoose || _removals.containsKey(id)) return;
+    final c = widget.services.coordinator;
+    final generation = c.generation;
+    setState(() => _opening = true);
+    try {
+      await c.loadPlanName(id);
+      try {
+        await c.syncPlanName(id);
+      } catch (_) {
+        if (!c.isCurrent) rethrow;
+      }
+      if (!mounted || !_isCurrent || generation != c.generation) return;
+      await showPlanNameDialog(
+        context: context,
+        initialName: c.planNameFor(id),
+        coordinator: c,
+        caseId: id,
+        defaultName: _details[id]?.title ?? homePlanTitle(null),
+        onSave: (value) async {
+          if (!_isCurrent || generation != c.generation) {
+            throw StateError(
+              'The selected account or plan changed. Reopen the name editor.',
+            );
+          }
+          await c.savePlanName(id, value);
+        },
+      );
+    } catch (error) {
+      if (mounted && _isCurrent) await showOperationError(context, error);
+    } finally {
+      if (_isCurrent) setState(() => _opening = false);
+    }
+  }
+
   bool get _canChoose =>
       _isCurrent &&
       !_opening &&
@@ -232,9 +337,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
 
   Widget _newPlanButton() => FilledButton.icon(
     key: const ValueKey('case-start'),
-    onPressed: _canChoose
-        ? () => _open(widget.services.coordinator.createDraft)
-        : null,
+    onPressed: _canChoose ? _create : null,
     icon: const Icon(Icons.add_rounded),
     label: const Text('Start a home plan'),
   );
@@ -264,9 +367,12 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
       const SizedBox(height: 16),
     ],
     if (_opening)
-      const Padding(
-        padding: EdgeInsets.all(20),
-        child: LinearProgressIndicator(semanticsLabel: 'Updating your plan'),
+      TickerMode(
+        enabled: ModalRoute.of(context)?.isCurrent ?? true,
+        child: const Padding(
+          padding: EdgeInsets.all(20),
+          child: LinearProgressIndicator(semanticsLabel: 'Updating your plan'),
+        ),
       ),
     if (_removalsFailed) ...[
       const SahNotice(
@@ -291,7 +397,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
       const SahPageHeader(title: 'A safer home, one step at a time'),
       ..._status(),
       SahFeaturePanel(
-        title: draft != null ? homePlanTitle(draft) : 'Your home safety plan',
+        title: draft != null ? _title(draft.caseId) : 'Your home safety plan',
         description: pending
             ? 'Check the removal of this plan before continuing.'
             : draft != null
@@ -349,7 +455,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
   bool _matches(String id) {
     final query = _query.trim().toLowerCase();
     return query.isEmpty ||
-        '${_details[id]?.title ?? homePlanTitle(null)} ${homePlanReference(id)} $id'
+        '${_title(id)} ${_details[id]?.draft.profile.city ?? ''} ${homePlanReference(id)} $id'
             .toLowerCase()
             .contains(query);
   }
@@ -366,11 +472,13 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
           ? 'local-case-$id'
           : 'saved-case-$id',
     ),
-    title: _details[id]?.title ?? homePlanTitle(null),
+    title: _title(id),
     subtitle: pending
         ? 'Removal needs checking · ${homePlanReference(id)}'
         : _details[id]?.description(onlineRevision: online?.caseRevision) ??
               '${online == null ? 'Available on this device' : 'Saved online'} · ${homePlanReference(id)}',
+    status: pending ? null : widget.services.coordinator.planNameStatus(id),
+    statusIcon: Icons.label_outline,
     icon: pending
         ? Icons.sync_problem_outlined
         : online == null
@@ -388,11 +496,14 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
           ),
     trailing: PopupMenuButton<String>(
       key: ValueKey('plan-actions-$id'),
-      tooltip:
-          'Actions for ${_details[id]?.title ?? homePlanTitle(null)}, ${homePlanReference(id)}',
+      tooltip: 'Actions for ${_title(id)}, ${homePlanReference(id)}',
       enabled: _canChoose,
-      onSelected: (_) => _remove(id, revision: online?.caseRevision),
+      onSelected: (action) => action == 'rename'
+          ? _rename(id)
+          : _remove(id, revision: online?.caseRevision),
       itemBuilder: (_) => [
+        if (!pending)
+          const PopupMenuItem(value: 'rename', child: Text('Rename plan')),
         PopupMenuItem(
           value: 'delete',
           child: Text(pending ? 'Check removal' : 'Delete plan'),
@@ -421,13 +532,15 @@ class _CaseHomeScreenState extends State<CaseHomeScreen> {
     return [
       const SahPageHeader(title: 'Your home plans'),
       ..._status(),
-      const Text('Open a plan to continue. Use its ⋮ menu to delete it.'),
+      const Text(
+        'Open a plan to continue. Use its ⋮ menu to rename or delete it.',
+      ),
       const SizedBox(height: 16),
       TextField(
         key: const ValueKey('plan-search'),
         decoration: const InputDecoration(
           labelText: 'Search loaded plans',
-          hintText: 'City or reference',
+          hintText: 'Name, city or reference',
           prefixIcon: Icon(Icons.search),
         ),
         onChanged: (value) => setState(() => _query = value),

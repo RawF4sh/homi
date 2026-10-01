@@ -26,6 +26,8 @@ import '../shared/services/lifecycle_api_client.dart';
 import '../shared/services/matching_api_client.dart';
 import '../shared/services/packet_api_client.dart';
 import '../shared/services/program_intake_api_client.dart';
+import '../shared/services/plan_names_api_client.dart';
+import '../shared/services/plan_name_sync.dart';
 import '../shared/services/request_tracking_api_client.dart';
 import '../shared/services/session_service.dart';
 
@@ -102,6 +104,11 @@ class AppServices {
       tokenProvider: token,
       transport: this.transport,
     );
+    planNames = PlanNamesApiClient(
+      baseUri: config.apiOrigin,
+      tokenProvider: token,
+      transport: this.transport,
+    );
     exports = DraftExportApiClient(
       evidenceEndpoint: endpoint('list-evidence'),
       evidenceDownloadEndpoint: endpoint('download-evidence'),
@@ -159,6 +166,7 @@ class AppServices {
       store: store,
       cases: cases,
       discovery: discovery,
+      planNames: planNames,
     );
   }
   final LiveAppConfig config;
@@ -174,6 +182,7 @@ class AppServices {
   final Widget Function(Uint8List bytes)? pdfPreviewBuilder;
   late final CaseEvidenceApiClient cases;
   late final CaseDiscoveryApiClient discovery;
+  late final PlanNamesApiClient planNames;
   late final DraftExportApiClient exports;
   late final AnnotatedExportApiClient annotatedExports;
   late final ProgramIntakeApiClient intake;
@@ -184,20 +193,39 @@ class AppServices {
   late final FormAnswersApiClient answers;
   late final RequestTrackingApiClient history;
   late final CaseCoordinator coordinator;
-  Future<void> signOut() => session.signOutAndClear(
-    () async {
-      try {
-        await _clearPersistedAuth(config);
-      } finally {
-        try {
-          await store.clear();
-        } finally {
-          await _clearTransientMedia();
-        }
+  Future<void> signOut() => _clearAccountSession(
+    prepare: (finish) => coordinator.withSignOutReservation(() async {
+      final names = coordinator.nameSync;
+      if (names == null) {
+        await finish();
+      } else {
+        await names.withSignOut(finish, attemptSync: false);
       }
-    },
-    isCurrent: () => session.userId == store.accountId && coordinator.isCurrent,
+    }),
   );
+
+  Future<void> signOutAfterAccountDeletion() => _clearAccountSession();
+
+  Future<void> _clearAccountSession({
+    Future<void> Function(Future<void> Function() finish)? prepare,
+  }) async {
+    await session.signOutAndClear(
+      () async {
+        try {
+          await _clearPersistedAuth(config);
+        } finally {
+          try {
+            await store.clear();
+          } finally {
+            await _clearTransientMedia();
+          }
+        }
+      },
+      isCurrent: () =>
+          session.userId == store.accountId && coordinator.isCurrent,
+      prepare: prepare,
+    );
+  }
 
   void dispose() => coordinator.dispose();
 }
@@ -295,6 +323,7 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
       }
       return MaterialApp(
         theme: SafeAtHomeTheme.light(),
+        darkTheme: SafeAtHomeTheme.dark(),
         debugShowCheckedModeBanner: false,
         home: state.hasError
             ? const StartupErrorScreen.startup()
@@ -484,6 +513,7 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
     debugShowCheckedModeBanner: false,
     builder: (context, child) => PrivateContentCover(child: child!),
     theme: SafeAtHomeTheme.light(),
+    darkTheme: SafeAtHomeTheme.dark(),
     home: widget.session.cleaningUp
         ? const Scaffold(
             body: Center(
@@ -524,6 +554,8 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
 }
 
 String safeOperationMessage(Object error) => error is MatchingApiException
+    ? error.message
+    : error is PlanNameSyncRequired
     ? error.message
     : 'This action could not be confirmed. Keep your local work and check saved state before trying again.';
 Future<void> showOperationError(BuildContext context, Object error) async {

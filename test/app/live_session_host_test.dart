@@ -107,9 +107,9 @@ void main() {
     files = _PrivateHostFiles();
     session = _HostSession();
     transport = FakeTransport((request) async {
-      expect(request.endpoint.path, '/v1/list-cases');
+      expect(request.endpoint.path, '/v2/list-cases');
       return http.jsonResponse({
-        'schemaVersion': '1',
+        'schemaVersion': '2',
         'cases': [],
         'nextAfterCaseId': null,
       });

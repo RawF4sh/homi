@@ -23,6 +23,8 @@ class ReceiptServices extends AppServices {
       );
   int cleanups = 0;
   @override
+  Future<void> signOutAfterAccountDeletion() => signOut();
+  @override
   Future<void> signOut() async {
     cleanups++;
     await session.signOut();

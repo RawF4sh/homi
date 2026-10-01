@@ -112,7 +112,7 @@ void main() {
         );
       }
       return http.jsonResponse({
-        'schemaVersion': '1',
+        'schemaVersion': '2',
         'cases': [],
         'nextAfterCaseId': null,
       });
@@ -141,8 +141,8 @@ void main() {
     expect(find.text('No home plans yet'), findsNothing);
     expect(reads, 2);
     expect(transport.requests.map((r) => r.endpoint.path), [
-      '/v1/list-cases',
-      '/v1/list-cases',
+      '/v2/list-cases',
+      '/v2/list-cases',
     ]);
     expect(tester.takeException(), isNull);
   });

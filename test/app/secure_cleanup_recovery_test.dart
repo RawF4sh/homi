@@ -133,9 +133,9 @@ void main() {
         config: config,
         session: session,
         transport: FakeTransport((request) async {
-          expect(request.endpoint.path, '/v1/list-cases');
+          expect(request.endpoint.path, '/v2/list-cases');
           return wire.jsonResponse({
-            'schemaVersion': '1',
+            'schemaVersion': '2',
             'cases': [],
             'nextAfterCaseId': null,
           });

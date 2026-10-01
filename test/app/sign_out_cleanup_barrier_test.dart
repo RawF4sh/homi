@@ -17,6 +17,7 @@ class DelayedLogoutAuth extends ControlledAuth {
   DelayedLogoutAuth()
     : super(session: fictionalSession('first', 'original-token'));
   final logout = Completer<void>();
+  final logoutEntered = Completer<void>();
   Completer<AuthSessionUrlResponse>? callback;
   int logoutCalls = 0, recoveryCalls = 0, callbackCalls = 0;
   @override
@@ -38,6 +39,7 @@ class DelayedLogoutAuth extends ControlledAuth {
   Future<void> signOut({SignOutScope scope = SignOutScope.local}) async {
     logoutCalls++;
     switchTo(null);
+    logoutEntered.complete();
     await logout.future;
   }
 
@@ -151,7 +153,7 @@ void main() {
       final reopen = session.waitForAccountCleanup().then(
         (_) => mayReopen = true,
       );
-      await drain();
+      await auth.logoutEntered.future.timeout(const Duration(seconds: 3));
       expect(session.userId, isNull);
       expect(await session.accessToken(), isNull);
       expect(auth.logoutCalls, 1);
@@ -261,7 +263,7 @@ void main() {
     () async {
       final rejected = expectLater(app.signOut(), throwsStateError);
       final login = session.signIn('second@example.invalid', 'fictional');
-      await drain();
+      await auth.logoutEntered.future.timeout(const Duration(seconds: 3));
       auth.logout.completeError(StateError('Fictional provider failure'));
       await rejected;
       expect(nativeCalls, 1);

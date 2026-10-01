@@ -73,13 +73,19 @@ void main() {
       final transport = FakeTransport((request) async {
         final body = http.requestJson(request);
         switch (request.endpoint.path) {
-          case '/v1/list-cases':
+          case '/v2/list-cases':
             return http.jsonResponse({
-              'schemaVersion': '1',
+              'schemaVersion': '2',
               'cases': serverCase == null
                   ? []
                   : [
-                      {'caseId': id(), 'caseRevision': revision()},
+                      {
+                        'caseId': id(),
+                        'caseRevision': revision(),
+                        'name': null,
+                        'nameRevision': 0,
+                        'lastMutationId': null,
+                      },
                     ],
               'nextAfterCaseId': null,
             });
@@ -280,6 +286,9 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: CaseHomeScreen(services: app)));
       await tester.pumpAndSettle();
       await tap('Start a home plan');
+      await tester.ensureVisible(find.byKey(const ValueKey('plan-name-save')));
+      await tester.tap(find.byKey(const ValueKey('plan-name-save')));
+      await tester.pumpAndSettle();
       await tap('Resident details');
       await tester.enterText(input('City'), 'Fictional San Jose');
       await tester.scrollUntilVisible(
@@ -289,7 +298,7 @@ void main() {
       );
       await tester.enterText(input('Annual household income (USD)'), '0');
       await tap('Done');
-      expect(revision(), 1);
+      expect(revision(), 2);
       expect((serverCase!['profile'] as Map)['annualIncomeUsd'], 0);
       expect((serverCase!['profile'] as Map)['ageYears'], isNull);
       await tap('Possible assistance and drafts');
@@ -306,7 +315,7 @@ void main() {
       await tap('Eligibility checks', direction: -250);
       await tap('Review program questions');
       await tap('Save these reported answers');
-      expect(revision(), 2);
+      expect(revision(), 3);
       await back();
       await tester.scrollUntilVisible(
         find.textContaining('The case changed.'),
@@ -326,7 +335,7 @@ void main() {
       await tester.tap(find.byType(CheckboxListTile).first);
       await tester.pumpAndSettle();
       await tap('Save reviewed administrative answers');
-      expect(revision(), 3);
+      expect(revision(), 4);
       final supplied = (savedAnswers!['answers'] as List).first;
       expect(supplied['value'], 'Fictional Resident');
       expect(supplied['reviewState'], 'reviewed');
@@ -349,7 +358,7 @@ void main() {
       await tap('Review evidence and draft PDF');
       await tap('Prepare or recover this draft');
       expect(exportRequest!['schemaVersion'], '2');
-      expect(exportRequest!['expectedCaseRevision'], 3);
+      expect(exportRequest!['expectedCaseRevision'], 4);
       expect(exportRequest!['expectedAnswerRevision'], 1);
       expect(exportRequest!['selectedEvidence'], isEmpty);
       expect(

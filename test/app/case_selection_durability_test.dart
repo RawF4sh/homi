@@ -14,13 +14,13 @@ void main() {
     (tester) async {
       final store = ControlledCaseStore();
       final transport = FakeTransport((request) async {
-        if (request.endpoint.path != '/v1/list-cases') {
+        if (request.endpoint.path != '/v2/list-cases') {
           throw StateError(
             'Retrying device persistence must not send a mutation',
           );
         }
         return http.jsonResponse({
-          'schemaVersion': '1',
+          'schemaVersion': '2',
           'cases': [],
           'nextAfterCaseId': null,
         });
@@ -88,7 +88,7 @@ void main() {
         'Fictional retained correction',
       );
       expect(
-        transport.requests.every((r) => r.endpoint.path == '/v1/list-cases'),
+        transport.requests.every((r) => r.endpoint.path == '/v2/list-cases'),
         true,
       );
       await tester.pageBack();

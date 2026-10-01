@@ -31,9 +31,16 @@ class _ControlledReads extends MemoryPrivateStore {
 }
 
 MatchingHttpResponse _page({String? id}) => http.jsonResponse({
-  'schemaVersion': '1',
+  'schemaVersion': '2',
   'cases': [
-    if (id != null) {'caseId': id, 'caseRevision': 1},
+    if (id != null)
+      {
+        'caseId': id,
+        'caseRevision': 1,
+        'name': null,
+        'nameRevision': 0,
+        'lastMutationId': null,
+      },
   ],
   'nextAfterCaseId': null,
 });
@@ -182,7 +189,11 @@ void main() {
       final first = Completer<MatchingHttpResponse>();
       final second = Completer<MatchingHttpResponse>();
       var calls = 0;
-      final transport = FakeTransport((_) {
+      final transport = FakeTransport((request) {
+        if (request.endpoint.path == '/v1/create-case') {
+          return Future.value(http.apiError('SERVICE_UNAVAILABLE', 503));
+        }
+        expect(request.endpoint.path, '/v2/list-cases');
         calls++;
         if (calls == 1) return first.future;
         if (calls == 2) return second.future;
@@ -196,6 +207,9 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: CaseHomeScreen(services: app)));
       await _tick(tester);
       await tester.tap(find.byKey(const ValueKey('case-start')));
+      await _tick(tester);
+      await tester.ensureVisible(find.byKey(const ValueKey('plan-name-save')));
+      await tester.tap(find.byKey(const ValueKey('plan-name-save')));
       await _tick(tester);
       final created = app.coordinator.currentDraft().caseId;
       expect(find.byType(CaseWorkspaceScreen), findsOneWidget);
@@ -275,11 +289,12 @@ void main() {
       await _tick(tester);
       final local = find.byKey(ValueKey('local-case-$id'));
       await _reveal(tester, local);
+      final readsBeforeOpen = store.caseReads;
       final open = tester.widget<SahActionTile>(local).onTap!;
       open();
       open();
       await _tick(tester);
-      expect(store.caseReads, 1);
+      expect(store.caseReads, readsBeforeOpen + 1);
       await app.session.signOut();
       store.caseRead!.complete(retained);
       remote.complete(_page());

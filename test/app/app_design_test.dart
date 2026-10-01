@@ -140,9 +140,9 @@ void main() {
         if (request.endpoint.path == '/v1/create-case') {
           return http.apiError('RATE_LIMITED', 429);
         }
-        expect(request.endpoint.path, '/v1/list-cases');
+        expect(request.endpoint.path, '/v2/list-cases');
         return http.jsonResponse({
-          'schemaVersion': '1',
+          'schemaVersion': '2',
           'cases': [],
           'nextAfterCaseId': null,
         });
@@ -158,6 +158,9 @@ void main() {
       await tester.pumpAndSettle();
       await reveal(tester, find.byKey(const ValueKey('case-start')));
       await tester.tap(find.byKey(const ValueKey('case-start')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('plan-name-save')));
+      await tester.tap(find.byKey(const ValueKey('plan-name-save')));
       await tester.pumpAndSettle();
       await reveal(tester, find.byKey(const ValueKey('case-profile')));
       await tester.tap(find.byKey(const ValueKey('case-profile')));
@@ -207,7 +210,11 @@ void main() {
             .status,
         'Cannot start yet',
       );
-      expect(transport.requests.length, 2);
+      expect(transport.requests.map((r) => r.endpoint.path), [
+        '/v2/list-cases',
+        '/v1/create-case',
+        '/v1/create-case',
+      ]);
       expect(tester.takeException(), isNull);
     },
   );

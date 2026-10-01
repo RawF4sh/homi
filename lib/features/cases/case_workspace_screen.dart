@@ -6,10 +6,71 @@ import '../programs/live_programs_screen.dart';
 import '../assessment/presentation/live_assessment_screen.dart';
 import 'case_display_details.dart';
 import 'profile_editor_screen.dart';
+import 'plan_name_dialog.dart';
 
-class CaseWorkspaceScreen extends StatelessWidget {
+class CaseWorkspaceScreen extends StatefulWidget {
   const CaseWorkspaceScreen({super.key, required this.services});
   final AppServices services;
+
+  @override
+  State<CaseWorkspaceScreen> createState() => _CaseWorkspaceScreenState();
+}
+
+class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
+  AppServices get services => widget.services;
+  bool _renaming = false;
+
+  Future<void> _rename() async {
+    final c = services.coordinator;
+    final draft = c.draft;
+    final route = ModalRoute.of(context);
+    if (_renaming ||
+        draft == null ||
+        c.busy ||
+        c.hasUndurableEdits ||
+        !c.isCurrent ||
+        route?.isCurrent != true) {
+      return;
+    }
+    final generation = c.generation;
+    setState(() => _renaming = true);
+    try {
+      await c.loadPlanName(draft.caseId);
+      try {
+        await c.syncPlanName(draft.caseId);
+      } catch (_) {
+        if (!c.isCurrent) rethrow;
+      }
+      if (!mounted ||
+          !c.isCurrent ||
+          generation != c.generation ||
+          route?.isCurrent != true) {
+        return;
+      }
+      await showPlanNameDialog(
+        context: context,
+        initialName: c.planNameFor(draft.caseId),
+        coordinator: c,
+        caseId: draft.caseId,
+        defaultName: homePlanTitle(draft),
+        onSave: (value) async {
+          if (!c.isCurrent || generation != c.generation) {
+            throw StateError(
+              'The selected account or plan changed. Reopen the name editor.',
+            );
+          }
+          await c.savePlanName(draft.caseId, value);
+        },
+      );
+    } catch (error) {
+      if (mounted && route?.isCurrent == true && c.isCurrent) {
+        await showOperationError(context, error);
+      }
+    } finally {
+      if (mounted) setState(() => _renaming = false);
+    }
+  }
+
   Future<void> _run(
     BuildContext context,
     Future<void> Function() action,
@@ -77,7 +138,23 @@ class CaseWorkspaceScreen extends StatelessWidget {
         onPrograms: () => open(LiveProgramsScreen(services: services)),
       );
       return Scaffold(
-        appBar: AppBar(title: Text(homePlanTitle(draft))),
+        appBar: AppBar(
+          title: Text(
+            c.planNameFor(draft.caseId) ?? homePlanTitle(draft),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          actions: [
+            IconButton(
+              key: const ValueKey('plan-rename'),
+              tooltip: 'Rename plan',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: _renaming || c.busy || c.hasUndurableEdits
+                  ? null
+                  : _rename,
+            ),
+          ],
+        ),
         body: SafeArea(
           child: SahContent(
             child: ListView(

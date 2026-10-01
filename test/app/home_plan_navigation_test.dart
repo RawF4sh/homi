@@ -58,13 +58,20 @@ Future<void> _seed(
 
 FakeTransport _transport({List<String> online = const []}) =>
     FakeTransport((request) async {
-      if (request.endpoint.path != '/v1/list-cases') {
+      if (request.endpoint.path != '/v2/list-cases') {
         throw StateError('Navigation must not write or open a different plan');
       }
       return http.jsonResponse({
-        'schemaVersion': '1',
+        'schemaVersion': '2',
         'cases': [
-          for (final id in online) {'caseId': id, 'caseRevision': 1},
+          for (final id in online)
+            {
+              'caseId': id,
+              'caseRevision': 1,
+              'name': null,
+              'nameRevision': 0,
+              'lastMutationId': null,
+            },
         ],
         'nextAfterCaseId': null,
       });
@@ -111,7 +118,7 @@ Future<void> _reveal(WidgetTester tester, Finder target) async {
 
 void _onlyDiscovery(FakeTransport transport) => expect(
   transport.requests.map((request) => request.endpoint.path),
-  everyElement('/v1/list-cases'),
+  everyElement('/v2/list-cases'),
 );
 
 void main() {
@@ -183,9 +190,9 @@ void main() {
       await _seed(store, _second, 'Redwood City', online: true);
       final transport = _transport(online: [_second]);
       final app = services(store, transport);
-      final retained = jsonEncode(store.records);
       await _mount(tester, app);
       await _tab(tester, 'plans');
+      final retained = jsonEncode(store.records);
       final search = find.byKey(const ValueKey('plan-search'));
 
       await tester.enterText(search, '  SAN JOSÉ  ');

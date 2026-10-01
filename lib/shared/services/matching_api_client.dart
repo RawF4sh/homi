@@ -281,6 +281,10 @@ class MatchingApiException implements Exception {
           'This case identifier is unavailable. Reload the selected case to recover an earlier attempt, or start a new case with a fresh identifier.',
       'CASE_SAVE_UNCERTAIN':
           'The case save outcome is unknown. Reload this same case identifier before deciding whether to save again.',
+      'PLAN_NAME_CONFLICT':
+          'This plan name changed elsewhere. Compare the saved name with your edit before trying again.',
+      'NAME_SAVE_UNCERTAIN':
+          'The plan name save could not be confirmed. Keep your edit and check the saved name before retrying.',
       'EVIDENCE_SAVE_UNCERTAIN':
           'The image change outcome is unknown. Reload the case and evidence catalog before changing the image again.',
       'INVALID_IMAGE':

@@ -156,6 +156,7 @@ abstract class SessionService extends ChangeNotifier {
   Future<void> signOutAndClear(
     Future<void> Function() clear, {
     bool Function()? isCurrent,
+    Future<void> Function(Future<void> Function() finish)? prepare,
   }) {
     if (isCurrent != null && !isCurrent()) {
       return Future.error(StateError('The account changed before sign-out.'));
@@ -173,16 +174,24 @@ abstract class SessionService extends ChangeNotifier {
       if (isCurrent != null && !isCurrent()) {
         throw StateError('The account changed before sign-out.');
       }
-      try {
-        await signOutProvider();
-      } finally {
+      Future<void> finish() async {
         try {
-          await clear();
-        } catch (_) {
-          _failedCleanup = clear;
-          _cleanupRevision++;
-          rethrow;
+          await signOutProvider();
+        } finally {
+          try {
+            await clear();
+          } catch (_) {
+            _failedCleanup = clear;
+            _cleanupRevision++;
+            rethrow;
+          }
         }
+      }
+
+      if (prepare == null) {
+        await finish();
+      } else {
+        await prepare(finish);
       }
     });
     _finishCleanup(work, completion);
