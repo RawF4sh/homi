@@ -18,6 +18,8 @@ import { parseExportArtifactMetadata } from '../exports/validation.ts';
 import { MAX_MEMORY_CASES, type CaseDraft } from '../cases/types.ts';
 import { parseCaseDraft } from '../cases/validation.ts';
 import type { CaseWriteRepository, CaseWriteResult } from '../cases/repository.ts';
+import { compareCaseIds, parseCaseListPage, parseCaseListQuery,
+  type CaseListPage, type CaseListQuery, type CaseListRepository } from '../cases/discovery.ts';
 
 export interface MemoryEvidenceLimits { maxBytes: number; maxAssets: number; maxArtifacts: number }
 const DEFAULT_EVIDENCE_LIMITS: MemoryEvidenceLimits = { maxBytes: 64 * 1024 * 1024, maxAssets: 64, maxArtifacts: 16 };
@@ -43,7 +45,7 @@ export interface OwnedCase {
   snapshot: CaseSnapshot;
 }
 
-export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepository, FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository {
+export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepository, FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository {
   private readonly cases = new Map<string, OwnedCase>();
   private readonly matches = new Map<string, MatchResponse>();
   private readonly packets = new Map<string, { caseId: string; contextFingerprint: string; packet: DraftPacket | null }>();
@@ -74,6 +76,18 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
   async loadForUser(userId: string, caseId: string): Promise<CaseSnapshot | null> {
     const entry = this.cases.get(caseId);
     return entry?.userId === userId ? structuredClone(entry.snapshot) : null;
+  }
+
+  async listForUser(userId: string, input: CaseListQuery): Promise<CaseListPage> {
+    if (!evidenceIdentifier(userId)) throw new Error('Invalid case discovery identity.');
+    const query = parseCaseListQuery(input);
+    const rows = [...this.cases.values()].filter(entry => entry.userId === userId
+      && (query.afterCaseId === null || compareCaseIds(entry.snapshot.caseId, query.afterCaseId) > 0))
+      .sort((a, b) => compareCaseIds(a.snapshot.caseId, b.snapshot.caseId));
+    const cases = rows.slice(0, query.limit).map(entry => ({
+      caseId: entry.snapshot.caseId, caseRevision: entry.snapshot.revision,
+    }));
+    return parseCaseListPage({ cases, nextAfterCaseId: rows.length > query.limit ? cases.at(-1)!.caseId : null }, query);
   }
 
   async createForUser(userId: string, draft: CaseDraft): Promise<CaseWriteResult> {

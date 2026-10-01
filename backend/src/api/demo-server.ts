@@ -51,7 +51,8 @@ export async function createDemoServer(fixturePath?: string, options: { formAnsw
   const formDependencies = form === null ? undefined : { ...dependencies,
     loadFormTemplate: async (programId: string) => programId === program.programId ? form : null };
   const server = createMatchingServer(dependencies, formDependencies ?? dependencies, formDependencies,
-    options.exports ? formDependencies : undefined, dependencies, options.exports ? dependencies : undefined);
+    options.exports ? formDependencies : undefined, dependencies, options.exports ? dependencies : undefined,
+    { caseListDependencies: dependencies });
   return { server, cases, sessions: { alice: aliceToken, bob: bobToken },
     caseIds: { alice: scenarios.map(scenario => scenario.case.caseId), bob: bobCase.caseId } };
 }
@@ -81,6 +82,7 @@ async function main() {
   if (!address || typeof address === 'string') throw new Error('Local listener was not created.');
   const ready = { type: 'demo-ready', endpoint: `http://127.0.0.1:${address.port}/v1/match-case`,
     caseEndpoint: `http://127.0.0.1:${address.port}/v1/read-case`,
+    listCasesEndpoint: `http://127.0.0.1:${address.port}/v1/list-cases`,
     createCaseEndpoint: `http://127.0.0.1:${address.port}/v1/create-case`,
     saveCaseEndpoint: `http://127.0.0.1:${address.port}/v1/save-case`,
     packetEndpoint: `http://127.0.0.1:${address.port}/v1/prepare-packet`,
@@ -98,6 +100,7 @@ async function main() {
     console.log('Fictional local API. Cases/results are in memory and disappear on exit.');
     console.log(`Endpoint: ${ready.endpoint}`);
     console.log(`Saved case endpoint: ${ready.caseEndpoint}`);
+    console.log(`Saved case list endpoint: ${ready.listCasesEndpoint}`);
     console.log(`Create/save cases: ${ready.createCaseEndpoint}, ${ready.saveCaseEndpoint}`);
     console.log(`Draft packet endpoint: ${ready.packetEndpoint}`);
     if (formAnswers) {
