@@ -143,6 +143,100 @@ void main() {
   });
 
   test(
+    'suggestion preview does not review geometry and confirmation touches only its feature',
+    () async {
+      final scene = fictionalScanScene(
+        elements: [
+          scanElementJson(),
+          scanElementJson(id: 'floor-1', kind: 'floor', dimensions: [3, 0, 3]),
+        ],
+      );
+      await seed(BathroomScanReview(scene: scene));
+      final session = make();
+      await session.initialize();
+      await session.setDifficulty(ScanDifficulty.enteringBathroom, true);
+      final candidate = session.suggestedImprovements.single;
+      expect(session.review.reviewed, isEmpty);
+      expect(session.currentReviewedSuggestionIds, isEmpty);
+      expect((await persisted()).reviewed, isEmpty);
+      final confirmed = await session.confirmImprovement(candidate);
+      expect(confirmed.id, candidate.id);
+      expect(confirmed.observation, contains('not a verified measurement'));
+      expect(session.review.reviewed, {'door-1'});
+      expect((await persisted()).reviewed, {'door-1'});
+      expect(session.review.scene!.toJson(), scene.toJson());
+      expect(session.currentReviewedSuggestionIds, {confirmed.id});
+      await session.reviewElement('door-1', confirmed: false);
+      expect(session.currentReviewedSuggestionIds, isEmpty);
+      expect(session.suggestedImprovements.single.id, candidate.id);
+    },
+  );
+
+  test(
+    'a changed resident answer rejects an earlier suggestion confirmation',
+    () async {
+      await seed(BathroomScanReview(scene: fictionalScanScene()));
+      final session = make();
+      await session.initialize();
+      await session.setDifficulty(ScanDifficulty.enteringBathroom, true);
+      final candidate = session.suggestedImprovements.single;
+      await session.setDifficulty(ScanDifficulty.enteringBathroom, false);
+      await expectLater(
+        session.confirmImprovement(candidate),
+        throwsStateError,
+      );
+      expect(session.review.reviewed, isEmpty);
+      expect((await persisted()).reviewed, isEmpty);
+    },
+  );
+
+  test(
+    'a corrected feature rejects an earlier suggestion without reviewing the correction',
+    () async {
+      await seed(BathroomScanReview(scene: fictionalScanScene()));
+      final session = make();
+      await session.initialize();
+      await session.setDifficulty(ScanDifficulty.enteringBathroom, true);
+      final candidate = session.suggestedImprovements.single;
+      await session.reviewElement(
+        'door-1',
+        confirmed: false,
+        label: ScanElementKind.sink,
+      );
+      await expectLater(
+        session.confirmImprovement(candidate),
+        throwsStateError,
+      );
+      expect(session.review.reviewed, isEmpty);
+      expect((await persisted()).reviewed, isEmpty);
+    },
+  );
+
+  test(
+    'failed concern review save does not return an importable observation',
+    () async {
+      await seed(BathroomScanReview(scene: fictionalScanScene()));
+      final session = make();
+      await session.initialize();
+      await session.setDifficulty(ScanDifficulty.enteringBathroom, true);
+      final candidate = session.suggestedImprovements.single;
+      store.failNextWrite = true;
+      await expectLater(
+        session.confirmImprovement(candidate),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(session.dirty, isTrue);
+      expect((await persisted()).reviewed, isEmpty);
+      await expectLater(
+        session.confirmImprovement(candidate),
+        throwsStateError,
+      );
+      await session.retrySave();
+      expect((await session.confirmImprovement(candidate)).id, candidate.id);
+    },
+  );
+
+  test(
     'geometry and review survive encrypted account-scoped restart without plaintext',
     () async {
       final session = make();

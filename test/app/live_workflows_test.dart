@@ -171,13 +171,13 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('profile-review-recovered')));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
-        find.text('Keep edits on this device'),
+        find.text('Done'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.ensureVisible(find.text('Keep edits on this device'));
+      await tester.ensureVisible(find.text('Done'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Keep edits on this device'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       final profile = app.coordinator.draft!.profile;
       expect(profile.annualIncomeUsd, 0);

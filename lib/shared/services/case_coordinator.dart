@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../models/case_draft.dart';
 import '../models/case_list.dart';
 import '../models/contracts.dart';
+import '../models/export_contract_values.dart';
 import 'case_discovery_api_client.dart';
 import 'case_evidence_api_client.dart';
 import 'local_private_store.dart';
@@ -292,7 +293,7 @@ class CaseCoordinator extends ChangeNotifier {
               input,
               currentDraft: () {
                 _guard(generation);
-                return currentDraft();
+                return input;
               },
             )
           : await cases.saveCase(
@@ -304,14 +305,16 @@ class CaseCoordinator extends ChangeNotifier {
               },
               currentDraft: () {
                 _guard(generation);
-                return currentDraft();
+                return input;
               },
             );
       _guard(generation);
       snapshot = result;
       if (_edit == edit) draft = CaseDraft.fromSnapshot(result);
       uncertain = false;
-      notice = 'Saved online.';
+      notice = hasUnsavedChanges
+          ? 'Earlier changes saved online. Newer edits are kept on this device.'
+          : 'Saved online.';
       _changed();
       await _persist();
     } on MatchingApiException catch (error) {
@@ -425,13 +428,7 @@ class CaseCoordinator extends ChangeNotifier {
       try {
         _guard(generation);
         if (id != null) {
-          for (final key in await store.keys()) {
-            _guard(generation);
-            if (key.split('.').contains(id) ||
-                key.startsWith('assessment:$id:')) {
-              await store.delete(key);
-            }
-          }
+          await _clearLocalCaseRecords(id, generation);
         }
       } finally {
         busy = false;
@@ -440,6 +437,62 @@ class CaseCoordinator extends ChangeNotifier {
     });
     _tail = next.then<void>((_) {}, onError: (Object _, StackTrace stack) {});
     await next;
+  }
+
+  Future<void> clearCaseLocally(String caseId) async {
+    ExportContractValues.id(caseId);
+    _guardCaseSelection();
+    if (draft?.caseId == caseId) return clearSelected();
+    final generation = _selection;
+    await serialize(() => _clearLocalCaseRecords(caseId, generation));
+  }
+
+  Future<void> _clearLocalCaseRecords(String id, int generation) async {
+    final storedKeys = await store.keys();
+    _guard(generation);
+    final keys = storedKeys.where((key) => _belongsToCase(key, id)).toList();
+    final knownIds = <String>{id};
+    for (final key in storedKeys) {
+      for (final prefix in ['case.', 'case-delete.', 'profile-edit.']) {
+        if (key.startsWith(prefix)) knownIds.add(key.substring(prefix.length));
+      }
+    }
+    for (final key in keys) {
+      if (knownIds.any((other) => other != id && _belongsToCase(key, other))) {
+        throw StateError('Local plan ownership needs recovery before cleanup.');
+      }
+    }
+    keys.sort((a, b) {
+      int rank(String key) => key == 'case-delete.$id'
+          ? 2
+          : key == 'case.$id'
+          ? 1
+          : 0;
+      return rank(a).compareTo(rank(b));
+    });
+    for (final key in keys) {
+      _guard(generation);
+      await store.delete(key);
+    }
+  }
+
+  bool _belongsToCase(String key, String id) {
+    if ([
+      'case',
+      'profile-edit',
+      'case-delete',
+    ].any((prefix) => key == '$prefix.$id')) {
+      return true;
+    }
+    if (key.startsWith('assessment:$id:')) return true;
+    return [
+      'form',
+      'intake',
+      'history',
+      'history-edit',
+      'export',
+      'annotation-review',
+    ].any((prefix) => key.startsWith('$prefix.$id.'));
   }
 
   @override

@@ -95,6 +95,18 @@ Future<Uint8List> drawFictionalScene(
   canvas.translate(w / 2, h * 0.7);
   canvas.scale(zoom);
   switch (area) {
+    case AssessmentArea.other:
+      for (var step = 0; step < 4; step++) {
+        canvas.drawRect(
+          Rect.fromLTWH(
+            -w * .3 + step * w * .15,
+            -step * h * .08,
+            w * .15,
+            h * .08,
+          ),
+          Paint()..color = const Color(0xFF8C8C8C),
+        );
+      }
     case AssessmentArea.entrance:
       canvas.drawRect(
         Rect.fromLTWH(-w * 0.18, -h * 0.55, w * 0.36, h * 0.55),

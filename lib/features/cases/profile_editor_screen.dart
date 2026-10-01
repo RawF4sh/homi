@@ -37,9 +37,15 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   bool _confirmingCounty = false;
   late final String _caseId;
   late final int _generation;
-  late final int? _baseRevision;
-  late final Map<String, Object?> _baseProfile;
-  late final String _baseFingerprint;
+  late int? _baseRevision;
+  late Map<String, Object?> _baseProfile;
+  late String _baseFingerprint;
+  Timer? _autosaveTimer;
+  Future<void>? _journalWrite;
+  bool _needsLocalPromotion = false;
+  Completer<void>? _onlineSave;
+  bool _syncFailed = false, _syncRequested = false;
+  int _editVersion = 0;
   String? _pendingProfileFingerprint;
   Map<String, Object?>? _recovered;
   int _fieldVersion = 0;
@@ -77,6 +83,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   @override
   void dispose() {
     widget.services.coordinator.removeListener(_caseChanged);
+    _cancelAutosave();
     _draftSaves.dispose();
     _scroll.dispose();
     for (final field in _fields.values) {
@@ -96,10 +103,11 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
         .toString();
   }
 
-  bool get _selected {
+  bool get _selected => mounted && _scopeCurrent;
+
+  bool get _scopeCurrent {
     final c = widget.services.coordinator;
-    return mounted &&
-        c.isCurrent &&
+    return c.isCurrent &&
         c.generation == _generation &&
         c.draft?.caseId == _caseId;
   }
@@ -133,6 +141,9 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
 
   void _caseChanged() {
     if (mounted) setState(() {});
+    if (_syncRequested && _onlineSave == null) {
+      scheduleMicrotask(() => unawaited(_saveOnline()));
+    }
   }
 
   Map<String, Object?> _parseEdits(Map<String, Object?> saved) {
@@ -194,6 +205,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
             saved['baseCaseRevision'] == _baseRevision &&
             saved['baseProfileFingerprint'] == _baseFingerprint) {
           _applyEdits(edits);
+          _needsLocalPromotion = true;
           _notice = 'Recovered unfinished edits from this device.';
         } else {
           _recovered = edits;
@@ -207,11 +219,16 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
             'Unfinished edits could not be restored. The current case details are shown; check them before continuing.';
       }
     }
-    if (mounted) setState(() => _restoring = false);
+    if (mounted) {
+      setState(() => _restoring = false);
+      if (_needsLocalPromotion && _editable) _scheduleAutosave();
+    }
   }
 
   void _stash() {
     if (!_editable) return;
+    _editVersion++;
+    _needsLocalPromotion = true;
     unawaited(
       _persistJournal().catchError((Object _) {
         if (_selected) {
@@ -222,6 +239,35 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
         }
       }),
     );
+    _scheduleAutosave();
+  }
+
+  void _cancelAutosave() {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = null;
+  }
+
+  void _scheduleAutosave() {
+    _cancelAutosave();
+    final version = _editVersion;
+    _autosaveTimer = Timer(const Duration(milliseconds: 800), () async {
+      _autosaveTimer = null;
+      if (_confirmingCounty || version != _editVersion || !_sameBase) return;
+      await _flushEdits();
+    });
+  }
+
+  Future<void> _flushEdits() async {
+    _cancelAutosave();
+    if (!_needsLocalPromotion || _saving || _draftSaves.failed || !_sameBase) {
+      return;
+    }
+    try {
+      await _journalWrite;
+    } catch (_) {
+      return;
+    }
+    if (_needsLocalPromotion && _sameBase) await _save(automatic: true);
   }
 
   Future<void> _persistJournal([Map<String, Object?>? edits]) {
@@ -229,10 +275,12 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       jsonDecode(jsonEncode(_journal(edits))) as Map,
     );
     final key = _editKey;
-    return _draftSaves.track(() {
+    final write = _draftSaves.track(() {
       _requireBase();
       return widget.services.store.writeJson(key, value);
     });
+    _journalWrite = write;
+    return write;
   }
 
   Future<void> _chooseRecovery({required bool useRecovered}) async {
@@ -306,8 +354,13 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     });
   }
 
-  Future<void> _save() async {
-    if (!_editable) return;
+  Future<void> _save({bool automatic = false}) async {
+    if (automatic) {
+      if (_saving || _restoring || _recovered != null || !_sameBase) return;
+    } else {
+      if (!_editable) return;
+      _cancelAutosave();
+    }
     final errors = <String, String>{};
     for (final key in labels.keys) {
       final error = _validateField(key);
@@ -343,20 +396,113 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       final changed = CaseDraft.fromJson(value);
       final changedFingerprint = _fingerprint(changed.toJson());
       _pendingProfileFingerprint = _fingerprint(changed.profile.toJson());
+      final changedProfile = _pendingProfileFingerprint != _baseFingerprint;
       await _draftSaves.track(() async {
         _requireExactDraft({beforeFingerprint, changedFingerprint});
-        await c.updateDraft(changed);
+        if (beforeFingerprint != changedFingerprint || c.hasUndurableEdits) {
+          await c.updateDraft(changed);
+        }
         _requireExactDraft({changedFingerprint});
         await widget.services.store.delete(_editKey);
       });
-      if (mounted && _selected && ModalRoute.of(context)?.isCurrent == true) {
+      _requireBase();
+      _baseProfile = changed.profile.toJson();
+      _baseFingerprint = _fingerprint(_baseProfile);
+      _pendingProfileFingerprint = null;
+      _needsLocalPromotion = false;
+      _notice = null;
+      if (changedProfile) {
+        _syncRequested = true;
+        unawaited(_saveOnline());
+      }
+      if (!automatic &&
+          mounted &&
+          _selected &&
+          ModalRoute.of(context)?.isCurrent == true) {
         _requestExit?.call();
       }
     } catch (error) {
-      if (mounted) await showOperationError(context, error);
+      if (mounted) {
+        if (automatic) {
+          setState(() => _notice = safeOperationMessage(error));
+        } else {
+          await showOperationError(context, error);
+        }
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _saveOnline() async {
+    final c = widget.services.coordinator;
+    if (!_scopeCurrent ||
+        _onlineSave != null ||
+        c.busy ||
+        c.hasUndurableEdits ||
+        c.uncertain ||
+        c.conflict ||
+        c.snapshot?.revision != _baseRevision ||
+        _fingerprint(c.currentDraft().profile.toJson()) != _baseFingerprint ||
+        !c.hasUnsavedChanges) {
+      return;
+    }
+    final sentProfile = _baseFingerprint;
+    final sentRevision = _baseRevision ?? 0;
+    final finished = Completer<void>();
+    _onlineSave = finished;
+    _syncRequested = false;
+    _syncFailed = false;
+    try {
+      await c.save();
+      if (_scopeCurrent) _notice = null;
+    } catch (error) {
+      if (_scopeCurrent) {
+        _syncFailed = true;
+        _notice = safeOperationMessage(error);
+      }
+    } finally {
+      if (_scopeCurrent &&
+          !c.uncertain &&
+          !c.conflict &&
+          c.snapshot?.revision == sentRevision + 1) {
+        final currentProfile = _fingerprint(c.currentDraft().profile.toJson());
+        if ((currentProfile == _baseFingerprint ||
+                currentProfile == _pendingProfileFingerprint) &&
+            _fingerprint(c.currentCase().profile.toJson()) == sentProfile) {
+          _baseRevision = c.snapshot!.revision;
+          if (mounted && _needsLocalPromotion && !_saving) {
+            unawaited(_persistJournal().catchError((Object _) {}));
+          }
+        }
+      }
+      if (identical(_onlineSave, finished)) _onlineSave = null;
+      finished.complete();
+      if (mounted) setState(() {});
+      if (_syncRequested && !_syncFailed && _scopeCurrent) {
+        unawaited(_saveOnline());
+      }
+    }
+  }
+
+  String get _saveStatus {
+    final c = widget.services.coordinator;
+    if (_restoring) return 'Opening resident details…';
+    if (_recovered != null) return 'Compare the two copies before continuing.';
+    if (!_sameBase && _onlineSave == null) return 'Review the changed case.';
+    if (_draftSaves.failed || c.localSaveFailed) {
+      return 'Device save needs attention. Your entries are still here.';
+    }
+    if (_errors.isNotEmpty) {
+      return 'Entries kept on this device. Correct the highlighted answer to sync.';
+    }
+    if (_draftSaves.pending || _saving) return 'Saving changes on this device…';
+    if (_onlineSave != null) return 'Saved on this device · syncing online…';
+    if (c.conflict || c.uncertain) {
+      return 'Saved on this device · check saved state from your case.';
+    }
+    if (_syncFailed || c.hasUnsavedChanges) return 'Saved on this device.';
+    return 'Saved online · changes save automatically.';
   }
 
   String _display(Object? value, {bool housing = false}) => switch (value) {
@@ -560,6 +706,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       }
     } finally {
       _confirmingCounty = false;
+      if (_needsLocalPromotion && _editable) _scheduleAutosave();
     }
   }
 
@@ -601,6 +748,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   @override
   Widget build(BuildContext context) => DraftExitGuard(
     tracker: _draftSaves,
+    beforeExit: _flushEdits,
     builder: (context, requestExit, exiting) {
       _leaving = exiting;
       _requestExit = requestExit;
@@ -624,7 +772,18 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                     const SahPageHeader(
                       title: 'About the resident',
                       description:
-                          'All optional. Blank means unknown, which is different from 0 or No.',
+                          'Changes save automatically. All answers are optional; blank means unknown, not 0 or No.',
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: ListenableBuilder(
+                        listenable: _draftSaves,
+                        builder: (context, _) => Text(
+                          _saveStatus,
+                          key: const ValueKey('profile-save-status'),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
                     ),
                     if (_notice != null) SahNotice(message: _notice!),
                     if (!_sameBase && !_restoring && !_saving)
@@ -715,13 +874,19 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                         onReview: _reviewInvalid,
                         revealRevision: _validationAttempt,
                       ),
+                    if (_syncFailed &&
+                        _sameBase &&
+                        !widget.services.coordinator.uncertain &&
+                        !widget.services.coordinator.conflict)
+                      OutlinedButton(
+                        key: const ValueKey('profile-retry-online'),
+                        onPressed: _onlineSave == null ? _saveOnline : null,
+                        child: const Text('Retry sync'),
+                      ),
                     FilledButton(
                       key: const ValueKey('profile-keep-edits'),
                       onPressed: _editable ? _save : null,
-                      child: const Text(
-                        'Keep edits on this device',
-                        textAlign: TextAlign.center,
-                      ),
+                      child: const Text('Done', textAlign: TextAlign.center),
                     ),
                     const SizedBox(height: 72),
                   ],

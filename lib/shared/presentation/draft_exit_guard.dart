@@ -7,8 +7,10 @@ class DraftExitGuard extends StatefulWidget {
     super.key,
     required this.tracker,
     required this.builder,
+    this.beforeExit,
   });
   final DraftSaveTracker tracker;
+  final Future<void> Function()? beforeExit;
   final Widget Function(
     BuildContext context,
     VoidCallback requestExit,
@@ -21,7 +23,7 @@ class DraftExitGuard extends StatefulWidget {
 }
 
 class _DraftExitGuardState extends State<DraftExitGuard> {
-  bool _exiting = false, _allowPop = false;
+  bool _exiting = false, _allowPop = false, _preparingExit = false;
 
   Future<void> _leaveRoute(Route<dynamic>? route) async {
     setState(() {
@@ -41,8 +43,25 @@ class _DraftExitGuardState extends State<DraftExitGuard> {
   }
 
   Future<void> _requestExit() async {
-    if (_exiting || !mounted || !Navigator.of(context).canPop()) return;
+    if (_exiting ||
+        _preparingExit ||
+        !mounted ||
+        !Navigator.of(context).canPop()) {
+      return;
+    }
     final route = ModalRoute.of(context);
+    final prepare = widget.beforeExit;
+    if (prepare != null) {
+      setState(() => _preparingExit = true);
+      try {
+        await prepare();
+      } catch (_) {
+        return;
+      } finally {
+        if (mounted) setState(() => _preparingExit = false);
+      }
+      if (!mounted || route?.isCurrent != true) return;
+    }
     if (!widget.tracker.isCurrent || !widget.tracker.needsSave) {
       await _leaveRoute(route);
       return;
@@ -68,19 +87,21 @@ class _DraftExitGuardState extends State<DraftExitGuard> {
     builder: (context, _) => PopScope<void>(
       canPop:
           _allowPop ||
-          (!_exiting &&
-              (!widget.tracker.isCurrent || !widget.tracker.needsSave)),
+          (widget.beforeExit == null &&
+              !_exiting &&
+              (!_preparingExit &&
+                  (!widget.tracker.isCurrent || !widget.tracker.needsSave))),
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) unawaited(_requestExit());
       },
       child: ExcludeFocus(
-        excluding: _exiting,
+        excluding: _exiting || _preparingExit,
         child: AbsorbPointer(
-          absorbing: _exiting,
+          absorbing: _exiting || _preparingExit,
           child: widget.builder(
             context,
             () => unawaited(_requestExit()),
-            _exiting,
+            _exiting || _preparingExit,
           ),
         ),
       ),

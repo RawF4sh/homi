@@ -176,7 +176,9 @@ void main() {
         'city': 'Changed fictional city',
       };
       await c.updateDraft(CaseDraft.fromJson(json));
-      reply.complete(http.jsonResponse(server));
+      reply.completeError(
+        const MatchingTransportException(MatchingTransportFailure.network),
+      );
       await failed;
       await c.reconcile();
       expect(c.conflict, true);
@@ -184,6 +186,65 @@ void main() {
       expect(c.snapshot!.profile.city, isNull);
     },
   );
+  for (final existing in [false, true]) {
+    test(
+      'acknowledged ${existing ? 'update' : 'create'} preserves edits typed during the request',
+      () async {
+        final sent = Completer<void>();
+        final reply = Completer<MatchingHttpResponse>();
+        Map<String, Object?>? server;
+        var hold = !existing;
+        final transport = FakeTransport((request) async {
+          final body = http.requestJson(request);
+          final revision = (server?['revision'] as int? ?? 0) + 1;
+          server = {
+            ...body..remove('expectedCaseRevision'),
+            'revision': revision,
+          };
+          if (hold) {
+            sent.complete();
+            return reply.future;
+          }
+          return http.jsonResponse(server);
+        });
+        final c = make(transport);
+        await c.createDraft();
+        if (existing) await c.save();
+        final first = c.currentDraft().toJson();
+        first['profile'] = {
+          ...c.currentDraft().profile.toJson(),
+          'city': 'First fictional city',
+        };
+        await c.updateDraft(CaseDraft.fromJson(first));
+        hold = true;
+        final saving = c.save();
+        await sent.future;
+        final next = c.currentDraft().toJson();
+        next['profile'] = {
+          ...c.currentDraft().profile.toJson(),
+          'city': 'Newer fictional city',
+        };
+        await c.updateDraft(CaseDraft.fromJson(next));
+        reply.complete(http.jsonResponse(server));
+        await saving;
+        expect(c.snapshot!.profile.city, 'First fictional city');
+        expect(c.draft!.profile.city, 'Newer fictional city');
+        expect(c.hasUnsavedChanges, isTrue);
+        expect(c.uncertain, isFalse);
+        expect(c.conflict, isFalse);
+        await c.restoreLocal(c.currentDraft().caseId);
+        expect(c.snapshot!.profile.city, 'First fictional city');
+        expect(c.draft!.profile.city, 'Newer fictional city');
+        expect(c.hasUnsavedChanges, isTrue);
+        hold = false;
+        await c.save();
+        expect(c.snapshot!.profile.city, 'Newer fictional city');
+        expect(c.hasUnsavedChanges, isFalse);
+        await c.restoreLocal(c.currentDraft().caseId);
+        expect(c.draft!.profile.city, 'Newer fictional city');
+      },
+    );
+  }
   test(
     'queued mutations execute in order and failed operation does not poison queue',
     () async {

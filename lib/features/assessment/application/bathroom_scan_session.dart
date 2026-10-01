@@ -298,7 +298,7 @@ class BathroomScanSession extends ChangeNotifier {
       _changed();
       await _save(BathroomScanReview(scene: result));
       notice =
-          'Model saved privately on this device. Review the detected features before adding observations.';
+          'Scan saved on this device. Choose what feels difficult to see possible improvements.';
       _changed();
     } finally {
       if (identical(_captureAttempt, attempt)) _captureAttempt = null;
@@ -335,6 +335,65 @@ class BathroomScanSession extends ChangeNotifier {
       review.copyWith(reviewed: reviewed, labels: labels, dismissed: {}),
     );
   });
+
+  List<ScanSuggestionCandidate> get suggestedImprovements {
+    final scene = review.scene;
+    if (scene == null) return const [];
+    return previewBathroomImprovements(
+      scene: scene,
+      difficulties: review.difficulties,
+      identifiedKinds: review.labels,
+    );
+  }
+
+  Set<String> get currentReviewedSuggestionIds {
+    final scene = review.scene;
+    if (scene == null) return const {};
+    return {
+      for (final suggestion in suggestBathroomImprovements(
+        scene: scene,
+        reviewedElementIds: review.reviewed,
+        difficulties: review.difficulties,
+        identifiedKinds: {
+          for (final entry in review.labels.entries)
+            if (review.reviewed.contains(entry.key)) entry.key: entry.value,
+        },
+      ))
+        suggestion.id,
+    };
+  }
+
+  Future<ScanSuggestion> confirmImprovement(
+    ScanSuggestionCandidate candidate,
+  ) async {
+    late ScanSuggestion confirmed;
+    await _run(() async {
+      if (dirty) throw StateError('Save the current review first.');
+      final current = suggestedImprovements
+          .where((value) => value.id == candidate.id)
+          .firstOrNull;
+      if (current == null) {
+        throw StateError('This suggestion changed. Review it again.');
+      }
+      final reviewed = {...review.reviewed, ...current.relatedElementIds};
+      final result = suggestBathroomImprovements(
+        scene: review.scene!,
+        reviewedElementIds: reviewed,
+        difficulties: review.difficulties,
+        identifiedKinds: {
+          for (final entry in review.labels.entries)
+            if (reviewed.contains(entry.key)) entry.key: entry.value,
+        },
+      ).where((value) => value.id == current.id).firstOrNull;
+      if (result == null) {
+        throw StateError('This suggestion needs another review.');
+      }
+      await _save(review.copyWith(reviewed: reviewed));
+      guard();
+      confirmed = result;
+    });
+    return confirmed;
+  }
 
   Future<void> setDifficulty(ScanDifficulty difficulty, bool value) =>
       _run(() async {

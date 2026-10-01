@@ -231,8 +231,19 @@ void main() {
               find.byType(CaseHomeScreen).evaluate().isNotEmpty,
           'signed-in home',
         );
-        await visible(find.text('Start a case'));
-        expect(find.text('Start a case'), findsOneWidget);
+        await visible(find.text('Start a home plan'));
+        expect(find.text('Start a home plan'), findsOneWidget);
+      }
+
+      Future<void> finishProfile() async {
+        await tapFinder(find.byKey(const ValueKey('profile-keep-edits')));
+        await until(
+          () => find
+              .byKey(const ValueKey('profile-keep-edits'))
+              .evaluate()
+              .isEmpty,
+          'resident details closes after its private save',
+        );
       }
 
       await tester.pumpWidget(AcceptanceHost(harness: h));
@@ -252,7 +263,7 @@ void main() {
       expect(h.session.userId, isNull);
       await login();
       checkpoint('fictional login');
-      await tap('Start a case');
+      await tap('Start a home plan');
       await idle();
       await tap('Resident details');
       await enter('City', 'Fictional San Jose');
@@ -260,11 +271,22 @@ void main() {
       final permission = find.byType(DropdownButtonFormField<bool>);
       await tapFinder(permission);
       await tap('No');
-      await tap('Keep edits on this device');
-      await tap('Save online', direction: -300);
+      await finishProfile();
       await until(
-        () => h.services!.coordinator.snapshot?.revision == 1,
-        'initial real case save',
+        () =>
+            h.services!.coordinator.snapshot != null &&
+            !h.services!.coordinator.busy &&
+            !h.services!.coordinator.hasUnsavedChanges &&
+            h.services!.coordinator.snapshot!.profile.city ==
+                'Fictional San Jose' &&
+            h.services!.coordinator.snapshot!.profile.annualIncomeUsd == 0 &&
+            h.services!.coordinator.snapshot!.profile.ownerConsentReported ==
+                false,
+        'all resident edits save automatically to the real case',
+      );
+      expect(
+        h.services!.coordinator.snapshot!.revision,
+        greaterThanOrEqualTo(1),
       );
       final profile = h.services!.coordinator.snapshot!.profile;
       expect(profile.annualIncomeUsd, 0);
@@ -314,6 +336,7 @@ void main() {
         find.byKey(const ValueKey('observation')),
         'Fictional threshold needs a closer look.',
       );
+      await tap('Add measurements (optional)');
       await visible(find.byKey(const ValueKey('measurement-thresholdHeight')));
       await tester.enterText(
         find.byKey(const ValueKey('measurement-thresholdHeight')),
@@ -326,7 +349,6 @@ void main() {
         ),
       );
       await tap('Review');
-      await tap('This threshold height is right');
       await tap('Confirm this finding');
       await tap('Save to my case');
       await until(
@@ -336,7 +358,12 @@ void main() {
       );
       final caseAfterPhoto = h.services!.coordinator.snapshot!;
       expect(caseAfterPhoto.findings, hasLength(1));
+      expect(caseAfterPhoto.findings.single.reviewState, 'confirmed');
       expect(caseAfterPhoto.findings.single.measurements.single.value, 12.7);
+      expect(
+        caseAfterPhoto.findings.single.measurements.single.confirmed,
+        true,
+      );
       final original =
           (((h.transport.responseBodies['/v2/save-assessment']!['assessment']
                               as Map)['metadata']
@@ -384,12 +411,11 @@ void main() {
       h.transport.offline = true;
       await tap('Resident details');
       await enter('City', 'Fictional offline city');
-      await tap('Keep edits on this device');
-      await tap('Save online', direction: -300);
+      await finishProfile();
       await until(
         () =>
             h.services!.coordinator.uncertain && !h.services!.coordinator.busy,
-        'offline edit retained',
+        'automatic offline save remains uncertain and keeps the edit',
       );
       final previousDirectory = h.directory!;
       await tester.pumpWidget(const SizedBox.shrink());
@@ -407,6 +433,7 @@ void main() {
         contains(caseAfterPhoto.caseId),
         reason: 'The exact encrypted case must survive service recreation.',
       );
+      await tapFinder(find.byKey(const ValueKey('nav-plans')));
       await tapFinder(
         find.byKey(ValueKey('local-case-${caseAfterPhoto.caseId}')),
       );
@@ -422,7 +449,10 @@ void main() {
         'offline conflict reconciled',
       );
       await tap('Keep my edits for another save');
-      await tap('Save online', direction: -300);
+      await tapFinder(
+        find.byKey(const ValueKey('case-save-online')),
+        direction: -300,
+      );
       await until(
         () =>
             !h.services!.coordinator.hasUnsavedChanges &&
@@ -812,7 +842,7 @@ void main() {
       bob.dispose();
       await back();
       await back();
-      await tapFinder(find.byTooltip('Settings'));
+      await tapFinder(find.byKey(const ValueKey('nav-settings')));
       await tap('Delete selected case');
       await tap('Continue');
       await until(
@@ -840,16 +870,18 @@ void main() {
       checkpoint('other owner denied; case/photo deletion; sign-out cleanup');
 
       await login();
-      await tap('Start a case');
+      await tap('Start a home plan');
       await idle();
-      await tap('Save online');
+      await tap('Resident details');
+      await enter('City', 'Fictional deletion check');
+      await finishProfile();
       await until(
         () => h.services!.coordinator.snapshot?.revision == 1,
         'new case for account-deletion check',
       );
       await idle();
       await back();
-      await tapFinder(find.byTooltip('Settings'));
+      await tapFinder(find.byKey(const ValueKey('nav-settings')));
       var durableReceiptBeforeConfirm = false;
       h.transport.beforeRequest = (path) async {
         if (path == '/v1/confirm-account-deletion') {

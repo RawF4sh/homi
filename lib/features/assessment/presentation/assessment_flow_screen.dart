@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../application/assessment_controller.dart';
 import '../application/assessment_flow.dart';
 import '../domain/annotation/box_annotation.dart';
+import '../domain/assessment_location.dart';
 import '../domain/capture/capture_adapter.dart';
 import '../domain/measurement/length_unit.dart';
 import '../domain/measurement/measurement_fields.dart';
@@ -13,6 +14,7 @@ import '../../../shared/presentation/sah_components.dart';
 import 'annotation_editor_screen.dart';
 import 'photo_privacy_screen.dart';
 import 'assessment_copy.dart';
+import 'assessment_location_guide.dart';
 
 class AssessmentFlowScreen extends StatelessWidget {
   const AssessmentFlowScreen({
@@ -111,23 +113,23 @@ class AssessmentFlowScreen extends StatelessWidget {
   List<Widget> _chooseArea(BuildContext context) {
     final List<FindingDraft> drafts = flow.controller.drafts;
     return [
+      const Text(
+        'Start where you would like help. You do not need to check every room or measure everything.',
+      ),
+      const SizedBox(height: 16),
       if (areaToolsFirst) ?areaTools,
-      if (areaTools != null)
-        SahSectionHeading(
-          title: areaToolsFirst
-              ? 'Or use photos and measurements'
-              : 'Photos and measurements',
-        ),
-      for (final AssessmentArea area in AssessmentArea.values)
+      const SahSectionHeading(title: 'Choose a place'),
+      const Text(
+        'Add a note, a photo, or both. 3D scanning is currently for bathrooms on supported phones.',
+      ),
+      const SizedBox(height: 12),
+      for (final AssessmentLocation location in AssessmentLocation.values)
         SahActionTile(
-          key: ValueKey('area-${area.name}'),
-          title: AssessmentCopy.areaTitle(area),
-          subtitle: AssessmentCopy.areaExplanation(area),
-          icon: switch (area) {
-            AssessmentArea.bathroom => Icons.bathtub_outlined,
-            AssessmentArea.entrance => Icons.door_front_door_outlined,
-          },
-          onTap: () => flow.chooseArea(area),
+          key: ValueKey('area-${location.name}'),
+          title: location.title,
+          subtitle: '${location.description}\nNotes & photos',
+          icon: location.icon,
+          onTap: () => flow.chooseLocation(location),
         ),
       if (!areaToolsFirst) ?areaTools,
       if (drafts.isNotEmpty) ...[
@@ -139,7 +141,7 @@ class AssessmentFlowScreen extends StatelessWidget {
                 ? 'No observation yet'
                 : d.observation.trim(),
             subtitle:
-                '${AssessmentCopy.areaTitle(d.area)} · '
+                '${_findingLocationTitle(d)} · '
                 '${d.evidence.length} ${d.evidence.length == 1 ? 'photo' : 'photos'}',
             status: AssessmentCopy.reviewState(
               flow.controller.reviewOf(d.id)!.state,
@@ -154,18 +156,23 @@ class AssessmentFlowScreen extends StatelessWidget {
 
   List<Widget> _viewPrompt(BuildContext context) {
     final AssessmentArea area = flow.area!;
+    final location = flow.location;
     return [
+      SahSectionHeading(
+        title: location?.title ?? AssessmentCopy.areaTitle(area),
+      ),
       Semantics(
         header: true,
         child: Text(
-          AssessmentCopy.viewPrompt(area, flow.view),
+          location?.photoPrompt(flow.view) ??
+              AssessmentCopy.viewPrompt(area, flow.view),
           style: Theme.of(context).textTheme.titleLarge,
         ),
       ),
       const SizedBox(height: 8),
       SahNotice(
         title: 'Stay safe',
-        message: AssessmentCopy.safetyNote(area),
+        message: location?.safetyNote ?? AssessmentCopy.safetyNote(area),
         icon: Icons.health_and_safety_outlined,
         liveRegion: false,
       ),
@@ -406,7 +413,7 @@ class AssessmentFlowScreen extends StatelessWidget {
       ),
       if (review.anotherViewRequested)
         const _NoticeCard(text: AssessmentCopy.anotherViewRequested),
-      heading('${AssessmentCopy.areaTitle(draft.area)} · what you notice'),
+      heading('${_findingLocationTitle(draft)} · what you notice'),
       Text(draft.observation.trim(), style: text.bodyLarge),
       heading('Photos'),
       if (draft.evidence.isEmpty)
@@ -427,14 +434,12 @@ class AssessmentFlowScreen extends StatelessWidget {
               ),
           ],
         ),
-      heading('Measurements'),
-      if (draft.measurements.isEmpty && cleared.isEmpty)
-        const Text('None recorded.'),
+      if (draft.measurements.isNotEmpty || cleared.isNotEmpty)
+        heading('Measurements you included'),
       for (final RecordedMeasurement m in draft.measurements)
         _MeasurementSummary(
           measurement: m,
           history: flow.controller.measurementHistoryOf(id, m.type),
-          onConfirm: () => flow.controller.confirmMeasurement(id, m.type),
         ),
       for (final String type in cleared)
         _ClearedMeasurement(
@@ -458,7 +463,7 @@ class AssessmentFlowScreen extends StatelessWidget {
       if (state == FindingReviewState.needsReview)
         _wide(
           FilledButton(
-            onPressed: () => flow.controller.confirm(id),
+            onPressed: () => flow.controller.confirmDisplayedRecord(id),
             child: const Text('Confirm this finding'),
           ),
         ),
@@ -522,6 +527,10 @@ class AssessmentFlowScreen extends StatelessWidget {
     ];
   }
 }
+
+String _findingLocationTitle(FindingDraft draft) =>
+    AssessmentLocation.fromObservation(draft.area, draft.observation)?.title ??
+    AssessmentCopy.areaTitle(draft.area);
 
 IconData _reviewIcon(FindingReviewState state) => switch (state) {
   FindingReviewState.needsReview => Icons.rate_review_outlined,
@@ -691,15 +700,10 @@ class _PhotoState extends State<_Photo> {
 }
 
 class _MeasurementSummary extends StatelessWidget {
-  const _MeasurementSummary({
-    required this.measurement,
-    required this.history,
-    required this.onConfirm,
-  });
+  const _MeasurementSummary({required this.measurement, required this.history});
 
   final RecordedMeasurement measurement;
   final List<MeasurementChange> history;
-  final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
@@ -724,14 +728,9 @@ class _MeasurementSummary extends StatelessWidget {
         ),
         if (m.promptsZeroReview) const Text(AssessmentCopy.zeroCheck),
         if (history.isNotEmpty) Text('Earlier: ${describeHistory(history)}'),
-        if (!m.confirmed)
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
-              onPressed: onConfirm,
-              icon: const Icon(Icons.check_rounded),
-              label: Text('This ${_lowerFirst(label)} is right'),
-            ),
+        if (!m.originalInputKnown && !m.confirmed)
+          const Text(
+            'Original input unavailable. This size remains unverified.',
           ),
       ],
     );
@@ -791,6 +790,9 @@ class _DetailsStepState extends State<_DetailsStep> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        SahSectionHeading(
+          title: flow.location?.title ?? AssessmentCopy.areaTitle(flow.area!),
+        ),
         TextField(
           key: const ValueKey('observation'),
           controller: _observation,
@@ -802,7 +804,9 @@ class _DetailsStepState extends State<_DetailsStep> {
           },
           decoration: InputDecoration(
             labelText: AssessmentCopy.observationLabel,
-            helperText: AssessmentCopy.observationHint,
+            helperText:
+                flow.location?.observationExample ??
+                AssessmentCopy.observationHintFor(flow.area!),
             helperMaxLines: 3,
             errorText: errors.observationMissing
                 ? AssessmentCopy.observationRequired
@@ -810,19 +814,29 @@ class _DetailsStepState extends State<_DetailsStep> {
             border: const OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 8),
-        const SizedBox(height: 16),
-        Semantics(
-          header: true,
-          child: Text(
-            'Measurements',
-            style: Theme.of(context).textTheme.titleMedium,
+        if (flow.measurementTypes.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          if (errors.measurements.isNotEmpty)
+            const SahNotice(
+              message:
+                  'Open Add measurements below to correct or clear the highlighted size.',
+              tone: SahNoticeTone.warning,
+            ),
+          ExpansionTile(
+            key: ValueKey('optional-measurements-${flow.findingId}'),
+            title: const Text('Add measurements (optional)'),
+            subtitle: const Text('Only if a size helps explain the concern'),
+            tilePadding: EdgeInsets.zero,
+            initiallyExpanded: flow.measurementTypes.any(
+              (type) => flow.entryFor(type).text.isNotEmpty,
+            ),
+            children: [
+              const Text(AssessmentCopy.measurementsIntro),
+              for (final String type in flow.measurementTypes)
+                _measurementField(context, type),
+            ],
           ),
-        ),
-        const SizedBox(height: 4),
-        const Text(AssessmentCopy.measurementsIntro),
-        for (final String type in flow.measurementTypes)
-          _measurementField(context, type),
+        ],
         const SizedBox(height: 20),
         FilledButton(
           onPressed: widget.enabled ? flow.saveDetails : null,
@@ -915,9 +929,6 @@ class _DetailsStepState extends State<_DetailsStep> {
     LengthUnit.foot => 'feet',
   };
 }
-
-String _lowerFirst(String text) =>
-    text.isEmpty ? text : '${text[0].toLowerCase()}${text.substring(1)}';
 
 class _Panel extends StatelessWidget {
   const _Panel({required this.children});

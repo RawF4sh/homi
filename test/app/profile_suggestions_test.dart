@@ -29,7 +29,7 @@ Future<void> choose(WidgetTester tester, String key, String value) async {
 
 void main() {
   testWidgets(
-    'choosing a city autofills county and saves both fields offline',
+    'choosing a city autofills county and keeps both fields before sync',
     (tester) async {
       final store = ProfileTestStore();
       final app = await appFor(store);
@@ -66,7 +66,8 @@ void main() {
       expect(saved.city, 'San José');
       expect(saved.county, 'Santa Clara');
       expect(saved.healthPlan, 'Santa Clara Family Health Plan');
-      expect((app.transport as FakeTransport).requests, isEmpty);
+      expect((app.transport as FakeTransport).requests, hasLength(1));
+      expect(app.coordinator.currentCase().profile.county, 'Santa Clara');
     },
   );
 

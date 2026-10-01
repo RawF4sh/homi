@@ -48,7 +48,7 @@ class _BathroomModelViewState extends State<BathroomModelView> {
                       ? null
                       : 'Selected: ${widget.selectedLabel}',
                   label:
-                      'Partial bathroom model. ${widget.scene.elements.length} detected features and ${widget.scene.points.length} point samples. Use the feature list below to review each item.',
+                      'Partial bathroom model. ${widget.scene.elements.length} detected features and ${widget.scene.points.length} point samples. This model is optional. Use the feature list below to identify an item if needed.',
                   child: GestureDetector(
                     onScaleStart: (_) => startZoom = zoom,
                     onScaleUpdate: (details) => setState(() {

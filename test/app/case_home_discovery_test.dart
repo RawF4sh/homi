@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/cases/case_home_screen.dart';
+import 'package:safe_at_home/features/cases/case_display_details.dart';
 import 'package:safe_at_home/features/cases/case_workspace_screen.dart';
 import 'package:safe_at_home/shared/presentation/sah_components.dart';
 import 'package:safe_at_home/shared/services/matching_api_client.dart';
@@ -45,6 +46,13 @@ Future<void> _tick(WidgetTester tester) async {
 }
 
 Future<void> _reveal(WidgetTester tester, Finder target) async {
+  await _tick(tester);
+  final navigation = find.byType(NavigationBar);
+  if (navigation.evaluate().isNotEmpty &&
+      tester.widget<NavigationBar>(navigation).selectedIndex != 1) {
+    await tester.tap(find.byKey(const ValueKey('nav-plans')));
+    await _tick(tester);
+  }
   final scrollable = find.byType(Scrollable).first;
   final position = tester.state<ScrollableState>(scrollable).position;
   position.jumpTo(position.minScrollExtent);
@@ -60,6 +68,66 @@ Future<void> _reveal(WidgetTester tester, Finder target) async {
 }
 
 void main() {
+  testWidgets(
+    'saved plans use recorded city names and appear only once after restart',
+    (tester) async {
+      final store = MemoryPrivateStore();
+      final previous = services(store, FakeTransport((_) async => _page()));
+      await previous.coordinator.createDraft();
+      final draft = changeCity(previous.coordinator.currentDraft(), 'San José');
+      final id = draft.caseId;
+      await store.writeJson('case.$id', {
+        'version': 1,
+        'draft': draft.toJson(),
+        'snapshot': draft.atRevision(1).toJson(),
+        'uncertain': false,
+        'conflict': false,
+      });
+      previous.dispose();
+      previous.session.dispose();
+      final app = services(store, FakeTransport((_) async => _page(id: id)));
+      addTearDown(() {
+        app.dispose();
+        app.session.dispose();
+      });
+      await tester.pumpWidget(MaterialApp(home: CaseHomeScreen(services: app)));
+      await tester.pumpAndSettle();
+      final saved = find.byKey(ValueKey('saved-case-$id'));
+      await _reveal(tester, saved);
+      final card = tester.widget<SahActionTile>(saved);
+      expect(card.title, 'San José home plan');
+      expect(card.subtitle, 'Saved online · ${homePlanReference(id)}');
+      expect(find.byKey(ValueKey('local-case-$id')), findsNothing);
+      expect(
+        find.text('Not saved online · check before continuing'),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('a plan without local details has a plain name and reference', (
+    tester,
+  ) async {
+    final app = services(
+      MemoryPrivateStore(),
+      FakeTransport((_) async => _page(id: _onlineId)),
+    );
+    addTearDown(() {
+      app.dispose();
+      app.session.dispose();
+    });
+    await tester.pumpWidget(MaterialApp(home: CaseHomeScreen(services: app)));
+    await tester.pumpAndSettle();
+    final saved = find.byKey(const ValueKey('saved-case-$_onlineId'));
+    await _reveal(tester, saved);
+    final card = tester.widget<SahActionTile>(saved);
+    expect(card.title, 'Home safety plan');
+    expect(card.subtitle, 'Saved online · Reference 10000000');
+    expect(card.subtitle, isNot(contains('revision')));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'large-text device draft opens while online discovery is still waiting',
     (tester) async {
@@ -90,7 +158,7 @@ void main() {
       final local = find.byKey(ValueKey('local-case-$id'));
       final localTitle = find.descendant(
         of: local,
-        matching: find.text('Case ${id.substring(0, 8)}'),
+        matching: find.text('Home safety plan'),
       );
       await _reveal(tester, localTitle);
       expect(remote.isCompleted, false);
@@ -210,6 +278,7 @@ void main() {
       final open = tester.widget<SahActionTile>(local).onTap!;
       open();
       open();
+      await _tick(tester);
       expect(store.caseReads, 1);
       await app.session.signOut();
       store.caseRead!.complete(retained);
@@ -222,7 +291,7 @@ void main() {
     },
   );
 
-  testWidgets('a failed local refresh preserves the prior device list', (
+  testWidgets('a failed local refresh keeps plans visible but blocks resume', (
     tester,
   ) async {
     final store = _ControlledReads();
@@ -243,7 +312,7 @@ void main() {
         .onRefresh();
     await tester.pumpAndSettle();
     expect(local, findsOneWidget);
-    expect(tester.widget<SahActionTile>(local).onTap, isNotNull);
+    expect(tester.widget<SahActionTile>(local).onTap, isNull);
     expect(tester.takeException(), isNull);
   });
 
@@ -298,6 +367,7 @@ void main() {
       );
       await tester.pumpWidget(MaterialApp(home: CaseHomeScreen(services: app)));
       await _tick(tester);
+      await _reveal(tester, find.byKey(const ValueKey('case-start')));
       expect(
         tester
             .widget<FilledButton>(find.byKey(const ValueKey('case-start')))

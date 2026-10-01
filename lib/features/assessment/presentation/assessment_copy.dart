@@ -11,11 +11,14 @@ abstract final class AssessmentCopy {
   static String areaTitle(AssessmentArea area) => switch (area) {
     AssessmentArea.bathroom => 'Bathroom',
     AssessmentArea.entrance => 'Entrance',
+    AssessmentArea.other => 'Other area',
   };
 
   static String areaExplanation(AssessmentArea area) => switch (area) {
     AssessmentArea.bathroom => 'Route to the tub, shower or toilet.',
     AssessmentArea.entrance => 'Approach, doorway or threshold.',
+    AssessmentArea.other =>
+      'Handrails, steps, hallways, bedrooms, kitchens or outdoor paths.',
   };
 
   static String viewPrompt(AssessmentArea area, CaptureView view) =>
@@ -28,12 +31,18 @@ abstract final class AssessmentCopy {
           'Take a photo of the approach and doorway.',
         (AssessmentArea.entrance, CaptureView.closeUp) =>
           'Take a closer photo of the threshold or doorway edge.',
+        (AssessmentArea.other, CaptureView.overview) =>
+          'Show the stairs or area where getting around is difficult.',
+        (AssessmentArea.other, CaptureView.closeUp) =>
+          'Show the specific step, rail or obstacle you want help with.',
       };
 
   static String safetyNote(AssessmentArea area) => switch (area) {
     AssessmentArea.bathroom =>
       'Stay on a dry floor. Don’t climb, stand in the tub or move heavy things.',
     AssessmentArea.entrance => 'Don’t climb or move heavy things.',
+    AssessmentArea.other =>
+      'Take photos from a stable place. Don’t use stairs or reach for a rail just to test it.',
   };
 
   static const String privacyCheck =
@@ -107,8 +116,17 @@ abstract final class AssessmentCopy {
       'Describe what you notice before continuing.';
 
   static const String measurementsIntro =
-      'Optional. Leave blank if not measured. Enter 0 only if you measured '
-      'and found nothing.';
+      'Only add a size if it helps explain this concern. You can continue '
+      'without measuring. Leave unknown sizes blank.';
+
+  static String observationHintFor(AssessmentArea area) => switch (area) {
+    AssessmentArea.bathroom =>
+      'For example, “I need something to hold when getting out of the shower.”',
+    AssessmentArea.entrance =>
+      'For example, “The front step is difficult to get over with my walker.”',
+    AssessmentArea.other =>
+      'Name the place and difficulty, for example “The indoor stairs have no handrail.”',
+  };
 
   static String measurementError(LengthParseError error) => switch (error) {
     LengthParseError.empty => 'Enter a number or leave it empty.',
@@ -129,8 +147,8 @@ abstract final class AssessmentCopy {
   };
 
   static const String confirmMeaning =
-      'Confirming means you checked this record. It is not an inspection, '
-      'diagnosis or program decision.';
+      'Check this concern and any numbers you entered once, then confirm below. '
+      'Estimates stay estimates. This is not a professional inspection or approval.';
 
   static const String anotherViewRequested =
       'You asked for another photo of this finding.';

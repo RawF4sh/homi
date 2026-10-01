@@ -30,7 +30,7 @@ final class ScanSuggestion {
     required this.elementId,
     required List<String> relatedElementIds,
     required this.title,
-    required String detail,
+    required this.detail,
     required this.nextAction,
     required this.basis,
   }) : relatedElementIds = List.unmodifiable(relatedElementIds),
@@ -70,6 +70,8 @@ final class ScanSuggestion {
   final String elementId;
   final List<String> relatedElementIds;
   final String title;
+
+  final String detail;
   final String observation;
   final String nextAction;
   final String basis;
@@ -79,6 +81,31 @@ final class ScanSuggestion {
       'surface details. Confirm the concern in the room. It does not establish '
       'safe clearance, structural capacity, clinical need or funding eligibility.';
 }
+
+final class ScanSuggestionCandidate {
+  const ScanSuggestionCandidate._(this._proposal);
+  final ScanSuggestion _proposal;
+  String get id => _proposal.id;
+  String get title => _proposal.title;
+  String get detail => _proposal.detail;
+  String get nextAction => _proposal.nextAction;
+  String get basis => _proposal.basis;
+  List<String> get relatedElementIds => _proposal.relatedElementIds;
+}
+
+List<ScanSuggestionCandidate> previewBathroomImprovements({
+  required BathroomScanScene scene,
+  required Set<ScanDifficulty> difficulties,
+  Map<String, ScanElementKind> identifiedKinds = const {},
+}) => List.unmodifiable([
+  for (final proposal in suggestBathroomImprovements(
+    scene: scene,
+    reviewedElementIds: {for (final element in scene.elements) element.id},
+    difficulties: difficulties,
+    identifiedKinds: identifiedKinds,
+  ))
+    ScanSuggestionCandidate._(proposal),
+]);
 
 List<ScanSuggestion> suggestBathroomImprovements({
   required BathroomScanScene scene,
@@ -128,7 +155,7 @@ List<ScanSuggestion> suggestBathroomImprovements({
         difficulties.contains(ScanDifficulty.enteringBathroom)) {
       add(
         rule: 'bathroom.doorway_report',
-        title: 'Review bathroom entry access',
+        title: 'Make the bathroom entrance easier to use',
         detail:
             'Resident reports difficulty getting through the bathroom entry '
             'and has identified this doorway or opening in the scan.',
@@ -142,12 +169,12 @@ List<ScanSuggestion> suggestBathroomImprovements({
         difficulties.contains(ScanDifficulty.bathing)) {
       add(
         rule: 'bathroom.bathing_report',
-        title: 'Review bathing access and support',
+        title: 'Explore bathing access and grab-bar support',
         detail:
             'Resident reports difficulty getting into or using the bath '
             'and has identified the bathtub in the scan.',
         action:
-            'Discuss bathing access, transfer needs and possible supports '
+            'Discuss grab bars, bathing access and transfer needs '
             'with a qualified assessor. The scan cannot verify suitable support '
             'placement or structural fixings.',
       );
@@ -156,12 +183,12 @@ List<ScanSuggestion> suggestBathroomImprovements({
         difficulties.contains(ScanDifficulty.toiletTransfer)) {
       add(
         rule: 'bathroom.toilet_report',
-        title: 'Review toilet transfer support',
+        title: 'Explore support for sitting and standing',
         detail:
             'Resident reports difficulty sitting down on or getting up '
             'from the toilet and has identified the toilet in the scan.',
         action:
-            'Discuss transfer technique, suitable supports and their '
+            'Discuss grab bars or other transfer supports and their '
             'placement with a qualified assessor. Do not install supports '
             'based on this model alone.',
       );
@@ -170,7 +197,7 @@ List<ScanSuggestion> suggestBathroomImprovements({
         difficulties.contains(ScanDifficulty.sinkUse)) {
       add(
         rule: 'bathroom.sink_report',
-        title: 'Review sink reach and access',
+        title: 'Make the sink easier to reach',
         detail:
             'Resident reports difficulty reaching or using the sink '
             'and has identified the sink in the scan.',
@@ -192,7 +219,7 @@ List<ScanSuggestion> suggestBathroomImprovements({
         ruleId: 'bathroom.movement_report',
         elementId: element.id,
         relatedElementIds: [element.id],
-        title: 'Review the bathroom movement route',
+        title: 'Create an easier route through the bathroom',
         detail:
             'Resident reports difficulty moving around the bathroom and '
             'has reviewed part of its scanned layout.',

@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-enum AssessmentArea { bathroom, entrance }
+enum AssessmentArea { bathroom, entrance, other }
 
 enum CaptureView { overview, closeUp }
 

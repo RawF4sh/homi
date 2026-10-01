@@ -6,6 +6,7 @@ import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/assessment/application/assessment_controller.dart';
 import 'package:safe_at_home/features/assessment/application/assessment_flow.dart';
 import 'package:safe_at_home/features/assessment/domain/annotation/box_annotation.dart';
+import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
 import 'package:safe_at_home/features/assessment/domain/capture/capture_adapter.dart';
 import 'package:safe_at_home/features/assessment/domain/capture/photo_capture_coordinator.dart';
 import 'package:safe_at_home/features/assessment/domain/capture/staging_store.dart';
@@ -68,6 +69,43 @@ void main() {
   CaptureSucceeded photo() =>
       CaptureSucceeded(jpegHeader(width: 4032, height: 3024));
 
+  testWidgets('stairs concern needs neither a photo nor measurements', (
+    tester,
+  ) async {
+    await pumpScreen(tester);
+    await tapText(tester, 'Stairs');
+    await tapText(tester, 'Continue without a photo');
+    expect(find.text('Add measurements (optional)'), findsNothing);
+    await tester.enterText(
+      find.byKey(const ValueKey('observation')),
+      'The indoor stairs have no handrail.',
+    );
+    await tapText(tester, 'Review');
+    await tapText(tester, 'Confirm this finding');
+    final finding = controller.findings.single;
+    expect(finding.room, 'other');
+    expect(finding.observation, 'Stairs: The indoor stairs have no handrail.');
+    expect(finding.reviewState, 'confirmed');
+    expect(finding.measurements, isEmpty);
+    expect(finding.evidenceIds, isEmpty);
+  });
+
+  testWidgets('measurements are optional and collapsed for a new concern', (
+    tester,
+  ) async {
+    await pumpScreen(tester);
+    await tapText(tester, 'Bathroom');
+    await tapText(tester, 'Continue without a photo');
+    expect(find.byKey(const ValueKey('measurement-curbHeight')), findsNothing);
+    await tester.enterText(
+      find.byKey(const ValueKey('observation')),
+      'I need something to hold when getting out of the shower.',
+    );
+    await tapText(tester, 'Review');
+    expect(controller.findings.single.measurements, isEmpty);
+    expect(find.text('Measurements you included'), findsNothing);
+  });
+
   Future<void> toPreview(WidgetTester tester, AssessmentArea area) async {
     await pumpScreen(tester);
     await tap(tester, find.byKey(ValueKey('area-${area.name}')));
@@ -94,14 +132,7 @@ void main() {
           .getTopLeft(find.byKey(const ValueKey('area-bathroom')))
           .dy;
       expect(primary ? scanY < manualY : scanY > manualY, true);
-      expect(
-        find.text(
-          primary
-              ? 'Or use photos and measurements'
-              : 'Photos and measurements',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('Choose a place'), findsOneWidget);
       await tester.ensureVisible(find.byKey(const ValueKey('area-bathroom')));
       await tester.tap(find.byKey(const ValueKey('area-bathroom')));
       await tester.pumpAndSettle();
@@ -110,6 +141,29 @@ void main() {
       expect(find.byKey(const ValueKey('observation')), findsOneWidget);
     });
   }
+
+  testWidgets('all seven places are labelled and usable with large text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpScreen(tester, textScale: 3.2);
+    for (final location in AssessmentLocation.values) {
+      await tester.ensureVisible(find.byKey(ValueKey('area-${location.name}')));
+      await tester.pumpAndSettle();
+      expect(find.text(location.title), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+    await tapText(tester, 'Outdoor paths');
+    expect(flow.location, AssessmentLocation.outdoorPaths);
+    await tapText(tester, 'Continue without a photo');
+    await tapText(tester, 'Review');
+    expect(flow.errors.observationMissing, true);
+    expect(controller.findings, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('a full bathroom finding: photo, details, confirm', (
     tester,
@@ -121,6 +175,7 @@ void main() {
     expect(find.text(AssessmentCopy.privacyCheck), findsOneWidget);
 
     await tapText(tester, 'Continue');
+    await tapText(tester, 'Add measurements (optional)');
     await tester.enterText(
       find.byKey(const ValueKey('observation')),
       'I notice a raised edge where you step into the tub.',
@@ -143,6 +198,7 @@ void main() {
     expect(finding.room, 'bathroom');
     expect(finding.reviewState, 'confirmed');
     expect(finding.measurements.single.value, 450);
+    expect(finding.measurements.single.confirmed, isTrue);
     expect(finding.evidenceIds, hasLength(1));
     semantics.dispose();
   });
@@ -153,6 +209,7 @@ void main() {
     ) async {
       await toPreview(tester, AssessmentArea.entrance);
       await tapText(tester, 'Continue');
+      await tapText(tester, 'Add measurements (optional)');
       final field = find.byKey(ValueKey(key));
       final original = key == 'observation'
           ? 'Fictional raised edge'
@@ -200,6 +257,7 @@ void main() {
     ) async {
       await toPreview(tester, AssessmentArea.entrance);
       await tapText(tester, 'Continue');
+      await tapText(tester, 'Add measurements (optional)');
       await tester.enterText(
         find.byKey(const ValueKey('observation')),
         'Fictional raised edge',
@@ -287,6 +345,7 @@ void main() {
   testWidgets('retaking a photo keeps typed measurements', (tester) async {
     await toPreview(tester, AssessmentArea.entrance);
     await tapText(tester, 'Continue');
+    await tapText(tester, 'Add measurements (optional)');
     await tester.enterText(
       find.byKey(const ValueKey('measurement-thresholdHeight')),
       '1.5',
@@ -354,6 +413,7 @@ void main() {
   ) async {
     await toPreview(tester, AssessmentArea.entrance);
     await tapText(tester, 'Continue');
+    await tapText(tester, 'Add measurements (optional)');
     await tester.enterText(
       find.byKey(const ValueKey('measurement-clearOpening')),
       '1,500',
@@ -369,6 +429,7 @@ void main() {
   ) async {
     await toPreview(tester, AssessmentArea.entrance);
     await tapText(tester, 'Continue');
+    await tapText(tester, 'Add measurements (optional)');
     await tester.enterText(
       find.byKey(const ValueKey('observation')),
       'I notice a narrow doorway.',
@@ -382,11 +443,46 @@ void main() {
     expect(controller.findings.single.measurements.single.value, 0);
   });
 
+  testWidgets('collapsed optional sizes still explain why review is blocked', (
+    tester,
+  ) async {
+    await pumpScreen(tester);
+    await tapText(tester, 'Entrance');
+    await tapText(tester, 'Continue without a photo');
+    await tester.enterText(
+      find.byKey(const ValueKey('observation')),
+      'The doorway is difficult to use.',
+    );
+    await tapText(tester, 'Add measurements (optional)');
+    await tester.enterText(
+      find.byKey(const ValueKey('measurement-clearOpening')),
+      'invalid',
+    );
+    await tapText(tester, 'Add measurements (optional)');
+    await tapText(tester, 'Review');
+    expect(
+      find.text(
+        'Open Add measurements below to correct or clear the highlighted size.',
+      ),
+      findsOneWidget,
+    );
+    expect(flow.step, AssessmentStep.details);
+    await tapText(tester, 'Add measurements (optional)');
+    await tester.enterText(
+      find.byKey(const ValueKey('measurement-clearOpening')),
+      '',
+    );
+    await tapText(tester, 'Review');
+    expect(flow.step, AssessmentStep.review);
+    expect(controller.findings.single.measurements, isEmpty);
+  });
+
   testWidgets('review actions: another photo, dismiss and restore', (
     tester,
   ) async {
     await toPreview(tester, AssessmentArea.entrance);
     await tapText(tester, 'Continue');
+    await tapText(tester, 'Add measurements (optional)');
     await tester.enterText(
       find.byKey(const ValueKey('observation')),
       'I notice a raised threshold.',
@@ -416,6 +512,7 @@ void main() {
   ) async {
     await toPreview(tester, AssessmentArea.bathroom);
     await tapText(tester, 'Continue');
+    await tapText(tester, 'Add measurements (optional)');
     await tester.enterText(
       find.byKey(const ValueKey('observation')),
       'I notice a raised edge.',
@@ -435,6 +532,7 @@ void main() {
   testWidgets('large text does not break the details step', (tester) async {
     await toPreview(tester, AssessmentArea.entrance);
     await tapText(tester, 'Continue');
+    await tapText(tester, 'Add measurements (optional)');
     await pumpScreen(tester, textScale: 2);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -477,6 +575,7 @@ void main() {
       final SemanticsHandle handle = tester.ensureSemantics();
       await toPreview(tester, AssessmentArea.entrance);
       await tapText(tester, 'Continue');
+      await tapText(tester, 'Add measurements (optional)');
       await tester.enterText(
         find.byKey(const ValueKey('observation')),
         'I notice a raised threshold.',
@@ -539,6 +638,7 @@ void main() {
     Future<String> finishOne(WidgetTester tester) async {
       await toPreview(tester, AssessmentArea.entrance);
       await tapText(tester, 'Continue');
+      await tapText(tester, 'Add measurements (optional)');
       await tester.enterText(
         find.byKey(const ValueKey('observation')),
         'I notice a raised threshold.',

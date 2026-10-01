@@ -133,10 +133,13 @@ void main() {
   );
 
   testWidgets(
-    'large-text case journey preserves local edits and explains the saved-case gate',
+    'large-text journey retains details when automatic sync is rate limited',
     (tester) async {
       narrowLargeText(tester);
       final transport = FakeTransport((request) async {
+        if (request.endpoint.path == '/v1/create-case') {
+          return http.apiError('RATE_LIMITED', 429);
+        }
         expect(request.endpoint.path, '/v1/list-cases');
         return http.jsonResponse({
           'schemaVersion': '1',
@@ -204,7 +207,7 @@ void main() {
             .status,
         'Cannot start yet',
       );
-      expect(transport.requests.length, 1);
+      expect(transport.requests.length, 2);
       expect(tester.takeException(), isNull);
     },
   );
@@ -246,7 +249,8 @@ void main() {
     (tester) async {
       narrowLargeText(tester, scale: 3.2);
       final transport = FakeTransport(
-        (_) async => throw StateError('No network expected'),
+        (request) async =>
+            http.jsonResponse({...http.requestJson(request), 'revision': 1}),
       );
       final app = services(MemoryPrivateStore(), transport);
       addTearDown(app.dispose);
@@ -265,13 +269,13 @@ void main() {
       await tester.ensureVisible(find.text('Rent').last);
       await tester.tap(find.text('Rent').last);
       await tester.pumpAndSettle();
-      await reveal(tester, find.byKey(const ValueKey('profile-keep-edits')));
-      await tester.tap(find.byKey(const ValueKey('profile-keep-edits')));
+      await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
       expect(app.coordinator.draft!.profile.tenure, 'renter');
       expect(app.coordinator.draft!.profile.ownerConsentReported, isNull);
       expect(app.coordinator.draft!.profile.annualIncomeUsd, isNull);
-      expect(transport.requests, isEmpty);
+      expect(transport.requests, hasLength(1));
+      expect(app.coordinator.snapshot!.profile.tenure, 'renter');
       expect(tester.takeException(), isNull);
     },
   );

@@ -126,8 +126,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await reveal(tester, find.text('No saved cases yet.'));
-    expect(find.text('No saved cases yet.'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('nav-plans')));
+    await tester.pumpAndSettle();
+    await reveal(tester, find.text('No home plans yet'));
+    expect(find.text('No home plans yet'), findsOneWidget);
     final refreshing = tester
         .state<RefreshIndicatorState>(find.byType(RefreshIndicator))
         .show();
@@ -136,7 +138,7 @@ void main() {
     await reveal(tester, find.text('Saved cases are unavailable'));
     expect(find.text('Saved cases are unavailable'), findsOneWidget);
     expect(find.text('Retry saved cases'), findsOneWidget);
-    expect(find.text('No saved cases yet.'), findsNothing);
+    expect(find.text('No home plans yet'), findsNothing);
     expect(reads, 2);
     expect(transport.requests.map((r) => r.endpoint.path), [
       '/v1/list-cases',

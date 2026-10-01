@@ -116,6 +116,8 @@ void main() {
       find.byKey(const ValueKey('observation')),
       'I notice a raised threshold.',
     );
+    await tapText(tester, 'Add measurements (optional)');
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('measurement-clearOpening')),
       '80',

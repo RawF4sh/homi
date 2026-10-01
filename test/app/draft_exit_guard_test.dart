@@ -10,6 +10,7 @@ Future<GlobalKey<NavigatorState>> _open(
   DraftSaveTracker tracker, {
   double scale = 1,
   double keyboard = 0,
+  Future<void> Function()? beforeExit,
 }) async {
   final navigator = GlobalKey<NavigatorState>();
   await tester.pumpWidget(
@@ -30,6 +31,7 @@ Future<GlobalKey<NavigatorState>> _open(
               MaterialPageRoute(
                 builder: (_) => DraftExitGuard(
                   tracker: tracker,
+                  beforeExit: beforeExit,
                   builder: (context, exit, exiting) => Scaffold(
                     appBar: AppBar(
                       leading: BackButton(onPressed: exit),
@@ -62,6 +64,54 @@ Future<void> _tapDialog(WidgetTester tester, String key) async {
 }
 
 void main() {
+  testWidgets('exit preparation runs for system Back before leaving', (
+    tester,
+  ) async {
+    final tracker = DraftSaveTracker(isCurrent: () => true);
+    addTearDown(tracker.dispose);
+    final localWrite = Completer<void>();
+    var calls = 0;
+    await _open(
+      tester,
+      tracker,
+      beforeExit: () async {
+        calls++;
+        await localWrite.future;
+      },
+    );
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(calls, 1);
+    expect(find.text('Exit is pending'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(calls, 1);
+    localWrite.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Open editor'), findsOneWidget);
+    expect(find.text('Editor'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('failed exit preparation leaves the editor available', (
+    tester,
+  ) async {
+    final tracker = DraftSaveTracker(isCurrent: () => true);
+    addTearDown(tracker.dispose);
+    await _open(
+      tester,
+      tracker,
+      beforeExit: () async {
+        throw StateError('Fictional local preparation failure');
+      },
+    );
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Editor'), findsOneWidget);
+    expect(find.text('Latest entries remain'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final stale in [false, true]) {
     testWidgets(
       'Back uses the settled scope without another PopScope frame: stale=$stale',

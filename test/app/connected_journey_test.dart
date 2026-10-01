@@ -279,7 +279,7 @@ void main() {
 
       await tester.pumpWidget(MaterialApp(home: CaseHomeScreen(services: app)));
       await tester.pumpAndSettle();
-      await tap('Start a case');
+      await tap('Start a home plan');
       await tap('Resident details');
       await tester.enterText(input('City'), 'Fictional San Jose');
       await tester.scrollUntilVisible(
@@ -288,8 +288,7 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       await tester.enterText(input('Annual household income (USD)'), '0');
-      await tap('Keep edits on this device');
-      await tap('Save online', direction: -250);
+      await tap('Done');
       expect(revision(), 1);
       expect((serverCase!['profile'] as Map)['annualIncomeUsd'], 0);
       expect((serverCase!['profile'] as Map)['ageYears'], isNull);

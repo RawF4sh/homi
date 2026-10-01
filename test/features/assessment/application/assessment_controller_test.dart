@@ -49,6 +49,54 @@ void main() {
 
   FindingReviewState stateOf(String id) => controller.reviewOf(id)!.state;
 
+  test(
+    'one explicit review checks entered measurements without changing their methods',
+    () {
+      final id = controller.startFinding(AssessmentArea.entrance);
+      controller.setObservation(
+        id,
+        'A raised threshold makes entry difficult.',
+      );
+      controller.setMeasurement(
+        id,
+        'thresholdHeight',
+        _input('2', LengthUnit.inch),
+      );
+      controller.setMeasurement(
+        id,
+        'clearOpening',
+        _input('80', LengthUnit.centimetre),
+        method: MeasurementMethod.estimated,
+      );
+      expect(controller.confirmDisplayedRecord(id).applied, isTrue);
+      final finding = controller.toFinding(id)!;
+      expect(finding.measurements.every((m) => m.confirmed), isTrue);
+      expect(finding.measurements.map((m) => m.method), [
+        'manual',
+        'estimated',
+      ]);
+      expect(stateOf(id), FindingReviewState.confirmed);
+      controller.setMeasurement(
+        id,
+        'thresholdHeight',
+        _input('3', LengthUnit.inch),
+      );
+      expect(stateOf(id), FindingReviewState.needsReview);
+      expect(controller.toFinding(id)!.measurements.first.confirmed, isFalse);
+    },
+  );
+
+  test('failed or dismissed review does not confirm measurements', () {
+    final id = controller.startFinding(AssessmentArea.entrance);
+    controller.setMeasurement(id, 'thresholdHeight', _input('20'));
+    expect(controller.confirmDisplayedRecord(id).applied, isFalse);
+    expect(controller.draftOf(id)!.measurements.single.confirmed, isFalse);
+    controller.setObservation(id, 'Threshold');
+    controller.dismiss(id);
+    expect(controller.confirmDisplayedRecord(id).applied, isFalse);
+    expect(controller.draftOf(id)!.measurements.single.confirmed, isFalse);
+  });
+
   String entranceFinding() {
     final String id = controller.startFinding(AssessmentArea.entrance);
     controller.setObservation(id, 'I notice a raised threshold');

@@ -222,6 +222,13 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
   await tester.pump();
 }
 
+Future<void> _openModel(WidgetTester tester) async {
+  final title = find.text('Explore or correct the 3D model');
+  await _reveal(tester, title);
+  await tester.tap(title);
+  await tester.pumpAndSettle();
+}
+
 Future<void> _check(WidgetTester tester, _Harness harness, String label) async {
   final tile = find.widgetWithText(CheckboxListTile, label);
   await _reveal(tester, tile);
@@ -340,6 +347,7 @@ void main() {
         tester,
         find.textContaining('Your saved model is still available to review.'),
       );
+      await _openModel(tester);
       await _reveal(tester, find.byType(BathroomModelView));
       final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
       await _reveal(tester, fallback);
@@ -360,8 +368,9 @@ void main() {
       final original = BathroomScanReview(scene: fictionalScanScene());
       await tester.runAsync(() => harness.seed(original));
       await _open(tester, harness);
+      await _openModel(tester);
       harness.store.failNextWrite = true;
-      await _check(tester, harness, 'I checked this against the room');
+      await _check(tester, harness, 'I checked this feature’s identity');
       expect(harness.session.dirty, isTrue);
       expect(harness.session.review.reviewed, {'door-1'});
 
@@ -430,7 +439,7 @@ void main() {
     },
   );
   testWidgets(
-    'capture, resident review and explicit confirmation precede importing an observation',
+    'capture and one concern confirmation import without checking every feature',
     (tester) async {
       await _open(tester, harness);
       final start = find.byKey(const ValueKey('bathroom-start-scan'));
@@ -439,8 +448,9 @@ void main() {
       await _idle(tester, harness);
       expect(harness.session.review.scene, isNotNull);
       expect(harness.imports, isEmpty);
-      await _check(tester, harness, 'I checked this against the room');
-      expect(harness.imports, isEmpty);
+      expect(find.byType(BathroomModelView), findsNothing);
+      expect(find.textContaining('not a verified measurement'), findsNothing);
+      expect(harness.session.review.reviewed, isEmpty);
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);
       expect(harness.imports, isEmpty);
       final add = find.text('Review and add observation');
@@ -452,12 +462,14 @@ void main() {
       await _tapDialogAction(tester, 'Cancel');
       await tester.pumpAndSettle();
       expect(harness.imports, isEmpty);
+      expect(harness.session.review.reviewed, isEmpty);
       await _reveal(tester, add);
       await tester.tap(add);
       await tester.pump(const Duration(milliseconds: 300));
       await _tapDialogAction(tester, 'Confirm and add');
       await _idle(tester, harness);
       expect(harness.imports, hasLength(1));
+      expect(harness.session.review.reviewed, {'door-1'});
       expect(
         harness.imports.single.sceneFingerprint,
         harness.session.review.scene!.fingerprint,
@@ -523,6 +535,7 @@ void main() {
         return reply.future;
       };
       await _open(tester, harness);
+      await _openModel(tester);
       await _reveal(tester, find.byType(BathroomModelView));
       expect(find.byType(BathroomModelView), findsOneWidget);
       final list = tester.state<ScrollableState>(find.byType(Scrollable).first);
@@ -573,7 +586,7 @@ void main() {
         scene: scene,
         reviewedElementIds: {'door-1'},
         difficulties: {ScanDifficulty.enteringBathroom},
-      ).single.observation;
+      ).single.detail;
       await _open(tester, harness);
       final add = find.text('Review and add observation');
       await _reveal(tester, add);
@@ -615,6 +628,7 @@ void main() {
         ),
       );
       await _open(tester, harness);
+      await _openModel(tester);
       final dropdown = find.byKey(const ValueKey('door-1-door'));
       await _reveal(tester, dropdown);
       await tester.tap(dropdown);
@@ -628,7 +642,7 @@ void main() {
       await _reveal(
         tester,
         find.textContaining(
-          'Check a feature and tick a difficulty to see prompts.',
+          'The scan has not identified a matching feature yet.',
         ),
       );
       expect(find.text('Review and add observation'), findsNothing);
@@ -663,6 +677,7 @@ void main() {
         ),
       );
       expect(earlierNotice, findsNothing);
+      await _openModel(tester);
       final dropdown = find.byKey(const ValueKey('door-1-door'));
       await _reveal(tester, dropdown);
       await tester.tap(dropdown);
@@ -724,6 +739,7 @@ void main() {
       final semantics = tester.ensureSemantics();
       await tester.runAsync(() => harness.seed(doorReview()));
       await _open(tester, harness);
+      await _openModel(tester);
       await _reveal(tester, find.byType(BathroomModelView));
       final model = find.bySemanticsLabel(RegExp('^Partial bathroom model'));
       expect(model, findsOneWidget);
@@ -760,11 +776,12 @@ void main() {
       await _reveal(tester, fallback);
       expect(tester.widget<OutlinedButton>(fallback).onPressed, isNotNull);
       expect(tester.takeException(), isNull);
+      await _openModel(tester);
       await _reveal(tester, find.byTooltip('Rotate model right'));
       await tester.tap(find.byTooltip('Rotate model right'));
       await tester.pump();
       expect(tester.takeException(), isNull);
-      await _check(tester, harness, 'I checked this against the room');
+      expect(harness.session.review.reviewed, isEmpty);
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);
       await _reveal(tester, find.text('Review and add observation'));
       await tester.tap(find.text('Review and add observation'));

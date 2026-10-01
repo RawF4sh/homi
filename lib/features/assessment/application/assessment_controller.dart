@@ -18,6 +18,7 @@ extension AssessmentAreaRoom on AssessmentArea {
   String get roomWireValue => switch (this) {
     AssessmentArea.bathroom => 'bathroom',
     AssessmentArea.entrance => 'entrance',
+    AssessmentArea.other => 'other',
   };
 }
 
@@ -326,6 +327,23 @@ class AssessmentController extends ChangeNotifier {
 
   ReviewOutcome confirm(String findingId) =>
       _notifying(_tracker.confirm(findingId, _require(findingId).snapshot));
+
+  ReviewOutcome confirmDisplayedRecord(String findingId) {
+    final draft = _require(findingId);
+    final review = _tracker.reviewOf(findingId)!;
+    if (draft.observation.trim().isEmpty ||
+        review.state == FindingReviewState.dismissed) {
+      return confirm(findingId);
+    }
+    final reviewed = draft._copyWith(
+      measurements: [
+        for (final m in draft.measurements)
+          m.originalInputKnown ? m._withConfirmed(true) : m,
+      ],
+    );
+    _drafts[findingId] = reviewed;
+    return _notifying(_tracker.confirm(findingId, reviewed.snapshot));
+  }
 
   ReviewOutcome dismiss(String findingId) {
     _require(findingId);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:safe_at_home/features/cases/case_home_screen.dart';
 import 'package:safe_at_home/shared/services/local_private_store.dart';
 
 import 'support/local_acceptance_harness.dart';
@@ -101,25 +102,34 @@ void main() {
         await text('Password', 'fictional-password-only');
         await tap(find.text('Sign in'));
         await until(
-          () => find.text('Start a case').evaluate().isNotEmpty,
+          () => find.byType(CaseHomeScreen).evaluate().isNotEmpty,
           'signed-in home',
         );
-        await tap(find.text('Start a case'));
+        await tap(find.text('Start a home plan'));
         await until(
           () =>
               harness.services!.coordinator.draft != null &&
               !harness.services!.coordinator.busy,
           'local case',
         );
-        await tap(find.text('Save online'), direction: -260);
+        await tap(find.text('Resident details'));
+        await text('City', 'Fictional lifecycle check');
+        await tap(find.byKey(const ValueKey('profile-keep-edits')));
         await until(
           () =>
               harness.services!.coordinator.snapshot?.revision == 1 &&
-              !harness.services!.coordinator.busy,
-          'durable saved case',
+              harness.services!.coordinator.snapshot?.profile.city ==
+                  'Fictional lifecycle check' &&
+              !harness.services!.coordinator.hasUnsavedChanges &&
+              !harness.services!.coordinator.busy &&
+              find
+                  .byKey(const ValueKey('profile-keep-edits'))
+                  .evaluate()
+                  .isEmpty,
+          'resident details automatically create the durable saved case',
         );
         await back();
-        await tap(find.byTooltip('Settings'));
+        await tap(find.byKey(const ValueKey('nav-settings')));
       }
 
       final initial = await config.control('status', {});

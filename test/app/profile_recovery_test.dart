@@ -142,7 +142,11 @@ void main() {
       );
       expect(app.coordinator.currentDraft().profile.ageYears, isNull);
       expect(store.records.containsKey('profile-edit.$id'), false);
-      expect((app.transport as FakeTransport).requests, isEmpty);
+      expect((app.transport as FakeTransport).requests, hasLength(1));
+      expect(
+        app.coordinator.currentCase().profile.city,
+        'Unfinished fictional city',
+      );
       expect(tester.takeException(), isNull);
     },
   );

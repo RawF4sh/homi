@@ -4,7 +4,7 @@ import '../../shared/models/case_draft.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../programs/live_programs_screen.dart';
 import '../assessment/presentation/live_assessment_screen.dart';
-import 'case_home_screen.dart';
+import 'case_display_details.dart';
 import 'profile_editor_screen.dart';
 
 class CaseWorkspaceScreen extends StatelessWidget {
@@ -77,7 +77,7 @@ class CaseWorkspaceScreen extends StatelessWidget {
         onPrograms: () => open(LiveProgramsScreen(services: services)),
       );
       return Scaffold(
-        appBar: AppBar(title: Text('Case ${shortCaseId(draft.caseId)}')),
+        appBar: AppBar(title: Text(homePlanTitle(draft))),
         body: SafeArea(
           child: SahContent(
             child: ListView(
@@ -92,21 +92,16 @@ class CaseWorkspaceScreen extends StatelessWidget {
                       SahStatusBadge(
                         key: const ValueKey('case-save-badge'),
                         label: c.snapshot == null
-                            ? 'Not saved online yet'
+                            ? 'Saved on this device'
                             : c.hasUnsavedChanges
                             ? 'Changes not saved online'
-                            : 'Saved online · revision ${c.snapshot!.revision}',
+                            : 'Saved online',
                         icon: c.snapshot == null || c.hasUnsavedChanges
                             ? Icons.phone_iphone_rounded
                             : Icons.cloud_done_outlined,
                         tone: c.snapshot == null || c.hasUnsavedChanges
                             ? SahNoticeTone.info
                             : SahNoticeTone.success,
-                      ),
-                      TextButton(
-                        key: const ValueKey('case-check-saved-state'),
-                        onPressed: () => _run(context, c.reconcile),
-                        child: const Text('Check saved state'),
                       ),
                     ],
                   ),
@@ -230,7 +225,7 @@ class CaseWorkspaceScreen extends StatelessWidget {
                         ? null
                         : () => _run(context, c.save),
                     icon: const Icon(Icons.cloud_upload_outlined),
-                    label: const Text('Save online'),
+                    label: const Text('Retry sync'),
                   ),
                   if (!c.uncertain)
                     TextButton(
@@ -241,9 +236,10 @@ class CaseWorkspaceScreen extends StatelessWidget {
                       child: const Text('Check saved state'),
                     ),
                 ],
-                const SahSectionHeading(title: 'All parts'),
+                const SahSectionHeading(title: 'Your plan'),
                 SahActionTile(
                   key: const ValueKey('case-profile'),
+                  overline: 'Step 1 · Resident',
                   title: 'Resident details',
                   subtitle: answered == 0
                       ? null
@@ -261,8 +257,11 @@ class CaseWorkspaceScreen extends StatelessWidget {
                 ),
                 SahActionTile(
                   key: const ValueKey('case-assessment'),
+                  overline: 'Step 2 · Rooms and concerns',
                   title: 'Home assessment',
-                  subtitle: c.snapshot == null ? 'Save online first.' : null,
+                  subtitle: c.snapshot == null
+                      ? 'Save online first.'
+                      : 'Choose a room or area. Record what is difficult with a scan, photos or notes.',
                   status: c.snapshot == null
                       ? 'Cannot start yet'
                       : saved.isEmpty
@@ -293,6 +292,7 @@ class CaseWorkspaceScreen extends StatelessWidget {
                 ),
                 SahActionTile(
                   key: const ValueKey('case-programs'),
+                  overline: 'Step 3 · Improvements and assistance',
                   title: 'Possible assistance and drafts',
                   subtitle: programsBlocked ? 'Save online first.' : null,
                   status: programsBlocked
@@ -339,20 +339,20 @@ Widget _nextStep(
       ),
     ),
     _ when unsaved => (
-      'Save your case online',
+      'Changes waiting to sync',
       neverSaved
-          ? 'Saving once unlocks the home assessment.'
-          : 'Some changes are only on this device.',
+          ? 'Your details are on this device. Connect to finish syncing and start the assessment.'
+          : 'Your edits are on this device. Connect to sync them before checking programs.',
       FilledButton.icon(
         key: const ValueKey('case-save-online'),
         onPressed: onSave,
         icon: const Icon(Icons.cloud_upload_outlined),
-        label: const Text('Save online'),
+        label: const Text('Retry sync'),
       ),
     ),
     _ when savedFindings == 0 => (
       'Assess the home',
-      'Photos and measurements of the bathroom and entrance.',
+      'Describe where getting around is difficult. Scan the bathroom or add notes and photos from any area.',
       FilledButton.icon(
         key: const ValueKey('case-next-assessment'),
         onPressed: onAssessment,

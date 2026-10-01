@@ -1377,11 +1377,10 @@ void main() {
       await tester.tap(start);
       await settleUntil(
         () => find
-            .textContaining('Model saved privately', skipOffstage: false)
+            .textContaining('Scan saved on this device.', skipOffstage: false)
             .evaluate()
             .isNotEmpty,
       );
-      await check('I checked this against the room');
       await check(ScanDifficulty.enteringBathroom.label);
       final add = find.text('Review and add observation');
       await reveal(add);

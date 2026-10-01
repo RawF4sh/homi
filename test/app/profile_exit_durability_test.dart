@@ -206,17 +206,15 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byKey(const ValueKey('draft-exit-waiting')), findsOneWidget);
+    expect(tester.widget<TextFormField>(cityField()).enabled, false);
     expect(find.byType(ProfileEditorScreen), findsOneWidget);
     expect(store.records[key], isNull);
     store.release.complete();
     await tester.pumpAndSettle();
     expect(find.byType(ProfileEditorScreen), findsNothing);
-    expect(
-      (store.records[key]!['values'] as Map)['city'],
-      'Held fictional city',
-    );
-    expectNoHttp(app);
+    expect(store.records[key], isNull);
+    expect(app.coordinator.currentDraft().profile.city, 'Held fictional city');
+    expect((app.transport as FakeTransport).requests, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 
@@ -254,9 +252,7 @@ void main() {
     },
   );
 
-  testWidgets('successful Keep edits settles an earlier failed journal', (
-    tester,
-  ) async {
+  testWidgets('Done settles an earlier failed journal', (tester) async {
     final store = ExitProfileStore();
     final app = await appFor(store);
     final key = 'profile-edit.${app.coordinator.currentDraft().caseId}';
@@ -271,11 +267,11 @@ void main() {
     expect(app.coordinator.currentDraft().profile.city, 'Kept fictional city');
     expect(store.records[key], isNull);
     expect(store.journalAttempts, hasLength(1));
-    expectNoHttp(app);
+    expect((app.transport as FakeTransport).requests, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Back during Keep edits waits for case durability and cleanup', (
+  testWidgets('Back during Done waits for case durability and cleanup', (
     tester,
   ) async {
     final store = ExitProfileStore();
@@ -301,7 +297,7 @@ void main() {
     expect(find.byType(ProfileEditorScreen), findsNothing);
     expect(store.records[key], isNull);
     expect(app.coordinator.localSaveFailed, false);
-    expectNoHttp(app);
+    expect((app.transport as FakeTransport).requests, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 

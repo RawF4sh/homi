@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../domain/annotation/box_annotation.dart';
+import '../domain/assessment_location.dart';
 import '../domain/capture/capture_adapter.dart';
 import '../domain/capture/photo_capture_coordinator.dart';
 import '../domain/capture/staging_store.dart';
@@ -115,6 +116,7 @@ typedef _Place = ({
 const Map<AssessmentArea, List<String>> measurementTypesByArea = {
   AssessmentArea.bathroom: ['curbHeight', 'clearOpening'],
   AssessmentArea.entrance: ['thresholdHeight', 'clearOpening'],
+  AssessmentArea.other: [],
 };
 
 class AssessmentFlow extends ChangeNotifier {
@@ -156,6 +158,7 @@ class AssessmentFlow extends ChangeNotifier {
   AssessmentStep _step = AssessmentStep.chooseArea;
   final List<_Place> _backStack = [];
   AssessmentArea? _area;
+  AssessmentLocation? _location;
   String? _findingId;
   CaptureView _view = CaptureView.overview;
   String? _previewEvidenceId;
@@ -173,6 +176,7 @@ class AssessmentFlow extends ChangeNotifier {
 
   AssessmentStep get step => _step;
   AssessmentArea? get area => _area;
+  AssessmentLocation? get location => _location;
   String? get findingId => _findingId;
   CaptureView get view => _view;
   FlowNotice? get notice => _notice;
@@ -211,8 +215,17 @@ class AssessmentFlow extends ChangeNotifier {
   }
 
   void chooseArea(AssessmentArea area) {
+    _chooseArea(area, AssessmentLocation.fromObservation(area, ''));
+  }
+
+  void chooseLocation(AssessmentLocation location) {
+    _chooseArea(location.area, location);
+  }
+
+  void _chooseArea(AssessmentArea area, AssessmentLocation? location) {
     if (_step != AssessmentStep.chooseArea) return;
     _area = area;
+    _location = location;
     _view = CaptureView.overview;
     _go(AssessmentStep.viewPrompt);
   }
@@ -492,7 +505,10 @@ class AssessmentFlow extends ChangeNotifier {
     }
 
     _mutate(() {
-      controller.setObservation(id, _observation);
+      controller.setObservation(
+        id,
+        _location?.observationWithLocation(_observation) ?? _observation,
+      );
       parsed.forEach((type, input) {
         final RecordedMeasurement? existing = controller
             .draftOf(id)
@@ -539,8 +555,14 @@ class AssessmentFlow extends ChangeNotifier {
     if (draft == null) return;
     _resetForNewFinding();
     _area = draft.area;
+    _location = AssessmentLocation.fromObservation(
+      draft.area,
+      draft.observation,
+    );
     _findingId = findingId;
-    _observation = draft.observation;
+    _observation =
+        _location?.observationWithoutLocation(draft.observation) ??
+        draft.observation;
     _entries = {
       for (final RecordedMeasurement m in draft.measurements)
         m.type: MeasurementEntry(
@@ -721,6 +743,7 @@ class AssessmentFlow extends ChangeNotifier {
   Map<String, Object?> toLocalJson() => {
     'step': _step.name,
     'area': _area?.name,
+    'location': _location?.name,
     'findingId': _findingId,
     'view': _view.name,
     'previewEvidenceId': _previewEvidenceId,
@@ -743,6 +766,12 @@ class AssessmentFlow extends ChangeNotifier {
     _area = value['area'] == null
         ? null
         : AssessmentArea.values.byName(value['area'] as String);
+    _location = value['location'] == null
+        ? null
+        : AssessmentLocation.values.byName(value['location'] as String);
+    if (_location != null && _location!.area != _area) {
+      throw const FormatException('Draft location does not match its area');
+    }
     _findingId = value['findingId'] as String?;
     _view = CaptureView.values.byName(value['view'] as String);
     _previewEvidenceId = value['previewEvidenceId'] as String?;
@@ -874,6 +903,7 @@ class AssessmentFlow extends ChangeNotifier {
     _step = AssessmentStep.chooseArea;
     _backStack.clear();
     _area = null;
+    _location = null;
     _findingId = null;
     _view = CaptureView.overview;
     _previewEvidenceId = null;

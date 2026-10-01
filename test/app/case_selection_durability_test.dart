@@ -49,6 +49,13 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('nav-plans')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('case-start')),
+        150,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(
         tester
             .widget<FilledButton>(find.byKey(const ValueKey('case-start')))

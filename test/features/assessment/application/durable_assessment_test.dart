@@ -3,6 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/features/assessment/application/assessment_controller.dart';
+import 'package:safe_at_home/features/assessment/application/assessment_flow.dart';
+import 'package:safe_at_home/features/assessment/domain/capture/photo_capture_coordinator.dart';
+import 'package:safe_at_home/features/assessment/domain/capture/staging_store.dart';
 import 'package:safe_at_home/features/assessment/application/encrypted_staging_store.dart';
 import 'package:safe_at_home/features/assessment/domain/capture/capture_adapter.dart';
 import 'package:safe_at_home/features/assessment/domain/image/image_validator.dart';
@@ -50,6 +53,82 @@ CaseSnapshot snapshot(AssessmentController c) => CaseSnapshot.fromJson({
   'findings': c.findings.map((f) => f.toJson()).toList(),
 });
 void main() {
+  test(
+    'editing an existing other-room concern preserves custom measurements',
+    () {
+      final c = AssessmentController(ids: SequentialIdFactory());
+      final id = c.startFinding(AssessmentArea.other);
+      c.setObservation(id, 'Indoor stairs');
+      final wire = snapshot(c).toJson();
+      (wire['findings'] as List).single['measurements'] = [
+        {
+          'type': 'customStepHeight',
+          'value': 170,
+          'unit': 'mm',
+          'method': 'manual',
+          'confirmed': false,
+        },
+      ];
+      c.hydrate(CaseSnapshot.fromJson(wire), evidenceVersions: {});
+      final staging = InMemoryStagingStore();
+      final flow = AssessmentFlow(
+        controller: c,
+        capture: PhotoCaptureCoordinator(
+          adapter: ScriptedCaptureAdapter(),
+          staging: staging,
+        ),
+        staging: staging,
+      );
+      flow.openFinding(id);
+      flow.edit();
+      flow.setObservationText(
+        'Indoor stairs are difficult to use without a handrail.',
+      );
+      expect(flow.saveDetails(), isTrue);
+      c.confirmDisplayedRecord(id);
+      expect(
+        c.findings.single.measurements.single.toJson(),
+        (wire['findings'] as List).single['measurements'].single,
+      );
+      expect(c.findings.single.room, 'other');
+      flow.dispose();
+      c.dispose();
+    },
+  );
+  test(
+    'stairs and other-area concerns survive local and cross-device resume',
+    () {
+      final c = AssessmentController(ids: SequentialIdFactory());
+      final id = c.startFinding(AssessmentArea.other);
+      c.setObservation(id, 'The indoor stairs have no handrail.');
+      c.confirmDisplayedRecord(id);
+      final restored = AssessmentController(ids: SequentialIdFactory());
+      restored.restoreLocal(c.toLocalJson());
+      expect(restored.draftOf(id)!.area, AssessmentArea.other);
+      restored.hydrate(
+        snapshot(c),
+        evidenceVersions: {},
+        metadata: c.metadataFor(c.findings),
+      );
+      expect(restored.toFinding(id)!.toJson(), c.toFinding(id)!.toJson());
+      expect(restored.draftOf(id)!.area, AssessmentArea.other);
+    },
+  );
+
+  test(
+    'combined review leaves unavailable original measurements unverified',
+    () {
+      final c = AssessmentController(ids: SequentialIdFactory());
+      final id = c.startFinding(AssessmentArea.entrance);
+      c.setObservation(id, 'Threshold');
+      c.setMeasurement(id, 'thresholdHeight', input('2', LengthUnit.inch));
+      final restored = AssessmentController(ids: SequentialIdFactory());
+      restored.hydrate(snapshot(c), evidenceVersions: {});
+      restored.confirmDisplayedRecord(id);
+      expect(restored.toFinding(id)!.reviewState, 'confirmed');
+      expect(restored.toFinding(id)!.measurements.single.confirmed, isFalse);
+    },
+  );
   test(
     'restoring a private draft preserves original entry, correction and review histories',
     () {
