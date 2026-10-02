@@ -37,6 +37,15 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>es</string>
+		<string>zh-Hans</string>
+		<string>zh-Hant</string>
+		<string>vi</string>
+		<string>fil</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Take private assessment photos or scan a bathroom on a supported device. Room scans are processed on your device.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

@@ -10,6 +10,18 @@ final class BathroomScanPlatformTests: XCTestCase {
   private let secondID = "3620d5cd-9507-4fa0-ae3a-826155162191"
   private let identity: [Double] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
+  func testNativeCaptureUsesSelectedLanguageAndKeepsEnglishFallback() {
+    let cancel = UIButton(type: .system)
+    let finish = UIButton(type: .system)
+    let layout = BathroomScanCaptureLayout(camera: UIView(), status: UILabel(),
+      cancelButton: cancel, finishButton: finish, language: "es")
+    XCTAssertEqual(layout.heading.text, "Escanee su baño")
+    XCTAssertEqual(cancel.title(for: .normal), "Cancelar escaneo")
+    XCTAssertEqual(finish.title(for: .normal), "Terminar escaneo")
+    XCTAssertEqual(BathroomScanText.text("Cancel scan", language: "zh-Hant"), "取消掃描")
+    XCTAssertEqual(BathroomScanText.text("Cancel scan", language: "unknown"), "Cancel scan")
+  }
+
   private func element(dimensions: [Double] = [2.5, 2.4, 0], transform: [Double]? = nil) throws -> [String: Any] {
     try BathroomScanGeometry.element(id: "wall-1", kind: "wall", nativeCategory: "wall",
       dimensions: dimensions, transform: transform ?? identity, confidence: "medium")
