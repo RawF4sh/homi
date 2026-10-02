@@ -106,6 +106,7 @@ void main() {
           'signed-in home',
         );
         await tap(find.text('Start a home plan'));
+        await tap(find.byKey(const ValueKey('plan-name-save')));
         await until(
           () =>
               harness.services!.coordinator.draft != null &&
@@ -117,7 +118,7 @@ void main() {
         await tap(find.byKey(const ValueKey('profile-keep-edits')));
         await until(
           () =>
-              harness.services!.coordinator.snapshot?.revision == 1 &&
+              harness.services!.coordinator.snapshot?.revision == 2 &&
               harness.services!.coordinator.snapshot?.profile.city ==
                   'Fictional lifecycle check' &&
               !harness.services!.coordinator.hasUnsavedChanges &&
@@ -126,7 +127,7 @@ void main() {
                   .byKey(const ValueKey('profile-keep-edits'))
                   .evaluate()
                   .isEmpty,
-          'resident details automatically create the durable saved case',
+          'resident details automatically update the newly saved case',
         );
         await back();
         await tap(find.byKey(const ValueKey('nav-settings')));

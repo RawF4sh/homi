@@ -264,6 +264,7 @@ void main() {
       await login();
       checkpoint('fictional login');
       await tap('Start a home plan');
+      await tapFinder(find.byKey(const ValueKey('plan-name-save')));
       await idle();
       await tap('Resident details');
       await enter('City', 'Fictional San Jose');
@@ -871,12 +872,13 @@ void main() {
 
       await login();
       await tap('Start a home plan');
+      await tapFinder(find.byKey(const ValueKey('plan-name-save')));
       await idle();
       await tap('Resident details');
       await enter('City', 'Fictional deletion check');
       await finishProfile();
       await until(
-        () => h.services!.coordinator.snapshot?.revision == 1,
+        () => h.services!.coordinator.snapshot?.revision == 2,
         'new case for account-deletion check',
       );
       await idle();
