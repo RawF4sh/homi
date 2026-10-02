@@ -61,7 +61,7 @@ class _HomeIllustrationPainter extends CustomPainter {
     const apricot = Color(0xFFE9B892);
     canvas.drawOval(
       const Rect.fromLTWH(15, 111, 214, 49),
-      paint..color = dark ? const Color(0xFF2B3D33) : const Color(0xFFCDDDC1),
+      paint..color = dark ? const Color(0xFF2A2F2D) : const Color(0xFFCDDDC1),
     );
     polygon(const [
       Offset(57, 77),
@@ -224,8 +224,8 @@ class SahFeaturePanel extends StatelessWidget {
     final scheme = theme.colorScheme;
     final enlarged = MediaQuery.textScalerOf(context).scale(14) > 20;
     final dark = theme.brightness == Brightness.dark;
-    final panel = dark ? scheme.primaryContainer : scheme.primary;
-    final onPanel = dark ? scheme.onPrimaryContainer : scheme.onPrimary;
+    final panel = dark ? scheme.surfaceContainer : scheme.primary;
+    final onPanel = dark ? scheme.onSurface : scheme.onPrimary;
     return Container(
       padding: EdgeInsets.all(enlarged ? 16 : 24),
       decoration: BoxDecoration(
@@ -241,7 +241,7 @@ class SahFeaturePanel extends StatelessWidget {
                 Text(
                   eyebrow!,
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: onPanel,
+                    color: dark ? scheme.primary : onPanel,
                     letterSpacing: 1.3,
                     fontWeight: FontWeight.w600,
                   ),
@@ -275,7 +275,7 @@ class SahFeaturePanel extends StatelessWidget {
                           ? scheme.onSurfaceVariant
                           : scheme.onPrimary,
                       disabledBackgroundColor: dark
-                          ? scheme.surfaceContainer
+                          ? scheme.outlineVariant
                           : const Color(0xFF48695C),
                       minimumSize: const Size(48, 52),
                       padding: const EdgeInsets.symmetric(

@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:safe_at_home/app/appearance.dart';
 import 'package:safe_at_home/app/theme.dart';
+import 'package:safe_at_home/features/settings/appearance_section.dart';
 import 'package:safe_at_home/shared/presentation/sah_components.dart';
 import 'app_design_test.dart' show contrast;
 
@@ -84,6 +88,63 @@ void main() {
       SafeAtHomeTheme.darkBackground,
     );
     await expectLater(tester, meetsGuideline(textContrastGuideline));
+    expect(tester.takeException(), isNull);
+  });
+
+  test(
+    'the appearance choice is saved and read back, unknown means system',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('sah-appearance-');
+      addTearDown(() => dir.delete(recursive: true));
+      Future<File> file() async => File('${dir.path}/appearance');
+      final first = AppAppearance(file: file);
+      await first.load();
+      expect(first.value, ThemeMode.system);
+      await first.choose(ThemeMode.dark);
+      final reopened = AppAppearance(file: file);
+      await reopened.load();
+      expect(reopened.value, ThemeMode.dark);
+      await (await file()).writeAsString('sepia');
+      await reopened.load();
+      expect(reopened.value, ThemeMode.system);
+    },
+  );
+
+  testWidgets('choosing Dark in settings switches the app at once', (
+    tester,
+  ) async {
+    final appearance = AppAppearance(
+      file: () async => throw const FileSystemException('unavailable'),
+    );
+    addTearDown(appearance.dispose);
+    await tester.pumpWidget(
+      ListenableBuilder(
+        listenable: appearance,
+        builder: (context, _) => MaterialApp(
+          theme: SafeAtHomeTheme.light(),
+          darkTheme: SafeAtHomeTheme.dark(),
+          themeMode: appearance.value,
+          home: Scaffold(
+            body: ListView(
+              children: [AppearanceSection(appearance: appearance)],
+            ),
+          ),
+        ),
+      ),
+    );
+    Color background() => Theme.of(
+      tester.element(find.text('Appearance')),
+    ).scaffoldBackgroundColor;
+    expect(background(), SafeAtHomeTheme.ivory);
+    await tester.tap(find.text('Dark'));
+    await tester.pumpAndSettle();
+    expect(appearance.value, ThemeMode.dark);
+    expect(background(), SafeAtHomeTheme.darkBackground);
+    await tester.tap(find.text('Light'));
+    await tester.pumpAndSettle();
+    expect(background(), SafeAtHomeTheme.ivory);
+    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     expect(tester.takeException(), isNull);
   });
 }

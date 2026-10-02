@@ -8,7 +8,7 @@ abstract final class SafeAtHomeTheme {
   static const coral = Color(0xFF965038);
   static const line = Color(0xFFDFE4DA);
 
-  static const darkBackground = Color(0xFF0F1714);
+  static const darkBackground = Color(0xFF131514);
 
   static ThemeData light() => _build(_lightScheme(), background: ivory);
 
@@ -50,30 +50,31 @@ abstract final class SafeAtHomeTheme {
         seedColor: teal,
         brightness: Brightness.dark,
       ).copyWith(
-        primary: const Color(0xFF8CCFB3),
-        onPrimary: const Color(0xFF04261C),
-        primaryContainer: const Color(0xFF1E4A3F),
-        onPrimaryContainer: const Color(0xFFB9EBD5),
-        secondary: const Color(0xFFB4CBB6),
-        secondaryContainer: const Color(0xFF2B3B31),
-        onSecondaryContainer: const Color(0xFFD2E7D5),
+        primary: const Color(0xFF5DBE93),
+        onPrimary: const Color(0xFF062418),
+        primaryContainer: const Color(0xFF183A2E),
+        onPrimaryContainer: const Color(0xFFA6E5C6),
+        secondary: const Color(0xFFB3C6B9),
+        secondaryContainer: const Color(0xFF2A2F2D),
+        onSecondaryContainer: const Color(0xFFDCE3DF),
         tertiary: const Color(0xFFEFAA90),
-        tertiaryContainer: const Color(0xFF4F271B),
-        onTertiaryContainer: const Color(0xFFFFD8C8),
-        surface: const Color(0xFF16201C),
-        onSurface: const Color(0xFFE2EBE6),
-        onSurfaceVariant: const Color(0xFFA8B7AF),
-        surfaceContainerLowest: const Color(0xFF16201C),
-        surfaceContainerLow: const Color(0xFF1C2722),
-        surfaceContainer: const Color(0xFF22302A),
-        outline: const Color(0xFF82938B),
-        outlineVariant: const Color(0xFF2E3B35),
-        error: const Color(0xFFFFB4A8),
+        tertiaryContainer: const Color(0xFF4A2B1F),
+        onTertiaryContainer: const Color(0xFFFFD9C9),
+        surface: const Color(0xFF1B1E1D),
+        onSurface: const Color(0xFFECEFED),
+        onSurfaceVariant: const Color(0xFFB3BCB7),
+        surfaceContainerLowest: const Color(0xFF1B1E1D),
+        surfaceContainerLow: const Color(0xFF222625),
+        surfaceContainer: const Color(0xFF2A2F2D),
+        surfaceContainerHigh: const Color(0xFF323836),
+        outline: const Color(0xFF8C9691),
+        outlineVariant: const Color(0xFF353B38),
+        error: const Color(0xFFFF9F92),
         onError: const Color(0xFF5C130C),
-        errorContainer: const Color(0xFF5F1E17),
+        errorContainer: const Color(0xFF5A201B),
         onErrorContainer: const Color(0xFFFFDAD4),
-        inverseSurface: const Color(0xFFDDE6E1),
-        onInverseSurface: const Color(0xFF1B2420),
+        inverseSurface: const Color(0xFFE7EBE9),
+        onInverseSurface: const Color(0xFF1B1E1D),
       );
 
   static ThemeData _build(ColorScheme scheme, {required Color background}) {

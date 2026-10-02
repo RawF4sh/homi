@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart' as hashing;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'appearance.dart';
 import 'theme.dart';
 import 'private_content_cover.dart';
 import '../features/assessment/domain/capture/capture_adapter.dart';
@@ -321,24 +322,28 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
       if (state.hasData) {
         return LiveSessionHost(config: state.data!.$1, session: state.data!.$2);
       }
-      return MaterialApp(
-        theme: SafeAtHomeTheme.light(),
-        darkTheme: SafeAtHomeTheme.dark(),
-        debugShowCheckedModeBanner: false,
-        home: state.hasError
-            ? const StartupErrorScreen.startup()
-            : const Scaffold(
-                body: SafeArea(
-                  child: Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(
-                        semanticsLabel: 'Opening secure session',
+      return ListenableBuilder(
+        listenable: AppAppearance.instance,
+        builder: (context, _) => MaterialApp(
+          theme: SafeAtHomeTheme.light(),
+          darkTheme: SafeAtHomeTheme.dark(),
+          themeMode: AppAppearance.instance.value,
+          debugShowCheckedModeBanner: false,
+          home: state.hasError
+              ? const StartupErrorScreen.startup()
+              : const Scaffold(
+                  body: SafeArea(
+                    child: Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(
+                          semanticsLabel: 'Opening secure session',
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+        ),
       );
     },
   );
@@ -507,49 +512,55 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    key: ValueKey(widget.session.epoch),
-    title: 'Safe at Home',
-    debugShowCheckedModeBanner: false,
-    builder: (context, child) => PrivateContentCover(child: child!),
-    theme: SafeAtHomeTheme.light(),
-    darkTheme: SafeAtHomeTheme.dark(),
-    home: widget.session.cleaningUp
-        ? const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(
-                semanticsLabel: 'Finishing private account cleanup',
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: AppAppearance.instance,
+    builder: (context, _) => MaterialApp(
+      key: ValueKey(widget.session.epoch),
+      title: 'Safe at Home',
+      debugShowCheckedModeBanner: false,
+      builder: (context, child) => PrivateContentCover(child: child!),
+      theme: SafeAtHomeTheme.light(),
+      darkTheme: SafeAtHomeTheme.dark(),
+      themeMode: AppAppearance.instance.value,
+      home: widget.session.cleaningUp
+          ? const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(
+                  semanticsLabel: 'Finishing private account cleanup',
+                ),
               ),
-            ),
-          )
-        : widget.session.cleanupRequired
-        ? _cleanupRecoveryScreen()
-        : widget.session.userId == null || widget.session.recoveryRequired
-        ? LoginScreen(
-            session: widget.session,
-            emailDeliveryEnabled: widget.config.emailDeliveryEnabled,
-            deletionStatusScreen: DeletionReceiptScreen(config: widget.config),
-          )
-        : FutureBuilder(
-            future: _services,
-            builder: (context, state) {
-              if (state.hasData) return CaseHomeScreen(services: state.data!);
-              if (state.hasError) {
-                final owner = _owner!;
-                final epoch = _ownerEpoch, generation = _openGeneration;
-                return StartupErrorScreen.storage(
-                  onSignOut: () =>
-                      _leaveUnavailableStorage(owner, epoch, generation),
-                  signingOut: _storageExitBusy,
-                  error: _storageExitError,
+            )
+          : widget.session.cleanupRequired
+          ? _cleanupRecoveryScreen()
+          : widget.session.userId == null || widget.session.recoveryRequired
+          ? LoginScreen(
+              session: widget.session,
+              emailDeliveryEnabled: widget.config.emailDeliveryEnabled,
+              deletionStatusScreen: DeletionReceiptScreen(
+                config: widget.config,
+              ),
+            )
+          : FutureBuilder(
+              future: _services,
+              builder: (context, state) {
+                if (state.hasData) return CaseHomeScreen(services: state.data!);
+                if (state.hasError) {
+                  final owner = _owner!;
+                  final epoch = _ownerEpoch, generation = _openGeneration;
+                  return StartupErrorScreen.storage(
+                    onSignOut: () =>
+                        _leaveUnavailableStorage(owner, epoch, generation),
+                    signingOut: _storageExitBusy,
+                    error: _storageExitError,
+                  );
+                }
+                return Scaffold(
+                  appBar: AppBar(title: const Text('Private storage')),
+                  body: const Center(child: CircularProgressIndicator()),
                 );
-              }
-              return Scaffold(
-                appBar: AppBar(title: const Text('Private storage')),
-                body: const Center(child: CircularProgressIndicator()),
-              );
-            },
-          ),
+              },
+            ),
+    ),
   );
 }
 

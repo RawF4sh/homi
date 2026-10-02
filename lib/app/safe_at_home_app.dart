@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'appearance.dart';
 import 'theme.dart';
 
 import '../features/programs/demo_programs_screen.dart';
@@ -13,14 +14,18 @@ class SafeAtHomeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Safe at Home',
-      debugShowCheckedModeBanner: false,
-      theme: SafeAtHomeTheme.light(),
-      darkTheme: SafeAtHomeTheme.dark(),
-      home: DemoProgramsScreen(
-        service: scenarioService ?? AssetDemoScenarioService(),
-        packetService: packetService ?? AssetDemoPacketService(),
+    return ListenableBuilder(
+      listenable: AppAppearance.instance,
+      builder: (context, _) => MaterialApp(
+        title: 'Safe at Home',
+        debugShowCheckedModeBanner: false,
+        theme: SafeAtHomeTheme.light(),
+        darkTheme: SafeAtHomeTheme.dark(),
+        themeMode: AppAppearance.instance.value,
+        home: DemoProgramsScreen(
+          service: scenarioService ?? AssetDemoScenarioService(),
+          packetService: packetService ?? AssetDemoPacketService(),
+        ),
       ),
     );
   }

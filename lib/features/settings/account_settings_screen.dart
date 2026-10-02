@@ -7,6 +7,7 @@ import '../../shared/services/io_matching_transport.dart';
 import '../../shared/services/lifecycle_api_client.dart';
 import '../../shared/services/local_private_store.dart';
 import '../../shared/services/matching_api_client.dart';
+import 'appearance_section.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({super.key, required this.services});
@@ -321,6 +322,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 message: 'Use fictional resident records.',
                 icon: Icons.lock_outline,
               ),
+              const AppearanceSection(),
               const SahSectionHeading(title: 'On this device'),
               const Text(
                 'Drafts on this device are encrypted. Signing out removes local work. A shared PDF is controlled by the recipient.',
