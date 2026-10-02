@@ -7,6 +7,21 @@ import java.nio.ByteOrder
 
 class BathroomScanGeometryTest {
     private val scanId = "037f1173-a7b2-4921-ae11-36aac11b8ba0"
+
+    @Test fun `localized start accepts only supported language codes and cancel remains strict`() {
+        for (language in listOf("en", "es", "zh-Hans", "zh-Hant", "vi", "fil")) {
+            val request = mapOf("scanId" to scanId, "languageCode" to language)
+            assertEquals(scanId, bathroomScanRequestId(request, allowLanguage = true))
+            assertNull(bathroomScanRequestId(request))
+        }
+        assertNull(bathroomScanRequestId(mapOf("scanId" to scanId, "languageCode" to "unknown"), allowLanguage = true))
+        assertNull(bathroomScanRequestId(mapOf("scanId" to scanId, "languageCode" to "es", "caseId" to scanId), allowLanguage = true))
+        assertEquals("Cancelar escaneo", AppScanTranslations.text("Cancel scan", "es"))
+        assertEquals("取消掃描", AppScanTranslations.text("Cancel scan", "zh-Hant"))
+        val notice = AppScanTranslations.text("This application runs on Google Play Services for AR (ARCore), which is provided by Google and governed by the Google Privacy Policy.", "vi")
+        assertTrue(notice.contains("Google Play Services for AR"))
+        assertTrue(notice.contains("Google Privacy Policy"))
+    }
     private fun identity() = floatArrayOf(1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f)
 
     @Test fun `scan identity rejects malformed and non-v4 identifiers`() {

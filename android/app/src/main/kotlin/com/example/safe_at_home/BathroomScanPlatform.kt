@@ -30,7 +30,7 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
                     ))
                 }
                 "start" -> {
-                    val id = bathroomScanRequestId(call.arguments)
+                    val id = bathroomScanRequestId(call.arguments, allowLanguage = true)
                     if (id == null) {
                         result.error("scan_failed", "The scan request is invalid.", null)
                     } else if (pending != null) {
@@ -43,7 +43,8 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
                         pendingRequestCode = requestCode
                         try {
                             activity.startActivityForResult(
-                                Intent(activity, BathroomScanActivity::class.java).putExtra(EXTRA_SCAN_ID, id),
+                                Intent(activity, BathroomScanActivity::class.java).putExtra(EXTRA_SCAN_ID, id)
+                                    .putExtra(EXTRA_LANGUAGE, (call.arguments as? Map<*, *>)?.get("languageCode") as? String ?: "en"),
                                 requestCode,
                             )
                         } catch (_: Exception) {
@@ -127,6 +128,7 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
         const val REQUEST_CODE = 21314
         private const val LAST_REQUEST_CODE = 21825
         const val EXTRA_SCAN_ID = "sah.scan.id"
+        const val EXTRA_LANGUAGE = "sah.scan.language"
         const val EXTRA_SCENE = "sah.scan.scene"
         const val EXTRA_ERROR = "sah.scan.error"
         private val ERROR_CODES = setOf(
@@ -144,9 +146,11 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
     }
 }
 
-internal fun bathroomScanRequestId(arguments: Any?): String? {
+internal fun bathroomScanRequestId(arguments: Any?, allowLanguage: Boolean = false): String? {
     val values = arguments as? Map<*, *> ?: return null
-    if (values.size != 1 || !values.containsKey("scanId")) return null
+    if (!values.containsKey("scanId")) return null
+    if (values.size != 1 && !(allowLanguage && values.size == 2 && values.containsKey("languageCode"))) return null
+    if (values.containsKey("languageCode") && (!allowLanguage || values["languageCode"] !in setOf("en", "es", "zh-Hans", "zh-Hant", "vi", "fil"))) return null
     val id = values["scanId"] as? String ?: return null
     return id.takeIf { BathroomScanGeometry.isScanId(it) }
 }

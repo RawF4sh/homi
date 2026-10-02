@@ -46,6 +46,7 @@ class BathroomScanActivity : ComponentActivity() {
     private var status: TextView? = null
     private var reviewButton: Button? = null
     private var scanId: String = ""
+    private var languageCode: String = "en"
     private var startRequested = false
     private var checkingAvailability = false
     private var availabilityConfirmed = false
@@ -64,6 +65,7 @@ class BathroomScanActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         scanId = intent.getStringExtra(BathroomScanPlatform.EXTRA_SCAN_ID) ?: ""
+        languageCode = intent.getStringExtra(BathroomScanPlatform.EXTRA_LANGUAGE) ?: "en"
         if (!BathroomScanGeometry.isScanId(scanId) || savedInstanceState != null) {
             fail("scan_interrupted")
             return
@@ -190,9 +192,11 @@ class BathroomScanActivity : ComponentActivity() {
                     if (!completed && active) {
                         val secondsLeft = ((MAX_CAPTURE_MS - (SystemClock.elapsedRealtime() - startedAt)) / 1000).coerceAtLeast(0)
                         status?.text = if (tracking) {
-                            "$planes surfaces · $points sampled points · ${secondsLeft}s remaining. Move slowly. Missing areas stay unknown."
+                            scanText("{surfaces} surfaces · {points} sampled points · {seconds}s remaining. Move slowly. Missing areas stay unknown.",
+                                mapOf("surfaces" to planes.toString(), "points" to points.toString(), "seconds" to secondsLeft.toString()))
                         } else {
-                            "Finding position. Move slowly in good light and avoid blank or reflective surfaces. ${secondsLeft}s remaining."
+                            scanText("Finding position. Move slowly in good light and avoid blank or reflective surfaces. {seconds}s remaining.",
+                                mapOf("seconds" to secondsLeft.toString()))
                         }
                         reviewButton?.isEnabled = planes > 0 || points >= 20
                     }
@@ -204,7 +208,7 @@ class BathroomScanActivity : ComponentActivity() {
         val cameraView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
             preserveEGLContextOnPause = false
-            contentDescription = "Live bathroom camera view. Detected surfaces and sampled points are outlined."
+            contentDescription = scanText("Live bathroom camera view. Detected surfaces and sampled points are outlined.")
             setRenderer(scanRenderer)
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         }
@@ -346,13 +350,13 @@ class BathroomScanActivity : ComponentActivity() {
         setBackgroundColor(Color.rgb(248, 246, 239))
     }
     private fun text(value: String, size: Float) = TextView(this).apply {
-        text = value
+        text = scanText(value)
         textSize = size
         setTextColor(Color.rgb(23, 55, 51))
         setPadding(dp(8), dp(10), dp(8), dp(10))
     }
     private fun button(label: String, action: () -> Unit) = Button(this).apply {
-        text = label
+        text = scanText(label)
         isAllCaps = false
         minHeight = dp(52)
         gravity = Gravity.CENTER
@@ -360,6 +364,11 @@ class BathroomScanActivity : ComponentActivity() {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    private fun scanText(english: String, arguments: Map<String, String> = emptyMap()): String =
+        Regex("\\{([A-Za-z][A-Za-z0-9_]*)\\}").replace(AppScanTranslations.text(english, languageCode)) { match ->
+            arguments[match.groupValues[1]] ?: match.value
+        }
 
     companion object {
         private const val CAMERA_PERMISSION = 21315
