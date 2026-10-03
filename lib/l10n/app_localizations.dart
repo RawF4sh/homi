@@ -1,0 +1,89 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+
+import 'app_language.dart';
+import 'catalogs/common.dart';
+import 'catalogs/core.dart';
+import 'catalogs/errors.dart';
+import 'catalogs/assessment.dart';
+import 'catalogs/journey.dart';
+import 'catalogs/lifecycle.dart';
+import 'catalogs/native_scan.dart';
+import 'catalogs/programs.dart';
+import 'catalogs/scan.dart';
+import 'catalogs/system.dart';
+
+class AppLocalizations {
+  const AppLocalizations(this.locale);
+  final Locale locale;
+
+  static final supportedLocales = AppLanguage.values
+      .map((language) => language.locale)
+      .whereType<Locale>()
+      .toList(growable: false);
+  static const localizationsDelegates = <LocalizationsDelegate<dynamic>>[
+    _AppLocalizationsDelegate(),
+    GlobalMaterialLocalizations.delegate,
+    GlobalWidgetsLocalizations.delegate,
+    GlobalCupertinoLocalizations.delegate,
+  ];
+  static const catalogs = [
+    coreTranslations,
+    assessmentTranslations,
+    programsTranslations,
+    errorsTranslations,
+    scanTranslations,
+    systemTranslations,
+    journeyTranslations,
+    lifecycleTranslations,
+    nativeScanTranslations,
+    commonTranslations,
+  ];
+  static final Map<String, Map<String, String>> translations = {
+    for (final catalog in catalogs) ...catalog,
+  };
+
+  static AppLocalizations of(BuildContext context) =>
+      Localizations.of<AppLocalizations>(context, AppLocalizations) ??
+      const AppLocalizations(Locale('en'));
+
+  static Locale resolveLocales(
+    List<Locale>? preferred,
+    Iterable<Locale> supported,
+  ) {
+    return AppLanguage.forPreferredLocales(preferred ?? const []).locale!;
+  }
+
+  String text(String english, [Map<String, Object?> arguments = const {}]) {
+    final code = AppLanguage.forLocale(locale).code;
+    final template = code == 'en'
+        ? english
+        : translations[english]?[code] ?? english;
+    return template.replaceAllMapped(RegExp(r'\{([A-Za-z][A-Za-z0-9_]*)\}'), (
+      match,
+    ) {
+      final key = match[1]!;
+      return arguments.containsKey(key) ? '${arguments[key] ?? ''}' : match[0]!;
+    });
+  }
+}
+
+class _AppLocalizationsDelegate
+    extends LocalizationsDelegate<AppLocalizations> {
+  const _AppLocalizationsDelegate();
+  @override
+  bool isSupported(Locale locale) => AppLocalizations.supportedLocales.any(
+    (supported) => supported.languageCode == locale.languageCode,
+  );
+  @override
+  Future<AppLocalizations> load(Locale locale) =>
+      SynchronousFuture(AppLocalizations(locale));
+  @override
+  bool shouldReload(_AppLocalizationsDelegate old) => false;
+}
+
+extension AppTranslation on BuildContext {
+  String tr(String english, [Map<String, Object?> arguments = const {}]) =>
+      AppLocalizations.of(this).text(english, arguments);
+}
