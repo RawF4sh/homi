@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart' as hashing;
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_language.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'appearance.dart';
@@ -323,26 +325,22 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
         return LiveSessionHost(config: state.data!.$1, session: state.data!.$2);
       }
       return ListenableBuilder(
-        listenable: AppAppearance.instance,
+        listenable: Listenable.merge([
+          AppAppearance.instance,
+          AppLanguageController.instance,
+        ]),
         builder: (context, _) => MaterialApp(
           theme: SafeAtHomeTheme.light(),
           darkTheme: SafeAtHomeTheme.dark(),
           themeMode: AppAppearance.instance.value,
+          locale: AppLanguageController.instance.value.locale,
+          supportedLocales: AppLocalizations.supportedLocales,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localeListResolutionCallback: AppLocalizations.resolveLocales,
           debugShowCheckedModeBanner: false,
           home: state.hasError
               ? const StartupErrorScreen.startup()
-              : const Scaffold(
-                  body: SafeArea(
-                    child: Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: CircularProgressIndicator(
-                          semanticsLabel: 'Opening secure session',
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              : const _SessionProgress('Opening secure session'),
         ),
       );
     },
@@ -513,7 +511,10 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: AppAppearance.instance,
+    listenable: Listenable.merge([
+      AppAppearance.instance,
+      AppLanguageController.instance,
+    ]),
     builder: (context, _) => MaterialApp(
       key: ValueKey(widget.session.epoch),
       title: 'Safe at Home',
@@ -522,14 +523,12 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
       theme: SafeAtHomeTheme.light(),
       darkTheme: SafeAtHomeTheme.dark(),
       themeMode: AppAppearance.instance.value,
+      locale: AppLanguageController.instance.value.locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      localeListResolutionCallback: AppLocalizations.resolveLocales,
       home: widget.session.cleaningUp
-          ? const Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(
-                  semanticsLabel: 'Finishing private account cleanup',
-                ),
-              ),
-            )
+          ? const _SessionProgress('Finishing private account cleanup')
           : widget.session.cleanupRequired
           ? _cleanupRecoveryScreen()
           : widget.session.userId == null || widget.session.recoveryRequired
@@ -555,7 +554,7 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
                   );
                 }
                 return Scaffold(
-                  appBar: AppBar(title: const Text('Private storage')),
+                  appBar: AppBar(title: Text(context.tr('Private storage'))),
                   body: const Center(child: CircularProgressIndicator()),
                 );
               },
@@ -571,7 +570,23 @@ String safeOperationMessage(Object error) => error is MatchingApiException
     : 'This action could not be confirmed. Keep your local work and check saved state before trying again.';
 Future<void> showOperationError(BuildContext context, Object error) async {
   if (!context.mounted) return;
-  ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text(safeOperationMessage(error))));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(context.tr(safeOperationMessage(error)))),
+  );
+}
+
+class _SessionProgress extends StatelessWidget {
+  const _SessionProgress(this.label);
+  final String label;
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: CircularProgressIndicator(semanticsLabel: context.tr(label)),
+        ),
+      ),
+    ),
+  );
 }

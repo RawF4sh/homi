@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
+import '../../features/settings/language_section.dart';
 import 'sah_components.dart';
 
 class StartupErrorScreen extends StatelessWidget {
@@ -36,7 +38,10 @@ class StartupErrorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Safe at Home')),
+    appBar: AppBar(
+      title: const Text('Safe at Home'),
+      actions: const [LanguageButton()],
+    ),
     body: SafeArea(
       child: SahContent(
         maxWidth: 680,
@@ -45,36 +50,41 @@ class StartupErrorScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SahPageHeader(title: title, description: message),
+              SahPageHeader(
+                title: context.tr(title),
+                description: context.tr(message),
+              ),
               if (onRetry != null)
                 FilledButton(
                   key: const ValueKey('startup-retry-cleanup'),
                   onPressed: onRetry,
-                  child: const Text('Retry private cleanup'),
+                  child: Text(context.tr('Retry private cleanup')),
                 ),
               if (onSignOut != null) ...[
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 16),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
                   child: Text(
-                    'Encrypted drafts will remain on this device. To remove them, unlock your phone, sign in to this account, and use Settings after private storage opens.',
+                    context.tr(
+                      'Encrypted drafts will remain on this device. To remove them, unlock your phone, sign in to this account, and use Settings after private storage opens.',
+                    ),
                   ),
                 ),
                 OutlinedButton(
                   key: const ValueKey('startup-sign-out'),
                   onPressed: signingOut ? null : onSignOut,
-                  child: const Text('Sign out and keep device drafts'),
+                  child: Text(context.tr('Sign out and keep device drafts')),
                 ),
                 if (signingOut)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
                     child: LinearProgressIndicator(
-                      semanticsLabel: 'Finishing sign-out',
+                      semanticsLabel: context.tr('Finishing sign-out'),
                     ),
                   ),
                 if (error != null)
                   SahActionFeedback(
                     key: const ValueKey('startup-exit-feedback'),
-                    message: error!,
+                    message: context.tr(error!),
                     tone: SahNoticeTone.warning,
                   ),
               ],

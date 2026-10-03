@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/contracts.dart';
 import '../../shared/models/form_answers.dart';
@@ -266,7 +267,7 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
       return Scaffold(
         appBar: AppBar(
           leading: BackButton(onPressed: requestExit),
-          title: const Text('Administrative answers'),
+          title: Text(context.tr('Administrative answers')),
         ),
         body: SafeArea(
           child: SahContent(
@@ -277,55 +278,84 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                 children: [
                   SahPageHeader(
                     title: widget.program.programName,
-                    description: 'Check details that may appear in your draft.',
+                    description: context.tr(
+                      'Check details that may appear in your draft.',
+                    ),
                   ),
-                  const SahMoreInfo(
+                  if (Localizations.localeOf(context).languageCode != 'en')
+                    SahNotice(
+                      message: context.tr(
+                        'Program information and official forms may remain in English. Your saved answers are not translated.',
+                      ),
+                    ),
+                  SahMoreInfo(
                     details: [
-                      'These answers do not supply diagnoses, medical necessity, consent or signatures. Review each supplied value yourself.',
+                      context.tr(
+                        'These answers do not supply diagnoses, medical necessity, consent or signatures. Review each supplied value yourself.',
+                      ),
                     ],
                   ),
                   if (_busy)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: LinearProgressIndicator(
-                        semanticsLabel: 'Updating administrative answers',
+                        semanticsLabel: context.tr(
+                          'Updating administrative answers',
+                        ),
                       ),
                     ),
                   if (_error != null && !_feedbackAtAction)
-                    SahNotice(message: _error!),
+                    SahNotice(message: context.tr(_error!)),
                   if (_uncertain)
-                    const SahNotice(
-                      title: 'Check the last save',
-                      message:
-                          'A save may have succeeded. Check saved answers before another save.',
+                    SahNotice(
+                      title: context.tr('Check the last save'),
+                      message: context.tr(
+                        'A save may have succeeded. Check saved answers before another save.',
+                      ),
                       tone: SahNoticeTone.warning,
                     ),
                   const SizedBox(height: 8),
                   OutlinedButton(
                     key: const ValueKey('form-reconcile'),
                     onPressed: _busy || exiting ? null : () => _read(),
-                    child: const Text(
-                      'Reload saved answers and reconcile',
+                    child: Text(
+                      context.tr('Reload saved answers and reconcile'),
                       textAlign: TextAlign.center,
                     ),
                   ),
                   if (_answers != null) ...[
                     SahStatusBadge(
                       label: _answers!.artifactKind == 'preparation_worksheet'
-                          ? 'Worksheet · not an official form'
-                          : 'Official-form draft · not submitted',
+                          ? context.tr('Worksheet · not an official form')
+                          : context.tr('Official-form draft · not submitted'),
                       icon: Icons.description_outlined,
                     ),
                     if (!_answers!.isCurrent)
-                      const SahNotice(
-                        message:
-                            'Saved answers need review for the current case and form.',
+                      SahNotice(
+                        message: context.tr(
+                          'Saved answers need review for the current case and form.',
+                        ),
                         tone: SahNoticeTone.warning,
                       ),
                     SahSectionHeading(
-                      title: 'Review your answers',
-                      description:
-                          '${_activeKeys.where((key) => _fields[key]!.text.trim().isNotEmpty && _reviewed[key] == true).length} of ${_activeKeys.where((key) => _fields[key]!.text.trim().isNotEmpty).length} checked · blank stays unknown',
+                      title: context.tr('Review your answers'),
+                      description: context.tr(
+                        '{reviewed} of {total} checked · blank stays unknown',
+                        {
+                          'reviewed': _activeKeys
+                              .where(
+                                (key) =>
+                                    _fields[key]!.text.trim().isNotEmpty &&
+                                    _reviewed[key] == true,
+                              )
+                              .length,
+                          'total': _activeKeys
+                              .where(
+                                (key) => _fields[key]!.text.trim().isNotEmpty,
+                              )
+                              .length,
+                        },
+                      ),
                     ),
                     for (final key in _activeKeys)
                       Padding(
@@ -357,9 +387,11 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                               contentPadding: EdgeInsets.zero,
                               controlAffinity: ListTileControlAffinity.leading,
                               title: Text(
-                                'I reviewed this value',
-                                semanticsLabel:
-                                    'I reviewed ${_definition(key).label}',
+                                context.tr('I reviewed this value'),
+                                semanticsLabel: context.tr(
+                                  'I reviewed {field}',
+                                  {'field': _definition(key).label},
+                                ),
                               ),
                               value: _reviewed[key] ?? false,
                               onChanged:
@@ -393,13 +425,13 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                     if (_error != null && _feedbackAtAction)
                       SahActionFeedback(
                         key: const ValueKey('form-save-feedback'),
-                        message: _error!,
+                        message: context.tr(_error!),
                       ),
                     FilledButton(
                       key: const ValueKey('form-save'),
                       onPressed: _busy || _uncertain || exiting ? null : _save,
-                      child: const Text(
-                        'Save reviewed administrative answers',
+                      child: Text(
+                        context.tr('Save reviewed administrative answers'),
                         textAlign: TextAlign.center,
                       ),
                     ),

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../../../app/live_app.dart';
 import '../../../shared/services/matching_api_client.dart';
@@ -154,7 +155,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
 
           return Scaffold(
             appBar: AppBar(
-              title: const Text('Home assessment'),
+              title: Text(context.tr('Home assessment')),
               leading: BackButton(onPressed: leaveUnopenedAssessment),
             ),
             body: SafeArea(
@@ -166,14 +167,16 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
-                          'The saved assessment could not be opened. Your private draft has been kept. Check your connection and open this case again.',
+                        Text(
+                          context.tr(
+                            'The saved assessment could not be opened. Your private draft has been kept. Check your connection and open this case again.',
+                          ),
                         ),
-                        const SizedBox(height: 24),
+                        SizedBox(height: 24),
                         FilledButton(
                           key: const ValueKey('assessment-error-back'),
                           onPressed: leaveUnopenedAssessment,
-                          child: const Text('Back to case'),
+                          child: Text(context.tr('Back to case')),
                         ),
                       ],
                     ),
@@ -184,10 +187,10 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
           );
         }
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
+          return Scaffold(
             body: Center(
               child: CircularProgressIndicator(
-                semanticsLabel: 'Opening assessment',
+                semanticsLabel: context.tr('Opening assessment'),
               ),
             ),
           );
@@ -210,12 +213,12 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
               actions: [
                 IconButton(
                   onPressed: busy ? null : history,
-                  tooltip: 'Saved review history',
+                  tooltip: context.tr('Saved review history'),
                   icon: const Icon(Icons.history),
                 ),
                 IconButton(
                   onPressed: busy || session.flow.isBusy ? null : close,
-                  tooltip: 'Save on device and close',
+                  tooltip: context.tr('Save on device and close'),
                   icon: const Icon(Icons.close),
                 ),
               ],
@@ -237,30 +240,41 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (notice != null)
-                    SahNotice(message: notice!, tone: SahNoticeTone.warning),
+                    SahNotice(
+                      message: context.tr(notice!),
+                      tone: SahNoticeTone.warning,
+                    ),
                   if (session.resumeNotice != null)
                     SahNotice(
-                      message: session.resumeNotice!,
+                      message: context.tr(session.resumeNotice!),
                       icon: Icons.cloud_off_outlined,
                     ),
                   if (session.caseWriteNotice != null)
                     SahNotice(
-                      message: session.caseWriteNotice!,
+                      message: context.tr(session.caseWriteNotice!),
                       tone: SahNoticeTone.warning,
                     ),
                   if (session.localSaveFailed)
-                    const SahNotice(
-                      title: 'Not saved on this device',
-                      message:
-                          'The private device save failed. Keep this screen open and free some device space before leaving.',
+                    SahNotice(
+                      title: context.tr('Not saved on this device'),
+                      message: context.tr(
+                        'The private device save failed. Keep this screen open and free some device space before leaving.',
+                      ),
                       tone: SahNoticeTone.error,
                     ),
                   if (session.localConflict) ...[
                     SahNotice(
-                      title: 'This device and the saved assessment differ',
-                      message:
-                          'Keeping this device’s findings will replace the saved assessment when you explicitly save. Other profile details stay from the latest saved case.\n\n'
-                          'Device: ${session.controller.findings.length} findings. Saved: ${session.state?.caseSnapshot.findings.length ?? 0} findings.',
+                      title: context.tr(
+                        'This device and the saved assessment differ',
+                      ),
+                      message: context.tr(
+                        'Keeping this device’s findings will replace the saved assessment when you explicitly save. Other profile details stay from the latest saved case.\n\nDevice: {deviceCount} findings. Saved: {savedCount} findings.',
+                        {
+                          'deviceCount': session.controller.findings.length,
+                          'savedCount':
+                              session.state?.caseSnapshot.findings.length ?? 0,
+                        },
+                      ),
                       tone: SahNoticeTone.warning,
                     ),
                     OutlinedButton(
@@ -273,8 +287,8 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                               () =>
                                   session.resolveLocalConflict(keepLocal: true),
                             ),
-                      child: const Text(
-                        'Keep this device’s findings for review',
+                      child: Text(
+                        context.tr('Keep this device’s findings for review'),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -289,12 +303,14 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                                 keepLocal: false,
                               ),
                             ),
-                      child: const Text(
-                        'Discard device edits and use saved assessment',
+                      child: Text(
+                        context.tr(
+                          'Discard device edits and use saved assessment',
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: 8),
                   ],
                   if (session.sync.recoveryConflict != null)
                     RecoveryPhotoReviewCard(
@@ -337,7 +353,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                     ),
                   if (session.annotationNotice != null)
                     SahNotice(
-                      message: session.annotationNotice!,
+                      message: context.tr(session.annotationNotice!),
                       tone: SahNoticeTone.warning,
                     ),
                   if (session.annotationConflictId != null)
@@ -345,8 +361,10 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                       onPressed: busy || session.flow.isBusy
                           ? null
                           : () => run(session.reloadConflictingMarks),
-                      child: const Text(
-                        'Discard device marks for this photo and reload saved marks',
+                      child: Text(
+                        context.tr(
+                          'Discard device marks for this photo and reload saved marks',
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -369,12 +387,12 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                             ? null
                             : () => run(session.save),
                         icon: const Icon(Icons.cloud_upload_outlined),
-                        label: const Text(
-                          'Save findings and photo marks online',
+                        label: Text(
+                          context.tr('Save findings and photo marks online'),
                         ),
                       ),
                     ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: 8),
                 ],
               ),
             );
@@ -389,7 +407,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Saved assessment history'),
+        title: Text(context.tr('Saved assessment history')),
         content: SizedBox(
           width: 560,
           child: SingleChildScrollView(
@@ -397,8 +415,10 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: events.isEmpty
                   ? [
-                      const Text(
-                        'No online assessment corrections have been saved yet.',
+                      Text(
+                        context.tr(
+                          'No online assessment corrections have been saved yet.',
+                        ),
                       ),
                     ]
                   : [
@@ -408,17 +428,32 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                             DateTime.tryParse(
                                   event['recordedAt'] as String? ?? '',
                                 )?.toLocal().toString() ??
-                                'Saved review',
+                                context.tr('Saved review'),
                           ),
-                          subtitle: const Text(
-                            'Recorded by the signed-in account',
+                          subtitle: Text(
+                            context.tr('Recorded by the signed-in account'),
                           ),
                           children: [
                             for (final change in event['changes'] as List)
                               Padding(
                                 padding: const EdgeInsets.all(8),
                                 child: Text(
-                                  '${_changeName((change as Map)['path'])}\nBefore: ${_display(change['before'])}\nAfter: ${_display(change['after'])}',
+                                  context.tr(
+                                    '{change}\nBefore: {before}\nAfter: {after}',
+                                    {
+                                      'change': context.tr(
+                                        _changeName((change as Map)['path']),
+                                      ),
+                                      'before': _display(
+                                        change['before'],
+                                        context: context,
+                                      ),
+                                      'after': _display(
+                                        change['after'],
+                                        context: context,
+                                      ),
+                                    },
+                                  ),
                                 ),
                               ),
                           ],
@@ -430,7 +465,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+            child: Text(context.tr('Close')),
           ),
         ],
       ),
@@ -446,13 +481,15 @@ String _changeName(Object? path) {
   return 'Assessment details';
 }
 
-String _display(Object? value) {
-  if (value == null) return 'None recorded';
-  if (value is List) return value.map(_display).join('; ');
+String _display(Object? value, {BuildContext? context}) {
+  if (value == null) return context?.tr('None recorded') ?? 'None recorded';
+  if (value is List) {
+    return value.map((item) => _display(item, context: context)).join('; ');
+  }
   if (value is Map) {
     return value.entries
         .where((e) => !{'id', 'findingId', 'evidenceIds'}.contains(e.key))
-        .map((e) => '${e.key}: ${_display(e.value)}')
+        .map((e) => '${e.key}: ${_display(e.value, context: context)}')
         .join(', ');
   }
   return value.toString();

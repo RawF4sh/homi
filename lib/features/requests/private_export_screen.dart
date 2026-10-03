@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../app/live_app.dart';
@@ -418,23 +419,25 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
                 Semantics(
                   header: true,
                   child: Text(
-                    'Share an incomplete draft?',
+                    ctx.tr('Share an incomplete draft?'),
                     style: Theme.of(ctx).textTheme.headlineSmall,
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text(
-                  'The selected app or recipient can keep this copy. Sharing does not submit an application or confirm receipt.',
+                Text(
+                  ctx.tr(
+                    'The selected app or recipient can keep this copy. Sharing does not submit an application or confirm receipt.',
+                  ),
                 ),
                 const SizedBox(height: 24),
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancel'),
+                  child: Text(ctx.tr('Cancel')),
                 ),
                 const SizedBox(height: 8),
                 FilledButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('Open share sheet'),
+                  child: Text(ctx.tr('Open share sheet')),
                 ),
               ],
             ),
@@ -483,7 +486,7 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path, mimeType: 'application/pdf')],
-          title: 'Safe at Home incomplete draft',
+          title: context.tr('Safe at Home incomplete draft'),
           sharePositionOrigin: box == null
               ? null
               : box.localToGlobal(Offset.zero) & box.size,
@@ -522,52 +525,79 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
   String _expiryLabel(BuildContext context) {
     final expires = DateTime.parse(_artifact!.base.expiresAt).toLocal();
     final local = MaterialLocalizations.of(context);
-    return '${local.formatMediumDate(expires)} at '
-        '${local.formatTimeOfDay(TimeOfDay.fromDateTime(expires))}';
+    return context.tr('{date} at {time}', {
+      'date': local.formatMediumDate(expires),
+      'time': local.formatTimeOfDay(TimeOfDay.fromDateTime(expires)),
+    });
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Private draft review')),
+    appBar: AppBar(title: Text(context.tr('Private draft review'))),
     body: SafeArea(
       child: SahContent(
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
             SahPageHeader(
-              title: 'Review your draft',
+              title: context.tr('Review your draft'),
               eyebrow: widget.program.programName,
-              description: 'Pick photos, prepare the draft, then check it.',
+              description: context.tr(
+                'Pick photos, prepare the draft, then check it.',
+              ),
             ),
-            const SahStatusBadge(
-              label: 'Incomplete draft · nothing is submitted',
+            if (Localizations.localeOf(context).languageCode != 'en')
+              SahNotice(
+                message: context.tr(
+                  'Program information and official forms may remain in English. Your saved answers are not translated.',
+                ),
+              ),
+            SahStatusBadge(
+              label: context.tr('Incomplete draft · nothing is submitted'),
               icon: Icons.info_outline_rounded,
               tone: SahNoticeTone.warning,
             ),
             if (_busy)
-              const LinearProgressIndicator(
-                semanticsLabel: 'Preparing your private draft',
+              LinearProgressIndicator(
+                semanticsLabel: context.tr('Preparing your private draft'),
               ),
             if (_error != null)
-              SahNotice(message: _error!, tone: SahNoticeTone.error),
-            if (_notice != null) SahNotice(message: _notice!),
-            const SahSectionHeading(
-              title: 'Photo attachments',
-              description: 'Only photos you select are included.',
+              SahNotice(
+                message: context.tr(_error!),
+                tone: SahNoticeTone.error,
+              ),
+            if (_notice != null) SahNotice(message: context.tr(_notice!)),
+            SahSectionHeading(
+              title: context.tr('Photo attachments'),
+              description: context.tr('Only photos you select are included.'),
             ),
             if (_catalog != null && _catalog!.evidence.isEmpty)
-              const SahNotice(
-                message:
-                    'No saved photos. You can prepare a draft without them.',
+              SahNotice(
+                message: context.tr(
+                  'No saved photos. You can prepare a draft without them.',
+                ),
                 icon: Icons.photo_outlined,
               ),
             if (_catalog != null)
               for (final evidence in _catalog!.evidence)
                 SahActionTile(
-                  title: 'Photo ${_catalog!.evidence.indexOf(evidence) + 1}',
+                  title: context.tr('Photo {number}', {
+                    'number': _catalog!.evidence.indexOf(evidence) + 1,
+                  }),
                   subtitle: _selected.containsKey(evidence.evidenceId)
-                      ? 'Reviewed · Attachment ${_selected.keys.toList().indexOf(evidence.evidenceId) + 1}. Tap to leave it out.'
-                      : 'View the saved photo and review its notes.',
+                      ? context.tr(
+                          'Reviewed · Attachment {number}. Tap to leave it out.',
+                          {
+                            'number':
+                                _selected.keys.toList().indexOf(
+                                  evidence.evidenceId,
+                                ) +
+                                1,
+                          },
+                        )
+                      : context.tr(
+                          'View the saved photo and review its notes.',
+                        ),
                   icon: _selected.containsKey(evidence.evidenceId)
                       ? Icons.check_circle_outline_rounded
                       : Icons.photo_outlined,
@@ -575,14 +605,16 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
                   onTap: () => _review(evidence),
                 ),
             if (_selected.length > 1)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(bottom: 12),
-                child: Text('Photos appear in the order you select them.'),
+                child: Text(
+                  context.tr('Photos appear in the order you select them.'),
+                ),
               ),
             OutlinedButton.icon(
               onPressed: _busy || _sharing ? null : _load,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Reload current evidence and answers'),
+              label: Text(context.tr('Reload current evidence and answers')),
             ),
             const SizedBox(height: 12),
             FilledButton.icon(
@@ -590,49 +622,62 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
                   ? null
                   : () => _prepare(),
               icon: const Icon(Icons.description_outlined),
-              label: const Text('Prepare or recover this draft'),
+              label: Text(context.tr('Prepare or recover this draft')),
             ),
             if (_error != null)
               TextButton(
                 onPressed: _busy || _sharing || !_current
                     ? null
                     : () => _prepare(newAttempt: true),
-                child: const Text('Start a newly reviewed draft attempt'),
+                child: Text(context.tr('Start a newly reviewed draft attempt')),
               ),
             if (_artifact != null) ...[
-              const SahSectionHeading(title: 'Draft checklist'),
-              Text('Download expires ${_expiryLabel(context)}.'),
+              SahSectionHeading(title: context.tr('Draft checklist')),
+              Text(
+                context.tr('Download expires {expiry}.', {
+                  'expiry': _expiryLabel(context),
+                }),
+              ),
               const SizedBox(height: 12),
               SahNotice(
-                title: 'Not ready to submit',
-                message:
-                    '${_artifact!.base.missingItems.length} unresolved items are listed below. '
-                    'Review the complete checklist before sharing. Nothing has been submitted.',
+                title: context.tr('Not ready to submit'),
+                message: context.tr(
+                  '{count} unresolved items are listed below. Review the complete checklist before sharing. Nothing has been submitted.',
+                  {'count': _artifact!.base.missingItems.length},
+                ),
                 tone: SahNoticeTone.warning,
               ),
               for (final warning in _artifact!.base.warnings)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(switch (warning) {
-                    'INCOMPLETE_DRAFT' => 'This draft is incomplete.',
-                    'NOT_SUBMITTED' => 'No application has been submitted.',
-                    _ =>
+                    'INCOMPLETE_DRAFT' => context.tr(
+                      'This draft is incomplete.',
+                    ),
+                    'NOT_SUBMITTED' => context.tr(
+                      'No application has been submitted.',
+                    ),
+                    _ => context.tr(
                       'Program availability or requirements still need confirmation.',
+                    ),
                   }),
                 ),
             ],
             if (_pdf != null) ...[
-              const SahSectionHeading(
-                title: 'Your PDF',
-                description:
-                    'Review every page before sharing. Use the page buttons, pinch to zoom, or open the page text.',
+              SahSectionHeading(
+                title: context.tr('Your PDF'),
+                description: context.tr(
+                  'Review every page before sharing. Use the page buttons, pinch to zoom, or open the page text.',
+                ),
               ),
               Builder(
                 builder: (ctx) => FilledButton.icon(
                   onPressed: _busy || _sharing ? null : () => _share(ctx),
                   icon: const Icon(Icons.ios_share),
                   label: Text(
-                    _sharing ? 'Opening sharing…' : 'Share or save draft',
+                    _sharing
+                        ? context.tr('Opening sharing…')
+                        : context.tr('Share or save draft'),
                   ),
                 ),
               ),
@@ -645,9 +690,11 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
               ExpansionTile(
                 key: const ValueKey('draft-unresolved-items'),
                 tilePadding: EdgeInsets.zero,
-                title: const Text('Unresolved draft items'),
+                title: Text(context.tr('Unresolved draft items')),
                 subtitle: Text(
-                  '${_artifact!.base.missingItems.length} items to review',
+                  context.tr('{count} items to review', {
+                    'count': _artifact!.base.missingItems.length,
+                  }),
                 ),
                 children: [
                   for (final item in _artifact!.base.missingItems)

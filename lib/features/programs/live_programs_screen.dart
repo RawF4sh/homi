@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/contracts.dart';
@@ -105,30 +106,41 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
         result.caseRevision == c.snapshot!.revision &&
         !c.hasUnsavedChanges;
     return Scaffold(
-      appBar: AppBar(title: const Text('Possible assistance')),
+      appBar: AppBar(title: Text(context.tr('Possible assistance'))),
       body: SafeArea(
         child: SahContent(
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              const SahPageHeader(
-                title: 'Possible assistance',
-                description:
-                    'Checks, not decisions. Each program still reviews the case.',
+              SahPageHeader(
+                title: context.tr('Possible assistance'),
+                description: context.tr(
+                  'Checks, not decisions. Each program still reviews the case.',
+                ),
               ),
+              if (Localizations.localeOf(context).languageCode != 'en')
+                SahNotice(
+                  message: context.tr(
+                    'Program information and official forms may remain in English. Your saved answers are not translated.',
+                  ),
+                ),
               if (_busy)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: LinearProgressIndicator(
-                    semanticsLabel: 'Checking possible assistance',
+                    semanticsLabel: context.tr('Checking possible assistance'),
                   ),
                 ),
               if (_error != null)
-                SahNotice(message: _error!, tone: SahNoticeTone.warning),
+                SahNotice(
+                  message: context.tr(_error!),
+                  tone: SahNoticeTone.warning,
+                ),
               if (result != null && !same)
-                const SahNotice(
-                  message:
-                      'The case changed. Refresh these results before preparing a draft.',
+                SahNotice(
+                  message: context.tr(
+                    'The case changed. Refresh these results before preparing a draft.',
+                  ),
                   tone: SahNoticeTone.warning,
                 ),
               if (result != null &&
@@ -137,8 +149,8 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                     c.currentCase(),
                     now: DateTime.now().toUtc(),
                   ))
-                const SahStatusBadge(
-                  label: 'Some policy details are unconfirmed',
+                SahStatusBadge(
+                  label: context.tr('Some policy details are unconfirmed'),
                   icon: Icons.info_outline_rounded,
                   tone: SahNoticeTone.warning,
                 ),
@@ -147,22 +159,27 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                 key: const ValueKey('program-refresh'),
                 onPressed: _busy ? null : _load,
                 icon: const Icon(Icons.refresh_rounded),
-                label: const Text(
-                  'Refresh program checks',
+                label: Text(
+                  context.tr('Refresh program checks'),
                   textAlign: TextAlign.center,
                 ),
               ),
               if (result != null && result.matches.isEmpty)
-                const SahEmptyState(
-                  title: 'No routes to review yet',
-                  message:
-                      'No program routes are currently configured for this case. Your saved assessment is still available.',
+                SahEmptyState(
+                  title: context.tr('No routes to review yet'),
+                  message: context.tr(
+                    'No program routes are currently configured for this case. Your saved assessment is still available.',
+                  ),
                   icon: Icons.search_rounded,
                 ),
               if (result != null && result.matches.isNotEmpty)
                 SahSectionHeading(
-                  title:
-                      '${result.matches.length} ${result.matches.length == 1 ? 'program route' : 'program routes'} to review',
+                  title: context.tr(
+                    result.matches.length == 1
+                        ? '{count} program route to review'
+                        : '{count} program routes to review',
+                    {'count': result.matches.length},
+                  ),
                 ),
               if (result != null)
                 for (final match in result.matches)
@@ -186,11 +203,13 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                             alignment: Alignment.centerLeft,
                             child: SahStatusBadge(
                               label: switch (match.status) {
-                                'meets_known_criteria' =>
+                                'meets_known_criteria' => context.tr(
                                   'Matches the known checks',
-                                'does_not_meet_criterion' =>
+                                ),
+                                'does_not_meet_criterion' => context.tr(
                                   'A known criterion is not met',
-                                _ => 'More information is needed',
+                                ),
+                                _ => context.tr('More information is needed'),
                               },
                               icon: match.status == 'meets_known_criteria'
                                   ? Icons.check_circle_outline_rounded
@@ -202,11 +221,24 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            '${match.checks.where((check) => check.status == 'pass').length} met · '
-                            '${match.checks.where((check) => check.status == 'fail').length} not met · '
-                            '${match.checks.where((check) => check.status == 'unknown').length} need confirmation',
+                            context.tr(
+                              '{met} met · {notMet} not met · {unknown} need confirmation',
+                              {
+                                'met': match.checks
+                                    .where((check) => check.status == 'pass')
+                                    .length,
+                                'notMet': match.checks
+                                    .where((check) => check.status == 'fail')
+                                    .length,
+                                'unknown': match.checks
+                                    .where((check) => check.status == 'unknown')
+                                    .length,
+                              },
+                            ),
                           ),
-                          const SahSectionHeading(title: 'Prepare a draft'),
+                          SahSectionHeading(
+                            title: context.tr('Prepare a draft'),
+                          ),
                           OutlinedButton(
                             key: ValueKey('program-${match.programId}-intake'),
                             style: _preparationActionStyle(context),
@@ -218,9 +250,9 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                       program: match,
                                     ),
                                   ),
-                            child: const _PreparationActionLabel(
+                            child: _PreparationActionLabel(
                               number: '01',
-                              title: 'Review program questions',
+                              title: context.tr('Review program questions'),
                             ),
                           ),
                           const Divider(height: 1),
@@ -239,9 +271,9 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                       caseChanges: c,
                                     ),
                                   ),
-                            child: const _PreparationActionLabel(
+                            child: _PreparationActionLabel(
                               number: '02',
-                              title: 'Draft checklist',
+                              title: context.tr('Draft checklist'),
                             ),
                           ),
                           const Divider(height: 1),
@@ -256,9 +288,11 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                       program: match,
                                     ),
                                   ),
-                            child: const _PreparationActionLabel(
+                            child: _PreparationActionLabel(
                               number: '03',
-                              title: 'Review administrative answers',
+                              title: context.tr(
+                                'Review administrative answers',
+                              ),
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -272,8 +306,8 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                       program: match,
                                     ),
                                   ),
-                            child: const Text(
-                              'Review evidence and draft PDF',
+                            child: Text(
+                              context.tr('Review evidence and draft PDF'),
                               textAlign: TextAlign.center,
                             ),
                           ),
@@ -288,16 +322,18 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                       program: match,
                                     ),
                                   ),
-                            child: const Text('Manual request history'),
+                            child: Text(context.tr('Manual request history')),
                           ),
                           const SizedBox(height: 16),
                           const Divider(height: 1),
                           ExpansionTile(
                             key: ValueKey('program-${match.programId}-checks'),
                             tilePadding: EdgeInsets.zero,
-                            title: const Text('Eligibility checks'),
+                            title: Text(context.tr('Eligibility checks')),
                             subtitle: Text(
-                              '${match.checks.length} reasons to review',
+                              context.tr('{count} reasons to review', {
+                                'count': match.checks.length,
+                              }),
                             ),
                             children: [
                               for (final check in match.checks)
@@ -326,9 +362,9 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                     ),
                                   ),
                                   title: Text(switch (check.status) {
-                                    'pass' => 'Met',
-                                    'fail' => 'Not met',
-                                    _ => 'Needs confirmation',
+                                    'pass' => context.tr('Met'),
+                                    'fail' => context.tr('Not met'),
+                                    _ => context.tr('Needs confirmation'),
                                   }),
                                   subtitle: Text(check.explanation),
                                 ),
@@ -336,37 +372,65 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                           ),
                           ExpansionTile(
                             tilePadding: EdgeInsets.zero,
-                            title: const Text(
-                              'Program sources and review dates',
+                            title: Text(
+                              context.tr('Program sources and review dates'),
                             ),
-                            subtitle: const Text(
-                              'Official references and current availability',
+                            subtitle: Text(
+                              context.tr(
+                                'Official references and current availability',
+                              ),
                             ),
                             children: [
                               ListTile(
                                 title: Text(
-                                  'Availability: ${match.availability.replaceAll('_', ' ')}',
+                                  context.tr('Availability: {availability}', {
+                                    'availability': context.tr(
+                                      switch (match.availability) {
+                                        'accepting' => 'accepting',
+                                        'not_accepting' => 'not accepting',
+                                        _ => 'unverified',
+                                      },
+                                    ),
+                                  }),
                                 ),
                                 subtitle: Text(
-                                  'Rule version: ${match.ruleVersion}',
+                                  context.tr('Rule version: {version}', {
+                                    'version': match.ruleVersion,
+                                  }),
                                 ),
                               ),
                               for (final source in match.sources)
                                 ListTile(
                                   title: Text(source.title),
-                                  trailing: const Icon(
+                                  trailing: Icon(
                                     Icons.open_in_new,
-                                    semanticLabel: 'Opens in your browser',
+                                    semanticLabel: context.tr(
+                                      'Opens in your browser',
+                                    ),
                                   ),
                                   onTap: () => _openSource(source.url),
                                   subtitle: SelectableText(
-                                    'Reviewed ${source.reviewedOn}\nEffective from: ${source.effectiveFrom ?? 'not specified'}\nEffective until: ${source.effectiveUntil ?? 'not specified'}\n${source.url}',
+                                    context.tr(
+                                      'Reviewed {reviewed}\nEffective from: {from}\nEffective until: {until}\n{url}',
+                                      {
+                                        'reviewed': source.reviewedOn,
+                                        'from':
+                                            source.effectiveFrom ??
+                                            context.tr('not specified'),
+                                        'until':
+                                            source.effectiveUntil ??
+                                            context.tr('not specified'),
+                                        'url': source.url,
+                                      },
+                                    ),
                                   ),
                                 ),
                               if (match.sources.isEmpty)
-                                const ListTile(
+                                ListTile(
                                   title: Text(
-                                    'No verified source references are supplied for this route.',
+                                    context.tr(
+                                      'No verified source references are supplied for this route.',
+                                    ),
                                   ),
                                 ),
                             ],
@@ -381,8 +445,8 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                 'https://rebuildingtogetherpeninsula.my.salesforce-sites.com/HomeownerApplication',
                               ),
                               icon: const Icon(Icons.open_in_new),
-                              label: const Text(
-                                'Open RTP’s official application',
+                              label: Text(
+                                context.tr('Open RTP’s official application'),
                               ),
                             ),
                         ],

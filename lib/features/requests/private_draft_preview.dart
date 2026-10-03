@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../../shared/models/case_draft.dart';
 import '../../shared/presentation/sah_components.dart';
@@ -186,11 +187,14 @@ class _PrivateDraftPreviewState extends State<PrivateDraftPreview> {
           onNext: () => _movePage(1),
         ),
         if (_navigationError != null)
-          SahNotice(message: _navigationError!, tone: SahNoticeTone.error),
+          SahNotice(
+            message: context.tr(_navigationError!),
+            tone: SahNoticeTone.error,
+          ),
         SwitchListTile.adaptive(
           key: const ValueKey('private-pdf-read-text'),
           contentPadding: EdgeInsets.zero,
-          title: const Text('Read page text'),
+          title: Text(context.tr('Read page text')),
           value: _readText,
           onChanged: _ready ? _toggleText : null,
         ),
@@ -234,16 +238,18 @@ class _PrivateDraftPreviewState extends State<PrivateDraftPreview> {
                             });
                           }
                         },
-                        loadingBannerBuilder: (context, _, _) => const Center(
+                        loadingBannerBuilder: (context, _, _) => Center(
                           child: CircularProgressIndicator(
-                            semanticsLabel: 'Opening PDF preview',
+                            semanticsLabel: context.tr('Opening PDF preview'),
                           ),
                         ),
                         errorBannerBuilder: (context, _, _, _) =>
-                            const SingleChildScrollView(
+                            SingleChildScrollView(
                               padding: EdgeInsets.all(20),
                               child: Text(
-                                'The PDF preview could not be opened. Reload and prepare the draft again.',
+                                context.tr(
+                                  'The PDF preview could not be opened. Reload and prepare the draft again.',
+                                ),
                               ),
                             ),
                       ),
@@ -290,10 +296,13 @@ class PrivatePdfPageNavigation extends StatelessWidget {
         liveRegion: true,
         child: Text(
           ready
-              ? 'Page $page of $pageCount'
+              ? context.tr('Page {page} of {count}', {
+                  'page': page,
+                  'count': pageCount,
+                })
               : failed
-              ? 'PDF pages unavailable'
-              : 'Opening PDF pages…',
+              ? context.tr('PDF pages unavailable')
+              : context.tr('Opening PDF pages…'),
           key: const ValueKey('private-pdf-page-status'),
           style: Theme.of(context).textTheme.titleMedium,
         ),
@@ -306,12 +315,15 @@ class PrivatePdfPageNavigation extends StatelessWidget {
           OutlinedButton(
             key: const ValueKey('private-pdf-previous'),
             onPressed: ready && !busy && page > 1 ? onPrevious : null,
-            child: const Text('Previous page', textAlign: TextAlign.center),
+            child: Text(
+              context.tr('Previous page'),
+              textAlign: TextAlign.center,
+            ),
           ),
           OutlinedButton(
             key: const ValueKey('private-pdf-next'),
             onPressed: ready && !busy && page < pageCount ? onNext : null,
-            child: const Text('Next page', textAlign: TextAlign.center),
+            child: Text(context.tr('Next page'), textAlign: TextAlign.center),
           ),
         ],
       ),
@@ -340,23 +352,29 @@ class PrivatePdfPageText extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Text view does not show photo markings. Review the page image too.',
+          Text(
+            context.tr(
+              'Text view does not show photo markings. Review the page image too.',
+            ),
           ),
           const SizedBox(height: 16),
           if (loading)
-            const LinearProgressIndicator(semanticsLabel: 'Reading page text')
+            LinearProgressIndicator(
+              semanticsLabel: context.tr('Reading page text'),
+            )
           else if (error != null) ...[
-            SahNotice(message: error!, tone: SahNoticeTone.error),
+            SahNotice(message: context.tr(error!), tone: SahNoticeTone.error),
             TextButton(
               onPressed: onRetry,
-              child: const Text('Retry page text'),
+              child: Text(context.tr('Retry page text')),
             ),
           ] else if (text?.isNotEmpty == true)
             Text(text!)
           else
-            const Text(
-              'No readable text was found on this page. It may contain an image or scanned form. Review the page image instead.',
+            Text(
+              context.tr(
+                'No readable text was found on this page. It may contain an image or scanned form. Review the page image instead.',
+              ),
             ),
         ],
       ),

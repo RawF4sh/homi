@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 
 class SahBrandMark extends StatelessWidget {
   const SahBrandMark({super.key, this.size = 44});
@@ -330,7 +331,7 @@ class SahMoreInfo extends StatelessWidget {
         color: theme.colorScheme.primary,
       ),
       title: Text(
-        label,
+        label == 'More about this' ? context.tr(label) : label,
         style: theme.textTheme.bodyMedium?.copyWith(
           color: theme.colorScheme.primary,
           fontWeight: FontWeight.w600,
@@ -605,7 +606,7 @@ class _SahActionFeedbackState extends State<SahActionFeedback> {
       if (widget.onReview != null)
         OutlinedButton(
           onPressed: widget.onReview,
-          child: const Text('Review this answer'),
+          child: Text(context.tr('Review this answer')),
         ),
     ],
   );

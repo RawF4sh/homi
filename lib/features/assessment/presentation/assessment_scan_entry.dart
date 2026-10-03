@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../application/bathroom_scan_availability.dart';
 
@@ -63,18 +64,18 @@ class AssessmentScanEntry extends StatelessWidget {
         children: [
           Semantics(
             header: true,
-            child: Text(title, style: theme.textTheme.titleLarge),
+            child: Text(context.tr(title), style: theme.textTheme.titleLarge),
           ),
           const SizedBox(height: 8),
-          Text(description),
+          Text(context.tr(description)),
           const SizedBox(height: 16),
           if (primary)
             FilledButton.icon(
               key: const ValueKey('open-bathroom-scan'),
               onPressed: onOpen,
               icon: const Icon(Icons.view_in_ar),
-              label: const Text(
-                'Scan bathroom in 3D',
+              label: Text(
+                context.tr('Scan bathroom in 3D'),
                 textAlign: TextAlign.center,
               ),
             )
@@ -83,8 +84,8 @@ class AssessmentScanEntry extends StatelessWidget {
               key: const ValueKey('open-bathroom-scan'),
               onPressed: onOpen,
               icon: const Icon(Icons.view_in_ar),
-              label: const Text(
-                'Saved 3D model & scan options',
+              label: Text(
+                context.tr('Saved 3D model & scan options'),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -92,7 +93,7 @@ class AssessmentScanEntry extends StatelessWidget {
             TextButton(
               key: const ValueKey('recheck-bathroom-scan'),
               onPressed: onCheck,
-              child: const Text('Check scanning support again'),
+              child: Text(context.tr('Check scanning support again')),
             ),
         ],
       ),

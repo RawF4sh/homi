@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/account_deletion.dart';
 import '../../shared/models/contracts.dart';
@@ -8,6 +9,7 @@ import '../../shared/services/lifecycle_api_client.dart';
 import '../../shared/services/local_private_store.dart';
 import '../../shared/services/matching_api_client.dart';
 import 'appearance_section.dart';
+import 'language_section.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({super.key, required this.services});
@@ -33,7 +35,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       _error != null && _feedbackAction == action
       ? SahActionFeedback(
           key: ValueKey('settings-feedback-${action.name}'),
-          message: _error!,
+          message: context.tr(_error!),
         )
       : const SizedBox.shrink();
   bool _selectedIsCurrent(String id, int generation) {
@@ -134,11 +136,11 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: Text(context.tr('Cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Continue'),
+              child: Text(context.tr('Continue')),
             ),
           ],
         ),
@@ -149,8 +151,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     final session = widget.services.session;
     final owner = session.userId, epoch = session.epoch;
     if (!await _confirm(
-      'Sign out and clear this device?',
-      'Names saved to your account will stay available on your other devices. Local drafts and staged photos will be removed. Unsynced names must finish syncing first.',
+      context.tr('Sign out and clear this device?'),
+      context.tr(
+        'Names saved to your account will stay available on your other devices. Local drafts and staged photos will be removed. Unsynced names must finish syncing first.',
+      ),
     )) {
       return;
     }
@@ -177,8 +181,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     if (_busy || c.snapshot == null) return;
     final id = c.snapshot!.caseId, generation = c.generation;
     if (!await _confirm(
-      'Delete selected case?',
-      'This removes its saved case, photos, answers and generated drafts. Copies already shared outside the app cannot be removed.',
+      context.tr('Delete selected case?'),
+      context.tr(
+        'This removes its saved case, photos, answers and generated drafts. Copies already shared outside the app cannot be removed.',
+      ),
     )) {
       return;
     }
@@ -225,8 +231,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     final id = c.draft?.caseId, generation = c.generation;
     if (_busy || id == null) return;
     if (!await _confirm(
-      'Remove this local draft?',
-      'This removes the selected draft and its staged photos from this device.',
+      context.tr('Remove this local draft?'),
+      context.tr(
+        'This removes the selected draft and its staged photos from this device.',
+      ),
     )) {
       return;
     }
@@ -263,10 +271,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         return;
       }
       final preview = await _client.prepareAccountDeletion(isCurrent: current);
-      if (!current()) return;
+      if (!mounted || !current()) return;
       if (!await _confirm(
-        'Delete this account?',
-        'This removes ${preview.counts.cases} cases and ${preview.counts.evidence} photos. Application data is removed first; account-provider cleanup may complete later. This cannot be undone.',
+        context.tr('Delete this account?'),
+        context.tr(
+          'This removes {cases} cases and {photos} photos. Application data is removed first; account-provider cleanup may complete later. This cannot be undone.',
+          {'cases': preview.counts.cases, 'photos': preview.counts.evidence},
+        ),
       )) {
         return;
       }
@@ -304,7 +315,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Account and privacy')),
+    appBar: AppBar(title: Text(context.tr('Account and privacy'))),
     body: SafeArea(
       child: SahContent(
         child: SingleChildScrollView(
@@ -312,47 +323,56 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SahPageHeader(
-                title: 'Your data, your choices',
-                description:
-                    'Review what stays on this device and manage your saved work.',
+              SahPageHeader(
+                title: context.tr('Your data, your choices'),
+                description: context.tr(
+                  'Review what stays on this device and manage your saved work.',
+                ),
               ),
-              const SahNotice(
-                title: 'Private team beta',
-                message: 'Use fictional resident records.',
+              SahNotice(
+                title: context.tr('Private team beta'),
+                message: context.tr('Use fictional resident records.'),
                 icon: Icons.lock_outline,
               ),
               const AppearanceSection(),
-              const SahSectionHeading(title: 'On this device'),
-              const Text(
-                'Drafts on this device are encrypted. Signing out removes local work. A shared PDF is controlled by the recipient.',
+              const LanguageSection(),
+              SahSectionHeading(title: context.tr('On this device')),
+              Text(
+                context.tr(
+                  'Drafts on this device are encrypted. Signing out removes local work. A shared PDF is controlled by the recipient.',
+                ),
               ),
               const SizedBox(height: 20),
               if (_busy)
                 TickerMode(
                   enabled: ModalRoute.of(context)?.isCurrent ?? true,
-                  child: const LinearProgressIndicator(
-                    semanticsLabel: 'Updating account settings',
+                  child: LinearProgressIndicator(
+                    semanticsLabel: context.tr('Updating account settings'),
                   ),
                 ),
               _feedback(_SettingsAction.device),
               OutlinedButton(
                 key: const ValueKey('settings-sign-out'),
                 onPressed: _busy ? null : _signOut,
-                child: const Text(
-                  'Sign out and clear local data',
+                child: Text(
+                  context.tr('Sign out and clear local data'),
                   textAlign: TextAlign.center,
                 ),
               ),
-              const SahSectionHeading(
-                title: 'Selected case',
-                description:
-                    'Deleting a case removes its saved photos, answers and generated drafts. Copies already shared outside the app remain with their recipients.',
+              SahSectionHeading(
+                title: context.tr('Selected case'),
+                description: context.tr(
+                  'Deleting a case removes its saved photos, answers and generated drafts. Copies already shared outside the app remain with their recipients.',
+                ),
               ),
               if (widget.services.coordinator.draft == null)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(bottom: 16),
-                  child: Text('Open a case from Your cases to manage it here.'),
+                  child: Text(
+                    context.tr(
+                      'Open a case from Your cases to manage it here.',
+                    ),
+                  ),
                 ),
               OutlinedButton(
                 key: const ValueKey('settings-delete-case'),
@@ -362,7 +382,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         widget.services.coordinator.snapshot == null
                     ? null
                     : _deleteCase,
-                child: const Text('Delete selected case'),
+                child: Text(context.tr('Delete selected case')),
               ),
               if (widget.services.coordinator.snapshot == null &&
                   widget.services.coordinator.draft != null)
@@ -373,28 +393,29 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           widget.services.coordinator.conflict
                       ? null
                       : _removeLocalDraft,
-                  child: const Text('Remove selected local draft'),
+                  child: Text(context.tr('Remove selected local draft')),
                 ),
               if (_caseDeletionPending)
                 OutlinedButton(
                   key: const ValueKey('settings-check-case-deletion'),
                   onPressed: _busy ? null : _checkCaseDeletion,
-                  child: const Text(
-                    'Check whether case deletion completed',
+                  child: Text(
+                    context.tr('Check whether case deletion completed'),
                     textAlign: TextAlign.center,
                   ),
                 ),
               _feedback(_SettingsAction.selectedCase),
-              const SahSectionHeading(
-                title: 'Account deletion',
-                description:
-                    'You will confirm your password and review what will be removed before deleting your account.',
+              SahSectionHeading(
+                title: context.tr('Account deletion'),
+                description: context.tr(
+                  'You will confirm your password and review what will be removed before deleting your account.',
+                ),
               ),
               TextButton(
                 key: const ValueKey('settings-delete-account'),
                 onPressed: _busy ? null : _deleteAccount,
-                child: const Text(
-                  'Delete account and application data',
+                child: Text(
+                  context.tr('Delete account and application data'),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -411,8 +432,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           ),
                         ),
                       ),
-                child: const Text(
-                  'Check pending account deletion',
+                child: Text(
+                  context.tr('Check pending account deletion'),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -484,13 +505,15 @@ class _ReauthenticateDialogState extends State<_ReauthenticateDialog> {
                 namesRoute: true,
                 header: true,
                 child: Text(
-                  'Confirm your password',
+                  context.tr('Confirm your password'),
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
               ),
               const SizedBox(height: 20),
-              const Text(
-                'Confirm the current account password before reviewing account deletion.',
+              Text(
+                context.tr(
+                  'Confirm the current account password before reviewing account deletion.',
+                ),
               ),
               const SizedBox(height: 20),
               TextField(
@@ -499,13 +522,16 @@ class _ReauthenticateDialogState extends State<_ReauthenticateDialog> {
                 autocorrect: false,
                 enableSuggestions: false,
                 enabled: !_busy,
-                decoration: const InputDecoration(
-                  labelText: 'Current password',
+                decoration: InputDecoration(
+                  labelText: context.tr('Current password'),
                 ),
                 onSubmitted: (_) => _confirmPassword(),
               ),
               if (_error != null)
-                SahNotice(message: _error!, tone: SahNoticeTone.error),
+                SahNotice(
+                  message: context.tr(_error!),
+                  tone: SahNoticeTone.error,
+                ),
               const SizedBox(height: 20),
               Wrap(
                 alignment: WrapAlignment.end,
@@ -516,11 +542,15 @@ class _ReauthenticateDialogState extends State<_ReauthenticateDialog> {
                     onPressed: _busy
                         ? null
                         : () => Navigator.pop(context, false),
-                    child: const Text('Cancel'),
+                    child: Text(context.tr('Cancel')),
                   ),
                   FilledButton(
                     onPressed: _busy ? null : _confirmPassword,
-                    child: Text(_busy ? 'Confirming…' : 'Confirm password'),
+                    child: Text(
+                      _busy
+                          ? context.tr('Confirming…')
+                          : context.tr('Confirm password'),
+                    ),
                   ),
                 ],
               ),
@@ -619,31 +649,35 @@ class _DeletionReceiptScreenState extends State<DeletionReceiptScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Account deletion')),
+    appBar: AppBar(title: Text(context.tr('Account deletion'))),
     body: SafeArea(
       child: SahContent(
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            const SahPageHeader(
-              title: 'Deletion status',
-              description:
-                  'Check the saved receipt for this device. Account cleanup can finish after application data is removed.',
+            SahPageHeader(
+              title: context.tr('Deletion status'),
+              description: context.tr(
+                'Check the saved receipt for this device. Account cleanup can finish after application data is removed.',
+              ),
             ),
             if (_busy)
-              const LinearProgressIndicator(
-                semanticsLabel: 'Checking deletion status',
+              LinearProgressIndicator(
+                semanticsLabel: context.tr('Checking deletion status'),
               ),
-            if (_message != null) SahNotice(message: _message!),
+            if (_message != null) SahNotice(message: context.tr(_message!)),
             if (_state != null)
               SahNotice(
                 message: switch (_state!.status) {
-                  'complete' =>
+                  'complete' => context.tr(
                     'Application data and the provider account were deleted.',
-                  'auth_pending' =>
+                  ),
+                  'auth_pending' => context.tr(
                     'Application data is deleted. Provider account cleanup is still pending.',
-                  _ =>
+                  ),
+                  _ => context.tr(
                     'Deletion is awaiting confirmation; data has not been deleted.',
+                  ),
                 },
                 tone: _state!.complete
                     ? SahNoticeTone.success
@@ -652,7 +686,7 @@ class _DeletionReceiptScreenState extends State<DeletionReceiptScreen> {
             const SizedBox(height: 16),
             OutlinedButton(
               onPressed: _busy ? null : _check,
-              child: const Text('Refresh status'),
+              child: Text(context.tr('Refresh status')),
             ),
           ],
         ),

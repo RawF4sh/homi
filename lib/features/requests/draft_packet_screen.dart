@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../../shared/models/contracts.dart';
 import '../../shared/models/draft_packet.dart';
@@ -146,10 +147,12 @@ class _DraftPacketScreenState extends State<DraftPacketScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             SahNotice(
-              title: 'Checklist unavailable',
+              title: context.tr('Checklist unavailable'),
               message: error is MatchingApiException
-                  ? error.message
-                  : 'The draft checklist could not be loaded. Please try again.',
+                  ? context.tr(error.message)
+                  : context.tr(
+                      'The draft checklist could not be loaded. Please try again.',
+                    ),
               tone: SahNoticeTone.warning,
             ),
             const SizedBox(height: 16),
@@ -159,13 +162,13 @@ class _DraftPacketScreenState extends State<DraftPacketScreen>
                     _retry(newGeneration: code == 'PACKET_GENERATION_CONFLICT'),
                 child: Text(
                   code == 'PACKET_GENERATION_CONFLICT'
-                      ? 'Prepare a new draft'
-                      : 'Try again',
+                      ? context.tr('Prepare a new draft')
+                      : context.tr('Try again'),
                 ),
               ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Return to program results'),
+              child: Text(context.tr('Return to program results')),
             ),
           ],
         ),
@@ -175,15 +178,15 @@ class _DraftPacketScreenState extends State<DraftPacketScreen>
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Draft checklist')),
+    appBar: AppBar(title: Text(context.tr('Draft checklist'))),
     body: SafeArea(
       child: FutureBuilder<DraftPacket>(
         future: _preparation,
         builder: (context, state) {
           if (state.connectionState != ConnectionState.done) {
-            return const Center(
+            return Center(
               child: CircularProgressIndicator(
-                semanticsLabel: 'Preparing draft checklist',
+                semanticsLabel: context.tr('Preparing draft checklist'),
               ),
             );
           }
@@ -245,71 +248,93 @@ class _Checklist extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SahFeaturePanel(
-                eyebrow: 'DRAFT CHECKLIST',
+                eyebrow: context.tr('DRAFT CHECKLIST'),
                 title: program.programName,
-                description: 'Draft only · Nothing has been submitted.',
+                description: context.tr(
+                  'Draft only · Nothing has been submitted.',
+                ),
               ),
+              if (Localizations.localeOf(context).languageCode != 'en')
+                SahNotice(
+                  message: context.tr(
+                    'Program information and official forms may remain in English. Your saved answers are not translated.',
+                  ),
+                ),
               const SizedBox(height: 20),
               if (packet.isDemo) ...[
                 Align(
                   alignment: Alignment.centerLeft,
                   child: SahStatusBadge(
                     label: savedExample
-                        ? 'Fictional saved example'
-                        : 'Fictional demo',
+                        ? context.tr('Fictional saved example')
+                        : context.tr('Fictional demo'),
                     icon: Icons.science_outlined,
                   ),
                 ),
                 const SizedBox(height: 12),
               ],
               if (savedExample)
-                const SahNotice(
-                  message:
-                      'This saved checklist shows the next steps. It is not an application for a real program.',
+                SahNotice(
+                  message: context.tr(
+                    'This saved checklist shows the next steps. It is not an application for a real program.',
+                  ),
                 )
               else if (!fresh)
-                const SahNotice(
-                  message:
-                      'This draft needs a fresh review. Refresh program results first.',
+                SahNotice(
+                  message: context.tr(
+                    'This draft needs a fresh review. Refresh program results first.',
+                  ),
                   tone: SahNoticeTone.warning,
                 )
               else
                 const SizedBox.shrink(),
               const SizedBox(height: 16),
               if (program.status == 'does_not_meet_criterion')
-                const SahNotice(
-                  message:
-                      'A requirement was not met. Review that result with the program before proceeding.',
+                SahNotice(
+                  message: context.tr(
+                    'A requirement was not met. Review that result with the program before proceeding.',
+                  ),
                   tone: SahNoticeTone.warning,
                 )
               else if (program.status == 'needs_confirmation')
-                const SahNotice(
-                  message: 'Some requirements still need confirmation.',
+                SahNotice(
+                  message: context.tr(
+                    'Some requirements still need confirmation.',
+                  ),
                   tone: SahNoticeTone.warning,
                 ),
-              const SahSectionHeading(title: 'Your draft materials'),
+              SahSectionHeading(title: context.tr('Your draft materials')),
               _MaterialSummary(
                 icon: Icons.description_outlined,
-                title: 'Application form',
+                title: context.tr('Application form'),
                 message:
                     packet.formVersion == null ||
                         packet.mappingVersion == null ||
                         packet.storageReference == null
-                    ? 'Official form not prepared. Its fields are unverified.'
-                    : 'Still a draft. Nothing is opened or submitted here.',
+                    ? context.tr(
+                        'Official form not prepared. Its fields are unverified.',
+                      )
+                    : context.tr(
+                        'Still a draft. Nothing is opened or submitted here.',
+                      ),
               ),
               const SizedBox(height: 16),
               _MaterialSummary(
                 icon: Icons.photo_library_outlined,
-                title: 'Supporting evidence',
+                title: context.tr('Supporting evidence'),
                 message: packet.attachments.isEmpty
-                    ? 'No evidence files attached.'
-                    : '${packet.attachments.length} evidence references recorded. Files are not shown here.',
+                    ? context.tr('No evidence files attached.')
+                    : context.tr(
+                        '{count} evidence references recorded. Files are not shown here.',
+                        {'count': packet.attachments.length},
+                      ),
               ),
-              const SahSectionHeading(title: 'What is needed next'),
+              SahSectionHeading(title: context.tr('What is needed next')),
               if (packet.missingItems.isEmpty)
-                const Text(
-                  'No checklist items were returned. The program must still review any application.',
+                Text(
+                  context.tr(
+                    'No checklist items were returned. The program must still review any application.',
+                  ),
                 ),
               for (final item in packet.missingItems)
                 Padding(
@@ -328,10 +353,11 @@ class _Checklist extends StatelessWidget {
                           _ => Icons.groups_outlined,
                         },
                         label: switch (item.resolvedBy) {
-                          'resident' => 'Who can help: resident',
-                          'professional' =>
+                          'resident' => context.tr('Who can help: resident'),
+                          'professional' => context.tr(
                             'Who can help: qualified professional',
-                          _ => 'Who can help: program team',
+                          ),
+                          _ => context.tr('Who can help: program team'),
                         },
                       ),
                     ],

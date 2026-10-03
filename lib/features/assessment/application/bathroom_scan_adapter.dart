@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import '../../../l10n/app_language.dart';
 
 import '../../../shared/models/case_draft.dart';
 import '../domain/scan/bathroom_scan_scene.dart';
@@ -78,8 +79,12 @@ class NativeBathroomScanAdapter implements BathroomScanAdapter {
   @override
   Future<BathroomScanScene> start(String scanId) async {
     if (!isCaseUuidV4(scanId)) throw const FormatException('Invalid scan ID.');
+    final language = AppLanguageController.instance.effectiveLanguage.code;
     final scene = BathroomScanScene.fromJson(
-      await channel.invokeMethod<Object?>('start', {'scanId': scanId}),
+      await channel.invokeMethod<Object?>('start', {
+        'scanId': scanId,
+        if (language != 'en') 'languageCode': language,
+      }),
     );
     if (scene.scanId != scanId) {
       throw const FormatException('Scan belongs to another capture.');

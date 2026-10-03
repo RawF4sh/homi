@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../services/draft_save_tracker.dart';
 
 class DraftExitGuard extends StatefulWidget {
@@ -183,60 +184,66 @@ class _DraftExitDialogState extends State<_DraftExitDialog> {
                 header: true,
                 child: Text(
                   _waiting
-                      ? 'Saving on this device'
+                      ? context.tr('Saving on this device')
                       : _confirmDiscard
-                      ? 'Leave this editor?'
-                      : 'Changes are not saved on this device',
+                      ? context.tr('Leave this editor?')
+                      : context.tr('Changes are not saved on this device'),
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
               ),
               const SizedBox(height: 16),
               Text(
                 _waiting
-                    ? 'Wait for the accepted device save, or return to editing. No online save is being started.'
+                    ? context.tr(
+                        'Wait for the accepted device save, or return to editing. No online save is being started.',
+                      )
                     : _confirmDiscard
-                    ? 'Unsaved entries kept only in this editor will be lost. Earlier device-saved entries remain. Changes already applied to the case or saved online are not undone.'
-                    : 'Your latest entries are still here. Retry their device save before leaving, or keep editing.',
+                    ? context.tr(
+                        'Unsaved entries kept only in this editor will be lost. Earlier device-saved entries remain. Changes already applied to the case or saved online are not undone.',
+                      )
+                    : context.tr(
+                        'Your latest entries are still here. Retry their device save before leaving, or keep editing.',
+                      ),
               ),
               const SizedBox(height: 20),
               if (_waiting)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(bottom: 20),
                   child: LinearProgressIndicator(
                     key: ValueKey('draft-exit-waiting'),
-                    semanticsLabel: 'Waiting for the device save',
+                    semanticsLabel: context.tr('Waiting for the device save'),
                   ),
                 ),
               if (_confirmDiscard) ...[
                 FilledButton(
                   key: const ValueKey('draft-exit-cancel-discard'),
                   onPressed: () => _finish(false),
-                  child: const Text('Keep these edits'),
+                  child: Text(context.tr('Keep these edits')),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
                   key: const ValueKey('draft-exit-confirm-discard'),
                   onPressed: _discard,
-                  child: const Text('Leave without retrying'),
+                  child: Text(context.tr('Leave without retrying')),
                 ),
               ] else ...[
                 FilledButton(
                   key: const ValueKey('draft-exit-keep-editing'),
                   onPressed: () => _finish(false),
-                  child: const Text('Keep editing'),
+                  child: Text(context.tr('Keep editing')),
                 ),
                 if (!_waiting) ...[
                   const SizedBox(height: 8),
                   OutlinedButton(
                     key: const ValueKey('draft-exit-retry'),
                     onPressed: _retry,
-                    child: const Text('Retry saving and leave'),
+                    child: Text(context.tr('Retry saving and leave')),
                   ),
                   const SizedBox(height: 8),
                   TextButton(
                     key: const ValueKey('draft-exit-discard'),
                     onPressed: () => setState(() => _confirmDiscard = true),
-                    child: const Text('Leave without retrying'),
+                    child: Text(context.tr('Leave without retrying')),
                   ),
                 ],
               ],

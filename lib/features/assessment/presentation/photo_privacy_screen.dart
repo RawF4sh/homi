@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../../shared/presentation/sah_components.dart';
 import '../domain/image/image_validator.dart';
 import '../domain/image/private_media_platform.dart';
@@ -90,25 +91,33 @@ class _PhotoPrivacyScreenState extends State<PhotoPrivacyScreen> {
     final info = const ImageValidator().check(widget.bytes);
     if (info is! ImageAccepted) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Remove private details')),
-        body: const SafeArea(
+        appBar: AppBar(title: Text(context.tr('Remove private details'))),
+        body: SafeArea(
           child: Padding(
             padding: EdgeInsets.all(24),
             child: SahNotice(
-              message:
-                  'This photo could not be opened. Go back to choose another photo.',
+              message: context.tr(
+                'This photo could not be opened. Go back to choose another photo.',
+              ),
               tone: SahNoticeTone.error,
             ),
           ),
         ),
       );
     }
-    final description =
-        'Selected area: left ${(selection.left * 100).round()}%, top ${(selection.top * 100).round()}%, width ${(selection.width * 100).round()}%, height ${(selection.height * 100).round()}%.';
+    final description = context.tr(
+      'Selected area: left {left}%, top {top}%, width {width}%, height {height}%.',
+      {
+        'left': (selection.left * 100).round(),
+        'top': (selection.top * 100).round(),
+        'width': (selection.width * 100).round(),
+        'height': (selection.height * 100).round(),
+      },
+    );
     return PopScope(
       canPop: !busy,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Remove private details')),
+        appBar: AppBar(title: Text(context.tr('Remove private details'))),
         body: SafeArea(
           child: SahContent(
             child: SingleChildScrollView(
@@ -116,21 +125,25 @@ class _PhotoPrivacyScreenState extends State<PhotoPrivacyScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SahPageHeader(
-                    eyebrow: 'PHOTO PRIVACY',
-                    title: 'Keep only what helps',
-                    description:
-                        'Cover faces, mail, medicine labels and other private details. Drag the outlined area or use the buttons below, then add a solid cover. Check the edited photo afterward.',
+                  SahPageHeader(
+                    eyebrow: context.tr('PHOTO PRIVACY'),
+                    title: context.tr('Keep only what helps'),
+                    description: context.tr(
+                      'Cover faces, mail, medicine labels and other private details. Drag the outlined area or use the buttons below, then add a solid cover. Check the edited photo afterward.',
+                    ),
                   ),
                   if (failed)
-                    const SahNotice(
-                      message:
-                          'The photo preview could not be opened. Your selected edits are kept. Go back and reopen the photo before changing or applying them.',
+                    SahNotice(
+                      message: context.tr(
+                        'The photo preview could not be opened. Your selected edits are kept. Go back and reopen the photo before changing or applying them.',
+                      ),
                       tone: SahNoticeTone.error,
                     )
                   else if (!ready)
-                    const LinearProgressIndicator(
-                      semanticsLabel: 'Opening photo before privacy edits',
+                    LinearProgressIndicator(
+                      semanticsLabel: context.tr(
+                        'Opening photo before privacy edits',
+                      ),
                     ),
                   AspectRatio(
                     aspectRatio: info.width / info.height,
@@ -142,9 +155,11 @@ class _PhotoPrivacyScreenState extends State<PhotoPrivacyScreen> {
                             widget.bytes,
                             fit: BoxFit.fill,
                             cacheWidth: 1024,
-                            semanticLabel: 'Photo before privacy edits',
-                            errorBuilder: (_, _, _) => const Center(
-                              child: Text('Preview unavailable'),
+                            semanticLabel: context.tr(
+                              'Photo before privacy edits',
+                            ),
+                            errorBuilder: (_, _, _) => Center(
+                              child: Text(context.tr('Preview unavailable')),
                             ),
                           ),
                           if (ready)
@@ -218,69 +233,79 @@ class _PhotoPrivacyScreenState extends State<PhotoPrivacyScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   Text(description),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
                       control(
                         Icons.arrow_back,
-                        'Move left',
+                        context.tr('Move left'),
                         () => adjust(x: -.025),
                       ),
                       control(
                         Icons.arrow_forward,
-                        'Move right',
+                        context.tr('Move right'),
                         () => adjust(x: .025),
                       ),
                       control(
                         Icons.arrow_upward,
-                        'Move up',
+                        context.tr('Move up'),
                         () => adjust(y: -.025),
                       ),
                       control(
                         Icons.arrow_downward,
-                        'Move down',
+                        context.tr('Move down'),
                         () => adjust(y: .025),
                       ),
                       control(
                         Icons.unfold_more,
-                        'Make taller',
+                        context.tr('Make taller'),
                         () => adjust(h: .025),
                       ),
                       control(
                         Icons.unfold_less,
-                        'Make shorter',
+                        context.tr('Make shorter'),
                         () => adjust(h: -.025),
                       ),
                       control(
                         Icons.swap_horiz,
-                        'Make wider',
+                        context.tr('Make wider'),
                         () => adjust(w: .025),
                       ),
                       control(
                         Icons.compress,
-                        'Make narrower',
+                        context.tr('Make narrower'),
                         () => adjust(w: -.025),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   Semantics(
                     liveRegion: true,
                     child: Text(
-                      '${covers.length} of 20 solid covers added. ${crop == null ? 'The full photo will be kept.' : 'Only the selected crop will be kept.'}',
+                      context.tr(
+                        '{count} of 20 solid covers added. {cropStatus}',
+                        {
+                          'count': covers.length,
+                          'cropStatus': context.tr(
+                            crop == null
+                                ? 'The full photo will be kept.'
+                                : 'Only the selected crop will be kept.',
+                          ),
+                        },
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: busy || !ready || covers.length >= 20
                         ? null
                         : () => updateEdits(() => covers.add(selection)),
                     icon: const Icon(Icons.privacy_tip_outlined),
-                    label: const Text('Add opaque cover'),
+                    label: Text(context.tr('Add opaque cover')),
                   ),
                   if (covers.isNotEmpty)
                     TextButton.icon(
@@ -288,21 +313,21 @@ class _PhotoPrivacyScreenState extends State<PhotoPrivacyScreen> {
                           ? null
                           : () => updateEdits(() => covers.removeLast()),
                       icon: const Icon(Icons.undo),
-                      label: const Text('Undo last cover'),
+                      label: Text(context.tr('Undo last cover')),
                     ),
                   OutlinedButton.icon(
                     onPressed: busy || !ready
                         ? null
                         : () => updateEdits(() => crop = selection),
                     icon: const Icon(Icons.crop),
-                    label: const Text('Crop to outlined area'),
+                    label: Text(context.tr('Crop to outlined area')),
                   ),
                   if (crop != null)
                     TextButton(
                       onPressed: busy || !ready
                           ? null
                           : () => updateEdits(() => crop = null),
-                      child: const Text('Keep full photo'),
+                      child: Text(context.tr('Keep full photo')),
                     ),
                   TextButton(
                     onPressed:
@@ -312,24 +337,28 @@ class _PhotoPrivacyScreenState extends State<PhotoPrivacyScreen> {
                             covers.clear();
                             crop = null;
                           }),
-                    child: const Text('Clear edits'),
+                    child: Text(context.tr('Clear edits')),
                   ),
                   if (error != null) ...[
                     Semantics(
                       liveRegion: true,
                       child: SahNotice(
-                        message: error!,
+                        message: context.tr(error!),
                         tone: SahNoticeTone.error,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                   ],
                   FilledButton(
                     onPressed:
                         busy || !ready || (covers.isEmpty && crop == null)
                         ? null
                         : apply,
-                    child: Text(busy ? 'Applying…' : 'Apply and review photo'),
+                    child: Text(
+                      busy
+                          ? context.tr('Applying…')
+                          : context.tr('Apply and review photo'),
+                    ),
                   ),
                 ],
               ),

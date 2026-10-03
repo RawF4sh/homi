@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../../app/live_app.dart';
 import '../../shared/models/plan_name.dart';
@@ -162,7 +163,11 @@ class _PlanNameDialogState extends State<_PlanNameDialog> {
       canPop: !_saving,
       child: AlertDialog(
         scrollable: true,
-        title: Text(widget.creating ? 'Name your plan' : 'Rename plan'),
+        title: Text(
+          widget.creating
+              ? context.tr('Name your plan')
+              : context.tr('Rename plan'),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,36 +179,60 @@ class _PlanNameDialogState extends State<_PlanNameDialog> {
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.done,
               decoration: InputDecoration(
-                labelText: 'Plan name (optional)',
-                hintText: 'For example, Mom’s home',
-                errorText: _validation,
-                errorMaxLines: 4,
-                helperText: 'Up to 80 characters',
+                labelText: context.tr('Plan name (optional)'),
+                hintText: context.tr('For example, Mom’s home'),
+                error: _validation == null
+                    ? null
+                    : Text(
+                        context.tr(_validation!),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                helperText: context.tr('Up to 80 characters'),
                 helperMaxLines: 2,
               ),
               onSubmitted: (_) => _save(),
             ),
             const SizedBox(height: 12),
-            Text('Leave blank to use “${widget.defaultName}”.'),
+            Text(
+              context.tr('Leave blank to use “{name}”.', {
+                'name': widget.defaultName,
+              }),
+            ),
             const SizedBox(height: 12),
-            const Text(
-              'Names sync with your account and stay available after sign-out. Offline changes are kept securely on this device until they sync.',
+            Text(
+              context.tr(
+                'Names sync with your account and stay available after sign-out. Offline changes are kept securely on this device until they sync.',
+              ),
             ),
             if (widget.caseId != null &&
                 widget.coordinator?.planNameStatus(widget.caseId!) != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
-                  widget.coordinator!.planNameStatus(widget.caseId!)!,
+                  context.tr(
+                    widget.coordinator!.planNameStatus(widget.caseId!)!,
+                  ),
                 ),
               ),
             if (_conflict) ...[
               const SizedBox(height: 12),
               Text(
-                'On this device: ${widget.coordinator!.planNameFor(widget.caseId!) ?? widget.defaultName}',
+                context.tr('On this device: {name}', {
+                  'name':
+                      widget.coordinator!.planNameFor(widget.caseId!) ??
+                      widget.defaultName,
+                }),
               ),
               Text(
-                'In your account: ${widget.coordinator!.nameSync!.remoteFor(widget.caseId!)!.name ?? widget.defaultName}',
+                context.tr('In your account: {name}', {
+                  'name':
+                      widget.coordinator!.nameSync!
+                          .remoteFor(widget.caseId!)!
+                          .name ??
+                      widget.defaultName,
+                }),
               ),
               Wrap(
                 spacing: 8,
@@ -215,7 +244,7 @@ class _PlanNameDialogState extends State<_PlanNameDialog> {
                             keepLocal: false,
                             reviewedRemote: reviewedRemote,
                           ),
-                    child: const Text('Use account name'),
+                    child: Text(context.tr('Use account name')),
                   ),
                   TextButton(
                     onPressed: _saving
@@ -224,7 +253,7 @@ class _PlanNameDialogState extends State<_PlanNameDialog> {
                             keepLocal: true,
                             reviewedRemote: reviewedRemote,
                           ),
-                    child: const Text('Keep this device’s name'),
+                    child: Text(context.tr('Keep this device’s name')),
                   ),
                 ],
               ),
@@ -233,26 +262,40 @@ class _PlanNameDialogState extends State<_PlanNameDialog> {
               OutlinedButton.icon(
                 onPressed: _saving ? null : _check,
                 icon: const Icon(Icons.sync),
-                label: const Text('Check name sync'),
+                label: Text(context.tr('Check name sync')),
               ),
-            if (_error != null) SahActionFeedback(message: _error!),
+            if (_error != null) SahActionFeedback(message: context.tr(_error!)),
             if (_saving) ...[
               const SizedBox(height: 12),
-              const LinearProgressIndicator(semanticsLabel: 'Saving plan name'),
+              LinearProgressIndicator(
+                semanticsLabel: context.tr('Saving plan name'),
+              ),
             ],
+            const SizedBox(height: 20),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                TextButton(
+                  onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                  child: Text(
+                    _pending ? context.tr('Close') : context.tr('Cancel'),
+                  ),
+                ),
+                FilledButton(
+                  key: const ValueKey('plan-name-save'),
+                  onPressed: _saving || _pending ? null : _save,
+                  child: Text(
+                    widget.creating
+                        ? context.tr('Create plan')
+                        : context.tr('Save name'),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: _saving ? null : () => Navigator.of(context).pop(),
-            child: Text(_pending ? 'Close' : 'Cancel'),
-          ),
-          FilledButton(
-            key: const ValueKey('plan-name-save'),
-            onPressed: _saving || _pending ? null : _save,
-            child: Text(widget.creating ? 'Create plan' : 'Save name'),
-          ),
-        ],
       ),
     );
   }

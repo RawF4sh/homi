@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../../../shared/presentation/sah_components.dart';
 import '../application/assessment_sync.dart';
@@ -34,48 +35,64 @@ class SaveStatusCard extends StatelessWidget {
           String? action,
           VoidCallback? onAction,
         ) = switch (sync.phase) {
-          SyncPhase.working => ('Saving…', null, null),
+          SyncPhase.working => (context.tr('Saving…'), null, null),
           SyncPhase.uncertain => (
-            'We couldn’t confirm the last save. Check before changing '
-                'anything.',
+            context.tr(
+              'We couldn’t confirm the last save. Check before changing anything.',
+            ),
             'Check what is saved',
             onRecover ?? sync.recover,
           ),
           SyncPhase.needsReload => (
-            'Your case changed elsewhere. Reload, then review your findings.',
+            context.tr(
+              'Your case changed elsewhere. Reload, then review your findings.',
+            ),
             'Reload',
             onRecover ?? sync.recover,
           ),
           SyncPhase.signInNeeded => (
-            'Sign in again to save. Your findings are still here.',
+            context.tr('Sign in again to save. Your findings are still here.'),
             null,
             null,
           ),
           SyncPhase.failed => (
-            '${sync.errorMessage ?? 'Saving failed.'} Your findings are '
-                'still here.',
+            context.tr('{error} Your findings are still here.', {
+              'error': sync.errorMessage ?? context.tr('Saving failed.'),
+            }),
             'Try saving again',
             onSave ?? sync.save,
           ),
           SyncPhase.idle when sync.hasUnsavedWork => (
             durableLocal
-                ? 'Kept privately here. Save to store it in your case online.'
-                : 'Not saved yet. Lost if the app closes.',
+                ? context.tr(
+                    'Kept privately here. Save to store it in your case online.',
+                  )
+                : context.tr('Not saved yet. Lost if the app closes.'),
             'Save to my case',
             onSave ?? sync.save,
           ),
           SyncPhase.idle when undescribedDraftOpen => (
-            '${sync.savedCase.findings.isEmpty ? '' : 'Earlier findings are saved. '}'
-                '${durableLocal ? 'Kept on this device until you save.' : 'Only on this screen until you save.'}',
+            context.tr('{earlier}{current}', {
+              'earlier': sync.savedCase.findings.isEmpty
+                  ? ''
+                  : context.tr('Earlier findings are saved. '),
+              'current': context.tr(
+                durableLocal
+                    ? 'Kept on this device until you save.'
+                    : 'Only on this screen until you save.',
+              ),
+            }),
             null,
             null,
           ),
           SyncPhase.idle when photoMarksUnsaved == true => (
-            'Findings are saved. Changed photo marks are only on this device.',
+            context.tr(
+              'Findings are saved. Changed photo marks are only on this device.',
+            ),
             'Save findings and photo marks online',
             onSave ?? sync.save,
           ),
-          SyncPhase.idle => ('Saved to your case.', null, null),
+          SyncPhase.idle => (context.tr('Saved to your case.'), null, null),
         };
         final (
           String? title,
@@ -132,7 +149,7 @@ class SaveStatusCard extends StatelessWidget {
           ),
         };
         return SahNotice(
-          title: title,
+          title: title == null ? null : context.tr(title),
           message: message,
           messageKey: const ValueKey('save-status'),
           tone: tone,
@@ -146,7 +163,7 @@ class SaveStatusCard extends StatelessWidget {
                         ? Icons.cloud_upload_outlined
                         : Icons.refresh_rounded,
                   ),
-                  label: Text(action, textAlign: TextAlign.center),
+                  label: Text(context.tr(action), textAlign: TextAlign.center),
                 ),
         );
       },

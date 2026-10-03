@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/case_draft.dart';
 import '../../shared/models/contracts.dart';
@@ -184,18 +185,20 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         scrollable: true,
-        title: const Text('Return this update to the editor?'),
-        content: const Text(
-          'Review the latest history above first. This discards the old pending attempt; a future save creates a new update.',
+        title: Text(ctx.tr('Return this update to the editor?')),
+        content: Text(
+          ctx.tr(
+            'Review the latest history above first. This discards the old pending attempt; a future save creates a new update.',
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(ctx.tr('Cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Return to editor'),
+            child: Text(ctx.tr('Return to editor')),
           ),
         ],
       ),
@@ -306,7 +309,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
     builder: (context, requestExit, exiting) => Scaffold(
       appBar: AppBar(
         leading: BackButton(onPressed: requestExit),
-        title: const Text('Manual request history'),
+        title: Text(context.tr('Manual request history')),
       ),
       body: SafeArea(
         child: SahContent(
@@ -317,35 +320,36 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
               children: [
                 SahPageHeader(
                   title: widget.program.programName,
-                  description:
-                      'Your own notes on calls, documents and next steps.',
+                  description: context.tr(
+                    'Your own notes on calls, documents and next steps.',
+                  ),
                 ),
-                const SahStatusBadge(
-                  label: 'Reported by you · not agency status',
+                SahStatusBadge(
+                  label: context.tr('Reported by you · not agency status'),
                   icon: Icons.edit_note_rounded,
                 ),
                 if (_busy)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
                     child: LinearProgressIndicator(
-                      semanticsLabel: 'Updating request history',
+                      semanticsLabel: context.tr('Updating request history'),
                     ),
                   ),
                 if (_error != null && !_feedbackAtAction)
-                  SahNotice(message: _error!),
+                  SahNotice(message: context.tr(_error!)),
                 const SizedBox(height: 8),
                 OutlinedButton(
                   key: const ValueKey('history-reconcile'),
                   onPressed: _busy || exiting ? null : () => _load(),
-                  child: const Text(
-                    'Reload history and check pending update',
+                  child: Text(
+                    context.tr('Reload history and check pending update'),
                     textAlign: TextAlign.center,
                   ),
                 ),
                 if (_history != null)
-                  const SahSectionHeading(title: 'Saved updates'),
+                  SahSectionHeading(title: context.tr('Saved updates')),
                 if (_history?.events.isEmpty == true)
-                  const Text('No updates yet.'),
+                  Text(context.tr('No updates yet.')),
                 for (final event in _history?.events ?? <RequestEvent>[])
                   ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -356,60 +360,76 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                       ),
                     ),
                     title: Text(
-                      '${_label(event.update.status)} · ${event.update.occurredOn}',
+                      context.tr('{status} · {date}', {
+                        'status': _label(context, event.update.status),
+                        'date': event.update.occurredOn,
+                      }),
                     ),
                     subtitle: Text(
                       [
                         event.update.note,
                         if (event.update.nextAction != null)
-                          'Next action: ${event.update.nextAction}',
+                          context.tr('Next action: {action}', {
+                            'action': event.update.nextAction,
+                          }),
                         if (event.update.responsibleParty != null)
-                          'Responsible: ${_label(event.update.responsibleParty!)}',
+                          context.tr('Responsible: {party}', {
+                            'party': _label(
+                              context,
+                              event.update.responsibleParty!,
+                            ),
+                          }),
                         if (event.update.followUpOn != null)
-                          'Follow-up: ${event.update.followUpOn}',
+                          context.tr('Follow-up: {date}', {
+                            'date': event.update.followUpOn,
+                          }),
                       ].whereType<String>().join('\n'),
                     ),
                   ),
                 if (_pending != null) ...[
-                  const SahSectionHeading(title: 'Pending update'),
-                  const SahNotice(
-                    message:
-                        'An update may already have been saved. Reload history before retrying the exact pending update.',
+                  SahSectionHeading(title: context.tr('Pending update')),
+                  SahNotice(
+                    message: context.tr(
+                      'An update may already have been saved. Reload history before retrying the exact pending update.',
+                    ),
                     tone: SahNoticeTone.warning,
                   ),
                   Text(
-                    '${_label(_pending!.update.status)} · ${_pending!.update.occurredOn}',
+                    context.tr('{status} · {date}', {
+                      'status': _label(context, _pending!.update.status),
+                      'date': _pending!.update.occurredOn,
+                    }),
                   ),
                   Text(_pending!.update.note ?? ''),
                   if (_error != null && _feedbackAtAction)
                     SahActionFeedback(
                       key: const ValueKey('history-save-feedback'),
-                      message: _error!,
+                      message: context.tr(_error!),
                     ),
                   FilledButton(
                     onPressed: _busy || exiting || !_canRetry ? null : _append,
-                    child: const Text(
-                      'Retry exact pending update',
+                    child: Text(
+                      context.tr('Retry exact pending update'),
                       textAlign: TextAlign.center,
                     ),
                   ),
                   if (_reconciledPending && !_canRetry)
                     TextButton(
                       onPressed: _busy || exiting ? null : _discardPending,
-                      child: const Text(
-                        'Review against changed history and edit',
+                      child: Text(
+                        context.tr('Review against changed history and edit'),
                       ),
                     ),
                 ] else if (_history != null) ...[
-                  const SahSectionHeading(title: 'Add a reported update'),
+                  SahSectionHeading(title: context.tr('Add a reported update')),
                   DropdownButtonFormField<String>(
                     key: ValueKey('status-$_restoring'),
                     initialValue: _status,
                     isExpanded: true,
                     isDense: false,
                     itemHeight: null,
-                    decoration: const InputDecoration(
-                      labelText: 'Reported status',
+                    decoration: InputDecoration(
+                      labelText: context.tr('Reported status'),
                     ),
                     items: [
                       for (final value in [
@@ -423,7 +443,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                       ])
                         DropdownMenuItem(
                           value: value,
-                          child: Text(_label(value)),
+                          child: Text(_label(context, value)),
                         ),
                     ],
                     onChanged: _busy || exiting
@@ -440,9 +460,9 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                     enabled: !_busy && !exiting,
                     keyboardType: TextInputType.datetime,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Date it happened (YYYY-MM-DD)',
-                      helperText: 'For example 2026-10-23',
+                    decoration: InputDecoration(
+                      labelText: context.tr('Date it happened (YYYY-MM-DD)'),
+                      helperText: context.tr('For example 2026-10-23'),
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -452,7 +472,9 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                     isExpanded: true,
                     isDense: false,
                     itemHeight: null,
-                    decoration: const InputDecoration(labelText: 'Your source'),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Your source'),
+                    ),
                     items: [
                       for (final value in [
                         'self_report',
@@ -461,7 +483,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                       ])
                         DropdownMenuItem(
                           value: value,
-                          child: Text(_label(value)),
+                          child: Text(_label(context, value)),
                         ),
                     ],
                     onChanged: _busy || exiting
@@ -479,14 +501,15 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                     maxLength: 500,
                     minLines: 2,
                     maxLines: 5,
-                    decoration: const InputDecoration(
-                      labelText: 'Optional note',
+                    decoration: InputDecoration(
+                      labelText: context.tr('Optional note'),
                     ),
                   ),
-                  const SahSectionHeading(
-                    title: 'Next action',
-                    description:
-                        'Optional · record who will follow up and when.',
+                  SahSectionHeading(
+                    title: context.tr('Next action'),
+                    description: context.tr(
+                      'Optional · record who will follow up and when.',
+                    ),
                   ),
                   TextField(
                     controller: _action,
@@ -495,8 +518,8 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                     maxLength: 250,
                     minLines: 1,
                     maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Optional next action',
+                    decoration: InputDecoration(
+                      labelText: context.tr('Optional next action'),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -506,8 +529,8 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                     isExpanded: true,
                     isDense: false,
                     itemHeight: null,
-                    decoration: const InputDecoration(
-                      labelText: 'Who handles the next action?',
+                    decoration: InputDecoration(
+                      labelText: context.tr('Who handles the next action?'),
                     ),
                     items: [
                       for (final value in [
@@ -520,7 +543,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                       ])
                         DropdownMenuItem(
                           value: value,
-                          child: Text(_label(value)),
+                          child: Text(_label(context, value)),
                         ),
                     ],
                     onChanged: _busy || exiting
@@ -536,22 +559,25 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                     onChanged: (_) => _stash(),
                     enabled: !_busy && !exiting,
                     keyboardType: TextInputType.datetime,
-                    decoration: const InputDecoration(
-                      labelText: 'Optional follow-up date (YYYY-MM-DD)',
-                      helperText: 'Needs a next action too',
+                    decoration: InputDecoration(
+                      labelText: context.tr(
+                        'Optional follow-up date (YYYY-MM-DD)',
+                      ),
+                      helperText: context.tr('Needs a next action too'),
                     ),
                   ),
                   const SizedBox(height: 24),
                   if (_history!.requestRevision >= 50)
-                    const SahNotice(
-                      message:
-                          'This request history has reached its limit of 50 updates. Your saved history remains available.',
+                    SahNotice(
+                      message: context.tr(
+                        'This request history has reached its limit of 50 updates. Your saved history remains available.',
+                      ),
                       tone: SahNoticeTone.warning,
                     ),
                   if (_error != null && _feedbackAtAction)
                     SahActionFeedback(
                       key: const ValueKey('history-save-feedback'),
-                      message: _error!,
+                      message: context.tr(_error!),
                     ),
                   FilledButton(
                     key: const ValueKey('history-save'),
@@ -559,7 +585,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                         _busy || exiting || _history!.requestRevision >= 50
                         ? null
                         : _append,
-                    child: const Text('Save manual update'),
+                    child: Text(context.tr('Save manual update')),
                   ),
                 ],
               ],
@@ -571,7 +597,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
   );
 }
 
-String _label(String text) => switch (text) {
+String _label(BuildContext context, String text) => context.tr(switch (text) {
   'needs_information' => 'Needs info',
   'program_contact' => 'Program contact',
   'self_report' => 'Self report',
@@ -579,4 +605,4 @@ String _label(String text) => switch (text) {
     text.isEmpty
         ? text
         : '${text[0].toUpperCase()}${text.substring(1).replaceAll('_', ' ')}',
-};
+});

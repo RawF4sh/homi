@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../domain/annotation/box_annotation.dart';
 import 'photo_decode_gate.dart';
@@ -77,40 +78,48 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
     final double dy = widget.image.height * _step;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Mark the area')),
+      appBar: AppBar(title: Text(context.tr('Mark the area'))),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'Draw a box around the part your observation is about. The '
-                'box only points to it; it does not measure anything. Save marks online, '
-                'then review them with the photo before including it in a draft PDF.',
+              Text(
+                context.tr(
+                  'Draw a box around the part your observation is about. The box only points to it; it does not measure anything. Save marks online, then review them with the photo before including it in a draft PDF.',
+                ),
               ),
-              const SizedBox(height: 8),
-              Text('Your observation: ${widget.observation.trim()}'),
+              SizedBox(height: 8),
+              Text(
+                context.tr('Your observation: {observation}', {
+                  'observation': widget.observation.trim(),
+                }),
+              ),
               if (failed)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Text(
-                    'This photo could not be opened. Existing marks are retained. Go back and reload the saved photo before editing marks.',
+                    context.tr(
+                      'This photo could not be opened. Existing marks are retained. Go back and reload the saved photo before editing marks.',
+                    ),
                   ),
                 )
               else if (!ready)
-                const LinearProgressIndicator(
-                  semanticsLabel: 'Opening photo before marking',
+                LinearProgressIndicator(
+                  semanticsLabel: context.tr('Opening photo before marking'),
                 ),
               if (stale.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Semantics(
                   liveRegion: true,
                   child: Text(
-                    'This photo changed, so ${stale.length} earlier '
-                    '${stale.length == 1 ? 'mark no longer applies' : 'marks no longer apply'}. '
-                    'Remove ${stale.length == 1 ? 'it' : 'them'} and add a new '
-                    'mark if you need one.',
+                    context.tr(
+                      stale.length == 1
+                          ? 'This photo changed, so {count} earlier mark no longer applies. Remove it and add a new mark if you need one.'
+                          : 'This photo changed, so {count} earlier marks no longer apply. Remove them and add a new mark if you need one.',
+                      {'count': stale.length},
+                    ),
                   ),
                 ),
                 TextButton(
@@ -124,10 +133,10 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                           });
                           widget.onChanged?.call();
                         },
-                  child: const Text('Remove old marks'),
+                  child: Text(context.tr('Remove old marks')),
                 ),
               ],
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               AspectRatio(
                 aspectRatio: widget.image.width / widget.image.height,
                 child: LayoutBuilder(
@@ -142,7 +151,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               if (box == null)
                 FilledButton(
                   onPressed: !ready
@@ -156,7 +165,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                           });
                           widget.onChanged?.call();
                         },
-                  child: const Text('Add a box'),
+                  child: Text(context.tr('Add a box')),
                 )
               else ...[
                 TextField(
@@ -164,14 +173,14 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                   enabled: ready,
                   controller: _label,
                   maxLength: 80,
-                  decoration: const InputDecoration(
-                    labelText: 'What does the box show? (optional)',
+                  decoration: InputDecoration(
+                    labelText: context.tr('What does the box show? (optional)'),
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (text) =>
                       _apply((id) => widget.store.setLabel(id, text)),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -179,46 +188,50 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                   children: [
                     _control(
                       Icons.arrow_back,
-                      'Move left',
+                      context.tr('Move left'),
                       () => _apply((id) => widget.store.move(id, -dx, 0)),
                     ),
                     _control(
                       Icons.arrow_forward,
-                      'Move right',
+                      context.tr('Move right'),
                       () => _apply((id) => widget.store.move(id, dx, 0)),
                     ),
                     _control(
                       Icons.arrow_upward,
-                      'Move up',
+                      context.tr('Move up'),
                       () => _apply((id) => widget.store.move(id, 0, -dy)),
                     ),
                     _control(
                       Icons.arrow_downward,
-                      'Move down',
+                      context.tr('Move down'),
                       () => _apply((id) => widget.store.move(id, 0, dy)),
                     ),
                     _control(
                       Icons.zoom_out_map,
-                      'Make bigger',
+                      context.tr('Make bigger'),
                       () => _apply((id) => widget.store.resize(id, dx, dy)),
                     ),
                     _control(
                       Icons.zoom_in_map,
-                      'Make smaller',
+                      context.tr('Make smaller'),
                       () => _apply((id) => widget.store.resize(id, -dx, -dy)),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 OutlinedButton(
                   onPressed: !ready
                       ? null
                       : () => _apply(
                           (id) => widget.store.setHidden(id, !box.hidden),
                         ),
-                  child: Text(box.hidden ? 'Show the box' : 'Hide the box'),
+                  child: Text(
+                    box.hidden
+                        ? context.tr('Show the box')
+                        : context.tr('Hide the box'),
+                  ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 OutlinedButton(
                   onPressed: !ready
                       ? null
@@ -229,13 +242,13 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                           });
                           widget.onChanged?.call();
                         },
-                  child: const Text('Remove the box'),
+                  child: Text(context.tr('Remove the box')),
                 ),
               ],
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               FilledButton.tonal(
                 onPressed: () => Navigator.of(context).maybePop(),
-                child: const Text('Done'),
+                child: Text(context.tr('Done')),
               ),
             ],
           ),
@@ -255,9 +268,9 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
           widget.bytes,
           cacheWidth: 1024,
           fit: BoxFit.contain,
-          semanticLabel: 'Photo to mark',
+          semanticLabel: context.tr('Photo to mark'),
           errorBuilder: (_, _, _) =>
-              const Center(child: Text('Preview unavailable')),
+              Center(child: Text(context.tr('Preview unavailable'))),
         ),
         if (view != null) ...[
           Positioned(
@@ -267,8 +280,8 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
             height: view.height,
             child: Semantics(
               label: box!.label.isEmpty
-                  ? 'Marked area'
-                  : 'Marked area: ${box.label}',
+                  ? context.tr('Marked area')
+                  : context.tr('Marked area: {label}', {'label': box.label}),
               child: GestureDetector(
                 key: const ValueKey('annotation-box'),
                 dragStartBehavior: DragStartBehavior.down,
@@ -307,7 +320,7 @@ class _AnnotationEditorScreenState extends State<AnnotationEditorScreen> {
                   ),
                 );
               }),
-              child: const Center(
+              child: Center(
                 child: Icon(Icons.open_in_full, color: Colors.amber),
               ),
             ),

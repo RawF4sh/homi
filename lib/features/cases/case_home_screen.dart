@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/case_list.dart';
 import '../../shared/presentation/sah_components.dart';
@@ -250,8 +251,10 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
 
   String _title(String id) =>
       widget.services.coordinator.planNameFor(id) ??
-      _details[id]?.title ??
-      homePlanTitle(null);
+      (_details[id] == null
+          ? null
+          : homePlanTitle(_details[id]!.draft, context: context)) ??
+      homePlanTitle(null, context: context);
 
   Future<void> _loadOnlineNames(List<CaseSummary> cases, int request) async {
     for (final item in cases) {
@@ -275,7 +278,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     final name = await showPlanNameDialog(
       context: context,
       creating: true,
-      defaultName: homePlanTitle(null),
+      defaultName: homePlanTitle(null, context: context),
     );
     if (!_isCurrent) return;
     setState(() => _opening = false);
@@ -311,7 +314,11 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         initialName: c.planNameFor(id),
         coordinator: c,
         caseId: id,
-        defaultName: _details[id]?.title ?? homePlanTitle(null),
+        defaultName:
+            (_details[id] == null
+                ? null
+                : homePlanTitle(_details[id]!.draft, context: context)) ??
+            homePlanTitle(null, context: context),
         onSave: (value) async {
           if (!_isCurrent || generation != c.generation) {
             throw StateError(
@@ -339,14 +346,14 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     key: const ValueKey('case-start'),
     onPressed: _canChoose ? _create : null,
     icon: const Icon(Icons.add_rounded),
-    label: const Text('Start a home plan'),
+    label: Text(context.tr('Start a home plan')),
   );
 
   List<Widget> _status() => [
     if (_selectionBlocked && widget.services.coordinator.draft != null) ...[
-      const SahNotice(
-        title: 'Finish saving your current plan',
-        message: 'Its device save is pending or failed.',
+      SahNotice(
+        title: context.tr('Finish saving your current plan'),
+        message: context.tr('Its device save is pending or failed.'),
         tone: SahNoticeTone.warning,
       ),
       OutlinedButton(
@@ -362,28 +369,31 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                 changesSelection: false,
                 targetId: widget.services.coordinator.draft?.caseId,
               ),
-        child: const Text('Continue current plan'),
+        child: Text(context.tr('Continue current plan')),
       ),
       const SizedBox(height: 16),
     ],
     if (_opening)
       TickerMode(
         enabled: ModalRoute.of(context)?.isCurrent ?? true,
-        child: const Padding(
+        child: Padding(
           padding: EdgeInsets.all(20),
-          child: LinearProgressIndicator(semanticsLabel: 'Updating your plan'),
+          child: LinearProgressIndicator(
+            semanticsLabel: context.tr('Updating your plan'),
+          ),
         ),
       ),
     if (_removalsFailed) ...[
-      const SahNotice(
-        title: 'Device plans need checking',
-        message:
-            'We could not check pending removals. Retry before opening a plan.',
+      SahNotice(
+        title: context.tr('Device plans need checking'),
+        message: context.tr(
+          'We could not check pending removals. Retry before opening a plan.',
+        ),
         tone: SahNoticeTone.warning,
       ),
       TextButton(
         onPressed: _refreshLocal,
-        child: const Text('Retry device plans'),
+        child: Text(context.tr('Retry device plans')),
       ),
     ],
   ];
@@ -394,15 +404,21 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     final hasPlans =
         _local.isNotEmpty || _cases.isNotEmpty || _removals.isNotEmpty;
     return [
-      const SahPageHeader(title: 'A safer home, one step at a time'),
+      SahPageHeader(title: context.tr('A safer home, one step at a time')),
       ..._status(),
       SahFeaturePanel(
-        title: draft != null ? _title(draft.caseId) : 'Your home safety plan',
+        title: draft != null
+            ? _title(draft.caseId)
+            : context.tr('Your home safety plan'),
         description: pending
-            ? 'Check the removal of this plan before continuing.'
+            ? context.tr('Check the removal of this plan before continuing.')
             : draft != null
-            ? 'Continue with your saved details, rooms and possible improvements.'
-            : 'Tell us what is difficult at home, record the areas that matter, and explore possible support.',
+            ? context.tr(
+                'Continue with your saved details, rooms and possible improvements.',
+              )
+            : context.tr(
+                'Tell us what is difficult at home, record the areas that matter, and explore possible support.',
+              ),
         illustration: const SahHomeIllustration(),
         action: draft != null
             ? FilledButton.icon(
@@ -421,14 +437,18 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                         targetId: widget.services.coordinator.draft?.caseId,
                       ),
                 icon: Icon(pending ? Icons.sync_problem : Icons.arrow_forward),
-                label: Text(pending ? 'Check removal' : 'Continue this plan'),
+                label: Text(
+                  pending
+                      ? context.tr('Check removal')
+                      : context.tr('Continue this plan'),
+                ),
               )
             : hasPlans
             ? FilledButton.icon(
                 key: const ValueKey('home-open-plans'),
                 onPressed: () => setState(() => _tab = 1),
                 icon: const Icon(Icons.folder_open_outlined),
-                label: const Text('Open a saved plan'),
+                label: Text(context.tr('Open a saved plan')),
               )
             : _newPlanButton(),
       ),
@@ -436,17 +456,18 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         const SizedBox(height: 12),
         Align(alignment: Alignment.centerLeft, child: _newPlanButton()),
       ],
-      const SahSectionHeading(title: 'How your plan comes together'),
+      SahSectionHeading(title: context.tr('How your plan comes together')),
       const HomePlanJourney(),
       const SizedBox(height: 16),
-      const SahNotice(
-        title: 'Start where you need help',
-        message:
-            'Bathroom, entrance, stairs, hallways and living spaces, bedroom, kitchen, or outdoor paths. You do not need to check every room. Bathroom 3D scanning is available on supported phones; use photos and notes anywhere.',
+      SahNotice(
+        title: context.tr('Start where you need help'),
+        message: context.tr(
+          'Bathroom, entrance, stairs, hallways and living spaces, bedroom, kitchen, or outdoor paths. You do not need to check every room. Bathroom 3D scanning is available on supported phones; use photos and notes anywhere.',
+        ),
       ),
       const SizedBox(height: 16),
-      const SahStatusBadge(
-        label: 'Private team beta · Fictional information only',
+      SahStatusBadge(
+        label: context.tr('Private team beta · Fictional information only'),
         icon: Icons.lock_outline_rounded,
       ),
     ];
@@ -455,7 +476,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
   bool _matches(String id) {
     final query = _query.trim().toLowerCase();
     return query.isEmpty ||
-        '${_title(id)} ${_details[id]?.draft.profile.city ?? ''} ${homePlanReference(id)} $id'
+        '${_title(id)} ${_details[id]?.draft.profile.city ?? ''} ${homePlanReference(id, context: context)} $id'
             .toLowerCase()
             .contains(query);
   }
@@ -474,10 +495,17 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     ),
     title: _title(id),
     subtitle: pending
-        ? 'Removal needs checking · ${homePlanReference(id)}'
-        : _details[id]?.description(onlineRevision: online?.caseRevision) ??
-              '${online == null ? 'Available on this device' : 'Saved online'} · ${homePlanReference(id)}',
-    status: pending ? null : widget.services.coordinator.planNameStatus(id),
+        ? context.tr('Removal needs checking · {reference}', {
+            'reference': homePlanReference(id, context: context),
+          })
+        : _details[id]?.description(
+                onlineRevision: online?.caseRevision,
+                context: context,
+              ) ??
+              '${online == null ? context.tr('Available on this device') : context.tr('Saved online')} · ${homePlanReference(id, context: context)}',
+    status: pending || widget.services.coordinator.planNameStatus(id) == null
+        ? null
+        : context.tr(widget.services.coordinator.planNameStatus(id)!),
     statusIcon: Icons.label_outline,
     icon: pending
         ? Icons.sync_problem_outlined
@@ -496,17 +524,25 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
           ),
     trailing: PopupMenuButton<String>(
       key: ValueKey('plan-actions-$id'),
-      tooltip: 'Actions for ${_title(id)}, ${homePlanReference(id)}',
+      tooltip: context.tr('Actions for {name}, {reference}', {
+        'name': _title(id),
+        'reference': homePlanReference(id, context: context),
+      }),
       enabled: _canChoose,
       onSelected: (action) => action == 'rename'
           ? _rename(id)
           : _remove(id, revision: online?.caseRevision),
       itemBuilder: (_) => [
         if (!pending)
-          const PopupMenuItem(value: 'rename', child: Text('Rename plan')),
+          PopupMenuItem(
+            value: 'rename',
+            child: Text(context.tr('Rename plan')),
+          ),
         PopupMenuItem(
           value: 'delete',
-          child: Text(pending ? 'Check removal' : 'Delete plan'),
+          child: Text(
+            pending ? context.tr('Check removal') : context.tr('Delete plan'),
+          ),
         ),
       ],
       icon: const Icon(Icons.more_vert),
@@ -530,17 +566,19 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         .toList();
     final pending = _removals.keys.where(_matches).toList();
     return [
-      const SahPageHeader(title: 'Your home plans'),
+      SahPageHeader(title: context.tr('Your home plans')),
       ..._status(),
-      const Text(
-        'Open a plan to continue. Use its ⋮ menu to rename or delete it.',
+      Text(
+        context.tr(
+          'Open a plan to continue. Use its ⋮ menu to rename or delete it.',
+        ),
       ),
       const SizedBox(height: 16),
       TextField(
         key: const ValueKey('plan-search'),
-        decoration: const InputDecoration(
-          labelText: 'Search loaded plans',
-          hintText: 'Name, city or reference',
+        decoration: InputDecoration(
+          labelText: context.tr('Search loaded plans'),
+          hintText: context.tr('Name, city or reference'),
           prefixIcon: Icon(Icons.search),
         ),
         onChanged: (value) => setState(() => _query = value),
@@ -549,29 +587,29 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       _newPlanButton(),
       if (_error != null) ...[
         SahNotice(
-          message: _error!,
-          title: 'Saved cases are unavailable',
+          message: context.tr(_error!),
+          title: context.tr('Saved cases are unavailable'),
           tone: SahNoticeTone.warning,
         ),
         TextButton(
           onPressed: !_isCurrent || _discovering ? null : () => _load(),
-          child: const Text('Retry saved cases'),
+          child: Text(context.tr('Retry saved cases')),
         ),
       ],
       if (pending.isNotEmpty) ...[
-        const SahSectionHeading(title: 'Removals to check'),
+        SahSectionHeading(title: context.tr('Removals to check')),
         for (final id in pending) _plan(id, pending: true),
       ],
       if (local.isNotEmpty) ...[
-        const SahSectionHeading(title: 'On this device'),
+        SahSectionHeading(title: context.tr('On this device')),
         for (final id in local) _plan(id),
       ],
-      const SahSectionHeading(title: 'Saved online'),
+      SahSectionHeading(title: context.tr('Saved online')),
       if (_discovering)
-        const Padding(
+        Padding(
           padding: EdgeInsets.symmetric(vertical: 16),
           child: LinearProgressIndicator(
-            semanticsLabel: 'Checking saved cases online',
+            semanticsLabel: context.tr('Checking saved cases online'),
           ),
         ),
       if (_loaded &&
@@ -582,11 +620,13 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
           pending.isEmpty)
         SahEmptyState(
           title: _query.trim().isEmpty
-              ? 'No home plans yet'
-              : 'No loaded plans match',
+              ? context.tr('No home plans yet')
+              : context.tr('No loaded plans match'),
           message: _query.trim().isEmpty
-              ? 'Start a home plan to record what matters to you.'
-              : 'Try another city or reference. More saved plans may be available below.',
+              ? context.tr('Start a home plan to record what matters to you.')
+              : context.tr(
+                  'Try another city or reference. More saved plans may be available below.',
+                ),
           icon: Icons.cottage_outlined,
         ),
       for (final item in online) _plan(item.caseId, online: item),
@@ -595,7 +635,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
           onPressed: !_isCurrent || _discovering
               ? null
               : () => _load(more: true),
-          child: const Text('Load more cases'),
+          child: Text(context.tr('Load more cases')),
         ),
     ];
   }
@@ -646,24 +686,24 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         });
         if (index != 2) unawaited(_refreshLocal());
       },
-      destinations: const [
+      destinations: [
         NavigationDestination(
           key: ValueKey('nav-home'),
           icon: Icon(Icons.home_outlined),
           selectedIcon: Icon(Icons.home),
-          label: 'Home',
+          label: context.tr('Home'),
         ),
         NavigationDestination(
           key: ValueKey('nav-plans'),
           icon: Icon(Icons.folder_outlined),
           selectedIcon: Icon(Icons.folder),
-          label: 'Plans',
+          label: context.tr('Plans'),
         ),
         NavigationDestination(
           key: ValueKey('nav-settings'),
           icon: Icon(Icons.settings_outlined),
           selectedIcon: Icon(Icons.settings),
-          label: 'Settings',
+          label: context.tr('Settings'),
         ),
       ],
     ),

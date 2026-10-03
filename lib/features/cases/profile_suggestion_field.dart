@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import 'profile_suggestions.dart';
 
@@ -66,7 +67,7 @@ class _ProfileSuggestionFieldState extends State<ProfileSuggestionField> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                         child: Text(
-                          'Suggestions',
+                          context.tr('Suggestions'),
                           style: theme.textTheme.labelLarge,
                         ),
                       ),
@@ -92,10 +93,20 @@ class _ProfileSuggestionFieldState extends State<ProfileSuggestionField> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(suggestion.label),
+                              Text(
+                                widget.field == 'county'
+                                    ? context.tr(suggestion.label)
+                                    : suggestion.label,
+                              ),
                               if (suggestion.detail != null)
                                 Text(
-                                  suggestion.detail!,
+                                  {
+                                        'San Mateo County',
+                                        'Santa Clara County',
+                                        'California',
+                                      }.contains(suggestion.detail)
+                                      ? context.tr(suggestion.detail!)
+                                      : suggestion.detail!,
                                   style: theme.textTheme.bodySmall,
                                 ),
                             ],

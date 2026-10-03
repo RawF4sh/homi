@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import 'photo_decode_gate.dart';
 
@@ -27,8 +28,10 @@ class RecoveryPhotoReviewCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'A photo is saved, but the interrupted upload did not return a receipt. Look at the saved photo before choosing which version to keep.',
+            Text(
+              context.tr(
+                'A photo is saved, but the interrupted upload did not return a receipt. Look at the saved photo before choosing which version to keep.',
+              ),
             ),
             if (bytes != null)
               Image.memory(
@@ -36,27 +39,31 @@ class RecoveryPhotoReviewCard extends StatelessWidget {
                 height: 240,
                 cacheWidth: 1024,
                 fit: BoxFit.contain,
-                semanticLabel: 'Current saved photo',
-                errorBuilder: (_, _, _) => const SizedBox(
+                semanticLabel: context.tr('Current saved photo'),
+                errorBuilder: (_, _, _) => SizedBox(
                   height: 60,
-                  child: Center(child: Text('Preview unavailable')),
+                  child: Center(child: Text(context.tr('Preview unavailable'))),
                 ),
               ),
             if (failed)
-              const Text(
-                'The saved photo could not be opened for review. Reload it or keep your device photo. Both copies are retained until you choose.',
+              Text(
+                context.tr(
+                  'The saved photo could not be opened for review. Reload it or keep your device photo. Both copies are retained until you choose.',
+                ),
               ),
             OutlinedButton(
               onPressed: busy ? null : onShowSaved,
-              child: const Text('Show saved photo'),
+              child: Text(context.tr('Show saved photo')),
             ),
             FilledButton(
               onPressed: busy || !ready ? null : onKeepSaved,
-              child: const Text('Keep the saved photo'),
+              child: Text(context.tr('Keep the saved photo')),
             ),
             TextButton(
               onPressed: busy ? null : onKeepDevice,
-              child: const Text('Keep device photo to upload after review'),
+              child: Text(
+                context.tr('Keep device photo to upload after review'),
+              ),
             ),
           ],
         ),

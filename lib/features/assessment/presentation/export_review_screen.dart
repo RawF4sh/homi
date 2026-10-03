@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../../../shared/models/contracts.dart';
 import '../../../shared/models/evidence.dart';
@@ -52,27 +53,25 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
         final List<ExportCandidate> candidates = review.candidates;
         final selection = review.draft.selection;
         return Scaffold(
-          appBar: AppBar(title: const Text('Photos for the draft')),
+          appBar: AppBar(title: Text(context.tr('Photos for the draft'))),
           body: SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Choose up to 6 photos for the draft. Look at each photo '
-                    'first: these are the saved copies, with hidden photo data '
-                    'removed, but anything visible in the picture is still '
-                    'there. Only photos from findings you confirmed can be '
-                    'included. Including a photo does not send it anywhere.',
+                  Text(
+                    context.tr(
+                      'Choose up to 6 photos for the draft. Look at each photo first: these are the saved copies, with hidden photo data removed, but anything visible in the picture is still there. Only photos from findings you confirmed can be included. Including a photo does not send it anywhere.',
+                    ),
                   ),
                   _status(review),
                   if (review.isLoading)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.all(16),
                       child: Center(
                         child: CircularProgressIndicator(
-                          semanticsLabel: 'Loading saved photos',
+                          semanticsLabel: context.tr('Loading saved photos'),
                         ),
                       ),
                     ),
@@ -80,22 +79,24 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
                       candidates.isEmpty &&
                       review.catalog != null &&
                       !review.isStale)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 12),
-                      child: Text('No saved photos yet.'),
+                      child: Text(context.tr('No saved photos yet.')),
                     ),
                   for (final ExportCandidate c in candidates) _candidate(c),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   Semantics(
                     liveRegion: true,
                     child: Text(
-                      '${selection.length} of 6 photos chosen',
+                      context.tr('{count} of 6 photos chosen', {
+                        'count': selection.length,
+                      }),
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                   for (final (int i, s) in selection.indexed)
                     _ordered(i, s.evidenceId, selection.length),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   FilledButton(
                     onPressed:
                         review.isStale ||
@@ -109,8 +110,8 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
                         : () => widget.onDone(review.selections),
                     child: Text(
                       selection.isEmpty
-                          ? 'Continue without photos'
-                          : 'Use these photos',
+                          ? context.tr('Continue without photos')
+                          : context.tr('Use these photos'),
                     ),
                   ),
                 ],
@@ -126,16 +127,17 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
     final List<String> messages = [
       if (review.errorMessage != null) review.errorMessage!,
       if (review.isStale)
-        'Your case changed since these photos were loaded. Reload them.',
+        context.tr(
+          'Your case changed since these photos were loaded. Reload them.',
+        ),
       if (review.lastDropped.isNotEmpty)
-        '${review.lastDropped.length} chosen '
-            '${review.lastDropped.length == 1 ? 'photo was' : 'photos were'} '
-            'removed from the list because '
-            '${review.lastDropped.length == 1 ? 'it' : 'they'} changed, '
-            '${review.lastDropped.length == 1 ? 'was' : 'were'} deleted, or '
-            '${review.lastDropped.length == 1 ? 'its' : 'their'} finding is '
-            'no longer confirmed.',
-      ?_rejection,
+        context.tr(
+          review.lastDropped.length == 1
+              ? '{count} chosen photo was removed from the list because it changed, was deleted, or its finding is no longer confirmed.'
+              : '{count} chosen photos were removed from the list because they changed, were deleted, or their finding is no longer confirmed.',
+          {'count': review.lastDropped.length},
+        ),
+      if (_rejection != null) context.tr(_rejection!),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -150,7 +152,7 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
             alignment: Alignment.centerLeft,
             child: TextButton(
               onPressed: review.isLoading ? null : review.load,
-              child: const Text('Reload photos'),
+              child: Text(context.tr('Reload photos')),
             ),
           ),
       ],
@@ -192,27 +194,32 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(finding?.observation ?? 'Finding not found'),
+              Text(finding?.observation ?? context.tr('Finding not found')),
               if (!c.findingConfirmed)
-                const Text(
-                  'This finding is not confirmed, so its photos cannot be '
-                  'included.',
+                Text(
+                  context.tr(
+                    'This finding is not confirmed, so its photos cannot be included.',
+                  ),
                 ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               if (pixels != null)
                 Semantics(
                   container: true,
                   image: true,
-                  label: 'Saved photo for: ${finding?.observation ?? ''}',
+                  label: context.tr('Saved photo for: {observation}', {
+                    'observation': finding?.observation ?? '',
+                  }),
                   excludeSemantics: true,
                   child: Image.memory(
                     pixels,
                     cacheWidth: 1024,
                     height: 220,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const SizedBox(
+                    errorBuilder: (_, _, _) => SizedBox(
                       height: 60,
-                      child: Center(child: Text('Preview unavailable')),
+                      child: Center(
+                        child: Text(context.tr('Preview unavailable')),
+                      ),
                     ),
                   ),
                 )
@@ -223,13 +230,15 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
                       : () => review.showPhoto(c.evidenceId),
                   child: Text(
                     review.isLoadingPixels(c.evidenceId)
-                        ? 'Loading photo'
-                        : 'Show photo',
+                        ? context.tr('Loading photo')
+                        : context.tr('Show photo'),
                   ),
                 ),
               if (failed)
-                const Text(
-                  'This photo could not be opened for review. Leave it out and reload it.',
+                Text(
+                  context.tr(
+                    'This photo could not be opened for review. Leave it out and reload it.',
+                  ),
                 ),
               if (pixels != null && !checked)
                 OutlinedButton(
@@ -239,18 +248,18 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
                           _rejection = null;
                           review.markChecked(c.evidenceId);
                         }),
-                  child: const Text('I checked this photo'),
+                  child: Text(context.tr('I checked this photo')),
                 ),
               if (checked)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(top: 4),
-                  child: Text('Checked by you'),
+                  child: Text(context.tr('Checked by you')),
                 ),
               CheckboxListTile(
                 key: ValueKey('include-${c.evidenceId}'),
                 contentPadding: EdgeInsets.zero,
                 value: selected,
-                title: const Text('Include in the draft'),
+                title: Text(context.tr('Include in the draft')),
                 onChanged: !c.findingConfirmed || !checked || !ready
                     ? null
                     : (v) => setState(() {
@@ -276,24 +285,30 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
     final ExportReview review = widget.review;
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text('Photo ${index + 1}'),
+      title: Text(context.tr('Photo {number}', {'number': index + 1})),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            tooltip: 'Move photo ${index + 1} earlier',
+            tooltip: context.tr('Move photo {number} earlier', {
+              'number': index + 1,
+            }),
             onPressed: index == 0 ? null : () => review.move(index, index - 1),
             icon: const Icon(Icons.arrow_upward),
           ),
           IconButton(
-            tooltip: 'Move photo ${index + 1} later',
+            tooltip: context.tr('Move photo {number} later', {
+              'number': index + 1,
+            }),
             onPressed: index == count - 1
                 ? null
                 : () => review.move(index, index + 1),
             icon: const Icon(Icons.arrow_downward),
           ),
           IconButton(
-            tooltip: 'Remove photo ${index + 1} from the draft',
+            tooltip: context.tr('Remove photo {number} from the draft', {
+              'number': index + 1,
+            }),
             onPressed: () => review.exclude(evidenceId),
             icon: const Icon(Icons.close),
           ),

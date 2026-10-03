@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/features/assessment/application/bathroom_scan_adapter.dart';
+import 'package:safe_at_home/l10n/app_language.dart';
 
 import '../domain/scan/scan_test_fixtures.dart';
 
@@ -13,6 +14,25 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+  test(
+    'non-English scan passes only its language and scoped ID; cancel stays ID-only',
+    () async {
+      final controller = AppLanguageController.instance;
+      final previous = controller.value;
+      controller.value = AppLanguage.chineseTraditional;
+      addTearDown(() => controller.value = previous);
+      final calls = <MethodCall>[];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return call.method == 'start' ? scanSceneJson() : null;
+      });
+      await adapter.start(id);
+      await adapter.cancel(id);
+      expect(calls[0].arguments, {'scanId': id, 'languageCode': 'zh-Hant'});
+      expect(calls[1].arguments, {'scanId': id});
+    },
+  );
 
   test(
     'start sends only the scoped scan ID and returns validated geometry',

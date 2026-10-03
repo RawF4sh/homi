@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/contracts.dart';
 import '../../shared/models/program_intake.dart';
@@ -327,7 +328,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
       return Scaffold(
         appBar: AppBar(
           leading: BackButton(onPressed: requestExit),
-          title: const Text('Program questions'),
+          title: Text(context.tr('Program questions')),
         ),
         body: SafeArea(
           child: Form(
@@ -340,42 +341,54 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                   children: [
                     SahPageHeader(
                       title: widget.program.programName,
-                      description:
-                          'Answer what you know. Unknown is different from No or 0.',
+                      description: context.tr(
+                        'Answer what you know. Unknown is different from No or 0.',
+                      ),
                     ),
-                    const SahMoreInfo(
+                    if (Localizations.localeOf(context).languageCode != 'en')
+                      SahNotice(
+                        message: context.tr(
+                          'Program information and official forms may remain in English. Your saved answers are not translated.',
+                        ),
+                      ),
+                    SahMoreInfo(
                       details: [
-                        'These are reported facts, not a diagnosis, professional determination or funding decision.',
+                        context.tr(
+                          'These are reported facts, not a diagnosis, professional determination or funding decision.',
+                        ),
                       ],
                     ),
                     if (_busy)
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.symmetric(vertical: 12),
                         child: LinearProgressIndicator(
-                          semanticsLabel: 'Updating program answers',
+                          semanticsLabel: context.tr(
+                            'Updating program answers',
+                          ),
                         ),
                       ),
                     if (_notice != null && !_feedbackAtAction)
-                      SahNotice(message: _notice!),
+                      SahNotice(message: context.tr(_notice!)),
                     if (_uncertain)
-                      const SahNotice(
-                        title: 'Check the last save',
-                        message:
-                            'A save may already have succeeded. Check saved answers before another save.',
+                      SahNotice(
+                        title: context.tr('Check the last save'),
+                        message: context.tr(
+                          'A save may already have succeeded. Check saved answers before another save.',
+                        ),
                         tone: SahNoticeTone.warning,
                       ),
                     const SizedBox(height: 8),
                     OutlinedButton(
                       key: const ValueKey('intake-reconcile'),
                       onPressed: _busy || exiting ? null : () => _read(),
-                      child: const Text(
-                        'Check saved answers and reconcile',
+                      child: Text(
+                        context.tr('Check saved answers and reconcile'),
                         textAlign: TextAlign.center,
                       ),
                     ),
                     if (_response?.saved != null)
                       ExpansionTile(
-                        title: const Text('Compare saved answers'),
+                        title: Text(context.tr('Compare saved answers')),
                         children: [
                           for (final q in _response!.definition.questions)
                             ListTile(
@@ -385,7 +398,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                         ],
                       ),
                     if (_response != null)
-                      const SahSectionHeading(title: 'Reported answers'),
+                      SahSectionHeading(title: context.tr('Reported answers')),
                     for (final q
                         in _response?.definition.questions ??
                             <IntakeQuestion>[])
@@ -403,7 +416,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                             ),
                             if (q.description.isNotEmpty)
                               SahMoreInfo(
-                                label: 'About this question',
+                                label: context.tr('About this question'),
                                 details: [q.description],
                               )
                             else
@@ -417,18 +430,18 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                                 isDense: false,
                                 itemHeight: null,
                                 decoration: InputDecoration(labelText: q.label),
-                                items: const [
+                                items: [
                                   DropdownMenuItem(
                                     value: 'unknown',
-                                    child: Text('Unknown'),
+                                    child: Text(context.tr('Unknown')),
                                   ),
                                   DropdownMenuItem(
                                     value: 'true',
-                                    child: Text('Yes'),
+                                    child: Text(context.tr('Yes')),
                                   ),
                                   DropdownMenuItem(
                                     value: 'false',
-                                    child: Text('No'),
+                                    child: Text(context.tr('No')),
                                   ),
                                 ],
                                 onChanged: _busy || _uncertain || exiting
@@ -451,11 +464,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                                 key: _fieldAnchors[q.key],
                                 controller: _text[q.key],
                                 focusNode: _fieldFocus[q.key],
-                                forceErrorText: _errors[q.key],
+                                forceErrorText: _errors[q.key] == null
+                                    ? null
+                                    : context.tr(_errors[q.key]!),
                                 enabled: !_busy && !_uncertain && !exiting,
                                 decoration: InputDecoration(
                                   labelText: q.label,
-                                  helperText: 'Blank means unknown',
+                                  helperText: context.tr('Blank means unknown'),
                                 ),
                                 keyboardType: q.kind == 'money'
                                     ? const TextInputType.numberWithOptions(
@@ -485,9 +500,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                     if (_errors.isNotEmpty)
                       SahActionFeedback(
                         key: const ValueKey('intake-validation-feedback'),
-                        title: 'Check this answer',
-                        message:
-                            '${_response!.definition.questions.firstWhere((q) => q.key == _errors.keys.first).label}: ${_errors.values.first}',
+                        title: context.tr('Check this answer'),
+                        message: context.tr('{field}: {message}', {
+                          'field': _response!.definition.questions
+                              .firstWhere((q) => q.key == _errors.keys.first)
+                              .label,
+                          'message': context.tr(_errors.values.first),
+                        }),
                         tone: SahNoticeTone.error,
                         onReview: _reviewInvalid,
                         revealRevision: _validationAttempt,
@@ -495,7 +514,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                     if (_feedbackAtAction && _notice != null)
                       SahActionFeedback(
                         key: const ValueKey('intake-save-feedback'),
-                        message: _notice!,
+                        message: context.tr(_notice!),
                       ),
                     FilledButton(
                       key: const ValueKey('intake-save'),
@@ -503,8 +522,8 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                           _busy || _uncertain || _response == null || exiting
                           ? null
                           : _save,
-                      child: const Text(
-                        'Save these reported answers',
+                      child: Text(
+                        context.tr('Save these reported answers'),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -524,11 +543,11 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
         ? null
         : answers.single.value;
     return value == null
-        ? 'Unknown'
+        ? context.tr('Unknown')
         : value == true
-        ? 'Yes'
+        ? context.tr('Yes')
         : value == false
-        ? 'No'
+        ? context.tr('No')
         : value.toString();
   }
 }

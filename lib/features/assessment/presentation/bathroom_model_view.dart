@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../domain/scan/bathroom_scan_scene.dart';
 import '../domain/scan/scan_projection.dart';
@@ -46,9 +47,16 @@ class _BathroomModelViewState extends State<BathroomModelView> {
                 return Semantics(
                   value: widget.selectedLabel == null
                       ? null
-                      : 'Selected: ${widget.selectedLabel}',
-                  label:
-                      'Partial bathroom model. ${widget.scene.elements.length} detected features and ${widget.scene.points.length} point samples. This model is optional. Use the feature list below to identify an item if needed.',
+                      : context.tr('Selected: {label}', {
+                          'label': widget.selectedLabel,
+                        }),
+                  label: context.tr(
+                    'Partial bathroom model. {features} detected features and {samples} point samples. This model is optional. Use the feature list below to identify an item if needed.',
+                    {
+                      'features': widget.scene.elements.length,
+                      'samples': widget.scene.points.length,
+                    },
+                  ),
                   child: GestureDetector(
                     onScaleStart: (_) => startZoom = zoom,
                     onScaleUpdate: (details) => setState(() {
@@ -76,13 +84,13 @@ class _BathroomModelViewState extends State<BathroomModelView> {
                         widget.selectedId,
                         zoom,
                       ),
-                      child: const Align(
+                      child: Align(
                         alignment: Alignment.topLeft,
                         child: Padding(
                           padding: EdgeInsets.all(16),
                           child: ExcludeSemantics(
                             child: Text(
-                              'PARTIAL 3D MODEL',
+                              context.tr('PARTIAL 3D MODEL'),
                               style: TextStyle(
                                 color: Color(0xFFD4E8DF),
                                 fontSize: 12,
@@ -108,12 +116,12 @@ class _BathroomModelViewState extends State<BathroomModelView> {
         alignment: WrapAlignment.center,
         children: [
           IconButton(
-            tooltip: 'Rotate model left',
+            tooltip: context.tr('Rotate model left'),
             onPressed: () => setState(() => yaw -= .3),
             icon: const Icon(Icons.rotate_left),
           ),
           IconButton(
-            tooltip: 'Rotate model right',
+            tooltip: context.tr('Rotate model right'),
             onPressed: () => setState(() => yaw += .3),
             icon: const Icon(Icons.rotate_right),
           ),
@@ -122,22 +130,22 @@ class _BathroomModelViewState extends State<BathroomModelView> {
               yaw = 0;
               pitch = math.pi / 2;
             }),
-            child: const Text('Top'),
+            child: Text(context.tr('Top')),
           ),
           TextButton(
             onPressed: () => setState(() {
               yaw = 0;
               pitch = 0;
             }),
-            child: const Text('Front'),
+            child: Text(context.tr('Front')),
           ),
           IconButton(
-            tooltip: 'Zoom out',
+            tooltip: context.tr('Zoom out'),
             onPressed: () => setState(() => zoom = (zoom - .2).clamp(.7, 2.5)),
             icon: const Icon(Icons.remove),
           ),
           IconButton(
-            tooltip: 'Zoom in',
+            tooltip: context.tr('Zoom in'),
             onPressed: () => setState(() => zoom = (zoom + .2).clamp(.7, 2.5)),
             icon: const Icon(Icons.add),
           ),
@@ -147,12 +155,14 @@ class _BathroomModelViewState extends State<BathroomModelView> {
               pitch = .55;
               zoom = 1;
             }),
-            child: const Text('Reset view'),
+            child: Text(context.tr('Reset view')),
           ),
         ],
       ),
-      const Text(
-        'Drag to rotate · Pinch to zoom · Tap a feature\nEmpty space can mean unscanned space.',
+      Text(
+        context.tr(
+          'Drag to rotate · Pinch to zoom · Tap a feature\nEmpty space can mean unscanned space.',
+        ),
         textAlign: TextAlign.center,
       ),
     ],

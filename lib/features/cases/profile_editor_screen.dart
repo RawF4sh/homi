@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import 'profile_suggestion_field.dart';
 import 'profile_suggestions.dart';
@@ -33,7 +34,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   late final DraftSaveTracker _draftSaves;
   VoidCallback? _requestExit;
   String? _notice;
-  String? _countyAutofillNote;
+  String? _countyAutofillCity;
   bool _confirmingCounty = false;
   late final String _caseId;
   late final int _generation;
@@ -487,31 +488,47 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
 
   String get _saveStatus {
     final c = widget.services.coordinator;
-    if (_restoring) return 'Opening resident details…';
-    if (_recovered != null) return 'Compare the two copies before continuing.';
-    if (!_sameBase && _onlineSave == null) return 'Review the changed case.';
+    if (_restoring) return context.tr('Opening resident details…');
+    if (_recovered != null) {
+      return context.tr('Compare the two copies before continuing.');
+    }
+    if (!_sameBase && _onlineSave == null) {
+      return context.tr('Review the changed case.');
+    }
     if (_draftSaves.failed || c.localSaveFailed) {
-      return 'Device save needs attention. Your entries are still here.';
+      return context.tr(
+        'Device save needs attention. Your entries are still here.',
+      );
     }
     if (_errors.isNotEmpty) {
-      return 'Entries kept on this device. Correct the highlighted answer to sync.';
+      return context.tr(
+        'Entries kept on this device. Correct the highlighted answer to sync.',
+      );
     }
-    if (_draftSaves.pending || _saving) return 'Saving changes on this device…';
-    if (_onlineSave != null) return 'Saved on this device · syncing online…';
+    if (_draftSaves.pending || _saving) {
+      return context.tr('Saving changes on this device…');
+    }
+    if (_onlineSave != null) {
+      return context.tr('Saved on this device · syncing online…');
+    }
     if (c.conflict || c.uncertain) {
-      return 'Saved on this device · check saved state from your case.';
+      return context.tr(
+        'Saved on this device · check saved state from your case.',
+      );
     }
-    if (_syncFailed || c.hasUnsavedChanges) return 'Saved on this device.';
-    return 'Saved online · changes save automatically.';
+    if (_syncFailed || c.hasUnsavedChanges) {
+      return context.tr('Saved on this device.');
+    }
+    return context.tr('Saved online · changes save automatically.');
   }
 
   String _display(Object? value, {bool housing = false}) => switch (value) {
-    null => 'Unknown',
-    true => 'Yes',
-    false => 'No',
-    'owner' when housing => 'Own',
-    'renter' when housing => 'Rent',
-    String text when text.trim().isEmpty => 'Unknown',
+    null => context.tr('Unknown'),
+    true => context.tr('Yes'),
+    false => context.tr('No'),
+    'owner' when housing => context.tr('Own'),
+    'renter' when housing => context.tr('Rent'),
+    String text when text.trim().isEmpty => context.tr('Unknown'),
     _ => value.toString(),
   };
 
@@ -526,10 +543,11 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       key: const ValueKey('profile-recovery-comparison'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SahSectionHeading(
-          title: 'Compare unfinished edits',
-          description:
-              'Choose which details to review. This does not save anything online.',
+        SahSectionHeading(
+          title: context.tr('Compare unfinished edits'),
+          description: context.tr(
+            'Choose which details to review. This does not save anything online.',
+          ),
         ),
         for (final entry in {
           ...labels,
@@ -543,15 +561,25 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  entry.value,
+                  context.tr(entry.value),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Current: ${_display(_baseProfile[entry.key], housing: entry.key == 'tenure')}',
+                  context.tr('Current: {value}', {
+                    'value': _display(
+                      _baseProfile[entry.key],
+                      housing: entry.key == 'tenure',
+                    ),
+                  }),
                 ),
                 Text(
-                  'Unfinished: ${_display(values[entry.key], housing: entry.key == 'tenure')}',
+                  context.tr('Unfinished: {value}', {
+                    'value': _display(
+                      values[entry.key],
+                      housing: entry.key == 'tenure',
+                    ),
+                  }),
                 ),
               ],
             ),
@@ -561,8 +589,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           onPressed: _saving || _leaving || !_sameBase
               ? null
               : () => _chooseRecovery(useRecovered: false),
-          child: const Text(
-            'Keep current details',
+          child: Text(
+            context.tr('Keep current details'),
             textAlign: TextAlign.center,
           ),
         ),
@@ -572,8 +600,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           onPressed: _saving || _leaving || !_sameBase
               ? null
               : () => _chooseRecovery(useRecovered: true),
-          child: const Text(
-            'Review recovered edits',
+          child: Text(
+            context.tr('Review recovered edits'),
             textAlign: TextAlign.center,
           ),
         ),
@@ -585,9 +613,9 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   void _fieldChanged(String key) {
     if (!_editable) return;
     if (_errors.containsKey(key) ||
-        (_countyAutofillNote != null && (key == 'city' || key == 'county'))) {
+        (_countyAutofillCity != null && (key == 'city' || key == 'county'))) {
       setState(() {
-        if (key == 'city' || key == 'county') _countyAutofillNote = null;
+        if (key == 'city' || key == 'county') _countyAutofillCity = null;
         final error = _validateField(key);
         if (error == null) {
           _errors.remove(key);
@@ -612,9 +640,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     }
     setState(() {
       if (values.containsKey('city') || values.containsKey('county')) {
-        _countyAutofillNote = countyCity == null
-            ? null
-            : 'Filled from $countyCity. You can change it.';
+        _countyAutofillCity = countyCity;
       }
       for (final key in values.keys) {
         if (!_errors.containsKey(key)) continue;
@@ -666,27 +692,36 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                   Semantics(
                     header: true,
                     child: Text(
-                      'Update county?',
+                      context.tr('Update county?'),
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    '${suggestion.value} is in $county County. '
-                    'Replace your current county, “$currentCounty”, with “$county”?',
+                    context.tr(
+                      '{city} is in {county} County. Replace your current county, “{currentCounty}”, with “{county}”?',
+                      {
+                        'city': suggestion.value,
+                        'county': county,
+                        'currentCounty': currentCounty,
+                      },
+                    ),
                   ),
                   const SizedBox(height: 20),
                   FilledButton(
                     key: const ValueKey('profile-use-city-county'),
                     onPressed: () => Navigator.of(context).pop(true),
-                    child: Text('Use $county', textAlign: TextAlign.center),
+                    child: Text(
+                      context.tr('Use {county}', {'county': county}),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
                     key: const ValueKey('profile-keep-existing-county'),
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text(
-                      'Keep current county',
+                    child: Text(
+                      context.tr('Keep current county'),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -715,18 +750,20 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       key: _fieldAnchors[key],
       controller: _fields[key],
       focusNode: _fieldFocus[key],
-      forceErrorText: _errors[key],
+      forceErrorText: _errors[key] == null ? null : context.tr(_errors[key]!),
       enabled: _editable,
       onChanged: (_) => _fieldChanged(key),
       decoration: InputDecoration(
-        labelText: labels[key],
+        labelText: context.tr(labels[key]!),
         helperMaxLines: 4,
-        helperText: key == 'county' && _countyAutofillNote != null
-            ? _countyAutofillNote
+        helperText: key == 'county' && _countyAutofillCity != null
+            ? context.tr('Filled from {city}. You can change it.', {
+                'city': _countyAutofillCity,
+              })
             : key == 'annualIncomeUsd'
-            ? 'Yearly household total, US dollars'
+            ? context.tr('Yearly household total, US dollars')
             : ['city', 'county', 'healthPlan'].contains(key)
-            ? 'Type for suggestions, or enter another name.'
+            ? context.tr('Type for suggestions, or enter another name.')
             : null,
       ),
       textInputAction: TextInputAction.next,
@@ -757,7 +794,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           leading: Navigator.of(context).canPop()
               ? BackButton(onPressed: requestExit)
               : null,
-          title: const Text('Resident details'),
+          title: Text(context.tr('Resident details')),
         ),
         body: SafeArea(
           child: Form(
@@ -769,10 +806,11 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const SahPageHeader(
-                      title: 'About the resident',
-                      description:
-                          'Changes save automatically. All answers are optional; blank means unknown, not 0 or No.',
+                    SahPageHeader(
+                      title: context.tr('About the resident'),
+                      description: context.tr(
+                        'Changes save automatically. All answers are optional; blank means unknown, not 0 or No.',
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 20),
@@ -785,32 +823,34 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                         ),
                       ),
                     ),
-                    if (_notice != null) SahNotice(message: _notice!),
+                    if (_notice != null)
+                      SahNotice(message: context.tr(_notice!)),
                     if (!_sameBase && !_restoring && !_saving)
-                      const SahNotice(
-                        title: 'This case changed',
-                        message:
-                            'Return to the case and reopen Resident details to compare your unfinished work with its current details.',
+                      SahNotice(
+                        title: context.tr('This case changed'),
+                        message: context.tr(
+                          'Return to the case and reopen Resident details to compare your unfinished work with its current details.',
+                        ),
                         tone: SahNoticeTone.warning,
                       ),
                     if (_restoring)
-                      const LinearProgressIndicator(
-                        semanticsLabel: 'Restoring private edits',
+                      LinearProgressIndicator(
+                        semanticsLabel: context.tr('Restoring private edits'),
                       ),
                     if (_recovered != null) _comparison(),
                     for (final key in labels.keys) ...[
                       if (key == 'city')
-                        const SahSectionHeading(title: 'Location'),
+                        SahSectionHeading(title: context.tr('Location')),
                       if (key == 'healthPlan')
-                        const SahSectionHeading(title: 'Health coverage'),
+                        SahSectionHeading(title: context.tr('Health coverage')),
                       if (key == 'ageYears')
-                        const SahSectionHeading(title: 'Household'),
+                        SahSectionHeading(title: context.tr('Household')),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 16),
                         child: _profileField(key),
                       ),
                     ],
-                    const SahSectionHeading(title: 'Housing'),
+                    SahSectionHeading(title: context.tr('Housing')),
                     DropdownButtonFormField<String>(
                       key: ValueKey(
                         'tenure-$_restoring${_fieldVersion == 0 ? '' : '-$_fieldVersion'}',
@@ -819,16 +859,22 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       isExpanded: true,
                       isDense: false,
                       itemHeight: null,
-                      decoration: const InputDecoration(
-                        labelText: 'Do you own or rent?',
+                      decoration: InputDecoration(
+                        labelText: context.tr('Do you own or rent?'),
                       ),
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: null,
-                          child: Text('Not provided'),
+                          child: Text(context.tr('Not provided')),
                         ),
-                        DropdownMenuItem(value: 'owner', child: Text('Own')),
-                        DropdownMenuItem(value: 'renter', child: Text('Rent')),
+                        DropdownMenuItem(
+                          value: 'owner',
+                          child: Text(context.tr('Own')),
+                        ),
+                        DropdownMenuItem(
+                          value: 'renter',
+                          child: Text(context.tr('Rent')),
+                        ),
                       ],
                       onChanged: !_editable
                           ? null
@@ -846,15 +892,25 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       isExpanded: true,
                       isDense: false,
                       itemHeight: null,
-                      decoration: const InputDecoration(
-                        labelText: 'Owner permission reported?',
-                        helperText:
-                            'Reported only, not a signed authorization.',
+                      decoration: InputDecoration(
+                        labelText: context.tr('Owner permission reported?'),
+                        helperText: context.tr(
+                          'Reported only, not a signed authorization.',
+                        ),
                       ),
-                      items: const [
-                        DropdownMenuItem(value: null, child: Text('Not known')),
-                        DropdownMenuItem(value: true, child: Text('Yes')),
-                        DropdownMenuItem(value: false, child: Text('No')),
+                      items: [
+                        DropdownMenuItem(
+                          value: null,
+                          child: Text(context.tr('Not known')),
+                        ),
+                        DropdownMenuItem(
+                          value: true,
+                          child: Text(context.tr('Yes')),
+                        ),
+                        DropdownMenuItem(
+                          value: false,
+                          child: Text(context.tr('No')),
+                        ),
                       ],
                       onChanged: !_editable
                           ? null
@@ -867,9 +923,11 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                     if (_errors.isNotEmpty)
                       SahActionFeedback(
                         key: const ValueKey('profile-validation-feedback'),
-                        title: 'Check this answer',
-                        message:
-                            '${labels[_errors.keys.first]}: ${_errors.values.first}',
+                        title: context.tr('Check this answer'),
+                        message: context.tr('{field}: {error}', {
+                          'field': context.tr(labels[_errors.keys.first]!),
+                          'error': context.tr(_errors.values.first),
+                        }),
                         tone: SahNoticeTone.error,
                         onReview: _reviewInvalid,
                         revealRevision: _validationAttempt,
@@ -881,12 +939,15 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       OutlinedButton(
                         key: const ValueKey('profile-retry-online'),
                         onPressed: _onlineSave == null ? _saveOnline : null,
-                        child: const Text('Retry sync'),
+                        child: Text(context.tr('Retry sync')),
                       ),
                     FilledButton(
                       key: const ValueKey('profile-keep-edits'),
                       onPressed: _editable ? _save : null,
-                      child: const Text('Done', textAlign: TextAlign.center),
+                      child: Text(
+                        context.tr('Done'),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                     const SizedBox(height: 72),
                   ],

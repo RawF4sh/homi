@@ -1,15 +1,27 @@
 import 'dart:convert';
+import 'package:flutter/widgets.dart';
+import '../../l10n/app_localizations.dart';
 
 import '../../shared/models/case_draft.dart';
 import '../../shared/models/contracts.dart';
 
-String homePlanTitle(CaseDraft? draft) {
+String homePlanTitle(CaseDraft? draft, {BuildContext? context}) {
   final city = draft?.profile.city?.trim();
-  return city == null || city.isEmpty ? 'Home safety plan' : '$city home plan';
+  if (context == null) {
+    return city == null || city.isEmpty
+        ? 'Home safety plan'
+        : '$city home plan';
+  }
+  return city == null || city.isEmpty
+      ? context.tr('Home safety plan')
+      : context.tr('{city} home plan', {'city': city});
 }
 
-String homePlanReference(String caseId) =>
-    'Reference ${caseId.length > 8 ? caseId.substring(0, 8) : caseId}';
+String homePlanReference(String caseId, {BuildContext? context}) {
+  final reference = caseId.length > 8 ? caseId.substring(0, 8) : caseId;
+  return context?.tr('Reference {reference}', {'reference': reference}) ??
+      'Reference $reference';
+}
 
 class CaseDisplayDetails {
   const CaseDisplayDetails({
@@ -59,12 +71,13 @@ class CaseDisplayDetails {
     return 'Saved online';
   }
 
-  String description({int? onlineRevision}) {
+  String description({int? onlineRevision, BuildContext? context}) {
     final isOlder =
         onlineRevision != null &&
         snapshot != null &&
         snapshot!.revision < onlineRevision;
-    return '${isOlder ? 'Newer version online' : status} · '
-        '${homePlanReference(draft.caseId)}';
+    final label = isOlder ? 'Newer version online' : status;
+    return '${context?.tr(label) ?? label} · '
+        '${homePlanReference(draft.caseId, context: context)}';
   }
 }

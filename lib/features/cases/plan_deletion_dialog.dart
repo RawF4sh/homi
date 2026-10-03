@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../../app/live_app.dart';
 import '../../shared/presentation/sah_components.dart';
@@ -112,7 +113,9 @@ class _PlanDeletionDialogState extends State<_PlanDeletionDialog> {
                 namesRoute: true,
                 header: true,
                 child: Text(
-                  _action.pending ? 'Check plan deletion' : 'Delete this plan?',
+                  _action.pending
+                      ? context.tr('Check plan deletion')
+                      : context.tr('Delete this plan?'),
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
               ),
@@ -122,30 +125,39 @@ class _PlanDeletionDialogState extends State<_PlanDeletionDialog> {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 4),
-              Text(homePlanReference(widget.caseId)),
+              Text(homePlanReference(widget.caseId, context: context)),
               const SizedBox(height: 16),
               Text(
                 _action.pending
-                    ? 'An earlier removal needs checking. Check its status before trying again.'
+                    ? context.tr(
+                        'An earlier removal needs checking. Check its status before trying again.',
+                      )
                     : _action.localOnly
-                    ? 'This removes this device-only plan and its staged photos. Your other plans stay saved.'
+                    ? context.tr(
+                        'This removes this device-only plan and its staged photos. Your other plans stay saved.',
+                      )
                     : _action.absentOnline
-                    ? 'This plan is no longer online. Remove its remaining copies from this device? Your other plans stay saved.'
-                    : 'This permanently removes this plan, its photos, answers and generated drafts from your account and this device. Your other plans stay saved. Copies already shared outside the app remain with their recipients.',
+                    ? context.tr(
+                        'This plan is no longer online. Remove its remaining copies from this device? Your other plans stay saved.',
+                      )
+                    : context.tr(
+                        'This permanently removes this plan, its photos, answers and generated drafts from your account and this device. Your other plans stay saved. Copies already shared outside the app remain with their recipients.',
+                      ),
               ),
               if (_busy) ...[
                 const SizedBox(height: 16),
-                const LinearProgressIndicator(
-                  semanticsLabel: 'Checking this home safety plan',
+                LinearProgressIndicator(
+                  semanticsLabel: context.tr('Checking this home safety plan'),
                 ),
               ],
-              if (_feedback != null) SahActionFeedback(message: _feedback!),
+              if (_feedback != null)
+                SahActionFeedback(message: context.tr(_feedback!)),
               const SizedBox(height: 20),
               if (_action.pending)
                 FilledButton(
                   onPressed: _busy ? null : () => _run(_action.checkPending),
-                  child: const Text(
-                    'Check deletion status',
+                  child: Text(
+                    context.tr('Check deletion status'),
                     textAlign: TextAlign.center,
                   ),
                 )
@@ -163,7 +175,9 @@ class _PlanDeletionDialogState extends State<_PlanDeletionDialog> {
                           return true;
                         }),
                   child: Text(
-                    _action.localOnly ? 'Delete local plan' : 'Delete plan',
+                    _action.localOnly
+                        ? context.tr('Delete local plan')
+                        : context.tr('Delete plan'),
                     textAlign: TextAlign.center,
                   ),
                 )
@@ -178,11 +192,11 @@ class _PlanDeletionDialogState extends State<_PlanDeletionDialog> {
                           });
                           _prepare();
                         },
-                  child: const Text('Try again'),
+                  child: Text(context.tr('Try again')),
                 ),
               TextButton(
                 onPressed: _busy ? null : () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+                child: Text(context.tr('Cancel')),
               ),
             ],
           ),

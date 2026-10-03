@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../application/assessment_controller.dart';
 import '../application/assessment_flow.dart';
@@ -50,13 +51,13 @@ class AssessmentFlowScreen extends StatelessWidget {
             actions: actions,
             title: Text(
               step == AssessmentStep.chooseArea && areaTools != null
-                  ? 'Home assessment'
-                  : _title(step),
+                  ? context.tr('Home assessment')
+                  : context.tr(_title(step)),
             ),
             leading: flow.canGoBack
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back),
-                    tooltip: 'Back',
+                    tooltip: context.tr('Back'),
                     onPressed: enabled ? flow.back : null,
                   )
                 : null,
@@ -113,38 +114,48 @@ class AssessmentFlowScreen extends StatelessWidget {
   List<Widget> _chooseArea(BuildContext context) {
     final List<FindingDraft> drafts = flow.controller.drafts;
     return [
-      const Text(
-        'Start where you would like help. You do not need to check every room or measure everything.',
+      Text(
+        context.tr(
+          'Start where you would like help. You do not need to check every room or measure everything.',
+        ),
       ),
       const SizedBox(height: 16),
       if (areaToolsFirst) ?areaTools,
-      const SahSectionHeading(title: 'Choose a place'),
-      const Text(
-        'Add a note, a photo, or both. 3D scanning is currently for bathrooms on supported phones.',
+      SahSectionHeading(title: context.tr('Choose a place')),
+      Text(
+        context.tr(
+          'Add a note, a photo, or both. 3D scanning is currently for bathrooms on supported phones.',
+        ),
       ),
       const SizedBox(height: 12),
       for (final AssessmentLocation location in AssessmentLocation.values)
         SahActionTile(
           key: ValueKey('area-${location.name}'),
-          title: location.title,
-          subtitle: '${location.description}\nNotes & photos',
+          title: context.tr(location.title),
+          subtitle: context.tr('{description}\nNotes & photos', {
+            'description': context.tr(location.description),
+          }),
           icon: location.icon,
           onTap: () => flow.chooseLocation(location),
         ),
       if (!areaToolsFirst) ?areaTools,
       if (drafts.isNotEmpty) ...[
-        const SahSectionHeading(title: 'Your findings'),
+        SahSectionHeading(title: context.tr('Your findings')),
         for (final FindingDraft d in drafts)
           SahActionTile(
             key: ValueKey('finding-${d.id}'),
             title: d.observation.trim().isEmpty
-                ? 'No observation yet'
+                ? context.tr('No observation yet')
                 : d.observation.trim(),
-            subtitle:
-                '${_findingLocationTitle(d)} · '
-                '${d.evidence.length} ${d.evidence.length == 1 ? 'photo' : 'photos'}',
-            status: AssessmentCopy.reviewState(
-              flow.controller.reviewOf(d.id)!.state,
+            subtitle: context.tr('{area} · {photos}', {
+              'area': _findingLocationTitle(context, d),
+              'photos': context.tr(
+                d.evidence.length == 1 ? '{count} photo' : '{count} photos',
+                {'count': d.evidence.length},
+              ),
+            }),
+            status: context.tr(
+              AssessmentCopy.reviewState(flow.controller.reviewOf(d.id)!.state),
             ),
             statusIcon: _reviewIcon(flow.controller.reviewOf(d.id)!.state),
             icon: Icons.sticky_note_2_outlined,
@@ -159,35 +170,41 @@ class AssessmentFlowScreen extends StatelessWidget {
     final location = flow.location;
     return [
       SahSectionHeading(
-        title: location?.title ?? AssessmentCopy.areaTitle(area),
+        title: context.tr(location?.title ?? AssessmentCopy.areaTitle(area)),
       ),
       Semantics(
         header: true,
         child: Text(
-          location?.photoPrompt(flow.view) ??
-              AssessmentCopy.viewPrompt(area, flow.view),
+          context.tr(
+            location?.photoPrompt(flow.view) ??
+                AssessmentCopy.viewPrompt(area, flow.view),
+          ),
           style: Theme.of(context).textTheme.titleLarge,
         ),
       ),
       const SizedBox(height: 8),
       SahNotice(
-        title: 'Stay safe',
-        message: location?.safetyNote ?? AssessmentCopy.safetyNote(area),
+        title: context.tr('Stay safe'),
+        message: context.tr(
+          location?.safetyNote ?? AssessmentCopy.safetyNote(area),
+        ),
         icon: Icons.health_and_safety_outlined,
         liveRegion: false,
       ),
       _NoticeCard(text: AssessmentCopy.notice(flow.notice)),
       const SizedBox(height: 8),
       if (flow.isBusy)
-        const Center(
-          child: CircularProgressIndicator(semanticsLabel: 'Opening camera'),
+        Center(
+          child: CircularProgressIndicator(
+            semanticsLabel: context.tr('Opening camera'),
+          ),
         )
       else ...[
         if (flow.cameraBlocked)
           _wide(
             OutlinedButton(
               onPressed: flow.permissionMayHaveChanged,
-              child: const Text('I changed the setting'),
+              child: Text(context.tr('I changed the setting')),
             ),
           )
         else
@@ -195,21 +212,21 @@ class AssessmentFlowScreen extends StatelessWidget {
             FilledButton.icon(
               onPressed: () => flow.openCamera(),
               icon: const Icon(Icons.photo_camera),
-              label: const Text('Open camera'),
+              label: Text(context.tr('Open camera')),
             ),
           ),
         _wide(
           OutlinedButton.icon(
             onPressed: () => flow.openCamera(source: CaptureSource.library),
             icon: const Icon(Icons.photo_library_outlined),
-            label: const Text('Choose a photo'),
+            label: Text(context.tr('Choose a photo')),
           ),
         ),
         const SizedBox(height: 8),
         _wide(
           OutlinedButton(
             onPressed: flow.continueWithoutPhoto,
-            child: const Text('Continue without a photo'),
+            child: Text(context.tr('Continue without a photo')),
           ),
         ),
       ],
@@ -224,16 +241,16 @@ class AssessmentFlowScreen extends StatelessWidget {
           flow: flow,
           evidenceId: evidenceId,
           height: 360,
-          label: 'The photo you just took',
+          label: context.tr('The photo you just took'),
         ),
       const SizedBox(height: 12),
-      const SahNotice(
-        title: 'Hide private details',
-        message: AssessmentCopy.privacyCheck,
+      SahNotice(
+        title: context.tr('Hide private details'),
+        message: context.tr(AssessmentCopy.privacyCheck),
         icon: Icons.privacy_tip_outlined,
         liveRegion: false,
       ),
-      const SahMoreInfo(details: [AssessmentCopy.privacyDetail]),
+      SahMoreInfo(details: [context.tr(AssessmentCopy.privacyDetail)]),
       if (evidenceId != null && flow.bytesFor(evidenceId) != null)
         _wide(
           OutlinedButton.icon(
@@ -262,9 +279,11 @@ class AssessmentFlowScreen extends StatelessWidget {
                     } catch (_) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
+                          SnackBar(
                             content: Text(
-                              'The private edited photo could not be saved. Keep the original and try again when device space is available.',
+                              context.tr(
+                                'The private edited photo could not be saved. Keep the original and try again when device space is available.',
+                              ),
                             ),
                           ),
                         );
@@ -272,21 +291,23 @@ class AssessmentFlowScreen extends StatelessWidget {
                     }
                   },
             icon: const Icon(Icons.privacy_tip_outlined),
-            label: const Text('Crop or cover private details'),
+            label: Text(context.tr('Crop or cover private details')),
           ),
         ),
       if (evidenceId != null) ..._markArea(context, evidenceId),
       _NoticeCard(text: AssessmentCopy.notice(flow.notice)),
       const SizedBox(height: 16),
       if (flow.isBusy)
-        const Center(
-          child: CircularProgressIndicator(semanticsLabel: 'Opening camera'),
+        Center(
+          child: CircularProgressIndicator(
+            semanticsLabel: context.tr('Opening camera'),
+          ),
         )
       else ...[
         _wide(
           FilledButton(
             onPressed: flow.continueFromPreview,
-            child: const Text('Continue'),
+            child: Text(context.tr('Continue')),
           ),
         ),
         _wide(
@@ -295,13 +316,13 @@ class AssessmentFlowScreen extends StatelessWidget {
                 ? null
                 : () => flow.openCamera(retake: true),
             icon: const Icon(Icons.replay),
-            label: const Text('Retake'),
+            label: Text(context.tr('Retake')),
           ),
         ),
         _wide(
           TextButton(
             onPressed: flow.addCloseUp,
-            child: const Text('Add a closer photo'),
+            child: Text(context.tr('Add a closer photo')),
           ),
         ),
         const SizedBox(height: 16),
@@ -311,13 +332,13 @@ class AssessmentFlowScreen extends StatelessWidget {
             onPressed: () async {
               if (await _confirm(
                 context,
-                title: 'Remove this photo?',
-                action: 'Remove',
+                title: context.tr('Remove this photo?'),
+                action: context.tr('Remove'),
               )) {
                 await flow.removePreviewPhoto();
               }
             },
-            label: 'Remove',
+            label: context.tr('Remove'),
           ),
         ),
       ],
@@ -330,7 +351,10 @@ class AssessmentFlowScreen extends StatelessWidget {
     final AnnotatedImage? image = flow.annotatableImage(evidenceId);
     final bytes = flow.bytesFor(evidenceId);
     if (image == null || bytes == null) {
-      return const [SizedBox(height: 8), Text(AssessmentCopy.markAfterSaving)];
+      return [
+        const SizedBox(height: 8),
+        Text(context.tr(AssessmentCopy.markAfterSaving)),
+      ];
     }
     final int marks = store
         .on(image)
@@ -349,7 +373,7 @@ class AssessmentFlowScreen extends StatelessWidget {
                   image: image,
                   bytes: bytes,
                   observation: flow.observationText.trim().isEmpty
-                      ? 'Not written yet.'
+                      ? context.tr('Not written yet.')
                       : flow.observationText,
                 ),
               ),
@@ -358,7 +382,9 @@ class AssessmentFlowScreen extends StatelessWidget {
           },
           icon: const Icon(Icons.crop_square),
           label: Text(
-            marks == 0 ? 'Mark the area on this photo' : 'Change the mark',
+            marks == 0
+                ? context.tr('Mark the area on this photo')
+                : context.tr('Change the mark'),
           ),
         ),
       ),
@@ -403,7 +429,7 @@ class AssessmentFlowScreen extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                AssessmentCopy.reviewState(state),
+                context.tr(AssessmentCopy.reviewState(state)),
                 key: const ValueKey('review-state'),
                 style: text.titleLarge,
               ),
@@ -413,11 +439,15 @@ class AssessmentFlowScreen extends StatelessWidget {
       ),
       if (review.anotherViewRequested)
         const _NoticeCard(text: AssessmentCopy.anotherViewRequested),
-      heading('${_findingLocationTitle(draft)} · what you notice'),
+      heading(
+        context.tr('{area} · what you notice', {
+          'area': _findingLocationTitle(context, draft),
+        }),
+      ),
       Text(draft.observation.trim(), style: text.bodyLarge),
-      heading('Photos'),
+      heading(context.tr('Photos')),
       if (draft.evidence.isEmpty)
-        const Text(AssessmentCopy.noPhotos)
+        Text(context.tr(AssessmentCopy.noPhotos))
       else
         Wrap(
           spacing: 8,
@@ -429,13 +459,16 @@ class AssessmentFlowScreen extends StatelessWidget {
                 flow: flow,
                 evidenceId: e.evidenceId,
                 height: 96,
-                label: 'Photo ${i + 1} of ${draft.evidence.length}',
+                label: context.tr('Photo {number} of {count}', {
+                  'number': i + 1,
+                  'count': draft.evidence.length,
+                }),
                 onTap: () => flow.openPhoto(e.evidenceId),
               ),
           ],
         ),
       if (draft.measurements.isNotEmpty || cleared.isNotEmpty)
-        heading('Measurements you included'),
+        heading(context.tr('Measurements you included')),
       for (final RecordedMeasurement m in draft.measurements)
         _MeasurementSummary(
           measurement: m,
@@ -448,14 +481,14 @@ class AssessmentFlowScreen extends StatelessWidget {
         ),
       const SizedBox(height: 16),
       Text(
-        AssessmentCopy.confirmMeaning,
+        context.tr(AssessmentCopy.confirmMeaning),
         style: text.bodyMedium?.copyWith(
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
       if (!keptOnDevice)
-        const SahNotice(
-          message: AssessmentCopy.notSavedYet,
+        SahNotice(
+          message: context.tr(AssessmentCopy.notSavedYet),
           tone: SahNoticeTone.warning,
           liveRegion: false,
         ),
@@ -464,21 +497,21 @@ class AssessmentFlowScreen extends StatelessWidget {
         _wide(
           FilledButton(
             onPressed: () => flow.controller.confirmDisplayedRecord(id),
-            child: const Text('Confirm this finding'),
+            child: Text(context.tr('Confirm this finding')),
           ),
         ),
       _wide(
         state == FindingReviewState.needsReview
             ? OutlinedButton(
                 onPressed: flow.startAnother,
-                child: const Text('Done, add another finding'),
+                child: Text(context.tr('Done, add another finding')),
               )
             : FilledButton(
                 onPressed: flow.startAnother,
-                child: const Text('Done, add another finding'),
+                child: Text(context.tr('Done, add another finding')),
               ),
       ),
-      heading('Other changes'),
+      heading(context.tr('Other changes')),
       Wrap(
         spacing: 8,
         runSpacing: 4,
@@ -486,25 +519,25 @@ class AssessmentFlowScreen extends StatelessWidget {
           TextButton.icon(
             onPressed: flow.edit,
             icon: const Icon(Icons.edit_outlined),
-            label: const Text('Edit'),
+            label: Text(context.tr('Edit')),
           ),
           if (state != FindingReviewState.dismissed)
             TextButton.icon(
               onPressed: flow.requestAnotherView,
               icon: const Icon(Icons.add_a_photo_outlined),
-              label: const Text('Request another photo'),
+              label: Text(context.tr('Request another photo')),
             ),
           if (state == FindingReviewState.dismissed)
             TextButton.icon(
               onPressed: () => flow.controller.restore(id),
               icon: const Icon(Icons.undo_rounded),
-              label: const Text('Restore'),
+              label: Text(context.tr('Restore')),
             )
           else
             TextButton.icon(
               onPressed: () => flow.controller.dismiss(id),
               icon: const Icon(Icons.visibility_off_outlined),
-              label: const Text('Dismiss'),
+              label: Text(context.tr('Dismiss')),
             ),
         ],
       ),
@@ -515,22 +548,27 @@ class AssessmentFlowScreen extends StatelessWidget {
           onPressed: () async {
             if (await _confirm(
               context,
-              title: 'Delete this finding and its photos?',
-              action: 'Delete',
+              title: context.tr('Delete this finding and its photos?'),
+              action: context.tr('Delete'),
             )) {
               await flow.discardFinding();
             }
           },
-          label: 'Delete this finding',
+          label: context.tr('Delete this finding'),
         ),
       ),
     ];
   }
 }
 
-String _findingLocationTitle(FindingDraft draft) =>
-    AssessmentLocation.fromObservation(draft.area, draft.observation)?.title ??
-    AssessmentCopy.areaTitle(draft.area);
+String _findingLocationTitle(BuildContext context, FindingDraft draft) =>
+    context.tr(
+      AssessmentLocation.fromObservation(
+            draft.area,
+            draft.observation,
+          )?.title ??
+          AssessmentCopy.areaTitle(draft.area),
+    );
 
 IconData _reviewIcon(FindingReviewState state) => switch (state) {
   FindingReviewState.needsReview => Icons.rate_review_outlined,
@@ -566,13 +604,19 @@ class _Progress extends StatelessWidget {
     final int total = AssessmentStep.values.length;
     return Semantics(
       container: true,
-      label: 'Step $number of $total',
+      label: context.tr('Step {number} of {total}', {
+        'number': number,
+        'total': total,
+      }),
       excludeSemantics: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Step $number of $total',
+            context.tr('Step {number} of {total}', {
+              'number': number,
+              'total': total,
+            }),
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -601,7 +645,7 @@ class _NoticeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final String? message = text;
     if (message == null) return const SizedBox.shrink();
-    return SahNotice(message: message);
+    return SahNotice(message: context.tr(message));
   }
 }
 
@@ -654,18 +698,18 @@ class _PhotoState extends State<_Photo> {
     final bytes = widget.flow.bytesFor(widget.evidenceId);
     final bool savedOnly = widget.flow.evidence[widget.evidenceId] == null;
     final String status = failed
-        ? 'Photo unavailable. Open this finding again to retry.'
+        ? context.tr('Photo unavailable. Open this finding again to retry.')
         : bytes != null
         ? ''
         : savedOnly
-        ? 'Saved to your case'
-        : 'Loading photo';
+        ? context.tr('Saved to your case')
+        : context.tr('Loading photo');
     final Widget fallback = SizedBox(
       height: widget.height,
       width: widget.height * 4 / 3,
       child: Center(
         child: Text(
-          bytes == null ? status : 'Preview unavailable',
+          bytes == null ? status : context.tr('Preview unavailable'),
           textAlign: TextAlign.center,
         ),
       ),
@@ -673,7 +717,7 @@ class _PhotoState extends State<_Photo> {
     final String label = [
       widget.label,
       if (status.isNotEmpty) status.toLowerCase(),
-      if (widget.onTap != null) 'open to retake or remove',
+      if (widget.onTap != null) context.tr('open to retake or remove'),
     ].join(', ');
     final Widget image = bytes == null
         ? fallback
@@ -708,29 +752,44 @@ class _MeasurementSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final RecordedMeasurement m = measurement;
-    final String label = measurementFieldSpecFor(m.type)?.label ?? m.type;
-    final String method = m.method == MeasurementMethod.estimated
-        ? 'your estimate'
-        : 'measured';
+    final spec = measurementFieldSpecFor(m.type);
+    final String label = spec == null ? m.type : context.tr(spec.label);
+    final String method = context.tr(
+      m.method == MeasurementMethod.estimated ? 'Your estimate' : 'Measured',
+    );
     final ThemeData theme = Theme.of(context);
     return _Panel(
       children: [
         Text(
-          '$label: ${describeMeasurement(m)}',
+          context.tr('{label}: {measurement}', {
+            'label': label,
+            'measurement': describeMeasurement(m, context: context),
+          }),
           style: theme.textTheme.bodyLarge,
         ),
         Text(
-          '${method[0].toUpperCase()}${method.substring(1)} · '
-          '${m.confirmed ? 'checked by you' : 'not checked yet'}',
+          context.tr('{method} · {status}', {
+            'method': method,
+            'status': context.tr(
+              m.confirmed ? 'checked by you' : 'not checked yet',
+            ),
+          }),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        if (m.promptsZeroReview) const Text(AssessmentCopy.zeroCheck),
-        if (history.isNotEmpty) Text('Earlier: ${describeHistory(history)}'),
+        if (m.promptsZeroReview) Text(context.tr(AssessmentCopy.zeroCheck)),
+        if (history.isNotEmpty)
+          Text(
+            context.tr('Earlier: {history}', {
+              'history': describeHistory(history, context: context),
+            }),
+          ),
         if (!m.originalInputKnown && !m.confirmed)
-          const Text(
-            'Original input unavailable. This size remains unverified.',
+          Text(
+            context.tr(
+              'Original input unavailable. This size remains unverified.',
+            ),
           ),
       ],
     );
@@ -745,11 +804,16 @@ class _ClearedMeasurement extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String label = measurementFieldSpecFor(type)?.label ?? type;
+    final spec = measurementFieldSpecFor(type);
+    final String label = spec == null ? type : context.tr(spec.label);
     return _Panel(
       children: [
-        Text('$label: not recorded now'),
-        Text('Earlier: ${describeHistory(history)}'),
+        Text(context.tr('{label}: not recorded now', {'label': label})),
+        Text(
+          context.tr('Earlier: {history}', {
+            'history': describeHistory(history, context: context),
+          }),
+        ),
       ],
     );
   }
@@ -791,7 +855,9 @@ class _DetailsStepState extends State<_DetailsStep> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SahSectionHeading(
-          title: flow.location?.title ?? AssessmentCopy.areaTitle(flow.area!),
+          title: context.tr(
+            flow.location?.title ?? AssessmentCopy.areaTitle(flow.area!),
+          ),
         ),
         TextField(
           key: const ValueKey('observation'),
@@ -803,13 +869,14 @@ class _DetailsStepState extends State<_DetailsStep> {
             if (widget.enabled && !flow.isBusy) flow.setObservationText(text);
           },
           decoration: InputDecoration(
-            labelText: AssessmentCopy.observationLabel,
-            helperText:
-                flow.location?.observationExample ??
-                AssessmentCopy.observationHintFor(flow.area!),
+            labelText: context.tr(AssessmentCopy.observationLabel),
+            helperText: context.tr(
+              flow.location?.observationExample ??
+                  AssessmentCopy.observationHintFor(flow.area!),
+            ),
             helperMaxLines: 3,
             errorText: errors.observationMissing
-                ? AssessmentCopy.observationRequired
+                ? context.tr(AssessmentCopy.observationRequired)
                 : null,
             border: const OutlineInputBorder(),
           ),
@@ -817,21 +884,24 @@ class _DetailsStepState extends State<_DetailsStep> {
         if (flow.measurementTypes.isNotEmpty) ...[
           const SizedBox(height: 16),
           if (errors.measurements.isNotEmpty)
-            const SahNotice(
-              message:
-                  'Open Add measurements below to correct or clear the highlighted size.',
+            SahNotice(
+              message: context.tr(
+                'Open Add measurements below to correct or clear the highlighted size.',
+              ),
               tone: SahNoticeTone.warning,
             ),
           ExpansionTile(
             key: ValueKey('optional-measurements-${flow.findingId}'),
-            title: const Text('Add measurements (optional)'),
-            subtitle: const Text('Only if a size helps explain the concern'),
+            title: Text(context.tr('Add measurements (optional)')),
+            subtitle: Text(
+              context.tr('Only if a size helps explain the concern'),
+            ),
             tilePadding: EdgeInsets.zero,
             initiallyExpanded: flow.measurementTypes.any(
               (type) => flow.entryFor(type).text.isNotEmpty,
             ),
             children: [
-              const Text(AssessmentCopy.measurementsIntro),
+              Text(context.tr(AssessmentCopy.measurementsIntro)),
               for (final String type in flow.measurementTypes)
                 _measurementField(context, type),
             ],
@@ -840,7 +910,7 @@ class _DetailsStepState extends State<_DetailsStep> {
         const SizedBox(height: 20),
         FilledButton(
           onPressed: widget.enabled ? flow.saveDetails : null,
-          child: const Text('Review'),
+          child: Text(context.tr('Review')),
         ),
       ],
     );
@@ -856,13 +926,13 @@ class _DetailsStepState extends State<_DetailsStep> {
         Semantics(
           header: true,
           child: Text(
-            spec.label,
+            context.tr(spec.label),
             style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
         SahMoreInfo(
-          label: 'How to measure',
-          details: [spec.definition, spec.howToMeasure],
+          label: context.tr('How to measure'),
+          details: [context.tr(spec.definition), context.tr(spec.howToMeasure)],
         ),
         TextField(
           key: ValueKey('measurement-$type'),
@@ -875,10 +945,13 @@ class _DetailsStepState extends State<_DetailsStep> {
             }
           },
           decoration: InputDecoration(
-            labelText: '${spec.label} (${entry.unit.symbol})',
+            labelText: context.tr('{label} ({unit})', {
+              'label': context.tr(spec.label),
+              'unit': context.tr(entry.unit.symbol),
+            }),
             errorText: error == null
                 ? null
-                : AssessmentCopy.measurementError(error),
+                : context.tr(AssessmentCopy.measurementError(error)),
             errorMaxLines: 3,
             border: const OutlineInputBorder(),
           ),
@@ -891,9 +964,12 @@ class _DetailsStepState extends State<_DetailsStep> {
           children: [
             for (final LengthUnit unit in LengthUnit.values)
               Tooltip(
-                message: _unitName(unit),
+                message: context.tr(_unitName(unit)),
                 child: ChoiceChip(
-                  label: Text(unit.symbol, semanticsLabel: _unitName(unit)),
+                  label: Text(
+                    context.tr(unit.symbol),
+                    semanticsLabel: context.tr(_unitName(unit)),
+                  ),
                   selected: entry.unit == unit,
                   materialTapTargetSize: MaterialTapTargetSize.padded,
                   onSelected: widget.enabled
@@ -907,7 +983,7 @@ class _DetailsStepState extends State<_DetailsStep> {
           key: ValueKey('estimate-$type'),
           contentPadding: EdgeInsets.zero,
           value: entry.method == MeasurementMethod.estimated,
-          title: const Text(AssessmentCopy.estimateLabel),
+          title: Text(context.tr(AssessmentCopy.estimateLabel)),
           onChanged: widget.enabled
               ? (v) => flow.setMeasurementMethod(
                   type,
@@ -968,7 +1044,7 @@ Future<bool> _confirm(
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(context.tr('Cancel')),
           ),
           TextButton(
             style: TextButton.styleFrom(
@@ -982,7 +1058,23 @@ Future<bool> _confirm(
     ) ??
     false;
 
-String describeMeasurement(RecordedMeasurement m) {
+String describeMeasurement(RecordedMeasurement m, {BuildContext? context}) {
+  if (context != null) {
+    final entered = m.input.unit == LengthUnit.millimetre
+        ? ''
+        : context.tr(' (you entered {value} {unit})', {
+            'value': m.input.originalText.trim(),
+            'unit': context.tr(m.input.unit.symbol),
+          });
+    final estimate = m.method == MeasurementMethod.estimated
+        ? context.tr(', estimate')
+        : '';
+    return context.tr('{value} mm{entered}{estimate}', {
+      'value': formatMillimetres(m.input.millimetres),
+      'entered': entered,
+      'estimate': estimate,
+    });
+  }
   final String entered = m.input.unit == LengthUnit.millimetre
       ? ''
       : ' (you entered ${m.input.originalText.trim()} ${m.input.unit.symbol})';
@@ -992,8 +1084,12 @@ String describeMeasurement(RecordedMeasurement m) {
   return '${formatMillimetres(m.input.millimetres)} mm$entered$estimate';
 }
 
-String describeHistory(List<MeasurementChange> history) =>
-    history.map((h) => describeMeasurement(h.previous)).join(', then ');
+String describeHistory(
+  List<MeasurementChange> history, {
+  BuildContext? context,
+}) => history
+    .map((h) => describeMeasurement(h.previous, context: context))
+    .join(context?.tr(', then ') ?? ', then ');
 
 String formatMillimetres(double value) {
   if (value == value.truncateToDouble()) return value.toInt().toString();

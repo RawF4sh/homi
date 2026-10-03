@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/case_draft.dart';
 import '../../shared/presentation/sah_components.dart';
@@ -52,7 +53,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
         initialName: c.planNameFor(draft.caseId),
         coordinator: c,
         caseId: draft.caseId,
-        defaultName: homePlanTitle(draft),
+        defaultName: homePlanTitle(draft, context: context),
         onSave: (value) async {
           if (!c.isCurrent || generation != c.generation) {
             throw StateError(
@@ -89,13 +90,13 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
       final c = services.coordinator;
       final draft = c.draft;
       if (draft == null) {
-        return const Scaffold(
+        return Scaffold(
           body: SafeArea(
             child: Padding(
               padding: EdgeInsets.all(24),
               child: SahEmptyState(
-                title: 'This case is no longer selected.',
-                message: 'Return to your cases to open it again.',
+                title: context.tr('This case is no longer selected.'),
+                message: context.tr('Return to your cases to open it again.'),
                 icon: Icons.folder_open_outlined,
               ),
             ),
@@ -140,14 +141,15 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
       return Scaffold(
         appBar: AppBar(
           title: Text(
-            c.planNameFor(draft.caseId) ?? homePlanTitle(draft),
+            c.planNameFor(draft.caseId) ??
+                homePlanTitle(draft, context: context),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
             IconButton(
               key: const ValueKey('plan-rename'),
-              tooltip: 'Rename plan',
+              tooltip: context.tr('Rename plan'),
               icon: const Icon(Icons.edit_outlined),
               onPressed: _renaming || c.busy || c.hasUndurableEdits
                   ? null
@@ -169,10 +171,10 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                       SahStatusBadge(
                         key: const ValueKey('case-save-badge'),
                         label: c.snapshot == null
-                            ? 'Saved on this device'
+                            ? context.tr('Saved on this device')
                             : c.hasUnsavedChanges
-                            ? 'Changes not saved online'
-                            : 'Saved online',
+                            ? context.tr('Changes not saved online')
+                            : context.tr('Saved online'),
                         icon: c.snapshot == null || c.hasUnsavedChanges
                             ? Icons.phone_iphone_rounded
                             : Icons.cloud_done_outlined,
@@ -186,7 +188,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                     Semantics(
                       liveRegion: true,
                       child: Text(
-                        c.notice!,
+                        context.tr(c.notice!),
                         key: const ValueKey('case-latest-update'),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -199,23 +201,25 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                   SahNotice(
                     key: const ValueKey('case-save-status'),
                     title: c.localSaveFailed
-                        ? 'Not saved on this device'
+                        ? context.tr('Not saved on this device')
                         : c.localWritePending
-                        ? 'Saving on this device'
+                        ? context.tr('Saving on this device')
                         : c.busy
-                        ? 'Case update in progress'
+                        ? context.tr('Case update in progress')
                         : c.conflict
-                        ? 'Case versions need review'
-                        : 'Save confirmation needed',
+                        ? context.tr('Case versions need review')
+                        : context.tr('Save confirmation needed'),
                     message: c.localSaveFailed
-                        ? 'Keep this case open and retry.'
+                        ? context.tr('Keep this case open and retry.')
                         : c.localWritePending
-                        ? 'Wait before leaving this case.'
+                        ? context.tr('Wait before leaving this case.')
                         : c.busy
-                        ? 'Wait for confirmation.'
+                        ? context.tr('Wait for confirmation.')
                         : c.conflict
-                        ? 'The saved case and this device differ.'
-                        : 'A save may already have worked. Check before saving again.',
+                        ? context.tr('The saved case and this device differ.')
+                        : context.tr(
+                            'A save may already have worked. Check before saving again.',
+                          ),
                     icon: c.localSaveFailed
                         ? Icons.error_outline
                         : c.localWritePending || c.busy
@@ -229,7 +233,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                   ),
                   if (c.notice != null)
                     Text(
-                      c.notice!,
+                      context.tr(c.notice!),
                       key: const ValueKey('case-latest-update'),
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
@@ -240,27 +244,27 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                           ? null
                           : () => _run(context, c.retryDeviceSave),
                       icon: const Icon(Icons.save_outlined),
-                      label: const Text('Retry saving on this device'),
+                      label: Text(context.tr('Retry saving on this device')),
                     ),
                   if (c.busy)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: LinearProgressIndicator(
-                        semanticsLabel: 'Updating saved case',
+                        semanticsLabel: context.tr('Updating saved case'),
                       ),
                     ),
                   if (c.conflict) ...[
                     ExpansionTile(
-                      title: const Text('Compare versions'),
+                      title: Text(context.tr('Compare versions')),
                       children: [
                         _CaseVersionSummary(
-                          title: 'Saved online',
+                          title: context.tr('Saved online'),
                           draft: c.snapshot == null
                               ? null
                               : CaseDraft.fromSnapshot(c.snapshot!),
                         ),
                         _CaseVersionSummary(
-                          title: 'On this device',
+                          title: context.tr('On this device'),
                           draft: draft,
                         ),
                       ],
@@ -272,7 +276,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                               context,
                               () => c.resolveConflict(keepLocal: false),
                             ),
-                      child: const Text('Use the saved version'),
+                      child: Text(context.tr('Use the saved version')),
                     ),
                     const SizedBox(height: 8),
                     OutlinedButton(
@@ -282,7 +286,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                               context,
                               () => c.resolveConflict(keepLocal: true),
                             ),
-                      child: const Text('Keep my edits for another save'),
+                      child: Text(context.tr('Keep my edits for another save')),
                     ),
                   ],
                   const SizedBox(height: 8),
@@ -292,7 +296,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                       onPressed: c.busy
                           ? null
                           : () => _run(context, c.reconcile),
-                      child: const Text('Check saved state'),
+                      child: Text(context.tr('Check saved state')),
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -302,7 +306,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                         ? null
                         : () => _run(context, c.save),
                     icon: const Icon(Icons.cloud_upload_outlined),
-                    label: const Text('Retry sync'),
+                    label: Text(context.tr('Retry sync')),
                   ),
                   if (!c.uncertain)
                     TextButton(
@@ -310,20 +314,23 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                       onPressed: c.busy
                           ? null
                           : () => _run(context, c.reconcile),
-                      child: const Text('Check saved state'),
+                      child: Text(context.tr('Check saved state')),
                     ),
                 ],
-                const SahSectionHeading(title: 'Your plan'),
+                SahSectionHeading(title: context.tr('Your plan')),
                 SahActionTile(
                   key: const ValueKey('case-profile'),
-                  overline: 'Step 1 · Resident',
-                  title: 'Resident details',
+                  overline: context.tr('Step 1 · Resident'),
+                  title: context.tr('Resident details'),
                   subtitle: answered == 0
                       ? null
-                      : '${draft.profile.city ?? 'City not provided'} · ${draft.profile.healthPlan ?? 'Health plan not provided'}',
+                      : '${draft.profile.city ?? context.tr('City not provided')} · ${draft.profile.healthPlan ?? context.tr('Health plan not provided')}',
                   status: answered == 0
-                      ? 'Not started'
-                      : '$answered of ${profile.length} answered',
+                      ? context.tr('Not started')
+                      : context.tr('{count} of {total} answered', {
+                          'count': answered,
+                          'total': profile.length,
+                        }),
                   statusIcon: answered == 0
                       ? Icons.radio_button_unchecked_rounded
                       : Icons.edit_note_rounded,
@@ -334,17 +341,25 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                 ),
                 SahActionTile(
                   key: const ValueKey('case-assessment'),
-                  overline: 'Step 2 · Rooms and concerns',
-                  title: 'Home assessment',
+                  overline: context.tr('Step 2 · Rooms and concerns'),
+                  title: context.tr('Home assessment'),
                   subtitle: c.snapshot == null
-                      ? 'Save online first.'
-                      : 'Choose a room or area. Record what is difficult with a scan, photos or notes.',
+                      ? context.tr('Save online first.')
+                      : context.tr(
+                          'Choose a room or area. Record what is difficult with a scan, photos or notes.',
+                        ),
                   status: c.snapshot == null
-                      ? 'Cannot start yet'
+                      ? context.tr('Cannot start yet')
                       : saved.isEmpty
-                      ? 'No findings saved online yet'
-                      : '${saved.length} saved online · '
-                            '${toReview == 0 ? 'none to review' : '$toReview to review'}',
+                      ? context.tr('No findings saved online yet')
+                      : toReview == 0
+                      ? context.tr('{count} saved online · none to review', {
+                          'count': saved.length,
+                        })
+                      : context.tr(
+                          '{count} saved online · {review} to review',
+                          {'count': saved.length, 'review': toReview},
+                        ),
                   statusIcon: c.snapshot == null
                       ? Icons.lock_outline_rounded
                       : saved.isEmpty
@@ -356,9 +371,11 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                       : () async {
                           if (c.snapshot == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
+                              SnackBar(
                                 content: Text(
-                                  'Save this case online once to start the assessment. After that it also works offline.',
+                                  context.tr(
+                                    'Save this case online once to start the assessment. After that it also works offline.',
+                                  ),
                                 ),
                               ),
                             );
@@ -369,12 +386,14 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                 ),
                 SahActionTile(
                   key: const ValueKey('case-programs'),
-                  overline: 'Step 3 · Improvements and assistance',
-                  title: 'Possible assistance and drafts',
-                  subtitle: programsBlocked ? 'Save online first.' : null,
+                  overline: context.tr('Step 3 · Improvements and assistance'),
+                  title: context.tr('Possible assistance and drafts'),
+                  subtitle: programsBlocked
+                      ? context.tr('Save online first.')
+                      : null,
                   status: programsBlocked
-                      ? 'Cannot start yet'
-                      : 'Ready to check',
+                      ? context.tr('Cannot start yet')
+                      : context.tr('Ready to check'),
                   statusIcon: programsBlocked
                       ? Icons.lock_outline_rounded
                       : Icons.arrow_forward_rounded,
@@ -406,61 +425,73 @@ Widget _nextStep(
 }) {
   final (String title, String description, Widget action) = switch (null) {
     _ when neverSaved && answered == 0 => (
-      'Add resident details',
-      'Skip anything you don’t know.',
+      context.tr('Add resident details'),
+      context.tr('Skip anything you don’t know.'),
       FilledButton.icon(
         key: const ValueKey('case-next-profile'),
         onPressed: onProfile,
         icon: const Icon(Icons.person_outline_rounded),
-        label: const Text('Add details'),
+        label: Text(context.tr('Add details')),
       ),
     ),
     _ when unsaved => (
-      'Changes waiting to sync',
+      context.tr('Changes waiting to sync'),
       neverSaved
-          ? 'Your details are on this device. Connect to finish syncing and start the assessment.'
-          : 'Your edits are on this device. Connect to sync them before checking programs.',
+          ? context.tr(
+              'Your details are on this device. Connect to finish syncing and start the assessment.',
+            )
+          : context.tr(
+              'Your edits are on this device. Connect to sync them before checking programs.',
+            ),
       FilledButton.icon(
         key: const ValueKey('case-save-online'),
         onPressed: onSave,
         icon: const Icon(Icons.cloud_upload_outlined),
-        label: const Text('Retry sync'),
+        label: Text(context.tr('Retry sync')),
       ),
     ),
     _ when savedFindings == 0 => (
-      'Assess the home',
-      'Describe where getting around is difficult. Scan the bathroom or add notes and photos from any area.',
+      context.tr('Assess the home'),
+      context.tr(
+        'Describe where getting around is difficult. Scan the bathroom or add notes and photos from any area.',
+      ),
       FilledButton.icon(
         key: const ValueKey('case-next-assessment'),
         onPressed: onAssessment,
         icon: const Icon(Icons.home_outlined),
-        label: const Text('Open assessment'),
+        label: Text(context.tr('Open assessment')),
       ),
     ),
     _ when toReview > 0 => (
-      'Review your findings',
-      '$toReview saved ${toReview == 1 ? 'finding needs' : 'findings need'} your check.',
+      context.tr('Review your findings'),
+      toReview == 1
+          ? context.tr('{count} saved finding needs your check.', {
+              'count': toReview,
+            })
+          : context.tr('{count} saved findings need your check.', {
+              'count': toReview,
+            }),
       FilledButton.icon(
         key: const ValueKey('case-next-assessment'),
         onPressed: onAssessment,
         icon: const Icon(Icons.rate_review_outlined),
-        label: const Text('Open assessment'),
+        label: Text(context.tr('Open assessment')),
       ),
     ),
     _ => (
-      'Check possible assistance',
-      'See which programs may fit and what is still unknown.',
+      context.tr('Check possible assistance'),
+      context.tr('See which programs may fit and what is still unknown.'),
       FilledButton.icon(
         key: const ValueKey('case-next-programs'),
         onPressed: onPrograms,
         icon: const Icon(Icons.arrow_forward_rounded),
-        label: const Text('See programs'),
+        label: Text(context.tr('See programs')),
       ),
     ),
   };
   return SahFeaturePanel(
     key: const ValueKey('case-next-step'),
-    eyebrow: 'NEXT STEP',
+    eyebrow: context.tr('NEXT STEP'),
     title: title,
     description: description,
     action: action,
@@ -474,24 +505,43 @@ class _CaseVersionSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final value = draft;
-    if (value == null) return Text('$title: no saved case');
-    const names = {
-      'city': 'City',
-      'county': 'County',
-      'healthPlan': 'Health plan',
-      'tenure': 'Housing',
-      'ageYears': 'Age',
-      'householdSize': 'Household size',
-      'annualIncomeUsd': 'Annual household income (USD)',
-      'ownerConsentReported': 'Owner consent reported',
+    if (value == null) {
+      return Text(context.tr('{title}: no saved case', {'title': title}));
+    }
+    final names = {
+      'city': context.tr('City'),
+      'county': context.tr('County'),
+      'healthPlan': context.tr('Health plan'),
+      'tenure': context.tr('Housing'),
+      'ageYears': context.tr('Age'),
+      'householdSize': context.tr('Household size'),
+      'annualIncomeUsd': context.tr('Annual household income (USD)'),
+      'ownerConsentReported': context.tr('Owner consent reported'),
     };
-    String display(Object? item) => switch (item) {
-      null => 'Not provided',
-      true => 'Yes',
-      false => 'No',
-      'owner' => 'Owner',
-      'renter' => 'Renter',
+    String display(String field, Object? item) => switch (item) {
+      null => context.tr('Not provided'),
+      true => context.tr('Yes'),
+      false => context.tr('No'),
+      'owner' when field == 'tenure' => context.tr('Owner'),
+      'renter' when field == 'tenure' => context.tr('Renter'),
       _ => item.toString(),
+    };
+    String roomLabel(String value) => switch (value) {
+      'bathroom' => context.tr('Bathroom'),
+      'entrance' => context.tr('Entrance'),
+      'other' => context.tr('Other area'),
+      _ => value,
+    };
+    String reviewLabel(String value) => switch (value) {
+      'confirmed' => context.tr('Confirmed by you'),
+      'needs_review' => context.tr('Needs your review'),
+      'dismissed' => context.tr('Dismissed'),
+      _ => value,
+    };
+    String methodLabel(String value) => switch (value) {
+      'manual' => context.tr('Measured'),
+      'estimated' => context.tr('Your estimate'),
+      _ => value,
     };
     String words(String text) => text
         .replaceAll('_', ' ')
@@ -507,22 +557,30 @@ class _CaseVersionSummary extends StatelessWidget {
           children: [
             Text(title, style: Theme.of(context).textTheme.titleMedium),
             for (final entry in value.profile.toJson().entries)
-              Text('${names[entry.key]}: ${display(entry.value)}'),
+              Text('${names[entry.key]}: ${display(entry.key, entry.value)}'),
             const SizedBox(height: 8),
-            Text('${value.findings.length} home findings'),
+            Text(
+              context.tr('{count} home findings', {
+                'count': value.findings.length,
+              }),
+            ),
             for (final finding in value.findings)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Text(
-                  '${words(finding.room)} · ${words(finding.reviewState)}\n'
+                  '${roomLabel(finding.room)} · ${reviewLabel(finding.reviewState)}\n'
                   '${finding.observation}\n'
-                  '${finding.evidenceIds.length} photos'
-                  '${finding.measurements.isEmpty ? '' : '\n${finding.measurements.map((m) => '${words(m.type)}: ${m.value} mm (${m.method}, ${m.confirmed ? 'confirmed' : 'needs review'})').join('; ')}'}',
+                  '${context.tr('{count} photos', {'count': finding.evidenceIds.length})}'
+                  '${finding.measurements.isEmpty ? '' : '\n${finding.measurements.map((m) => '${words(m.type)}: ${m.value} mm (${methodLabel(m.method)}, ${m.confirmed ? context.tr('confirmed') : context.tr('needs review')})').join('; ')}'}',
                 ),
               ),
             if (value.unresolvedFields.isNotEmpty)
               Text(
-                'Still to answer: ${value.unresolvedFields.map(words).join(', ')}',
+                context.tr('Still to answer: {fields}', {
+                  'fields': value.unresolvedFields
+                      .map((field) => names[field] ?? words(field))
+                      .join(', '),
+                }),
               ),
           ],
         ),

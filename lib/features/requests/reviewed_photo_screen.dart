@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../assessment/presentation/saved_photo_with_marks.dart';
 
@@ -82,17 +83,18 @@ class _ReviewedPhotoScreenState extends State<ReviewedPhotoScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Review private photo')),
+    appBar: AppBar(title: Text(context.tr('Review private photo'))),
     body: SafeArea(
       child: LayoutBuilder(
         builder: (context, constraints) => SahContent(
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              const SahPageHeader(
-                title: 'Check this attachment',
-                description:
-                    'Review the saved photo and its notes. Pinch to zoom in on details.',
+              SahPageHeader(
+                title: context.tr('Check this attachment'),
+                description: context.tr(
+                  'Review the saved photo and its notes. Pinch to zoom in on details.',
+                ),
               ),
               SizedBox(
                 height: (constraints.maxHeight * .55).clamp(240, 480),
@@ -109,7 +111,9 @@ class _ReviewedPhotoScreenState extends State<ReviewedPhotoScreen> {
                           width: widget.width,
                           height: widget.height,
                           marks: widget.marks,
-                          semanticLabel: 'Saved photo with observations',
+                          semanticLabel: context.tr(
+                            'Saved photo with observations',
+                          ),
                         ),
                       ),
                     ),
@@ -117,19 +121,20 @@ class _ReviewedPhotoScreenState extends State<ReviewedPhotoScreen> {
                 ),
               ),
               if (_failed)
-                const SahNotice(
-                  message:
-                      'This photo could not be opened for review. Leave it out, then reload the draft to try again.',
+                SahNotice(
+                  message: context.tr(
+                    'This photo could not be opened for review. Leave it out, then reload the draft to try again.',
+                  ),
                   tone: SahNoticeTone.error,
                 )
               else if (!_decoded)
-                const LinearProgressIndicator(
-                  semanticsLabel: 'Opening saved photo',
+                LinearProgressIndicator(
+                  semanticsLabel: context.tr('Opening saved photo'),
                 ),
               if (widget.marks.any(
                 (mark) => (mark['label'] as String).isNotEmpty,
               )) ...[
-                const SahSectionHeading(title: 'Photo notes'),
+                SahSectionHeading(title: context.tr('Photo notes')),
                 for (final mark in widget.marks)
                   if ((mark['label'] as String).isNotEmpty)
                     Padding(
@@ -137,9 +142,10 @@ class _ReviewedPhotoScreenState extends State<ReviewedPhotoScreen> {
                       child: Text(mark['label'] as String),
                     ),
               ],
-              const SahNotice(
-                message:
-                    'Include only information you want in this draft. Marks are observations, not a professional assessment.',
+              SahNotice(
+                message: context.tr(
+                  'Include only information you want in this draft. Marks are observations, not a professional assessment.',
+                ),
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
@@ -147,12 +153,12 @@ class _ReviewedPhotoScreenState extends State<ReviewedPhotoScreen> {
                     ? () => Navigator.of(context).pop(true)
                     : null,
                 icon: const Icon(Icons.check_rounded),
-                label: const Text('Include this reviewed photo'),
+                label: Text(context.tr('Include this reviewed photo')),
               ),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Leave this photo out'),
+                child: Text(context.tr('Leave this photo out')),
               ),
             ],
           ),

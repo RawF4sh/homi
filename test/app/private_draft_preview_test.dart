@@ -3,8 +3,108 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/requests/private_draft_preview.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 void main() {
+  for (final example in [
+    (
+      const Locale('es'),
+      'Página 1 de 2',
+      'Página siguiente',
+      'Reintentar texto de la página',
+    ),
+    (
+      const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+      '第 1 页，共 2 页',
+      '下一页',
+      '重试读取页面文字',
+    ),
+    (
+      const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
+      '第 1 頁，共 2 頁',
+      '下一頁',
+      '重試讀取頁面文字',
+    ),
+    (const Locale('vi'), 'Trang 1/2', 'Trang sau', 'Thử đọc văn bản trang lại'),
+    (
+      const Locale('fil'),
+      'Pahina 1 sa 2',
+      'Susunod na pahina',
+      'Subukang muli ang teksto ng pahina',
+    ),
+  ]) {
+    testWidgets('translated PDF controls preserve source text in ${example.$1}', (
+      tester,
+    ) async {
+      var advances = 0, retries = 0;
+      const original =
+          'Next page\nPrivate original note: Casa de María {count} — 照片';
+      Widget app({String? error}) => MaterialApp(
+        locale: example.$1,
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localeListResolutionCallback: AppLocalizations.resolveLocales,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
+                PrivatePdfPageNavigation(
+                  page: 1,
+                  pageCount: 2,
+                  ready: true,
+                  busy: false,
+                  onPrevious: () => fail('First page must not go backward'),
+                  onNext: () => advances++,
+                ),
+                SizedBox(
+                  height: 360,
+                  child: PrivatePdfPageText(
+                    loading: false,
+                    text: original,
+                    error: error,
+                    onRetry: () => retries++,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      expect(find.text(example.$2), findsOneWidget);
+      expect(find.text(original), findsOneWidget);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('private-pdf-previous')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await tester.tap(find.text(example.$3));
+      expect(advances, 1);
+      await tester.pumpWidget(
+        app(
+          error:
+              'The text on this page could not be read. Retry or review the page image.',
+        ),
+      );
+      await tester.pumpAndSettle();
+      final retry = find.text(example.$4);
+      await tester.ensureVisible(retry);
+      await tester.tap(retry);
+      expect(retries, 1);
+      expect(
+        find.text(
+          'The text on this page could not be read. Retry or review the page image.',
+        ),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets(
     'PDF navigation exposes semantic actions and respects page bounds',
     (tester) async {

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../../shared/services/session_service.dart';
+import '../settings/language_section.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -75,6 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final recovering = widget.session.recoveryRequired;
     return Scaffold(
       appBar: AppBar(
+        actions: const [LanguageButton()],
         title: Row(
           children: [
             const SahBrandMark(size: 32),
@@ -98,10 +101,10 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
                   child: SahStatusBadge(
-                    label: 'Private team beta',
+                    label: context.tr('Private team beta'),
                     icon: Icons.lock_outline_rounded,
                   ),
                 ),
@@ -120,8 +123,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             header: true,
                             child: Text(
                               recovering
-                                  ? 'Choose a new password'
-                                  : 'Welcome back',
+                                  ? context.tr('Choose a new password')
+                                  : context.tr('Welcome back'),
                               style: theme.textTheme.headlineLarge,
                             ),
                           ),
@@ -140,8 +143,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 10),
                 Text(
                   recovering
-                      ? 'Choose a new password.'
-                      : 'Sign in to continue.',
+                      ? context.tr('Choose a new password.')
+                      : context.tr('Sign in to continue.'),
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -167,8 +170,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           autofillHints: const [AutofillHints.username],
                           enabled: !_busy,
                           onChanged: _clearFeedback,
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
+                          decoration: InputDecoration(
+                            labelText: context.tr('Email'),
                             prefixIcon: Icon(Icons.alternate_email_rounded),
                           ),
                         ),
@@ -188,13 +191,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         onChanged: _clearFeedback,
                         decoration: InputDecoration(
                           labelText: recovering
-                              ? 'New password (12+ characters)'
-                              : 'Password',
+                              ? context.tr('New password (12+ characters)')
+                              : context.tr('Password'),
                           prefixIcon: const Icon(Icons.lock_outline_rounded),
                           suffixIcon: IconButton(
                             tooltip: _passwordVisible
-                                ? 'Hide password'
-                                : 'Show password',
+                                ? context.tr('Hide password')
+                                : context.tr('Show password'),
                             onPressed: _busy
                                 ? null
                                 : () => setState(
@@ -215,10 +218,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         onPressed: _busy ? null : () => _submit(),
                         child: Text(
                           _busy
-                              ? 'Please wait…'
+                              ? context.tr('Please wait…')
                               : recovering
-                              ? 'Save password'
-                              : 'Sign in',
+                              ? context.tr('Save password')
+                              : context.tr('Sign in'),
                         ),
                       ),
                       if (widget.emailDeliveryEnabled && !recovering)
@@ -226,12 +229,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           onPressed: _busy
                               ? null
                               : () => _submit(recovery: true),
-                          child: const Text('Forgot password'),
+                          child: Text(context.tr('Forgot password')),
                         ),
                       if (_message != null)
                         SahActionFeedback(
                           key: const ValueKey('auth-action-feedback'),
-                          message: _message!,
+                          message: context.tr(_message!),
                           revealRevision: _feedbackRevision,
                           tone: SahNoticeTone.warning,
                         ),
@@ -240,7 +243,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Team beta: use fictional information only.',
+                  context.tr('Team beta: use fictional information only.'),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -249,7 +252,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
                     child: Text(
-                      'Use your team account. Sign-up and password reset are off in this beta.',
+                      context.tr(
+                        'Use your team account. Sign-up and password reset are off in this beta.',
+                      ),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -263,12 +268,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         builder: (_) => widget.deletionStatusScreen!,
                       ),
                     ),
-                    child: const Text('Check pending account deletion'),
+                    child: Text(context.tr('Check pending account deletion')),
                   ),
                 ],
                 if (widget.session.callbackNotice != null)
                   SahNotice(
-                    message: widget.session.callbackNotice!,
+                    message: context.tr(widget.session.callbackNotice!),
                     tone: SahNoticeTone.warning,
                   ),
               ],

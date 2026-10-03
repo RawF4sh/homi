@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 
 enum HomePlanStep { profile, assessment, assistance }
 
@@ -23,24 +24,30 @@ class HomePlanJourney extends StatelessWidget {
       children: [
         _JourneyStep(
           step: HomePlanStep.profile,
-          title: 'Resident details',
-          description: 'Add what you know about the resident and their home.',
+          title: context.tr('Resident details'),
+          description: context.tr(
+            'Add what you know about the resident and their home.',
+          ),
           current: currentStep == HomePlanStep.profile,
           onTap: onProfile,
         ),
         const Divider(height: 1),
         _JourneyStep(
           step: HomePlanStep.assessment,
-          title: 'Rooms and concerns',
-          description: 'Choose an area and describe what feels difficult.',
+          title: context.tr('Rooms and concerns'),
+          description: context.tr(
+            'Choose an area and describe what feels difficult.',
+          ),
           current: currentStep == HomePlanStep.assessment,
           onTap: onAssessment,
         ),
         const Divider(height: 1),
         _JourneyStep(
           step: HomePlanStep.assistance,
-          title: 'Improvements and assistance',
-          description: 'Review possible changes and explore help with them.',
+          title: context.tr('Improvements and assistance'),
+          description: context.tr(
+            'Review possible changes and explore help with them.',
+          ),
           current: currentStep == HomePlanStep.assistance,
           onTap: onAssistance,
         ),
@@ -73,9 +80,12 @@ class _JourneyStep extends StatelessWidget {
       key: ValueKey('home-plan-step-${step.name}'),
       container: true,
       button: onTap != null,
-      label:
-          'Step $number of 3. ${current ? 'Next step. ' : ''}'
-          '$title. $description',
+      label: context.tr(
+        current
+            ? 'Step {number} of 3. Next step. {title}. {description}'
+            : 'Step {number} of 3. {title}. {description}',
+        {'number': number, 'title': title, 'description': description},
+      ),
       onTap: onTap,
       child: ExcludeSemantics(
         child: Ink(
@@ -95,7 +105,12 @@ class _JourneyStep extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Step $number${current ? ' · Next step' : ''}',
+                            context.tr(
+                              current
+                                  ? 'Step {number} · Next step'
+                                  : 'Step {number}',
+                              {'number': number},
+                            ),
                             style: theme.textTheme.labelMedium?.copyWith(
                               color: theme.colorScheme.primary,
                               fontWeight: FontWeight.w600,

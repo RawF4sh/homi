@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_language.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'app/appearance.dart';
 import 'app/live_app.dart';
 import 'app/safe_at_home_app.dart';
@@ -7,7 +9,10 @@ import 'shared/presentation/sah_components.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppAppearance.instance.load();
+  await Future.wait([
+    AppAppearance.instance.load(),
+    AppLanguageController.instance.load(),
+  ]);
   const live = bool.fromEnvironment('SAH_LIVE_BACKEND');
   runApp(live ? const LiveAppBootstrap() : const _DemoEntry());
 }
@@ -16,12 +21,19 @@ class _DemoEntry extends StatelessWidget {
   const _DemoEntry();
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: AppAppearance.instance,
+    listenable: Listenable.merge([
+      AppAppearance.instance,
+      AppLanguageController.instance,
+    ]),
     builder: (context, _) => MaterialApp(
       title: 'Safe at Home',
       theme: SafeAtHomeTheme.light(),
       darkTheme: SafeAtHomeTheme.dark(),
       themeMode: AppAppearance.instance.value,
+      locale: AppLanguageController.instance.value.locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      localeListResolutionCallback: AppLocalizations.resolveLocales,
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         appBar: AppBar(title: const Text('Safe at Home')),
