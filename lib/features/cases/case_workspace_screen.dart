@@ -197,7 +197,7 @@ class CaseWorkspaceScreen extends StatelessWidget {
                   title: 'Home assessment',
                   subtitle: c.snapshot == null
                       ? 'Save this case online once to begin photos and measurements.'
-                      : '${draft.findings.length} findings · Bathroom and entrance',
+                      : '${draft.findings.length} ${draft.findings.length == 1 ? 'finding' : 'findings'} · Bathroom and entrance',
                   icon: Icons.home_outlined,
                   onTap: c.busy
                       ? null

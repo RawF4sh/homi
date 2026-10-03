@@ -187,7 +187,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                             'This device and the saved assessment differ. Keeping this device’s findings will replace the saved assessment when you explicitly save. Other profile details stay from the latest saved case.',
                           ),
                           Text(
-                            'Device: ${session.controller.findings.length} findings. Saved: ${session.state?.caseSnapshot.findings.length ?? 0} findings.',
+                            'Device: ${_findingCount(session.controller.findings.length)}. Saved: ${_findingCount(session.state?.caseSnapshot.findings.length ?? 0)}.',
                           ),
                           OutlinedButton(
                             onPressed:
@@ -333,6 +333,8 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     );
   }
 }
+
+String _findingCount(int count) => count == 1 ? '1 finding' : '$count findings';
 
 String _changeName(Object? path) {
   final text = path.toString();
