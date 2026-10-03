@@ -23,6 +23,9 @@ import { parseExportArtifactMetadata } from '../exports/validation.ts';
 import type { ExportArtifactMetadata } from '../exports/types.ts';
 import { AccountClosedError, type LifecycleRepository, type DeletionCounts,
   type AccountDeletionState, type ConfirmAccountDeletionResult } from '../lifecycle/types.ts';
+import { appendRequestHistory, emptyRequestHistory, MAX_REQUEST_PROGRAMS, parseRequestAppendInput,
+  parseRequestHistory, parseRequestHistoryInput, type RequestHistory, type RequestHistoryAppendInput,
+  type RequestHistoryReadInput, type RequestHistoryRepository, type RequestHistoryResult } from '../requests/tracking.ts';
 
 const S = 'safeathome_private';
 const LIMITS = { cases: 64, assets: 64, artifacts: 16, bytes: 64 * 1024 * 1024 };
@@ -72,7 +75,7 @@ function validatePdf(bytes: Uint8Array, metadata: ExportArtifactMetadata): void 
 }
 
 export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRepository,
-  FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository, LifecycleRepository {
+  FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository, LifecycleRepository, RequestHistoryRepository {
   private readonly pool: Pool;
   constructor(pool: Pool) { this.pool = pool; }
 
@@ -172,10 +175,11 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       matches: 'jsonb_build_array(case_id,response)::text',
       packets: 'jsonb_build_array(case_id,generation_key,packet_id,context_fingerprint,packet)::text',
       form_answers: 'jsonb_build_array(case_id,program_id,answer_revision,record)::text',
+      request_history: 'jsonb_build_array(case_id,program_id,request_revision,record)::text',
       evidence: "jsonb_build_array(case_id,evidence_id,finding_id,revision,prepared_at,descriptor,encode(sha256(bytes),'hex'))::text",
       exports: "jsonb_build_array(case_id,artifact_id,generation_key,bindings,metadata,invalidated,last_checked_at,extract(epoch FROM expires_at),encode(sha256(bytes),'hex'))::text",
     };
-    for (const table of ['matches', 'packets', 'form_answers', 'evidence', 'exports']) {
+    for (const table of ['matches', 'packets', 'form_answers', 'request_history', 'evidence', 'exports']) {
       const binary = table === 'evidence' || table === 'exports';
       const row = (await tx.client.query(`SELECT count(*) AS total,count(size) AS active,
         COALESCE(sum(size),0) AS bytes,
@@ -205,7 +209,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       (SELECT count(bytes) FROM ${S}.exports WHERE case_id=ANY($1::text[])) AS artifacts,
       ((SELECT COALESCE(sum(octet_length(bytes)),0) FROM ${S}.evidence WHERE case_id=ANY($1::text[]))+
        (SELECT COALESCE(sum(octet_length(bytes)),0) FROM ${S}.exports WHERE case_id=ANY($1::text[]))) AS bytes`, [ids])).rows[0];
-    for (const table of ['matches', 'packets', 'form_answers', 'evidence', 'exports']) {
+    for (const table of ['matches', 'packets', 'form_answers', 'request_history', 'evidence', 'exports']) {
       await tx.client.query(`DELETE FROM ${S}.${table} WHERE case_id=ANY($1::text[])`, [ids]);
     }
     const removed = await tx.client.query(`DELETE FROM ${S}.cases WHERE owner_id=$1 AND case_id=ANY($2::text[])`, [userId, ids]);
@@ -310,6 +314,44 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
 
   async loadForUser(userId: string, caseId: string): Promise<CaseSnapshot | null> {
     return this.transaction(userId, false, async tx => (await this.caseRow(tx, userId, caseId))?.snapshot ?? null);
+  }
+  private async requestHistory(tx: Tx, input: RequestHistoryReadInput): Promise<RequestHistory> {
+    const row = (await tx.client.query(`SELECT request_revision,record FROM ${S}.request_history
+      WHERE case_id=$1 AND program_id=$2`, [input.caseId, input.programId])).rows[0];
+    if (!row) return emptyRequestHistory(input);
+    const stored = parseRequestHistory(row.record);
+    check(stored.caseId === input.caseId && stored.programId === input.programId
+      && stored.requestRevision === integer(row.request_revision) && stored.caseRevision <= input.revision);
+    return parseRequestHistory({ ...stored, caseRevision: input.revision });
+  }
+  async readRequestHistoryForUser(raw: RequestHistoryReadInput): Promise<RequestHistoryResult> {
+    const input = parseRequestHistoryInput(raw);
+    return this.transaction(input.userId, false, async tx => {
+      const entry = await this.caseRow(tx, input.userId, input.caseId);
+      if (!entry) return { status: 'not_found' };
+      if (entry.snapshot.revision !== input.revision) return { status: 'conflict' };
+      return { status: 'found', history: await this.requestHistory(tx, input) };
+    });
+  }
+  async appendRequestUpdateForUser(raw: RequestHistoryAppendInput): Promise<RequestHistoryResult> {
+    const input = parseRequestAppendInput(raw);
+    return this.transaction(input.userId, true, async tx => {
+      const entry = await this.caseRow(tx, input.userId, input.caseId, true);
+      if (!entry) return { status: 'not_found' };
+      if (entry.snapshot.revision !== input.revision) return { status: 'conflict' };
+      const current = await this.requestHistory(tx, input);
+      const result = appendRequestHistory(current, input);
+      if (result.status !== 'found' || result.history.requestRevision === current.requestRevision) return result;
+      if (current.requestRevision === 0) {
+        const row = (await tx.client.query(`SELECT count(*) AS count FROM ${S}.request_history WHERE case_id=$1`, [input.caseId])).rows[0];
+        if (integer(row.count, true) >= MAX_REQUEST_PROGRAMS) return { status: 'quota_exceeded' };
+      }
+      await tx.client.query(`INSERT INTO ${S}.request_history(case_id,program_id,request_revision,record)
+        VALUES($1,$2,$3,$4::jsonb) ON CONFLICT(case_id,program_id) DO UPDATE
+        SET request_revision=EXCLUDED.request_revision,record=EXCLUDED.record`,
+      [input.caseId, input.programId, result.history.requestRevision, JSON.stringify(result.history)]);
+      return result;
+    });
   }
   async listForUser(userId: string, query: CaseListQuery): Promise<CaseListPage> {
     const captured = parseCaseListQuery(query);

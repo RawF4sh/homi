@@ -7,6 +7,7 @@ import { createPostgresPool, databaseConfigurationFromEnvironment } from './post
 const migrations = [
   { version: '001', file: new URL('../../migrations/001_private_repository.sql', import.meta.url) },
   { version: '002', file: new URL('../../migrations/002_retention_deletion.sql', import.meta.url) },
+  { version: '003', file: new URL('../../migrations/003_request_tracking.sql', import.meta.url) },
 ];
 export class MigrationError extends Error {
   constructor() { super('Database migrations are missing, changed, or could not be applied.'); this.name = 'MigrationError'; }
