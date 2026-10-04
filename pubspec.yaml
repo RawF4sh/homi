@@ -14,6 +14,9 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
+  flutter_local_notifications: 22.3.2
+  flutter_timezone: 5.1.1
+  timezone: 0.11.2
   crypto: 3.0.7
   supabase_flutter: 2.18.3
   flutter_secure_storage: 11.2.0
@@ -41,6 +44,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - backend/src/assessment/steadi-catalog.json
     - contracts/v1/fixtures/scenarios.json
     - contracts/v1/fixtures/packets.json
 
