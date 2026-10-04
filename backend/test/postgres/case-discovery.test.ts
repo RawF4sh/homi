@@ -26,7 +26,7 @@ before(async () => {
 beforeEach(async () => {
   await admin.query(`TRUNCATE safeathome_private.cases, safeathome_private.matches,
     safeathome_private.packets, safeathome_private.form_answers, safeathome_private.evidence,
-    safeathome_private.exports, safeathome_private.deleted_cases, safeathome_private.closed_accounts,
+    safeathome_private.exports, safeathome_private.request_history, safeathome_private.deleted_cases, safeathome_private.closed_accounts,
     safeathome_private.account_deletion_previews, safeathome_private.auth_deletion_jobs;
     UPDATE safeathome_private.repository_quota
     SET case_count=0,asset_count=0,artifact_count=0,stored_bytes=0`);
