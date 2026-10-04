@@ -5,6 +5,7 @@ import { handlePreparePacket, type PreparePacketDependencies } from './prepare-p
 import { handleReadFormAnswers, handleSaveFormAnswers, type FormAnswerDependencies } from './form-answers.ts';
 import { handleReadCase } from './read-case.ts';
 import { handleListCases, type ListCasesDependencies } from './list-cases.ts';
+import { handleReadRequestHistory, handleAppendRequestUpdate, type RequestTrackingDependencies } from './request-tracking.ts';
 import { handleDraftExport, type DraftExportDependencies, type ExportRoute } from './draft-export.ts';
 import { handleCreateCase, handleSaveCase, type CaseWriteDependencies } from './write-case.ts';
 import { handleUploadEvidence, handleDeleteEvidence, type WriteEvidenceDependencies } from './write-evidence.ts';
@@ -25,6 +26,7 @@ export interface HttpServerOptions {
   admissionNow?: () => number;
   lifecycleDependencies?: LifecycleDependencies;
   caseListDependencies?: ListCasesDependencies;
+  requestTrackingDependencies?: RequestTrackingDependencies;
 }
 
 const HEAVY_ROUTES = new Set(['/v1/upload-evidence', '/v1/download-evidence',
@@ -129,7 +131,7 @@ export function createMatchingServer(
       },
     } : evidenceWriteDependencies;
     void route(request, response, dependencies, uploadAdmission, packetDependencies, formAnswerDependencies,
-      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies, options.lifecycleDependencies, options.caseListDependencies).catch(() => {
+      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies, options.lifecycleDependencies, options.caseListDependencies, options.requestTrackingDependencies).catch(() => {
       if (response.headersSent) response.destroy();
       else fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
     }).finally(async () => {
@@ -158,6 +160,7 @@ async function route(
   caseWriteDependencies?: CaseWriteDependencies, evidenceWriteDependencies?: WriteEvidenceDependencies,
   lifecycleDependencies?: LifecycleDependencies,
   caseListDependencies?: ListCasesDependencies,
+  requestTrackingDependencies?: RequestTrackingDependencies,
 ) {
   const exportRoutes: ExportRoute[] = ['list-evidence', 'download-evidence', 'create-draft-export', 'download-draft-export'];
   const exportRoute = exportDependencies === undefined ? undefined : exportRoutes.find(route => request.url === `/v1/${route}`);
@@ -166,6 +169,8 @@ async function route(
   const isFormSave = request.url === '/v1/save-form-answers' && formAnswerDependencies !== undefined;
   const isCaseRead = request.url === '/v1/read-case';
   const isCaseList = request.url === '/v1/list-cases' && caseListDependencies !== undefined;
+  const requestTrackingRoute = requestTrackingDependencies === undefined ? undefined
+    : (['read-request-history', 'append-request-update'] as const).find(route => request.url === `/v1/${route}`);
   const isCaseCreate = request.url === '/v1/create-case' && caseWriteDependencies !== undefined;
   const isCaseSave = request.url === '/v1/save-case' && caseWriteDependencies !== undefined;
   const isUpload = request.url === '/v1/upload-evidence' && evidenceWriteDependencies !== undefined;
@@ -173,7 +178,7 @@ async function route(
   const lifecycleRoutes: LifecycleRoute[] = ['delete-case', 'prepare-account-deletion', 'confirm-account-deletion', 'account-deletion-status'];
   const lifecycleRoute = lifecycleDependencies === undefined ? undefined : lifecycleRoutes.find(route => request.url === `/v1/${route}`);
   if (request.url !== '/v1/match-case' && !isPacketRequest && !isFormRead && !isFormSave && !isCaseRead && !exportRoute
-    && !isCaseCreate && !isCaseSave && !isUpload && !isDelete && !lifecycleRoute && !isCaseList) {
+    && !isCaseCreate && !isCaseSave && !isUpload && !isDelete && !lifecycleRoute && !isCaseList && !requestTrackingRoute) {
     fail(response, 404, 'NOT_FOUND', 'This endpoint does not exist.');
     request.resume();
     return;
@@ -232,8 +237,8 @@ async function route(
       if (request.destroyed || response.destroyed) return;
     }
     await readAndDispatch(request, response, bearer[1], dependencies, {
-      isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, lifecycleRoute,
-    }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies, lifecycleDependencies, caseListDependencies);
+      isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, lifecycleRoute, requestTrackingRoute,
+    }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies, lifecycleDependencies, caseListDependencies, requestTrackingDependencies);
   } finally {
     if (isUpload) uploadAdmission.active = false;
   }
@@ -243,12 +248,13 @@ async function readAndDispatch(
   request: IncomingMessage, response: ServerResponse, token: string, dependencies: MatchCaseDependencies,
   routes: { isCaseRead: boolean; isCaseList: boolean; isCaseCreate: boolean; isCaseSave: boolean; isFormRead: boolean; isFormSave: boolean;
     isPacketRequest: boolean; isUpload: boolean; isDelete: boolean; exportRoute: ExportRoute | undefined;
-    lifecycleRoute: LifecycleRoute | undefined },
+    lifecycleRoute: LifecycleRoute | undefined; requestTrackingRoute: 'read-request-history' | 'append-request-update' | undefined },
   packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
   exportDependencies?: DraftExportDependencies, caseWriteDependencies?: CaseWriteDependencies,
   evidenceWriteDependencies?: WriteEvidenceDependencies,
   lifecycleDependencies?: LifecycleDependencies,
   caseListDependencies?: ListCasesDependencies,
+  requestTrackingDependencies?: RequestTrackingDependencies,
 ) {
   const { isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, lifecycleRoute } = routes;
   const limit = isUpload ? MAX_UPLOAD_REQUEST_BYTES : MAX_REQUEST_BYTES;
@@ -271,6 +277,13 @@ async function readAndDispatch(
   }
   if (response.destroyed || response.writableEnded) return;
   const input = { body, bearerToken: token };
+  if (routes.requestTrackingRoute) {
+    const result = routes.requestTrackingRoute === 'read-request-history'
+      ? await handleReadRequestHistory(input, requestTrackingDependencies!)
+      : await handleAppendRequestUpdate(input, requestTrackingDependencies!);
+    sendJson(response, result.status, result.body, result.headers);
+    return;
+  }
   if (isCaseList) {
     const result = await handleListCases(input, caseListDependencies!);
     sendJson(response, result.status, result.body, result.headers);

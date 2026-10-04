@@ -20,6 +20,9 @@ import { parseCaseDraft } from '../cases/validation.ts';
 import type { CaseWriteRepository, CaseWriteResult } from '../cases/repository.ts';
 import { compareCaseIds, parseCaseListPage, parseCaseListQuery,
   type CaseListPage, type CaseListQuery, type CaseListRepository } from '../cases/discovery.ts';
+import { MAX_REQUEST_PROGRAMS, appendRequestHistory, emptyRequestHistory, parseRequestAppendInput,
+  parseRequestHistory, parseRequestHistoryInput, type RequestHistory, type RequestHistoryRepository,
+  type RequestHistoryReadInput, type RequestHistoryAppendInput, type RequestHistoryResult } from '../requests/tracking.ts';
 
 export interface MemoryEvidenceLimits { maxBytes: number; maxAssets: number; maxArtifacts: number }
 const DEFAULT_EVIDENCE_LIMITS: MemoryEvidenceLimits = { maxBytes: 64 * 1024 * 1024, maxAssets: 64, maxArtifacts: 16 };
@@ -45,12 +48,13 @@ export interface OwnedCase {
   snapshot: CaseSnapshot;
 }
 
-export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepository, FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository {
+export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepository, FormAnswerCaseRepository, EvidenceRepository, CaseWriteRepository, CaseListRepository, RequestHistoryRepository {
   private readonly cases = new Map<string, OwnedCase>();
   private readonly matches = new Map<string, MatchResponse>();
   private readonly packets = new Map<string, { caseId: string; contextFingerprint: string; packet: DraftPacket | null }>();
   private readonly packetIds = new Set<string>();
   private readonly formAnswers = new Map<string, SavedFormAnswerSet>();
+  private readonly requestHistories = new Map<string, Map<string, RequestHistory>>();
   private readonly evidence = new Map<string, Map<string, StoredEvidence>>();
   private readonly catalogRevisions = new Map<string, number>();
   private readonly exports = new Map<string, StoredExport>();
@@ -88,6 +92,33 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
       caseId: entry.snapshot.caseId, caseRevision: entry.snapshot.revision,
     }));
     return parseCaseListPage({ cases, nextAfterCaseId: rows.length > query.limit ? cases.at(-1)!.caseId : null }, query);
+  }
+
+  async readRequestHistoryForUser(raw: RequestHistoryReadInput): Promise<RequestHistoryResult> {
+    const input = parseRequestHistoryInput(raw);
+    const entry = this.cases.get(input.caseId);
+    if (!entry || entry.userId !== input.userId) return { status: 'not_found' };
+    if (entry.snapshot.revision !== input.revision) return { status: 'conflict' };
+    const stored = this.requestHistories.get(input.caseId)?.get(input.programId);
+    const history = stored ? parseRequestHistory(stored) : emptyRequestHistory(input);
+    return { status: 'found', history: parseRequestHistory({ ...history, caseRevision: input.revision }) };
+  }
+
+  async appendRequestUpdateForUser(raw: RequestHistoryAppendInput): Promise<RequestHistoryResult> {
+    const input = parseRequestAppendInput(raw);
+    const entry = this.cases.get(input.caseId);
+    if (!entry || entry.userId !== input.userId) return { status: 'not_found' };
+    if (entry.snapshot.revision !== input.revision) return { status: 'conflict' };
+    const programs = this.requestHistories.get(input.caseId) ?? new Map<string, RequestHistory>();
+    const stored = programs.get(input.programId);
+    const prior = stored ? parseRequestHistory(stored) : emptyRequestHistory(input);
+    const result = appendRequestHistory({ ...prior, caseRevision: input.revision }, input);
+    if (result.status === 'found') {
+      if (!stored && programs.size >= MAX_REQUEST_PROGRAMS) return { status: 'quota_exceeded' };
+      programs.set(input.programId, structuredClone(result.history));
+      this.requestHistories.set(input.caseId, programs);
+    }
+    return result;
   }
 
   async createForUser(userId: string, draft: CaseDraft): Promise<CaseWriteResult> {

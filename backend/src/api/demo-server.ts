@@ -52,7 +52,7 @@ export async function createDemoServer(fixturePath?: string, options: { formAnsw
     loadFormTemplate: async (programId: string) => programId === program.programId ? form : null };
   const server = createMatchingServer(dependencies, formDependencies ?? dependencies, formDependencies,
     options.exports ? formDependencies : undefined, dependencies, options.exports ? dependencies : undefined,
-    { caseListDependencies: dependencies });
+    { caseListDependencies: dependencies, requestTrackingDependencies: dependencies });
   return { server, cases, sessions: { alice: aliceToken, bob: bobToken },
     caseIds: { alice: scenarios.map(scenario => scenario.case.caseId), bob: bobCase.caseId } };
 }
@@ -83,6 +83,8 @@ async function main() {
   const ready = { type: 'demo-ready', endpoint: `http://127.0.0.1:${address.port}/v1/match-case`,
     caseEndpoint: `http://127.0.0.1:${address.port}/v1/read-case`,
     listCasesEndpoint: `http://127.0.0.1:${address.port}/v1/list-cases`,
+    readRequestHistoryEndpoint: `http://127.0.0.1:${address.port}/v1/read-request-history`,
+    appendRequestUpdateEndpoint: `http://127.0.0.1:${address.port}/v1/append-request-update`,
     createCaseEndpoint: `http://127.0.0.1:${address.port}/v1/create-case`,
     saveCaseEndpoint: `http://127.0.0.1:${address.port}/v1/save-case`,
     packetEndpoint: `http://127.0.0.1:${address.port}/v1/prepare-packet`,
