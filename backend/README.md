@@ -1,10 +1,12 @@
 # Matcher and draft packet preparation
 
+Manual application reports now have private, revision-checked read/append APIs and bounded history. Reports remain explicitly user-reported and never submit a form or verify an agency decision. See [manual request tracking](../docs/request-tracking-api.md) for contracts, uncertain-write recovery, the Flutter client and migration 003 rollout.
+
 The matcher and draft checklist planner are hosting-independent TypeScript modules with no I/O. They have separate authenticated API handlers, a disposable HTTP demo, and an optional durable PostgreSQL/Supabase Auth server. The Free Supabase development project is configured and passed real-session/case checks; the Node API is deployed to Railway with a verified HTTPS development endpoint. The demo uses only a fictional program; the durable command-line server starts with an empty registry and no form artifact. The explicit `SAFEATHOME_BENEFITS_BUNDLE=scfhp-eaa-draft-v1` option enables a source-reviewed SCFHP referral route and pinned public form. It remains excluded from the defaults; see [SCFHP draft workflow](../docs/scfhp-draft-workflow.md). No real route is approved for live eligibility decisions.
 
 The PDF renderers use pinned `pdf-lib` 1.17.1, private image preparation uses Sharp 0.35.5, and the optional PostgreSQL adapter uses `pg` 8.23.1; the matching engine itself remains dependency-free. The form renderer selects the reviewed service route and can populate 18 explicitly reviewed identity/contact/referral answers. The export renderer appends explicitly selected, sanitized evidence images. Answers remain revision-bound records; clinical, consent and signature answers remain manual review tasks.
 
-Run from this `backend/` directory with a Node version supporting native TypeScript stripping (tested on Node 25.2.1):
+Run from this `backend/` directory with a Node version supporting native TypeScript stripping (tested on Node 24.22.0):
 
 ```bash
 npm test
