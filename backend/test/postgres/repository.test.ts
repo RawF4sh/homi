@@ -31,7 +31,7 @@ before(async () => {
 });
 after(async () => { await cluster?.close(); });
 beforeEach(async () => {
-  await admin.query(`TRUNCATE safeathome_private.program_intake, safeathome_private.assessment_metadata, safeathome_private.evidence_annotations, safeathome_private.cases, safeathome_private.matches, safeathome_private.packets,
+  await admin.query(`TRUNCATE safeathome_private.case_shares, safeathome_private.program_intake, safeathome_private.assessment_metadata, safeathome_private.evidence_annotations, safeathome_private.cases, safeathome_private.matches, safeathome_private.packets,
     safeathome_private.form_answers, safeathome_private.evidence, safeathome_private.exports, safeathome_private.request_history,
     safeathome_private.deleted_cases, safeathome_private.closed_accounts,
     safeathome_private.account_deletion_previews, safeathome_private.auth_deletion_jobs;
@@ -169,7 +169,7 @@ test('RLS hides every private table with no identity and rejects another owner w
   const protectedTables = await admin.query(`SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='safeathome_private' AND c.relkind='r'`);
-  assert.equal(protectedTables.rows.length, 15);
+  assert.equal(protectedTables.rows.length, 16);
   assert.ok(protectedTables.rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
 });
 
