@@ -4,6 +4,10 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_language.dart';
 import 'catalogs/common.dart';
+import 'catalogs/sharing.dart';
+import 'catalogs/tracking.dart';
+import 'catalogs/local_help.dart';
+import 'catalogs/home_safety.dart';
 import 'catalogs/core.dart';
 import 'catalogs/errors.dart';
 import 'catalogs/assessment.dart';
@@ -29,6 +33,10 @@ class AppLocalizations {
     GlobalCupertinoLocalizations.delegate,
   ];
   static const catalogs = [
+    sharingTranslations,
+    trackingTranslations,
+    localHelpTranslations,
+    homeSafetyTranslations,
     coreTranslations,
     assessmentTranslations,
     programsTranslations,
