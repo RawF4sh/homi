@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../tracking/program_progress_screen.dart';
+import '../local_help/local_help_screen.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../app/live_app.dart';
@@ -106,12 +108,25 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
         result.caseRevision == c.snapshot!.revision &&
         !c.hasUnsavedChanges;
     return Scaffold(
-      appBar: AppBar(title: Text(context.tr('Possible assistance'))),
+      appBar: AppBar(
+        title: Text(context.tr('Possible assistance')),
+        actions: [LocalHelpButton(services: widget.services)],
+      ),
       body: SafeArea(
         child: SahContent(
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
+              if (widget.services.config.trackingEnabled)
+                OutlinedButton.icon(
+                  onPressed: same
+                      ? () => _open(
+                          ProgramProgressScreen(services: widget.services),
+                        )
+                      : null,
+                  icon: const Icon(Icons.view_list_outlined),
+                  label: Text(context.tr('Program progress')),
+                ),
               SahPageHeader(
                 title: context.tr('Possible assistance'),
                 description: context.tr(
@@ -324,6 +339,43 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                   ),
                             child: Text(context.tr('Manual request history')),
                           ),
+                          if (widget.services.config.trackingEnabled)
+                            OutlinedButton.icon(
+                              onPressed: !same
+                                  ? null
+                                  : () async {
+                                      try {
+                                        await widget.services.progressReady;
+                                        if (!mounted || !c.isCurrent) return;
+                                        final id = c.currentCase().caseId,
+                                            revision = c.currentCase().revision;
+                                        await widget.services.progress!.refresh(
+                                          id,
+                                        );
+                                        await widget.services.progress!
+                                            .mutate(id, revision, {
+                                              'type': 'track_program',
+                                              'programId': match.programId,
+                                            });
+                                        if (mounted && c.isCurrent) {
+                                          _open(
+                                            ProgramProgressScreen(
+                                              services: widget.services,
+                                            ),
+                                          );
+                                        }
+                                      } catch (error) {
+                                        if (context.mounted) {
+                                          await showOperationError(
+                                            context,
+                                            error,
+                                          );
+                                        }
+                                      }
+                                    },
+                              icon: const Icon(Icons.playlist_add),
+                              label: Text(context.tr('Track program')),
+                            ),
                           const SizedBox(height: 16),
                           const Divider(height: 1),
                           ExpansionTile(

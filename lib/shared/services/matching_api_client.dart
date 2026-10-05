@@ -233,6 +233,24 @@ class MatchingApiException implements Exception {
 
   factory MatchingApiException.forCode(String code, {int? statusCode}) {
     const messages = {
+      'SHARING_NOT_FOUND':
+          'Sharing could not be confirmed. Refresh access before trying again.',
+      'SHARING_CONFLICT':
+          'Sharing could not be confirmed. Refresh access before trying again.',
+      'SHARING_LIMIT':
+          'Sharing could not be confirmed. Refresh access before trying again.',
+      'SHARING_SAVE_UNCERTAIN':
+          'Sharing could not be confirmed. Refresh access before trying again.',
+      'PROGRESS_CONFLICT':
+          'Program progress changed. Refresh and review your pending change.',
+      'TASK_CONFLICT':
+          'This task changed. Refresh and review your pending change.',
+      'PROGRESS_MUTATION_CONFLICT':
+          'This save identifier was already used. Review saved progress before discarding the pending change.',
+      'PROGRESS_LIMIT':
+          'The tracking limit has been reached. Existing tasks and history are retained.',
+      'PROGRESS_SAVE_UNCERTAIN':
+          'This save could not be confirmed. Retry the same pending change to avoid duplicates.',
       'RECENT_AUTHENTICATION_REQUIRED':
           'Enter your password again before deleting your account.',
       'ACCOUNT_CLOSED':
@@ -283,6 +301,14 @@ class MatchingApiException implements Exception {
           'The case save outcome is unknown. Reload this same case identifier before deciding whether to save again.',
       'PLAN_NAME_CONFLICT':
           'This plan name changed elsewhere. Compare the saved name with your edit before trying again.',
+      'HOME_SAFETY_CONFLICT':
+          'This device and the saved checklist differ. Review both before continuing.',
+      'HOME_SAFETY_MUTATION_CONFLICT':
+          'The saved case changed. Reload it before continuing.',
+      'HOME_SAFETY_HISTORY_LIMIT':
+          'The checklist history limit has been reached. Existing work is retained.',
+      'HOME_SAFETY_SAVE_UNCERTAIN':
+          'This step could not finish. Your saved device changes are retained. Check saved state before trying again.',
       'NAME_SAVE_UNCERTAIN':
           'The plan name save could not be confirmed. Keep your edit and check the saved name before retrying.',
       'EVIDENCE_SAVE_UNCERTAIN':

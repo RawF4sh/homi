@@ -1,10 +1,15 @@
+import '../sharing/sharing_screens.dart';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/case_draft.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../programs/live_programs_screen.dart';
+import '../tracking/program_progress_screen.dart';
+import '../local_help/local_help_screen.dart';
+import '../assessment/domain/measurement/measurement_fields.dart';
 import '../assessment/presentation/live_assessment_screen.dart';
+import '../assessment/presentation/home_safety/home_safety_screen.dart';
 import 'case_display_details.dart';
 import 'profile_editor_screen.dart';
 import 'plan_name_dialog.dart';
@@ -92,7 +97,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
       if (draft == null) {
         return Scaffold(
           body: SafeArea(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: EdgeInsets.all(24),
               child: SahEmptyState(
                 title: context.tr('This case is no longer selected.'),
@@ -104,6 +109,8 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
         );
       }
       final profile = draft.profile.toJson();
+      final planTitle =
+          c.planNameFor(draft.caseId) ?? homePlanTitle(draft, context: context);
       final answered = profile.values.where((v) => v != null).length;
       final saved = draft.findings
           .where((f) => f.reviewState != 'dismissed')
@@ -140,13 +147,16 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
       );
       return Scaffold(
         appBar: AppBar(
-          title: Text(
-            c.planNameFor(draft.caseId) ??
-                homePlanTitle(draft, context: context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(planTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: [
+            if (services.config.permissionSharingEnabled)
+              IconButton(
+                tooltip: context.tr('People with access'),
+                icon: const Icon(Icons.people_outline),
+                onPressed: programsBlocked
+                    ? null
+                    : () => open(PeopleWithAccessScreen(services: services)),
+              ),
             IconButton(
               key: const ValueKey('plan-rename'),
               tooltip: context.tr('Rename plan'),
@@ -162,6 +172,15 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                Semantics(
+                  header: true,
+                  child: Text(
+                    planTitle,
+                    key: const ValueKey('case-plan-title'),
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ),
+                const SizedBox(height: 16),
                 if (!problem) ...[
                   Wrap(
                     spacing: 8,
@@ -317,6 +336,18 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                       child: Text(context.tr('Check saved state')),
                     ),
                 ],
+                if (services.config.localHelpEnabled)
+                  SahActionTile(
+                    key: const ValueKey('case-local-help'),
+                    title: context.tr('Find local help'),
+                    subtitle: context.tr(
+                      'Official referrals, saved contacts and follow-ups',
+                    ),
+                    icon: Icons.support_agent,
+                    onTap: c.busy || c.hasUndurableEdits
+                        ? null
+                        : () => open(LocalHelpScreen(services: services)),
+                  ),
                 SahSectionHeading(title: context.tr('Your plan')),
                 SahActionTile(
                   key: const ValueKey('case-profile'),
@@ -338,6 +369,17 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                   onTap: c.busy
                       ? null
                       : () => open(ProfileEditorScreen(services: services)),
+                ),
+                SahActionTile(
+                  key: const ValueKey('case-rooms-checklist'),
+                  title: context.tr('Rooms and checklist'),
+                  subtitle: context.tr(
+                    'Name each room and review home safety questions. Photos are optional.',
+                  ),
+                  icon: Icons.checklist_rounded,
+                  onTap: c.busy || c.snapshot == null
+                      ? null
+                      : () => open(HomeSafetyScreen(services: services)),
                 ),
                 SahActionTile(
                   key: const ValueKey('case-assessment'),
@@ -384,6 +426,23 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                           open(LiveAssessmentScreen(services: services));
                         },
                 ),
+                if (services.config.trackingEnabled)
+                  SahActionTile(
+                    key: const ValueKey('case-next-steps'),
+                    title: context.tr('My next steps'),
+                    subtitle: context.tr(
+                      'Program progress, tasks, and device reminders',
+                    ),
+                    icon: Icons.checklist_rounded,
+                    onTap: programsBlocked
+                        ? null
+                        : () => open(
+                            ProgramProgressScreen(
+                              services: services,
+                              tasksFirst: true,
+                            ),
+                          ),
+                  ),
                 SahActionTile(
                   key: const ValueKey('case-programs'),
                   overline: context.tr('Step 3 · Improvements and assistance'),
@@ -549,6 +608,11 @@ class _CaseVersionSummary extends StatelessWidget {
           RegExp(r'([a-z])([A-Z])'),
           (m) => '${m[1]} ${m[2]!.toLowerCase()}',
         );
+    String measurementLabel(String type) {
+      final label = measurementFieldSpecFor(type)?.label;
+      return label == null ? words(type) : context.tr(label);
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -571,7 +635,7 @@ class _CaseVersionSummary extends StatelessWidget {
                   '${roomLabel(finding.room)} · ${reviewLabel(finding.reviewState)}\n'
                   '${finding.observation}\n'
                   '${context.tr('{count} photos', {'count': finding.evidenceIds.length})}'
-                  '${finding.measurements.isEmpty ? '' : '\n${finding.measurements.map((m) => '${words(m.type)}: ${m.value} mm (${methodLabel(m.method)}, ${m.confirmed ? context.tr('confirmed') : context.tr('needs review')})').join('; ')}'}',
+                  '${finding.measurements.isEmpty ? '' : '\n${finding.measurements.map((m) => '${measurementLabel(m.type)}: ${m.value} mm (${methodLabel(m.method)}, ${m.confirmed ? context.tr('confirmed') : context.tr('needs review')})').join('; ')}'}',
                 ),
               ),
             if (value.unresolvedFields.isNotEmpty)

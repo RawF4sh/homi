@@ -1,3 +1,4 @@
+import '../shared/services/sharing_api_client.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -7,6 +8,10 @@ import 'package:safe_at_home/l10n/app_language.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../features/tracking/device_reminders.dart';
+import '../features/tracking/progress_service.dart';
+import '../shared/services/progress_api_client.dart';
+import '../features/tracking/program_progress_screen.dart';
 import 'appearance.dart';
 import 'theme.dart';
 import 'private_content_cover.dart';
@@ -40,6 +45,11 @@ class LiveAppConfig {
     required this.supabaseUrl,
     required this.publishableKey,
     this.emailDeliveryEnabled = false,
+    this.permissionSharingEnabled = false,
+    this.trackingEnabled = false,
+    this.localHelpEnabled = const bool.fromEnvironment(
+      'SAH_LOCAL_HELP_ENABLED',
+    ),
   }) {
     for (final uri in [apiOrigin, supabaseUrl]) {
       if (uri.scheme != 'https' ||
@@ -60,12 +70,19 @@ class LiveAppConfig {
   final Uri apiOrigin, supabaseUrl;
   final String publishableKey;
   final bool emailDeliveryEnabled;
+  final bool permissionSharingEnabled;
+  final bool trackingEnabled;
+  final bool localHelpEnabled;
   Uri get callback => Uri.parse('safeathome://auth/callback');
   bool acceptsCallback(Uri uri) => acceptsAuthCallback(uri, callback);
   static LiveAppConfig fromEnvironment() => LiveAppConfig(
     apiOrigin: Uri.parse(const String.fromEnvironment('SAH_API_URL')),
     supabaseUrl: Uri.parse(const String.fromEnvironment('SUPABASE_URL')),
     publishableKey: const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY'),
+    trackingEnabled: const bool.fromEnvironment('SAH_TRACKING_ENABLED'),
+    permissionSharingEnabled: const bool.fromEnvironment(
+      'SAH_PERMISSION_SHARING_ENABLED',
+    ),
     emailDeliveryEnabled: const bool.fromEnvironment(
       'SAH_EMAIL_DELIVERY_ENABLED',
     ),
@@ -81,6 +98,7 @@ class AppServices {
     this.pdfPreviewBuilder,
     this.captureAdapterFactory,
     this.bathroomScanAdapter,
+    NotificationDevice? notificationDevice,
   }) : transport = transport ?? IoMatchingTransport() {
     Future<String?> token() async {
       final epoch = session.epoch;
@@ -104,6 +122,11 @@ class AppServices {
     discovery = CaseDiscoveryApiClient(
       listCasesEndpoint: endpoint('list-cases'),
       caseEndpoint: endpoint('read-case'),
+      tokenProvider: token,
+      transport: this.transport,
+    );
+    sharing = SharingApiClient(
+      baseUri: config.apiOrigin,
       tokenProvider: token,
       transport: this.transport,
     );
@@ -171,7 +194,37 @@ class AppServices {
       discovery: discovery,
       planNames: planNames,
     );
+    if (config.trackingEnabled) {
+      final epoch = session.epoch;
+      bool current() =>
+          session.epoch == epoch &&
+          session.userId == store.accountId &&
+          coordinator.isCurrent;
+      progress = ProgressService(
+        api: ProgressApiClient(
+          baseUri: config.apiOrigin,
+          tokenProvider: token,
+          transport: this.transport,
+        ),
+        store: store,
+        isCurrent: current,
+        reminders: DeviceReminders(
+          store: store,
+          device: notificationDevice ?? LocalNotificationDevice(),
+          isCurrent: current,
+          body: () => AppLocalizations(
+            AppLanguageController.instance.value.locale ?? const Locale('en'),
+          ).text('You have a Safe at Home next step.'),
+          onTap: () => reminderOpen.value = true,
+        ),
+      );
+      progressReady = progress!.initialize();
+      unawaited(progressReady.catchError((Object _) {}));
+    }
   }
+  final ValueNotifier<bool> reminderOpen = ValueNotifier(false);
+  ProgressService? progress;
+  Future<void> progressReady = Future.value();
   final LiveAppConfig config;
   final SessionService session;
   final LocalPrivateStore store;
@@ -186,6 +239,7 @@ class AppServices {
   late final CaseEvidenceApiClient cases;
   late final CaseDiscoveryApiClient discovery;
   late final PlanNamesApiClient planNames;
+  late final SharingApiClient sharing;
   late final DraftExportApiClient exports;
   late final AnnotatedExportApiClient annotatedExports;
   late final ProgramIntakeApiClient intake;
@@ -215,6 +269,7 @@ class AppServices {
     await session.signOutAndClear(
       () async {
         try {
+          await progress?.stop();
           await _clearPersistedAuth(config);
         } finally {
           try {
@@ -230,7 +285,11 @@ class AppServices {
     );
   }
 
-  void dispose() => coordinator.dispose();
+  void dispose() {
+    progress?.dispose();
+    reminderOpen.dispose();
+    coordinator.dispose();
+  }
 }
 
 Future<void> _clearPersistedAuth(LiveAppConfig config) async {
@@ -280,6 +339,9 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
       await marker.writeAsString('1', flush: true);
     }
     await _clearTransientMedia();
+    final notifications = LocalNotificationDevice();
+    await notifications.initialize(() {});
+    await notifications.cancelAll();
     final sessionReady = Completer<SupabaseSessionService>();
     final persistedSessionStorage = SecureSessionStorage(secrets, namespace);
     await Supabase.initialize(
@@ -362,6 +424,8 @@ class LiveSessionHost extends StatefulWidget {
 }
 
 class _LiveSessionHostState extends State<LiveSessionHost> {
+  var _navigator = GlobalKey<NavigatorState>();
+  bool _reminderOpening = false;
   String? _owner;
   int _ownerEpoch = -1, _openGeneration = 0;
   Future<AppServices>? _services;
@@ -388,6 +452,8 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
     final owner = widget.session.userId;
     final epoch = widget.session.epoch;
     if (owner != _owner || epoch != _ownerEpoch) {
+      _navigator = GlobalKey<NavigatorState>();
+      _reminderOpening = false;
       final departingOwner = _owner;
       _ownerEpoch = epoch;
       _openGeneration++;
@@ -397,6 +463,7 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
       if (departingOwner != null) {
         _cleanup = _cleanup.then((_) async {
           try {
+            await previous?.progress?.stop();
             await previous?.store.close();
           } finally {
             await widget.session.waitForAccountCleanup();
@@ -443,12 +510,47 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
       await store.close();
       throw MatchingApiException.forCode('STALE_RESPONSE');
     }
-    return _opened = AppServices(
+    final services = AppServices(
       config: widget.config,
       session: widget.session,
       store: store,
       transport: widget.transport,
     );
+    _opened = services;
+    services.reminderOpen.addListener(_openReminder);
+    return services;
+  }
+
+  void _openReminder() {
+    final services = _opened;
+    if (!mounted ||
+        services == null ||
+        !services.reminderOpen.value ||
+        _reminderOpening ||
+        !services.coordinator.isCurrent) {
+      return;
+    }
+    _reminderOpening = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        if (!mounted ||
+            _opened != services ||
+            !services.coordinator.isCurrent ||
+            _navigator.currentState == null) {
+          return;
+        }
+        services.reminderOpen.value = false;
+        await _navigator.currentState!.push(
+          MaterialPageRoute(
+            builder: (_) => services.coordinator.snapshot == null
+                ? CaseHomeScreen(services: services)
+                : ProgramProgressScreen(services: services, tasksFirst: true),
+          ),
+        );
+      } finally {
+        _reminderOpening = false;
+      }
+    });
   }
 
   Future<void> _leaveUnavailableStorage(
@@ -517,6 +619,7 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
     ]),
     builder: (context, _) => MaterialApp(
       key: ValueKey(widget.session.epoch),
+      navigatorKey: _navigator,
       title: 'Safe at Home',
       debugShowCheckedModeBanner: false,
       builder: (context, child) => PrivateContentCover(child: child!),
@@ -542,7 +645,10 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
           : FutureBuilder(
               future: _services,
               builder: (context, state) {
-                if (state.hasData) return CaseHomeScreen(services: state.data!);
+                if (state.hasData) {
+                  _openReminder();
+                  return CaseHomeScreen(services: state.data!);
+                }
                 if (state.hasError) {
                   final owner = _owner!;
                   final epoch = _ownerEpoch, generation = _openGeneration;

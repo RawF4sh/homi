@@ -168,12 +168,14 @@ class PlanDeletionAction {
     _guard();
     final status = PlanRemovalStatus.fromRecord(caseId, receipt);
     if (status.localOnly || status.serverDeleted) {
+      await services.progress?.forget(caseId);
       await services.coordinator.clearCaseLocally(caseId);
       return true;
     }
     await _readRemote();
     _guard();
     if (absentOnline) {
+      await services.progress?.forget(caseId);
       await services.coordinator.clearCaseLocally(caseId);
       return true;
     }
@@ -226,6 +228,7 @@ class PlanDeletionAction {
       });
       _guard();
       pending = true;
+      await services.progress?.forget(caseId);
       await services.lifecycle.deleteCase(
         snapshot,
         expectedCatalogRevision: catalog.catalogRevision,
@@ -238,6 +241,7 @@ class PlanDeletionAction {
       _guard();
     });
     _guard();
+    await services.progress?.forget(caseId);
     await services.coordinator.clearCaseLocally(caseId);
   }
 }

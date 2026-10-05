@@ -1,3 +1,4 @@
+import '../sharing/sharing_screens.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
@@ -577,7 +578,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       TextField(
         key: const ValueKey('plan-search'),
         decoration: InputDecoration(
-          labelText: context.tr('Search loaded plans'),
+          label: Text(context.tr('Search loaded plans')),
           hintText: context.tr('Name, city or reference'),
           prefixIcon: Icon(Icons.search),
         ),
@@ -645,6 +646,19 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     appBar: _tab == 2
         ? null
         : AppBar(
+            actions: [
+              if (widget.services.config.permissionSharingEnabled)
+                IconButton(
+                  tooltip: context.tr('Shared with me'),
+                  icon: const Icon(Icons.people_outline),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          SharedWithMeScreen(services: widget.services),
+                    ),
+                  ),
+                ),
+            ],
             title: Row(
               children: [
                 const SahBrandMark(size: 32),

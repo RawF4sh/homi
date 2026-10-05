@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../../local_help/local_help_screen.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../../../app/live_app.dart';
@@ -10,14 +11,22 @@ import '../application/bathroom_scan_availability.dart';
 import 'assessment_scan_entry.dart';
 import '../application/bathroom_scan_session.dart';
 import 'assessment_flow_screen.dart';
+import 'assessment_copy.dart';
 import 'bathroom_scan_screen.dart';
 import 'save_status_card.dart';
 import '../application/assessment_sync.dart';
+import '../application/assessment_flow.dart';
+import '../domain/assessment_location.dart';
 import '../../../shared/presentation/sah_components.dart';
 import 'recovery_photo_review_card.dart';
 
 class LiveAssessmentScreen extends StatefulWidget {
-  const LiveAssessmentScreen({super.key, required this.services});
+  const LiveAssessmentScreen({
+    super.key,
+    required this.services,
+    this.initialFindingId,
+  });
+  final String? initialFindingId;
   final AppServices services;
   @override
   State<LiveAssessmentScreen> createState() => _LiveAssessmentScreenState();
@@ -39,6 +48,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
   late final Future<void> ready;
   bool busy = false, canPop = false, initialized = false;
   String? notice;
+  final saveStatusKey = GlobalKey();
   Uint8List? recoveredPhoto;
 
   @override
@@ -47,6 +57,10 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     WidgetsBinding.instance.addObserver(this);
     ready = session.initialize().then((_) {
       initialized = true;
+      final findingId = widget.initialFindingId;
+      if (findingId != null && session.controller.draftOf(findingId) != null) {
+        session.flow.openFinding(findingId);
+      }
       if (mounted) scanAvailability.refresh();
     });
   }
@@ -74,16 +88,64 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
   }
 
   Future<void> close() => run(() async {
+    final route = ModalRoute.of(context);
     try {
       await ready;
     } catch (_) {
       // ignore: empty_catches
     }
     if (initialized) await session.flush();
-    if (!mounted) return;
+    if (!mounted ||
+        route?.isCurrent != true ||
+        !identical(route, ModalRoute.of(context))) {
+      return;
+    }
     setState(() => canPop = true);
     Navigator.of(context).pop();
   });
+
+  Future<void> continueToCase() async {
+    final route = ModalRoute.of(context);
+    await run(() async {
+      await session.save();
+      await session.flush();
+      session.guard();
+      if (session.localConflict ||
+          session.localSaveFailed ||
+          session.sync.phase != SyncPhase.idle ||
+          session.sync.hasUnsavedWork ||
+          session.pendingRequest != null ||
+          session.annotationConflictId != null ||
+          session.photoMarksUnsaved != false) {
+        return;
+      }
+      if (!mounted ||
+          route?.isCurrent != true ||
+          !identical(route, ModalRoute.of(context))) {
+        return;
+      }
+      setState(() => canPop = true);
+      Navigator.of(context).pop();
+    });
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted ||
+        canPop ||
+        route?.isCurrent != true ||
+        !identical(route, ModalRoute.of(context))) {
+      return;
+    }
+    final statusContext = saveStatusKey.currentContext;
+    if (statusContext != null && statusContext.mounted) {
+      await Scrollable.ensureVisible(statusContext, alignment: 0);
+    }
+  }
+
+  void openManualConcern({required bool photo}) {
+    session.guard();
+    if (session.flow.step != AssessmentStep.chooseArea) return;
+    session.flow.chooseLocation(AssessmentLocation.bathroom);
+    if (!photo) session.flow.continueWithoutPhoto();
+  }
 
   Future<void> openBathroomScan() => run(() async {
     session.guard();
@@ -107,6 +169,15 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
               session.localSaveFailed ? null : session.importedScanFinding(id),
           activeImports: () => session.activeScanImports,
           onImport: session.importScanObservation,
+          onContinue: (findingId) {
+            session.guard();
+            if (findingId != null &&
+                session.flow.step == AssessmentStep.chooseArea) {
+              session.flow.openFinding(findingId);
+            }
+          },
+          onAddOtherConcern: () => openManualConcern(photo: false),
+          onUsePhotos: () => openManualConcern(photo: true),
         ),
       ),
     );
@@ -205,12 +276,21 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                 : session.photoMarksUnsaved;
             return AssessmentFlowScreen(
               flow: session.flow,
+              onContinue: continueToCase,
+              scanFindingIds: session.activeScanImports
+                  .map(session.importedScanFinding)
+                  .whereType<String>()
+                  .toSet(),
               keptOnDevice: !session.localSaveFailed,
               enabled:
                   !busy &&
                   (!session.localConflict || session.caseWriteBlocked) &&
                   session.sync.recoveryConflict == null,
               actions: [
+                LocalHelpButton(
+                  services: widget.services,
+                  findingId: session.flow.findingId,
+                ),
                 IconButton(
                   onPressed: busy ? null : history,
                   tooltip: context.tr('Saved review history'),
@@ -237,6 +317,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                     : openBathroomScan,
               ),
               status: Column(
+                key: saveStatusKey,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (notice != null)
@@ -444,13 +525,13 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                                       'change': context.tr(
                                         _changeName((change as Map)['path']),
                                       ),
-                                      'before': _display(
+                                      'before': assessmentHistoryValue(
+                                        context,
                                         change['before'],
-                                        context: context,
                                       ),
-                                      'after': _display(
+                                      'after': assessmentHistoryValue(
+                                        context,
                                         change['after'],
-                                        context: context,
                                       ),
                                     },
                                   ),
@@ -479,18 +560,4 @@ String _changeName(Object? path) {
   if (text.contains('review')) return 'Review decision';
   if (text.contains('finding')) return 'Finding details';
   return 'Assessment details';
-}
-
-String _display(Object? value, {BuildContext? context}) {
-  if (value == null) return context?.tr('None recorded') ?? 'None recorded';
-  if (value is List) {
-    return value.map((item) => _display(item, context: context)).join('; ');
-  }
-  if (value is Map) {
-    return value.entries
-        .where((e) => !{'id', 'findingId', 'evidenceIds'}.contains(e.key))
-        .map((e) => '${e.key}: ${_display(e.value, context: context)}')
-        .join(', ');
-  }
-  return value.toString();
 }

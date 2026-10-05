@@ -798,6 +798,11 @@ class CaseCoordinator extends ChangeNotifier {
       'case-delete',
       'plan-name',
       'plan-name-sync',
+      'home-safety',
+      'progress-cache',
+      'progress-pending',
+      'progress-edit',
+      'local-help',
     ].any((prefix) => key == '$prefix.$id')) {
       return true;
     }
