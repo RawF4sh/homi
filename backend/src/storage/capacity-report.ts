@@ -3,7 +3,7 @@ import { CAPACITY_LIMITS } from './capacity-limits.ts';
 import { assertMigrationsCurrent } from './migrate.ts';
 
 const TABLES = ['repository_quota', 'cases', 'matches', 'packets', 'form_answers', 'evidence', 'exports',
-  'deleted_cases', 'closed_accounts', 'account_deletion_previews', 'auth_deletion_jobs', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake'] as const;
+  'deleted_cases', 'closed_accounts', 'account_deletion_previews', 'auth_deletion_jobs', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'case_shares'] as const;
 type Table = typeof TABLES[number];
 interface Quota { cases: number; evidence: number; activeExports: number; binaryBytes: number }
 export interface CapacityReport {

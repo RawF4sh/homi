@@ -1,3 +1,5 @@
+import { changeProgress, emptyProgress, parseProgressRecord, parseProgressRequest, type ProgressContext, type ProgressRecord, type ProgressResult, type ProgressSave } from '../tracking/progress.ts';
+import { assessmentForSafetyReview, changeHomeSafety, emptyHomeSafety, homeSafetyState, parseHomeSafetyRequest, type HomeSafetySave, type HomeSafetyResult } from '../assessment/home-safety.ts';
 import { emptyPlanName, changePlanName, parseSavePlanNameRequest, parseNamedCaseListPage,
   type PlanNameState, type PlanNameRepository, type SavePlanNameRequest, type SavePlanNameResult, type NamedCaseListPage } from '../cases/plan-name.ts';
 import { parseSavedProgramIntake, type SavedProgramIntake } from '../programs/intake.ts';
@@ -108,6 +110,42 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     const next=structuredClone({...entry,snapshot:{...entry.snapshot,revision:caseRevision}});
     this.programIntake.set(key,saved);this.cases.set(input.caseId,next);this.invalidateCaseOutputs(input.caseId);
     return {status:'saved',saved:structuredClone(saved),caseRevision};
+  }
+  private readonly progress = new Map<string, ProgressRecord>();
+  async readProgressForUser(userId: string, caseId: string): Promise<ProgressResult> {
+    const entry = this.cases.get(caseId); if (!entry || entry.userId !== userId) return { status: 'not_found' };
+    return { status: 'found', context: structuredClone({ snapshot: entry.snapshot, record: this.progress.get(caseId) ?? emptyProgress(caseId),
+      legacy: [...(this.requestHistories.get(caseId)?.values() ?? [])] }) };
+  }
+  async saveProgressForUser(userId: string, raw: ProgressSave, at: string, registry: import('../types.ts').ProgramDefinition[]): Promise<ProgressResult> {
+    const input = parseProgressRequest(raw, true) as ProgressSave;
+    const entry = this.cases.get(input.caseId); if (!entry || entry.userId !== userId) return { status: 'not_found' };
+    const context: ProgressContext = { snapshot: entry.snapshot, record: this.progress.get(input.caseId) ?? emptyProgress(input.caseId), legacy: [...(this.requestHistories.get(input.caseId)?.values() ?? [])] };
+    const result = changeProgress(context, input, userId, at, registry);
+    if (result.status !== 'changed' && result.status !== 'retry') return result;
+    if (result.status === 'changed') { this.progress.set(input.caseId, result.record); context.record = result.record; }
+    return { status: 'found', context: structuredClone(context), acknowledgedMutationId: input.mutationId };
+  }
+  private readonly homeSafety = new Map<string, ReturnType<typeof emptyHomeSafety>>();
+  async readHomeSafetyForUser(userId: string, caseId: string): Promise<HomeSafetyResult> {
+    const entry = this.cases.get(caseId); if (!entry || entry.userId !== userId) return { status: 'not_found' };
+    return { status: 'found', state: homeSafetyState(entry.snapshot, this.homeSafety.get(caseId) ?? null) };
+  }
+  async saveHomeSafetyForUser(userId: string, raw: HomeSafetySave, at: string): Promise<HomeSafetyResult> {
+    const input = parseHomeSafetyRequest(raw, true) as HomeSafetySave, entry = this.cases.get(input.caseId);
+    if (!entry || entry.userId !== userId) return { status: 'not_found' };
+    const prior = this.homeSafety.get(input.caseId) ?? emptyHomeSafety(input.caseId);
+    const result = changeHomeSafety(entry.snapshot, prior, input, userId, at);
+    if (result.status === 'retry') return { status: 'found', state: homeSafetyState(entry.snapshot, prior, input.mutationId) };
+    if (result.status !== 'changed') return result;
+    const preserved = result.changesCase ? assessmentForSafetyReview({ before: entry.snapshot, next: result.snapshot,
+      prior: this.assessments.get(input.caseId) ?? null, request: input, userId, at, catalogRevision: this.catalogRevisions.get(input.caseId) ?? 0 }) : { record: null, limit: false };
+    if (preserved.limit) return { status: 'history_limit' };
+    this.cases.set(input.caseId, { ...entry, snapshot: result.snapshot });
+    if (preserved.record) this.assessments.set(input.caseId, preserved.record);
+    this.homeSafety.set(input.caseId, result.record);
+    if (result.changesCase) this.invalidateCaseOutputs(input.caseId);
+    return { status: 'found', state: homeSafetyState(result.snapshot, result.record, input.mutationId) };
   }
   async readAssessmentForUser(userId:string,caseId:string):Promise<AssessmentResult> {
     const entry=this.cases.get(caseId);if(!entry||entry.userId!==userId)return {status:'not_found'};

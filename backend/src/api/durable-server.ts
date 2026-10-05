@@ -1,3 +1,4 @@
+import { PostgresSharingRepository } from '../sharing/postgres-sharing-repository.ts';
 import { pathToFileURL } from 'node:url';
 import type { Pool } from 'pg';
 import { createSupabaseAuthenticator, type SupabaseAuthConfig } from '../auth/supabase-auth.ts';
@@ -11,6 +12,9 @@ import { createRecentSupabaseAuthenticator } from '../auth/recent-authentication
 
 export interface DurableServerOptions {
   pool: Pool;
+  homeSafetyEnabled?: boolean;
+  trackingEnabled?: boolean;
+  sharingEnabled?: boolean;
   auth: SupabaseAuthConfig;
   fetchImpl?: typeof fetch;
   loadRegistry?: DraftExportDependencies['loadRegistry'];
@@ -33,8 +37,13 @@ export async function createDurableServer(options: DurableServerOptions) {
     loadRegistry: options.loadRegistry ?? (async () => []),
     loadFormTemplate: options.loadFormTemplate ?? (async () => null),
   };
+  const verifiedAuthenticate = createSupabaseAuthenticator(options.auth, options.fetchImpl, true);
+  const sharingDependencies = { authenticate: async (token: string) => {
+    const user = await verifiedAuthenticate(token);
+    return user && !await cases.isAccountClosed(user.userId) ? user : null;
+  }, sharing: new PostgresSharingRepository(options.pool) };
   const server = createMatchingServer(dependencies, dependencies, dependencies,
-    dependencies, dependencies, dependencies, { hosted: true, lifecycleDependencies, caseListDependencies: dependencies, requestTrackingDependencies: dependencies, assessmentDependencies: dependencies, programIntakeDependencies: dependencies, planNameDependencies: dependencies });
+    dependencies, dependencies, dependencies, { hosted: true, sharingDependencies: options.sharingEnabled === true ? sharingDependencies : undefined, lifecycleDependencies, caseListDependencies: dependencies, requestTrackingDependencies: dependencies, assessmentDependencies: dependencies, programIntakeDependencies: dependencies, planNameDependencies: dependencies, homeSafetyDependencies: options.homeSafetyEnabled ? dependencies : undefined, progressDependencies: options.trackingEnabled === true ? dependencies : undefined });
   return { server, cases };
 }
 
@@ -55,6 +64,8 @@ async function main() {
   const pool = createPostgresPool(await databaseConfigurationFromEnvironment(process.env));
   try {
     const { server } = await createDurableServer({ pool, auth,
+      sharingEnabled: process.env.SAH_PERMISSION_SHARING_ENABLED === 'true',
+      homeSafetyEnabled: process.env.SAFEATHOME_HOME_SAFETY_ENABLED === 'true', trackingEnabled: process.env.SAH_TRACKING_ENABLED === 'true',
       loadRegistry: bundle.loadRegistry, loadFormTemplate: bundle.loadFormTemplate });
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);

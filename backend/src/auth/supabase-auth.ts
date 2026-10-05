@@ -41,19 +41,22 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function userFromResponse(value: unknown): AuthenticatedUser | null {
+function userFromResponse(value: unknown, requireConfirmedIdentity: boolean): AuthenticatedUser | null {
   if (!record(value) || typeof value.id !== 'string'
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.id)
     || value.id.length !== 36 || typeof value.role !== 'string') {
     throw new AuthServiceUnavailableError();
   }
   if (value.role !== 'authenticated') return null;
+  if (requireConfirmedIdentity && (value.is_anonymous === true || ![value.email_confirmed_at, value.phone_confirmed_at].some(
+    at => typeof at === 'string' && at.length > 0 && Number.isFinite(Date.parse(at))))) return null;
   return Object.freeze({ userId: value.id });
 }
 
 export function createSupabaseAuthenticator(
   config: SupabaseAuthConfig,
   fetchImpl: typeof fetch = globalThis.fetch,
+  requireConfirmedIdentity = false,
 ): (token: string) => Promise<AuthenticatedUser | null> {
   const { endpoint, publishableKey, timeoutMs } = configuration(config);
   if (typeof fetchImpl !== 'function') throw new TypeError('Invalid authentication transport.');
@@ -120,7 +123,7 @@ export function createSupabaseAuthenticator(
         size += chunk.value.byteLength;
       }
       const decoded: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size)));
-      return userFromResponse(decoded);
+      return userFromResponse(decoded, requireConfirmedIdentity);
     };
 
     try {

@@ -1,3 +1,7 @@
+import { SHARING_ROUTES, type SharingRoute } from '../sharing/contracts.ts';
+import { handleSharing, type SharingDependencies } from './sharing.ts';
+import { handleProgress, type ProgressDependencies, type ProgressRoute } from './progress.ts';
+import { handleHomeSafety, type HomeSafetyDependencies, type HomeSafetyRoute } from './home-safety.ts';
 import { handlePlanName, type PlanNameDependencies, type PlanNameRoute } from './plan-name.ts';
 import { handleReadFormAnswersV2, handleSaveFormAnswersV2 } from './form-answers-v2.ts';
 import { handleReadProgramIntake, handleSaveProgramIntake, type ProgramIntakeDependencies } from './program-intake.ts';
@@ -31,6 +35,9 @@ export interface HttpServerOptions {
   assessmentDependencies?: AssessmentDependencies;
   programIntakeDependencies?: ProgramIntakeDependencies;
   planNameDependencies?: PlanNameDependencies;
+  progressDependencies?: ProgressDependencies;
+  homeSafetyDependencies?: HomeSafetyDependencies;
+  sharingDependencies?: SharingDependencies;
   admissionNow?: () => number;
   lifecycleDependencies?: LifecycleDependencies;
   caseListDependencies?: ListCasesDependencies;
@@ -180,7 +187,7 @@ export function createMatchingServer(
       },
     } : evidenceWriteDependencies;
     void route(request, response, dependencies, uploadAdmission, packetDependencies, formAnswerDependencies,
-      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies, options.lifecycleDependencies, options.caseListDependencies, options.requestTrackingDependencies, accountGate, options.assessmentDependencies, options.programIntakeDependencies, options.planNameDependencies).catch(() => {
+      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies, options.lifecycleDependencies, options.caseListDependencies, options.requestTrackingDependencies, accountGate, options.assessmentDependencies, options.programIntakeDependencies, options.planNameDependencies, options.homeSafetyDependencies, options.sharingDependencies, options.progressDependencies).catch(() => {
       if (response.headersSent) response.destroy();
       else fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
     }).finally(async () => {
@@ -214,7 +221,13 @@ async function route(
   assessmentDependencies?: AssessmentDependencies,
   programIntakeDependencies?: ProgramIntakeDependencies,
   planNameDependencies?: PlanNameDependencies,
+  homeSafetyDependencies?: HomeSafetyDependencies,
+  sharingDependencies?: SharingDependencies,
+  progressDependencies?: ProgressDependencies,
 ) {
+  const progressRoute = progressDependencies ? (['read-progress', 'save-progress', 'read-progress-history'] as ProgressRoute[]).find(r => request.url === `/v3/${r}`) : undefined;
+  const sharingRoute = sharingDependencies ? SHARING_ROUTES.find(r => request.url === `/v3/${r}`) : undefined;
+  const homeSafetyRoute = homeSafetyDependencies ? (['read-home-safety', 'save-home-safety'] as HomeSafetyRoute[]).find(r => request.url === `/v3/${r}`) : undefined;
   const planNameRoute = planNameDependencies ? (['read-plan-name', 'save-plan-name', 'list-cases'] as PlanNameRoute[]).find(r => request.url === `/v2/${r}`) : undefined;
   const programIntakeRoute=programIntakeDependencies ? (['read-program-intake','save-program-intake'] as const).find(r=>request.url===`/v2/${r}`):undefined;
   const assessmentRoute=assessmentDependencies ? (['read-assessment','save-assessment','read-evidence-annotations','save-evidence-annotations'] as AssessmentRoute[]).find(r=>request.url===`/v2/${r}`):undefined;
@@ -235,7 +248,7 @@ async function route(
   const lifecycleRoutes: LifecycleRoute[] = ['delete-case', 'prepare-account-deletion', 'confirm-account-deletion', 'account-deletion-status'];
   const lifecycleRoute = lifecycleDependencies === undefined ? undefined : lifecycleRoutes.find(route => request.url === `/v1/${route}`);
   if (request.url !== '/v1/match-case' && !isPacketRequest && !isFormRead && !isFormSave && !isCaseRead && !exportRoute
-    && !isCaseCreate && !isCaseSave && !isUpload && !isDelete && !lifecycleRoute && !isCaseList && !requestTrackingRoute && !assessmentRoute && !programIntakeRoute && !planNameRoute) {
+    && !isCaseCreate && !isCaseSave && !isUpload && !isDelete && !lifecycleRoute && !isCaseList && !requestTrackingRoute && !assessmentRoute && !programIntakeRoute && !planNameRoute && !homeSafetyRoute && !progressRoute && !sharingRoute) {
     fail(response, 404, 'NOT_FOUND', 'This endpoint does not exist.');
     request.resume();
     return;
@@ -308,8 +321,8 @@ async function route(
       }
     }
     await readAndDispatch(request, response, bearer[1], dependencies, {
-      isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, exportVersion, lifecycleRoute, requestTrackingRoute, assessmentRoute, programIntakeRoute, planNameRoute,
-    }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies, lifecycleDependencies, caseListDependencies, requestTrackingDependencies, accountGate, assessmentDependencies, programIntakeDependencies, planNameDependencies);
+      isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, exportVersion, lifecycleRoute, requestTrackingRoute, assessmentRoute, programIntakeRoute, planNameRoute, homeSafetyRoute, sharingRoute, progressRoute,
+    }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies, lifecycleDependencies, caseListDependencies, requestTrackingDependencies, accountGate, assessmentDependencies, programIntakeDependencies, planNameDependencies, homeSafetyDependencies, sharingDependencies, progressDependencies);
   } finally {
     if (isUpload) uploadAdmission.active = false;
   }
@@ -319,7 +332,7 @@ async function readAndDispatch(
   request: IncomingMessage, response: ServerResponse, token: string, dependencies: MatchCaseDependencies,
   routes: { isCaseRead: boolean; isCaseList: boolean; isCaseCreate: boolean; isCaseSave: boolean; isFormRead: boolean; isFormSave: boolean;
     exportVersion:1|2; isPacketRequest: boolean; isUpload: boolean; isDelete: boolean; exportRoute: ExportRoute | undefined;
-    planNameRoute: PlanNameRoute | undefined; programIntakeRoute:'read-program-intake'|'save-program-intake'|undefined; assessmentRoute: AssessmentRoute | undefined; lifecycleRoute: LifecycleRoute | undefined; requestTrackingRoute: 'read-request-history' | 'append-request-update' | undefined },
+    sharingRoute: SharingRoute | undefined; progressRoute: ProgressRoute | undefined; homeSafetyRoute: HomeSafetyRoute | undefined; planNameRoute: PlanNameRoute | undefined; programIntakeRoute:'read-program-intake'|'save-program-intake'|undefined; assessmentRoute: AssessmentRoute | undefined; lifecycleRoute: LifecycleRoute | undefined; requestTrackingRoute: 'read-request-history' | 'append-request-update' | undefined },
   packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
   exportDependencies?: DraftExportDependencies, caseWriteDependencies?: CaseWriteDependencies,
   evidenceWriteDependencies?: WriteEvidenceDependencies,
@@ -330,8 +343,11 @@ async function readAndDispatch(
   assessmentDependencies?: AssessmentDependencies,
   programIntakeDependencies?: ProgramIntakeDependencies,
   planNameDependencies?: PlanNameDependencies,
+  homeSafetyDependencies?: HomeSafetyDependencies,
+  sharingDependencies?: SharingDependencies,
+  progressDependencies?: ProgressDependencies,
 ) {
-  const { isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, exportVersion, lifecycleRoute, requestTrackingRoute, assessmentRoute, programIntakeRoute, planNameRoute } = routes;
+  const { isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, exportVersion, lifecycleRoute, requestTrackingRoute, assessmentRoute, programIntakeRoute, planNameRoute, homeSafetyRoute, sharingRoute, progressRoute } = routes;
   const limit = isUpload ? MAX_UPLOAD_REQUEST_BYTES : assessmentRoute==='save-assessment' ? 32*1024 : MAX_REQUEST_BYTES;
   if (request.headers['content-length'] && Number(request.headers['content-length']) > limit) {
     fail(response, 413, 'PAYLOAD_TOO_LARGE', 'The request is too large.', { Connection: 'close' });
@@ -355,7 +371,7 @@ async function readAndDispatch(
     if (lifecycleRoute === 'account-deletion-status') {
       if (!accountGate.receipt()) return;
     } else {
-      const selected = planNameRoute ? planNameDependencies! : programIntakeRoute ? programIntakeDependencies! : assessmentRoute ? assessmentDependencies! : requestTrackingRoute ? requestTrackingDependencies!
+      const selected = sharingRoute ? sharingDependencies! : progressRoute ? progressDependencies! : homeSafetyRoute ? homeSafetyDependencies! : planNameRoute ? planNameDependencies! : programIntakeRoute ? programIntakeDependencies! : assessmentRoute ? assessmentDependencies! : requestTrackingRoute ? requestTrackingDependencies!
         : isCaseList ? caseListDependencies! : lifecycleRoute ? lifecycleDependencies!
           : isCaseCreate || isCaseSave ? caseWriteDependencies! : isDelete ? evidenceWriteDependencies!
             : exportRoute ? exportDependencies! : isFormRead || isFormSave ? formAnswerDependencies!
@@ -367,7 +383,10 @@ async function readAndDispatch(
       if (response.destroyed || response.writableEnded) return;
       if (outcome.malformed) { fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.'); return; }
       if (outcome.userId !== null && !accountGate.acquire(outcome.userId)) return;
-      if (planNameRoute) planNameDependencies = { ...planNameDependencies!, authenticate: outcome.authenticate };
+      if (sharingRoute) sharingDependencies = { ...sharingDependencies!, authenticate: outcome.authenticate };
+      else if (progressRoute) progressDependencies = { ...progressDependencies!, authenticate: outcome.authenticate };
+      else if (homeSafetyRoute) homeSafetyDependencies = { ...homeSafetyDependencies!, authenticate: outcome.authenticate };
+      else if (planNameRoute) planNameDependencies = { ...planNameDependencies!, authenticate: outcome.authenticate };
       else if(programIntakeRoute) programIntakeDependencies={...programIntakeDependencies!,authenticate:outcome.authenticate};
       else if (assessmentRoute) assessmentDependencies = {...assessmentDependencies!,authenticate:outcome.authenticate};
       else if (requestTrackingRoute) requestTrackingDependencies = { ...requestTrackingDependencies!, authenticate: outcome.authenticate };
@@ -384,6 +403,18 @@ async function readAndDispatch(
     }
   }
   const input = { body, bearerToken: token };
+  if (progressRoute) {
+    const result = await handleProgress(input, progressDependencies!, progressRoute);
+    sendJson(response, result.status, result.body, result.headers); return;
+  }
+  if (sharingRoute) {
+    const result = await handleSharing({ body, bearerToken: token }, sharingDependencies!, sharingRoute);
+    sendJson(response, result.status, result.body, result.headers); return;
+  }
+  if (homeSafetyRoute) {
+    const result = await handleHomeSafety(input, homeSafetyDependencies!, homeSafetyRoute);
+    sendJson(response, result.status, result.body, result.headers); return;
+  }
   if (planNameRoute) {
     const result = await handlePlanName(input, planNameDependencies!, planNameRoute);
     sendJson(response, result.status, result.body, result.headers); return;

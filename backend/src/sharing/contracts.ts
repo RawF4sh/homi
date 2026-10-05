@@ -1,0 +1,94 @@
+import { evidenceIdentifier, evidenceRevision } from '../evidence/validation.ts';
+import type { CaseSnapshot } from '../types.ts';
+
+
+export const SHARING_ROUTES = ['preview-sharing', 'create-invitation', 'list-sharing', 'change-sharing', 'revoke-sharing',
+  'review-invitation', 'accept-invitation', 'list-shared-cases', 'read-shared-case', 'add-shared-note'] as const;
+export type SharingRoute = typeof SHARING_ROUTES[number];
+export interface ShareScope { findingIds: string[]; programIds: string[]; allowHelperNotes: boolean }
+export interface SharedCaseProjection {
+  schemaVersion: '3'; caseId: string; sourceRevision: number; publishedAt: string; stale: boolean;
+  summary: 'Selected home safety information';
+  findings: { id: string; room: string; observation: string; reviewState: string }[];
+  programs: { programId: string; status: string | null; occurredOn: string | null; provenance: 'user_reported' }[];
+}
+export interface SharedNote { mutationId: string; authorId: string; note: string; recordedAt: string }
+export interface AccessAuditEvent { type: 'invited' | 'accepted' | 'changed' | 'revoked' | 'read' | 'note'; actorId: string; at: string }
+export interface CaseMembership {
+  membershipId: string; caseId: string; grantorId: string; recipientId: string; role: 'viewer' | 'helper'; scope: ShareScope;
+  permissionRevision: number; expiresAt: string | null; invitationExpiresAt: string;
+  state: 'pending' | 'active' | 'revoked' | 'expired';
+}
+export interface OwnerShare extends CaseMembership { projection: SharedCaseProjection | null; notes: SharedNote[]; audit: AccessAuditEvent[] }
+export interface SharedView { membership: CaseMembership; projection: SharedCaseProjection; notes: SharedNote[] }
+export type SharingRequest = { schemaVersion: '3'; caseId?: string; expectedCaseRevision?: number; invitationId?: string;
+  recipientId?: string; role?: 'viewer' | 'helper'; scope?: ShareScope; expiresAt?: string | null;
+  expectedPermissionRevision?: number; code?: string; membershipId?: string; mutationId?: string; note?: string };
+export interface SharingRepository { execute(userId: string, route: SharingRoute, request: SharingRequest, tokenHash?: string): Promise<SharingResult> }
+export type SharingResult = { status: 'ok'; data: Record<string, unknown> } | { status: 'not_found' | 'conflict' | 'quota_exceeded' | 'invalid_request' };
+export function check(value: unknown): asserts value { if (!value) throw new TypeError('Invalid sharing data.'); }
+export function object(value: unknown, keys: readonly string[]): asserts value is Record<string, unknown> {
+  check(value !== null && typeof value === 'object' && !Array.isArray(value));
+  check(Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key)));
+}
+export function uuid(value: unknown): value is string { return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value); }
+export function instant(value: unknown): value is string { return typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value; }
+export function parseScope(value: unknown): ShareScope {
+  object(value, ['findingIds', 'programIds', 'allowHelperNotes']);
+  for (const [key, max] of [['findingIds', 32], ['programIds', 4]] as const) {
+    const ids = value[key]; check(Array.isArray(ids) && ids.length <= max && ids.every(evidenceIdentifier) && new Set(ids).size === ids.length);
+  }
+  check(typeof value.allowHelperNotes === 'boolean');
+  return structuredClone(value) as unknown as ShareScope;
+}
+const keys: Record<SharingRoute, string[]> = {
+  'preview-sharing': ['caseId', 'expectedCaseRevision', 'scope'],
+  'create-invitation': ['caseId', 'expectedCaseRevision', 'invitationId', 'recipientId', 'role', 'scope', 'expiresAt'],
+  'list-sharing': ['caseId'], 'change-sharing': ['caseId', 'expectedCaseRevision', 'invitationId', 'expectedPermissionRevision', 'role', 'scope', 'expiresAt'],
+  'revoke-sharing': ['caseId', 'invitationId', 'expectedPermissionRevision'],
+  'review-invitation': ['code'], 'accept-invitation': ['code', 'expectedPermissionRevision'], 'list-shared-cases': [],
+  'read-shared-case': ['membershipId', 'expectedPermissionRevision'],
+  'add-shared-note': ['membershipId', 'expectedPermissionRevision', 'mutationId', 'note'],
+};
+export function parseSharingRequest(route: SharingRoute, value: unknown): SharingRequest {
+  object(value, ['schemaVersion', ...keys[route]]); check(value.schemaVersion === '3');
+  if ('caseId' in value) check(evidenceIdentifier(value.caseId));
+  for (const key of ['invitationId', 'recipientId', 'membershipId', 'mutationId']) if (key in value) check(uuid(value[key]));
+  for (const key of ['expectedCaseRevision', 'expectedPermissionRevision']) if (key in value) check(evidenceRevision(value[key]));
+  if ('scope' in value) { const scope = parseScope(value.scope); if ('role' in value) check(value.role === 'viewer' || value.role === 'helper'); check(value.role !== 'viewer' || !scope.allowHelperNotes); }
+  if ('expiresAt' in value) check(value.expiresAt === null || instant(value.expiresAt));
+  if ('code' in value) check(typeof value.code === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value.code));
+  if ('note' in value) check(typeof value.note === 'string' && value.note.trim() === value.note && value.note.length > 0 && value.note.length <= 500 && !/[\u0000-\u001f\u007f-\u009f]/.test(value.note));
+  return structuredClone(value) as SharingRequest;
+}
+export function projectCase(snapshot: CaseSnapshot, scope: ShareScope, histories: { programId: string; events: { status: string; occurredOn: string }[] }[], at: string): SharedCaseProjection {
+  parseScope(scope); check(scope.findingIds.every(id => snapshot.findings.some(f => f.id === id)));
+  return { schemaVersion: '3', caseId: snapshot.caseId, sourceRevision: snapshot.revision, publishedAt: at, stale: false,
+    summary: 'Selected home safety information', findings: scope.findingIds.map(id => {
+      const f = snapshot.findings.find(f => f.id === id)!; return { id: f.id, room: f.room, observation: f.observation, reviewState: f.reviewState };
+    }), programs: scope.programIds.map(programId => { const event = histories.find(h => h.programId === programId)?.events.at(-1);
+      return { programId, status: event?.status ?? null, occurredOn: event?.occurredOn ?? null, provenance: 'user_reported' }; }) };
+}
+
+export function parseSharedProjection(value: unknown): SharedCaseProjection {
+  object(value, ['schemaVersion','caseId','sourceRevision','publishedAt','stale','summary','findings','programs']);
+  check(value.schemaVersion === '3' && evidenceIdentifier(value.caseId) && evidenceRevision(value.sourceRevision)
+    && instant(value.publishedAt) && typeof value.stale === 'boolean' && value.summary === 'Selected home safety information');
+  check(Array.isArray(value.findings) && value.findings.length <= 32 && Array.isArray(value.programs) && value.programs.length <= 4);
+  for (const finding of value.findings) {
+    object(finding, ['id','room','observation','reviewState']);
+    check(evidenceIdentifier(finding.id) && ['bathroom','entrance','other'].includes(String(finding.room))
+      && typeof finding.observation === 'string' && finding.observation.length > 0 && finding.observation.length <= 2000
+      && ['confirmed','needs_review','dismissed'].includes(String(finding.reviewState)));
+  }
+  for (const program of value.programs) {
+    object(program, ['programId','status','occurredOn','provenance']);
+    check(evidenceIdentifier(program.programId) && program.provenance === 'user_reported'
+      && ((program.status === null && program.occurredOn === null) ||
+        (['preparing','submitted','received','needs_information','approved','denied','withdrawn'].includes(String(program.status))
+          && typeof program.occurredOn === 'string' && /^\d{4}-\d\d-\d\d$/.test(program.occurredOn)
+          && Number.isFinite(Date.parse(program.occurredOn)) && new Date(program.occurredOn).toISOString().slice(0,10) === program.occurredOn)));
+  }
+  for (const [rows, key] of [[value.findings,'id'],[value.programs,'programId']] as const) check(new Set(rows.map(v=>v[key])).size === rows.length);
+  return structuredClone(value) as unknown as SharedCaseProjection;
+}

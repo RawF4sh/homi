@@ -1,3 +1,5 @@
+import { changeProgress, emptyProgress, parseProgressRecord, parseProgressRequest, type ProgressContext, type ProgressRecord, type ProgressResult, type ProgressSave } from '../tracking/progress.ts';
+import { assessmentForSafetyReview, changeHomeSafety, emptyHomeSafety, homeSafetyState, parseHomeSafetyRecord, parseHomeSafetyRequest, type HomeSafetySave, type HomeSafetyResult } from '../assessment/home-safety.ts';
 import { emptyPlanName, changePlanName, parseStoredPlanName, parseSavePlanNameRequest, parseNamedCaseListPage,
   type PlanNameState, type PlanNameRepository, type SavePlanNameRequest, type SavePlanNameResult, type NamedCaseListPage } from '../cases/plan-name.ts';
 import { parseSavedProgramIntake, type SavedProgramIntake } from '../programs/intake.ts';
@@ -196,6 +198,59 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       await this.invalidateCase(tx,input.caseId);return {status:'saved',saved,caseRevision};
     });
   }
+  private async progressContext(tx: Tx, userId: string, caseId: string, lock = false): Promise<ProgressContext | null> {
+    const entry = await this.caseRow(tx, userId, caseId, lock); if (!entry) return null;
+    const row = (await tx.client.query(`SELECT progress FROM ${S}.cases WHERE case_id=$1 AND owner_id=$2`, [caseId, userId])).rows[0];
+    const legacy = (await tx.client.query(`SELECT record FROM ${S}.request_history WHERE case_id=$1 ORDER BY program_id`, [caseId])).rows.map(r => parseRequestHistory(r.record));
+    return { snapshot: entry.snapshot, record: row.progress === null ? emptyProgress(caseId) : parseProgressRecord(row.progress), legacy };
+  }
+  async readProgressForUser(userId: string, caseId: string): Promise<ProgressResult> {
+    return this.transaction(userId, false, async tx => { const context = await this.progressContext(tx, userId, caseId); return context ? { status: 'found', context } : { status: 'not_found' }; });
+  }
+  async saveProgressForUser(userId: string, raw: ProgressSave, at: string, registry: import('../types.ts').ProgramDefinition[]): Promise<ProgressResult> {
+    const input = parseProgressRequest(raw, true) as ProgressSave;
+    return this.transaction(userId, true, async tx => {
+      const context = await this.progressContext(tx, userId, input.caseId, true); if (!context) return { status: 'not_found' };
+      const result = changeProgress(context, input, userId, new Date(await this.clock(tx, at)).toISOString(), registry);
+      if (result.status !== 'changed' && result.status !== 'retry') return result;
+      if (result.status === 'changed') {
+        await tx.client.query(`UPDATE ${S}.cases SET progress=$3::jsonb WHERE case_id=$1 AND owner_id=$2`, [input.caseId, userId, JSON.stringify(result.record)]);
+        context.record = result.record;
+      }
+      return { status: 'found', context, acknowledgedMutationId: input.mutationId };
+    });
+  }
+  async readHomeSafetyForUser(userId: string, caseId: string): Promise<HomeSafetyResult> {
+    return this.transaction(userId, false, async tx => {
+      const entry = await this.caseRow(tx, userId, caseId); if (!entry) return { status: 'not_found' };
+      const row = (await tx.client.query(`SELECT home_safety FROM ${S}.cases WHERE case_id=$1 AND owner_id=$2`, [caseId, userId])).rows[0];
+      return { status: 'found', state: homeSafetyState(entry.snapshot, row.home_safety === null ? null : parseHomeSafetyRecord(row.home_safety)) };
+    });
+  }
+  async saveHomeSafetyForUser(userId: string, raw: HomeSafetySave, at: string): Promise<HomeSafetyResult> {
+    const input = parseHomeSafetyRequest(raw, true) as HomeSafetySave;
+    return this.transaction(userId, true, async tx => {
+      const entry = await this.caseRow(tx, userId, input.caseId, true); if (!entry) return { status: 'not_found' };
+      const row = (await tx.client.query(`SELECT home_safety FROM ${S}.cases WHERE case_id=$1 AND owner_id=$2`, [input.caseId, userId])).rows[0];
+      const prior = row.home_safety === null ? emptyHomeSafety(input.caseId) : parseHomeSafetyRecord(row.home_safety);
+      const result = changeHomeSafety(entry.snapshot, prior, input, userId, await this.clock(tx, at));
+      if (result.status === 'retry') return { status: 'found', state: homeSafetyState(entry.snapshot, prior, input.mutationId) };
+      if (result.status !== 'changed') return result;
+      let preserved: AssessmentRecord | null = null;
+      if (result.changesCase) {
+        const old = (await tx.client.query(`SELECT record FROM ${S}.assessment_metadata WHERE case_id=$1`, [input.caseId])).rows[0];
+        const assessment = assessmentForSafetyReview({ before: entry.snapshot, next: result.snapshot, prior: old ? parseAssessmentRecord(old.record) : null,
+          request: input, userId, at: await this.clock(tx, at), catalogRevision: entry.catalogRevision });
+        if (assessment.limit) return { status: 'history_limit' };
+        preserved = assessment.record;
+      }
+      if (preserved) await tx.client.query(`UPDATE ${S}.assessment_metadata SET record=$2::jsonb WHERE case_id=$1`, [input.caseId, JSON.stringify(preserved)]);
+      await tx.client.query(`UPDATE ${S}.cases SET home_safety=$3::jsonb, revision=$4, snapshot=$5::jsonb
+        WHERE case_id=$1 AND owner_id=$2`, [input.caseId, userId, JSON.stringify(result.record), result.snapshot.revision, JSON.stringify(result.snapshot)]);
+      if (result.changesCase) await this.invalidateCase(tx, input.caseId);
+      return { status: 'found', state: homeSafetyState(result.snapshot, result.record, input.mutationId) };
+    });
+  }
   async readAssessmentForUser(userId:string,caseId:string):Promise<AssessmentResult> {
     return this.transaction(userId,false,async tx=>{
       const entry=await this.caseRow(tx,userId,caseId);if(!entry)return {status:'not_found'};
@@ -266,13 +321,14 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     ids: string[]; counts: DeletionCounts; fingerprint: string;
   }> {
     const rows = (await tx.client.query(`SELECT case_id,revision,catalog_revision,
-      encode(sha256(convert_to(COALESCE(plan_name::text,'null'),'UTF8')),'hex') AS name_fingerprint FROM ${S}.cases
+      encode(sha256(convert_to(jsonb_build_array(plan_name,home_safety,progress)::text,'UTF8')),'hex') AS name_fingerprint FROM ${S}.cases
       WHERE owner_id=$1 ORDER BY case_id FOR UPDATE`, [userId])).rows;
     const ids = rows.map(row => String(row.case_id));
     const cases = rows.map(row => ({ id: row.case_id, revision: integer(row.revision), catalog: integer(row.catalog_revision, true),
       nameFingerprint: row.name_fingerprint }));
     const inventory: Record<string, { total: number; active: number; bytes: number; fingerprint: string }> = {};
     const content: Record<string, string> = {
+      case_shares: 'to_jsonb(case_shares)::text',
       matches: 'jsonb_build_array(case_id,response)::text',
       packets: 'jsonb_build_array(case_id,generation_key,packet_id,context_fingerprint,packet)::text',
       form_answers: 'jsonb_build_array(case_id,program_id,answer_revision,record)::text',
@@ -283,7 +339,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       evidence: "jsonb_build_array(case_id,evidence_id,finding_id,revision,prepared_at,descriptor,encode(sha256(bytes),'hex'))::text",
       exports: "jsonb_build_array(case_id,artifact_id,generation_key,bindings,metadata,invalidated,last_checked_at,extract(epoch FROM expires_at),encode(sha256(bytes),'hex'))::text",
     };
-    for (const table of ['matches', 'packets', 'form_answers', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'evidence', 'exports']) {
+    for (const table of ['case_shares', 'matches', 'packets', 'form_answers', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'evidence', 'exports']) {
       const binary = table === 'evidence' || table === 'exports';
       const row = (await tx.client.query(`SELECT count(*) AS total,count(size) AS active,
         COALESCE(sum(size),0) AS bytes,
@@ -313,7 +369,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       (SELECT count(bytes) FROM ${S}.exports WHERE case_id=ANY($1::text[])) AS artifacts,
       ((SELECT COALESCE(sum(octet_length(bytes)),0) FROM ${S}.evidence WHERE case_id=ANY($1::text[]))+
        (SELECT COALESCE(sum(octet_length(bytes)),0) FROM ${S}.exports WHERE case_id=ANY($1::text[]))) AS bytes`, [ids])).rows[0];
-    for (const table of ['matches', 'packets', 'form_answers', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'evidence', 'exports']) {
+    for (const table of ['case_shares', 'matches', 'packets', 'form_answers', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'evidence', 'exports']) {
       await tx.client.query(`DELETE FROM ${S}.${table} WHERE case_id=ANY($1::text[])`, [ids]);
     }
     const removed = await tx.client.query(`DELETE FROM ${S}.cases WHERE owner_id=$1 AND case_id=ANY($2::text[])`, [userId, ids]);
