@@ -1,3 +1,4 @@
+import '../../../../shared/models/contracts.dart';
 import '../../../../shared/models/evidence.dart';
 
 final class ExportCandidate {
@@ -18,6 +19,31 @@ final class ExportCandidate {
   final int sanitizedByteLength;
 
   final bool findingConfirmed;
+
+  static List<ExportCandidate> fromCatalog(
+    EvidenceCatalog catalog,
+    CaseSnapshot saved,
+  ) {
+    if (catalog.caseId != saved.caseId ||
+        catalog.caseRevision != saved.revision) {
+      return const [];
+    }
+    return [
+      for (final EvidenceDescriptor item in catalog.evidence)
+        ExportCandidate(
+          evidenceId: item.evidenceId,
+          evidenceRevision: item.evidenceRevision,
+          findingId: item.findingId,
+          sanitizedByteLength: item.byteLength,
+          findingConfirmed: saved.findings.any(
+            (f) =>
+                f.id == item.findingId &&
+                f.reviewState == 'confirmed' &&
+                f.evidenceIds.contains(item.evidenceId),
+          ),
+        ),
+    ];
+  }
 }
 
 final class SelectedEvidence {

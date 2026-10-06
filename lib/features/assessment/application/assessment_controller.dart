@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../shared/models/contracts.dart';
 import '../../../shared/models/export_contract_values.dart';
 import '../domain/capture/capture_adapter.dart';
@@ -103,13 +105,36 @@ final class FindingDraft {
   );
 }
 
-class AssessmentController {
-  AssessmentController({required IdFactory ids, FindingReviewTracker? tracker})
-    : _ids = ids,
-      _tracker = tracker ?? FindingReviewTracker();
+enum MeasurementChangeKind { corrected, cleared }
+
+final class MeasurementChange {
+  const MeasurementChange({
+    required this.kind,
+    required this.previous,
+    required this.at,
+  });
+
+  final MeasurementChangeKind kind;
+
+  final RecordedMeasurement previous;
+
+  final DateTime at;
+}
+
+class AssessmentController extends ChangeNotifier {
+  AssessmentController({
+    required IdFactory ids,
+    FindingReviewTracker? tracker,
+    DateTime Function()? clock,
+  }) : _ids = ids,
+       _clock = clock ?? (() => DateTime.now().toUtc()),
+       _tracker = tracker ?? FindingReviewTracker(clock: clock);
 
   final IdFactory _ids;
+  final DateTime Function() _clock;
   final FindingReviewTracker _tracker;
+  final Map<String, List<MeasurementChange>> _measurementHistory = {};
+  final Set<String> _removedFindingIds = {};
 
   final Map<String, FindingDraft> _drafts = {};
   final Set<String> _issuedFindingIds = {};
@@ -121,6 +146,13 @@ class AssessmentController {
 
   FindingReview? reviewOf(String findingId) => _tracker.reviewOf(findingId);
 
+  List<MeasurementChange> measurementHistoryOf(String findingId, String type) =>
+      List.unmodifiable(
+        _measurementHistory[_historyKey(findingId, type)] ?? const [],
+      );
+
+  Set<String> get removedFindingIds => Set.unmodifiable(_removedFindingIds);
+
   String startFinding(AssessmentArea area) {
     final String id = _issue(_ids.newFindingId(), _issuedFindingIds);
     _drafts[id] = FindingDraft._(
@@ -131,6 +163,7 @@ class AssessmentController {
       measurements: const [],
     );
     _tracker.start(id);
+    notifyListeners();
     return id;
   }
 
@@ -212,6 +245,9 @@ class AssessmentController {
       method: method,
       confirmed: false,
     );
+    if (existing != null) {
+      _recordChange(findingId, existing, MeasurementChangeKind.corrected);
+    }
     _update(
       draft._copyWith(
         measurements: existing == null
@@ -226,7 +262,9 @@ class AssessmentController {
 
   bool clearMeasurement(String findingId, String type) {
     final FindingDraft draft = _require(findingId);
-    if (draft.measurementOf(type) == null) return false;
+    final RecordedMeasurement? existing = draft.measurementOf(type);
+    if (existing == null) return false;
+    _recordChange(findingId, existing, MeasurementChangeKind.cleared);
     _update(
       draft._copyWith(
         measurements: draft.measurements.where((m) => m.type != type).toList(),
@@ -246,25 +284,26 @@ class AssessmentController {
           m.type == type ? m._withConfirmed(true) : m,
       ],
     );
+    notifyListeners();
     return true;
   }
 
   ReviewOutcome confirm(String findingId) =>
-      _tracker.confirm(findingId, _require(findingId).snapshot);
+      _notifying(_tracker.confirm(findingId, _require(findingId).snapshot));
 
   ReviewOutcome dismiss(String findingId) {
     _require(findingId);
-    return _tracker.dismiss(findingId);
+    return _notifying(_tracker.dismiss(findingId));
   }
 
   ReviewOutcome restore(String findingId) {
     _require(findingId);
-    return _tracker.restore(findingId);
+    return _notifying(_tracker.restore(findingId));
   }
 
   ReviewOutcome requestAnotherView(String findingId) {
     _require(findingId);
-    return _tracker.requestAnotherView(findingId);
+    return _notifying(_tracker.requestAnotherView(findingId));
   }
 
   Finding? toFinding(String findingId) {
@@ -289,15 +328,25 @@ class AssessmentController {
   );
 
   FindingDraft? removeFinding(String findingId) {
+    final FindingDraft? removed = _drafts.remove(findingId);
+    if (removed == null) return null;
     _tracker.forget(findingId);
-    return _drafts.remove(findingId);
+    _measurementHistory.removeWhere(
+      (key, _) => key.startsWith('$findingId\u0000'),
+    );
+    _removedFindingIds.add(findingId);
+    notifyListeners();
+    return removed;
   }
 
   void clear() {
     _drafts.clear();
     _issuedFindingIds.clear();
     _issuedEvidenceIds.clear();
+    _measurementHistory.clear();
+    _removedFindingIds.clear();
     _tracker.clear();
+    notifyListeners();
   }
 
   FindingDraft _require(String findingId) =>
@@ -307,7 +356,26 @@ class AssessmentController {
   void _update(FindingDraft next) {
     _drafts[next.id] = next;
     _tracker.contentChanged(next.id, next.snapshot);
+    notifyListeners();
   }
+
+  ReviewOutcome _notifying(ReviewOutcome outcome) {
+    if (outcome.applied) notifyListeners();
+    return outcome;
+  }
+
+  void _recordChange(
+    String findingId,
+    RecordedMeasurement previous,
+    MeasurementChangeKind kind,
+  ) {
+    (_measurementHistory[_historyKey(findingId, previous.type)] ??= []).add(
+      MeasurementChange(kind: kind, previous: previous, at: _clock()),
+    );
+  }
+
+  static String _historyKey(String findingId, String type) =>
+      '$findingId\u0000$type';
 
   static String _issue(String id, Set<String> issued) {
     ExportContractValues.id(id);
