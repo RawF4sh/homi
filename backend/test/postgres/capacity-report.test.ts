@@ -9,7 +9,7 @@ import { PostgresCaseRepository } from '../../src/storage/postgres-case-reposito
 import { CAPACITY_LIMITS } from '../../src/storage/capacity-limits.ts';
 import { OWNER, OTHER, FORM_CONTEXT, create, draft, answerInput, imageInput, iso, packetInput, publication } from './fixtures.ts';
 
-const PRIVATE_TABLES = ['assessment_metadata', 'evidence_annotations', 'program_intake', 'cases', 'matches', 'packets', 'form_answers', 'evidence', 'exports', 'request_history',
+const PRIVATE_TABLES = ['case_shares', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'cases', 'matches', 'packets', 'form_answers', 'evidence', 'exports', 'request_history',
   'deleted_cases', 'closed_accounts', 'account_deletion_previews', 'auth_deletion_jobs'];
 let cluster: TestPostgres, admin: Pool, operator: Pool, runtime: Pool, repo: PostgresCaseRepository;
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -66,7 +66,7 @@ test('operator sees aggregate data across owners, retained identities, private b
   assert.equal(report.mode, 'read_only'); assert.equal(report.quota.consistent, true);
   assert.deepEqual(report.rows, { repository_quota: 1, cases: 2, matches: 0, packets: 2, form_answers: 1,
     evidence: 2, exports: 2, deleted_cases: 2, closed_accounts: 1, account_deletion_previews: 1,
-    auth_deletion_jobs: 1, request_history: 1, assessment_metadata: 0, evidence_annotations: 0, program_intake: 0 });
+    auth_deletion_jobs: 1, request_history: 1, assessment_metadata: 0, evidence_annotations: 0, program_intake: 0, case_shares: 0 });
   assert.deepEqual(report.payloads, { liveEvidence: 1, evidenceTombstones: 1, packetPayloads: 1, packetTombstones: 1,
     storedPdfPayloads: 1, expiredPdfPayloads: 0, exportTombstones: 1, pendingAuthDeletions: 1 });
   assert.deepEqual(report.maxima, { casesPerOwner: 1, evidencePerOwner: 2, packetsPerCase: 2, exportsPerCase: 2,
