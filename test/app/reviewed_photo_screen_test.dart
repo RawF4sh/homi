@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
+import 'program_localization_support.dart';
 import 'package:safe_at_home/features/assessment/presentation/saved_photo_with_marks.dart';
 import 'package:safe_at_home/features/requests/reviewed_photo_screen.dart';
 
@@ -58,9 +60,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  for (final scale in [1.0, 2.0, 3.2]) {
+  for (final config in [
+    for (final scale in [1.0, 2.0, 3.2]) (const Locale('en'), scale),
+    for (final locale in programLocales) (locale, 3.2),
+  ]) {
+    final (locale, scale) = config;
+    String tr(String text) => programText(locale, text);
     testWidgets(
-      'photo confirmation and complete notes remain reachable at ${scale}x',
+      'photo confirmation and complete notes remain reachable at ${scale}x in $locale',
       (tester) async {
         tester.view.physicalSize = const Size(320, 640);
         tester.view.devicePixelRatio = 1;
@@ -72,10 +79,13 @@ void main() {
         });
         final bytes = (await tester.runAsync(fictionalImage))!;
         final note =
-            'Fictional threshold observation requiring a careful review of its full meaning.';
+            'Fictional threshold — Casa de María 李家 {number}. Revise toda la observación antes de incluirla. 請完整檢查原始備註。';
         bool? result;
         await tester.pumpWidget(
           MaterialApp(
+            locale: locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
             theme: SafeAtHomeTheme.light(),
             home: Builder(
               builder: (context) => Scaffold(
@@ -113,7 +123,14 @@ void main() {
         await tester.scrollUntilVisible(find.byType(SavedPhotoWithMarks), 160);
         final imageSize = tester.getSize(find.byType(SavedPhotoWithMarks));
         expect(imageSize.width / imageSize.height, closeTo(320 / 200, .001));
-        await tester.scrollUntilVisible(find.text('Photo notes'), 160);
+        await tester.scrollUntilVisible(find.text(tr('Photo notes')), 160);
+        await tester.scrollUntilVisible(
+          find.byWidgetPredicate(
+            (w) => w is Text && w.data == note && w.maxLines == null,
+          ),
+          160,
+          maxScrolls: 30,
+        );
         expect(
           find.byWidgetPredicate(
             (w) => w is Text && w.data == note && w.maxLines == null,
@@ -121,15 +138,15 @@ void main() {
           findsOneWidget,
         );
         await tester.scrollUntilVisible(
-          find.text('Include this reviewed photo'),
+          find.text(tr('Include this reviewed photo')),
           160,
         );
         await tester.ensureVisible(
-          find.widgetWithText(FilledButton, 'Include this reviewed photo'),
+          find.widgetWithText(FilledButton, tr('Include this reviewed photo')),
         );
         await tester.pumpAndSettle();
         await tester.tap(
-          find.widgetWithText(FilledButton, 'Include this reviewed photo'),
+          find.widgetWithText(FilledButton, tr('Include this reviewed photo')),
         );
         await tester.pumpAndSettle();
         expect(result, isTrue);

@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
+import 'program_localization_support.dart';
 import 'package:safe_at_home/features/programs/live_programs_screen.dart';
 import 'case_coordinator_test.dart' show FakeTransport;
 import 'live_workflows_test.dart' show MemoryPrivateStore, services;
 import '../services/case_evidence_api_client_test.dart' as http;
 
 void main() {
-  for (final size in [const Size(320, 812), const Size(932, 430)]) {
+  for (final config in [
+    (const Locale('en'), const Size(320, 812)),
+    (const Locale('en'), const Size(932, 430)),
+    for (final locale in programLocales) (locale, const Size(320, 812)),
+  ]) {
+    final (locale, size) = config;
+    String tr(String text, [Map<String, Object?> args = const {}]) =>
+        programText(locale, text, args);
     testWidgets(
-      'program actions and all expanded reasons remain accessible at 3.2x in $size',
+      'program actions and all expanded reasons remain accessible at 3.2x in $locale $size',
       (tester) async {
         tester.view.physicalSize = size;
         tester.view.devicePixelRatio = 1;
@@ -69,6 +78,9 @@ void main() {
         await app.coordinator.save();
         await tester.pumpWidget(
           MaterialApp(
+            locale: locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
             theme: SafeAtHomeTheme.light(),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(
@@ -95,14 +107,20 @@ void main() {
         expect(action.hitTestable(), findsOneWidget);
         expect(tester.widget<OutlinedButton>(action).onPressed, isNotNull);
         expect(
-          find.text('3 met · 3 not met · 4 need confirmation'),
+          find.text(
+            tr('{met} met · {notMet} not met · {unknown} need confirmation', {
+              'met': 3,
+              'notMet': 3,
+              'unknown': 4,
+            }),
+          ),
           findsOneWidget,
         );
-        expect(find.text('A known criterion is not met'), findsOneWidget);
+        expect(find.text(tr('A known criterion is not met')), findsOneWidget);
         for (final reason in reasons) {
           expect(find.text(reason), findsNothing);
         }
-        final title = find.text('Eligibility checks');
+        final title = find.text(tr('Eligibility checks'));
         expect(
           tester.getTopLeft(action).dy,
           lessThan(tester.getTopLeft(title).dy),
@@ -121,10 +139,10 @@ void main() {
           expect(
             (widget.title! as Text).data,
             i < 3
-                ? 'Met'
+                ? tr('Met')
                 : i < 6
-                ? 'Not met'
-                : 'Needs confirmation',
+                ? tr('Not met')
+                : tr('Needs confirmation'),
           );
         }
         final last = find.byKey(
@@ -132,7 +150,7 @@ void main() {
         );
         final lastTitle = find.descendant(
           of: last,
-          matching: find.text('Needs confirmation'),
+          matching: find.text(tr('Needs confirmation')),
         );
         await Scrollable.ensureVisible(
           tester.element(lastTitle),

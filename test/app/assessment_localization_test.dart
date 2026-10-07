@@ -74,7 +74,10 @@ void main() {
         observation,
       );
       await _tap(tester, find.text(words.text('Review')));
-      expect(find.text('Stairs: $observation'), findsOneWidget);
+      expect(
+        find.text('${words.text('Stairs')}: $observation'),
+        findsOneWidget,
+      );
       await _tap(tester, find.text(words.text('Confirm this finding')));
       expect(controller.findings.single.observation, 'Stairs: $observation');
       expect(controller.findings.single.room, 'other');

@@ -20,7 +20,7 @@ class AssessmentScanEntry extends StatelessWidget {
     final capability = availability.capabilities;
     final primary = availability.prefersScan;
     final title = primary
-        ? 'Scan your bathroom in 3D'
+        ? 'Scan or view your bathroom'
         : availability.checking
         ? 'Checking 3D scan support'
         : 'Photos and measurements work here';
@@ -75,7 +75,7 @@ class AssessmentScanEntry extends StatelessWidget {
               onPressed: onOpen,
               icon: const Icon(Icons.view_in_ar),
               label: Text(
-                context.tr('Scan bathroom in 3D'),
+                context.tr('Open 3D bathroom'),
                 textAlign: TextAlign.center,
               ),
             )

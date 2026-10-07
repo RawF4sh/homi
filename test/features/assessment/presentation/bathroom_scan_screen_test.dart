@@ -94,6 +94,8 @@ class _Harness {
   final current = ValueNotifier(true);
   final scanner = _WidgetScanner();
   final imports = <ScanSuggestion>[];
+  bool continued = false, otherConcern = false;
+  String? continuedFindingId;
 
   final removed = <String>{};
   late final _WidgetStore store;
@@ -121,6 +123,13 @@ class _Harness {
                 builder: (_) => BathroomScanScreen(
                   session: session,
                   scope: current,
+                  onContinue: (id) {
+                    continued = true;
+                    continuedFindingId = id;
+                  },
+                  onAddOtherConcern: () {
+                    otherConcern = true;
+                  },
                   onImport: (suggestion) async {
                     imports.add(suggestion);
                     return 'fictional-finding';
@@ -216,6 +225,13 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
       const Offset(0, -300),
     );
     await tester.pump(const Duration(milliseconds: 50));
+    final options = find.text('Scan options');
+    if (finder.evaluate().isEmpty &&
+        options.hitTestable().evaluate().isNotEmpty &&
+        find.byKey(const ValueKey('bathroom-start-scan')).evaluate().isEmpty) {
+      await tester.tap(options);
+      await tester.pumpAndSettle();
+    }
   }
   expect(finder, findsOneWidget);
   await Scrollable.ensureVisible(tester.element(finder), alignment: .5);
@@ -275,7 +291,7 @@ void main() {
         expect(harness.scanner.starts, isEmpty);
         final start = find.byKey(const ValueKey('bathroom-start-scan'));
         await _reveal(tester, start);
-        expect(tester.widget<FilledButton>(start).onPressed, isNotNull);
+        expect(tester.widget<ButtonStyleButton>(start).onPressed, isNotNull);
         expect(find.text('Set up 3D scanning'), findsOneWidget);
         final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
         await _reveal(tester, fallback);
@@ -419,7 +435,7 @@ void main() {
       await _open(tester, harness);
       final start = find.byKey(const ValueKey('bathroom-start-scan'));
       await _reveal(tester, start);
-      expect(tester.widget<FilledButton>(start).onPressed, isNull);
+      expect(tester.widget<ButtonStyleButton>(start).onPressed, isNull);
 
       harness.scanner.capability = const BathroomScanCapabilities(
         supported: true,
@@ -431,7 +447,7 @@ void main() {
       await tester.tap(recheck);
       await _idle(tester, harness);
       await _reveal(tester, start);
-      expect(tester.widget<FilledButton>(start).onPressed, isNotNull);
+      expect(tester.widget<ButtonStyleButton>(start).onPressed, isNotNull);
       expect(harness.session.review.scene!.fingerprint, scene.fingerprint);
       expect(harness.session.review.reviewed, {scene.elements.first.id});
       expect(harness.scanner.starts, isEmpty);
@@ -448,7 +464,8 @@ void main() {
       await _idle(tester, harness);
       expect(harness.session.review.scene, isNotNull);
       expect(harness.imports, isEmpty);
-      expect(find.byType(BathroomModelView), findsNothing);
+      await _reveal(tester, find.byType(BathroomModelView));
+      expect(find.byType(BathroomModelView), findsOneWidget);
       expect(find.textContaining('not a verified measurement'), findsNothing);
       expect(harness.session.review.reviewed, isEmpty);
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);
@@ -484,7 +501,38 @@ void main() {
         ),
         findsOneWidget,
       );
+      final next = find.byKey(const ValueKey('bathroom-continue'));
+      expect(next.hitTestable(), findsOneWidget);
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+      expect(harness.continued, isTrue);
+      expect(harness.continuedFindingId, 'fictional-finding');
+      expect(harness.scanner.starts, hasLength(1));
+      expect(find.text('Open scan review'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'saved model is visible and another concern opens the note path',
+    (tester) async {
+      await tester.runAsync(
+        () => harness.seed(BathroomScanReview(scene: fictionalScanScene())),
+      );
+      await _open(tester, harness);
+      expect(find.byType(BathroomModelView), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('bathroom-continue')).hitTestable(),
+        findsOneWidget,
+      );
+      final other = find.byKey(const ValueKey('bathroom-other-concern'));
+      await _reveal(tester, other);
+      await tester.tap(other);
+      await tester.pumpAndSettle();
+      expect(harness.otherConcern, isTrue);
+      expect(harness.scanner.starts, isEmpty);
+      expect(harness.imports, isEmpty);
+      expect(find.text('Open scan review'), findsOneWidget);
     },
   );
 
@@ -500,7 +548,7 @@ void main() {
       await _open(tester, harness);
       final start = find.byKey(const ValueKey('bathroom-start-scan'));
       await _reveal(tester, start);
-      expect(tester.widget<FilledButton>(start).onPressed, isNull);
+      expect(tester.widget<ButtonStyleButton>(start).onPressed, isNull);
       await _reveal(
         tester,
         find.textContaining('The simulator cannot capture LiDAR.'),
@@ -706,6 +754,12 @@ void main() {
       expect(find.text('Review and add observation'), findsNothing);
       expect(earlierNotice, findsNothing);
       expect(harness.imports, hasLength(1));
+      expect(find.text('Add a note'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('bathroom-continue')));
+      await tester.pumpAndSettle();
+      expect(harness.otherConcern, isTrue);
+      expect(harness.continued, isFalse);
+      expect(harness.continuedFindingId, isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

@@ -30,6 +30,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   String? _tenure;
   bool? _consent;
   bool _saving = false, _restoring = true;
+  bool _automaticSaving = false;
+  Completer<void>? _localPromotion;
   bool _leaving = false;
   late final DraftSaveTracker _draftSaves;
   VoidCallback? _requestExit;
@@ -45,6 +47,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   Future<void>? _journalWrite;
   bool _needsLocalPromotion = false;
   Completer<void>? _onlineSave;
+  String? _sentProfileFingerprint;
+  int? _sentRevision;
   bool _syncFailed = false, _syncRequested = false;
   int _editVersion = 0;
   String? _pendingProfileFingerprint;
@@ -122,7 +126,11 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   }
 
   bool get _editable =>
-      !_saving && !_restoring && !_leaving && _recovered == null && _sameBase;
+      (!_saving || _automaticSaving) &&
+      !_restoring &&
+      !_leaving &&
+      _recovered == null &&
+      _sameBase;
 
   void _requireBase() {
     if (!_sameBase) throw MatchingApiException.forCode('STALE_RESPONSE');
@@ -141,6 +149,21 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   }
 
   void _caseChanged() {
+    final c = widget.services.coordinator;
+    if (_scopeCurrent &&
+        _onlineSave != null &&
+        _sentRevision != null &&
+        !c.uncertain &&
+        !c.conflict &&
+        c.snapshot?.revision == _sentRevision! + 1 &&
+        _fingerprint(c.currentCase().profile.toJson()) ==
+            _sentProfileFingerprint) {
+      final current = _fingerprint(c.currentDraft().profile.toJson());
+      if (current == _baseFingerprint ||
+          current == _pendingProfileFingerprint) {
+        _baseRevision = c.snapshot!.revision;
+      }
+    }
     if (mounted) setState(() {});
     if (_syncRequested && _onlineSave == null) {
       scheduleMicrotask(() => unawaited(_saveOnline()));
@@ -260,6 +283,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
 
   Future<void> _flushEdits() async {
     _cancelAutosave();
+    if (_automaticSaving) await _localPromotion?.future;
     if (!_needsLocalPromotion || _saving || _draftSaves.failed || !_sameBase) {
       return;
     }
@@ -359,7 +383,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     if (automatic) {
       if (_saving || _restoring || _recovered != null || !_sameBase) return;
     } else {
-      if (!_editable) return;
+      if (!_editable || _saving) return;
       _cancelAutosave();
     }
     final errors = <String, String>{};
@@ -374,7 +398,13 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
         ..addAll(errors);
     });
     if (errors.isNotEmpty) return;
-    setState(() => _saving = true);
+    final editVersion = _editVersion;
+    final promotion = Completer<void>();
+    _localPromotion = promotion;
+    setState(() {
+      _saving = true;
+      _automaticSaving = automatic;
+    });
     try {
       _requireBase();
       final c = widget.services.coordinator;
@@ -404,13 +434,16 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           await c.updateDraft(changed);
         }
         _requireExactDraft({changedFingerprint});
-        await widget.services.store.delete(_editKey);
+        if (_editVersion == editVersion) {
+          await widget.services.store.delete(_editKey);
+        }
       });
       _requireBase();
       _baseProfile = changed.profile.toJson();
       _baseFingerprint = _fingerprint(_baseProfile);
       _pendingProfileFingerprint = null;
-      _needsLocalPromotion = false;
+      _needsLocalPromotion = _editVersion != editVersion;
+      if (_needsLocalPromotion) await _persistJournal();
       _notice = null;
       if (changedProfile) {
         _syncRequested = true;
@@ -431,7 +464,17 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
         }
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (identical(_localPromotion, promotion)) _localPromotion = null;
+      promotion.complete();
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _automaticSaving = false;
+        });
+        if (_needsLocalPromotion && _editable && !_draftSaves.failed) {
+          _scheduleAutosave();
+        }
+      }
     }
   }
 
@@ -452,6 +495,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     final sentRevision = _baseRevision ?? 0;
     final finished = Completer<void>();
     _onlineSave = finished;
+    _sentProfileFingerprint = sentProfile;
+    _sentRevision = sentRevision;
     _syncRequested = false;
     _syncFailed = false;
     try {
@@ -477,7 +522,11 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           }
         }
       }
-      if (identical(_onlineSave, finished)) _onlineSave = null;
+      if (identical(_onlineSave, finished)) {
+        _onlineSave = null;
+        _sentProfileFingerprint = null;
+        _sentRevision = null;
+      }
       finished.complete();
       if (mounted) setState(() {});
       if (_syncRequested && !_syncFailed && _scopeCurrent) {
@@ -751,19 +800,27 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       controller: _fields[key],
       focusNode: _fieldFocus[key],
       forceErrorText: _errors[key] == null ? null : context.tr(_errors[key]!),
+      errorBuilder: (context, error) => Text(error),
       enabled: _editable,
       onChanged: (_) => _fieldChanged(key),
       decoration: InputDecoration(
         labelText: context.tr(labels[key]!),
-        helperMaxLines: 4,
-        helperText: key == 'county' && _countyAutofillCity != null
-            ? context.tr('Filled from {city}. You can change it.', {
-                'city': _countyAutofillCity,
-              })
+        helper: key == 'county' && _countyAutofillCity != null
+            ? Text(
+                context.tr('Filled from {city}. You can change it.', {
+                  'city': _countyAutofillCity,
+                }),
+              )
             : key == 'annualIncomeUsd'
-            ? context.tr('Yearly household total, US dollars')
-            : ['city', 'county', 'healthPlan'].contains(key)
-            ? context.tr('Type for suggestions, or enter another name.')
+            ? Text(context.tr('Yearly household total, US dollars'))
+            : key == 'healthPlan'
+            ? Text(
+                context.tr(
+                  'Enter any health plan. Suggestions are examples, not a complete list.',
+                ),
+              )
+            : ['city', 'county'].contains(key)
+            ? Text(context.tr('Type for suggestions, or enter another name.'))
             : null,
       ),
       textInputAction: TextInputAction.next,
@@ -772,15 +829,100 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           ? TextInputType.numberWithOptions(decimal: key == 'annualIncomeUsd')
           : TextInputType.text,
     );
-    if (!['city', 'county', 'healthPlan'].contains(key)) return field;
-    return ProfileSuggestionField(
-      field: key,
-      controller: _fields[key]!,
-      enabled: _editable,
-      onSelected: (suggestion) => _selectSuggestion(key, suggestion),
-      child: field,
+    final input = !['city', 'county', 'healthPlan'].contains(key)
+        ? field
+        : ProfileSuggestionField(
+            field: key,
+            controller: _fields[key]!,
+            focusNode: _fieldFocus[key]!,
+            enabled: _editable,
+            onSelected: (suggestion) => _selectSuggestion(key, suggestion),
+            child: field,
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (key == 'annualIncomeUsd' ||
+            MediaQuery.textScalerOf(context).scale(16) > 24)
+          _fullFieldLabel(labels[key]!, key),
+        input,
+        if (key == 'healthPlan')
+          Wrap(
+            spacing: 8,
+            children: [
+              TextButton(
+                key: const ValueKey('profile-other-health-plan'),
+                onPressed: !_editable
+                    ? null
+                    : () {
+                        _fieldFocus[key]!.requestFocus();
+                        _fields[key]!.selection = TextSelection(
+                          baseOffset: 0,
+                          extentOffset: _fields[key]!.text.length,
+                        );
+                      },
+                child: Text(context.tr('Another health plan')),
+              ),
+              TextButton(
+                key: const ValueKey('profile-no-health-coverage'),
+                onPressed: !_editable
+                    ? null
+                    : () => _applySuggestionValues({
+                        key: context.tr('No health coverage'),
+                      }),
+                child: Text(context.tr('No health coverage')),
+              ),
+              TextButton(
+                key: const ValueKey('profile-unknown-health-coverage'),
+                onPressed: !_editable
+                    ? null
+                    : () => _applySuggestionValues({key: ''}),
+                child: Text(context.tr('Not sure')),
+              ),
+            ],
+          ),
+      ],
     );
   }
+
+  Widget _fullFieldLabel(String label, String key) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: ExcludeSemantics(
+      child: Text(
+        context.tr(label),
+        key: ValueKey('profile-full-label-$key'),
+        style: Theme.of(context).textTheme.bodyLarge,
+      ),
+    ),
+  );
+
+  Widget _statusText() => LayoutBuilder(
+    builder: (context, constraints) {
+      final style = Theme.of(context).textTheme.bodySmall;
+      var height = 0.0;
+      for (final status in [
+        'Saving changes on this device…',
+        'Saved on this device · syncing online…',
+        'Saved online · changes save automatically.',
+      ]) {
+        final painter = TextPainter(
+          text: TextSpan(text: context.tr(status), style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        if (painter.height > height) height = painter.height;
+        painter.dispose();
+      }
+      return ConstrainedBox(
+        constraints: BoxConstraints(minHeight: height),
+        child: Text(
+          _saveStatus,
+          key: const ValueKey('profile-save-status'),
+          style: style,
+        ),
+      );
+    },
+  );
 
   @override
   Widget build(BuildContext context) => DraftExitGuard(
@@ -816,11 +958,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       padding: const EdgeInsets.only(bottom: 20),
                       child: ListenableBuilder(
                         listenable: _draftSaves,
-                        builder: (context, _) => Text(
-                          _saveStatus,
-                          key: const ValueKey('profile-save-status'),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                        builder: (context, _) => _statusText(),
                       ),
                     ),
                     if (_notice != null)
@@ -846,11 +984,13 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       if (key == 'ageYears')
                         SahSectionHeading(title: context.tr('Household')),
                       Padding(
+                        key: ValueKey('profile-field-$key'),
                         padding: const EdgeInsets.only(bottom: 16),
                         child: _profileField(key),
                       ),
                     ],
                     SahSectionHeading(title: context.tr('Housing')),
+                    _fullFieldLabel('Do you own or rent?', 'tenure'),
                     DropdownButtonFormField<String>(
                       key: ValueKey(
                         'tenure-$_restoring${_fieldVersion == 0 ? '' : '-$_fieldVersion'}',
@@ -884,6 +1024,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                             }),
                     ),
                     const SizedBox(height: 16),
+                    _fullFieldLabel('Owner permission reported?', 'consent'),
                     DropdownButtonFormField<bool>(
                       key: ValueKey(
                         'consent-$_restoring${_fieldVersion == 0 ? '' : '-$_fieldVersion'}',
@@ -894,8 +1035,10 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       itemHeight: null,
                       decoration: InputDecoration(
                         labelText: context.tr('Owner permission reported?'),
-                        helperText: context.tr(
-                          'Reported only, not a signed authorization.',
+                        helper: Text(
+                          context.tr(
+                            'Reported only, not a signed authorization.',
+                          ),
                         ),
                       ),
                       items: [
@@ -943,7 +1086,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       ),
                     FilledButton(
                       key: const ValueKey('profile-keep-edits'),
-                      onPressed: _editable ? _save : null,
+                      onPressed: _editable && !_saving ? _save : null,
                       child: Text(
                         context.tr('Done'),
                         textAlign: TextAlign.center,

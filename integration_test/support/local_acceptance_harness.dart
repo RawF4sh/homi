@@ -13,6 +13,8 @@ import 'package:safe_at_home/features/assessment/domain/capture/capture_adapter.
 import 'package:safe_at_home/features/auth/login_screen.dart';
 import 'package:safe_at_home/features/cases/case_home_screen.dart';
 import 'package:safe_at_home/features/settings/account_settings_screen.dart';
+import 'package:safe_at_home/l10n/app_language.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:safe_at_home/shared/services/io_matching_transport.dart';
 import 'package:safe_at_home/shared/services/local_private_store.dart';
 import 'package:safe_at_home/shared/services/matching_api_client.dart';
@@ -29,7 +31,8 @@ class LocalFixtureConfig {
       runId = const String.fromEnvironment('SAH_IOS_ACCEPTANCE_RUN'),
       alice = const String.fromEnvironment('SAH_IOS_ACCEPTANCE_ALICE'),
       bob = const String.fromEnvironment('SAH_IOS_ACCEPTANCE_BOB'),
-      textScale = _readTextScale() {
+      textScale = _readTextScale(),
+      language = _readLanguage() {
     final uuid = RegExp(
       r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
     );
@@ -47,6 +50,38 @@ class LocalFixtureConfig {
   final int port;
   final String key, runId, alice, bob;
   final double? textScale;
+  final AppLanguage language;
+  FictionalPacketText get packetText => switch (language) {
+    AppLanguage.chineseSimplified => const FictionalPacketText(
+      residentName: '陈美华兀兀𠮷',
+      observation: '虚构观察：门槛旁需要扶手。',
+      photoLabel: '门槛需复查',
+      repairRequest: '虚构申请：检查门槛及扶手，Café 12。',
+    ),
+    AppLanguage.chineseTraditional => const FictionalPacketText(
+      residentName: '陳美華兀兀𠮷',
+      observation: '虛構觀察：門檻旁需要扶手。',
+      photoLabel: '門檻需複查',
+      repairRequest: '虛構申請：檢查門檻及扶手，Café 12。',
+    ),
+    _ => const FictionalPacketText(
+      residentName: 'Fictional Resident',
+      observation: 'Fictional threshold needs a closer look.',
+      photoLabel: 'Fictional step marker',
+      repairRequest: 'Fictional threshold repair request.',
+    ),
+  };
+  static AppLanguage _readLanguage() {
+    const raw = String.fromEnvironment('SAH_IOS_LANGUAGE', defaultValue: 'en');
+    final language = AppLanguage.fromCode(raw);
+    if (language == AppLanguage.system) {
+      throw StateError(
+        'Choose an explicit supported local acceptance language.',
+      );
+    }
+    return language;
+  }
+
   static double? _readTextScale() {
     const raw = String.fromEnvironment('SAH_IOS_TEXT_SCALE');
     if (raw.isEmpty) return null;
@@ -104,6 +139,17 @@ class LocalFixtureConfig {
       client.close(force: true);
     }
   }
+}
+
+class FictionalPacketText {
+  const FictionalPacketText({
+    required this.residentName,
+    required this.observation,
+    required this.photoLabel,
+    required this.repairRequest,
+  });
+
+  final String residentName, observation, photoLabel, repairRequest;
 }
 
 class FixtureTransport implements MatchingTransport {
@@ -298,7 +344,9 @@ class AcceptanceHarness {
   AcceptanceHarness(this.config, {GeneratedCapture? capture})
     : session = FixtureSession(config),
       transport = FixtureTransport(config),
-      capture = capture ?? GeneratedCapture();
+      capture = capture ?? GeneratedCapture() {
+    AppLanguageController.instance.value = config.language;
+  }
   final LocalFixtureConfig config;
   final FixtureSession session;
   final FixtureTransport transport;
@@ -381,55 +429,62 @@ class _AcceptanceHostState extends State<AcceptanceHost> {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    key: ValueKey(widget.harness.session.epoch),
-    builder: (context, child) {
-      final covered = PrivateContentCover(
-        child: widget.showFixtureBanner
-            ? Banner(
-                message: 'FICTIONAL LOCAL TEST',
-                location: BannerLocation.topEnd,
-                child: child!,
-              )
-            : child!,
-      );
-      final scale = widget.harness.config.textScale;
-      return scale == null
-          ? covered
-          : MediaQuery(
-              data: MediaQuery.of(
-                context,
-              ).copyWith(textScaler: TextScaler.linear(scale)),
-              child: covered,
-            );
-    },
-    theme: SafeAtHomeTheme.light(),
-    debugShowCheckedModeBanner: false,
-    home: widget.harness.session.cleaningUp
-        ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-        : owner == null
-        ? LoginScreen(
-            session: widget.harness.session,
-            emailDeliveryEnabled: false,
-            deletionStatusScreen: DeletionReceiptScreen(
-              config: widget.harness.config.app,
-              transport: widget.harness.transport,
-            ),
-          )
-        : FutureBuilder(
-            future: opening,
-            builder: (context, snapshot) {
-              if (snapshot.hasData) {
-                return CaseHomeScreen(services: snapshot.data!);
-              }
-              return Scaffold(
-                body: Center(
-                  child: snapshot.hasError
-                      ? const Text('Native acceptance storage failed.')
-                      : const CircularProgressIndicator(),
-                ),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: AppLanguageController.instance,
+    builder: (context, _) => MaterialApp(
+      key: ValueKey(widget.harness.session.epoch),
+      locale: AppLanguageController.instance.value.locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      localeListResolutionCallback: AppLocalizations.resolveLocales,
+      builder: (context, child) {
+        final covered = PrivateContentCover(
+          child: widget.showFixtureBanner
+              ? Banner(
+                  message: 'FICTIONAL LOCAL TEST',
+                  location: BannerLocation.topEnd,
+                  child: child!,
+                )
+              : child!,
+        );
+        final scale = widget.harness.config.textScale;
+        return scale == null
+            ? covered
+            : MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: TextScaler.linear(scale)),
+                child: covered,
               );
-            },
-          ),
+      },
+      theme: SafeAtHomeTheme.light(),
+      debugShowCheckedModeBanner: false,
+      home: widget.harness.session.cleaningUp
+          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          : owner == null
+          ? LoginScreen(
+              session: widget.harness.session,
+              emailDeliveryEnabled: false,
+              deletionStatusScreen: DeletionReceiptScreen(
+                config: widget.harness.config.app,
+                transport: widget.harness.transport,
+              ),
+            )
+          : FutureBuilder(
+              future: opening,
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  return CaseHomeScreen(services: snapshot.data!);
+                }
+                return Scaffold(
+                  body: Center(
+                    child: snapshot.hasError
+                        ? const Text('Native acceptance storage failed.')
+                        : const CircularProgressIndicator(),
+                  ),
+                );
+              },
+            ),
+    ),
   );
 }

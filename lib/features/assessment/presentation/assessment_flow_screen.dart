@@ -27,6 +27,8 @@ class AssessmentFlowScreen extends StatelessWidget {
     this.areaTools,
     this.areaToolsFirst = false,
     this.keptOnDevice = false,
+    this.onContinue,
+    this.scanFindingIds = const {},
   });
 
   final AssessmentFlow flow;
@@ -38,6 +40,8 @@ class AssessmentFlowScreen extends StatelessWidget {
   final bool areaToolsFirst;
 
   final bool keptOnDevice;
+  final VoidCallback? onContinue;
+  final Set<String> scanFindingIds;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +51,44 @@ class AssessmentFlowScreen extends StatelessWidget {
         final AssessmentStep step = flow.step;
         final bool editable = enabled && !flow.isBusy;
         return Scaffold(
+          bottomNavigationBar: step == AssessmentStep.details
+              ? _primaryAction(
+                  context,
+                  editable ? flow.saveDetails : null,
+                  'Review',
+                  'assessment-review',
+                )
+              : onContinue != null &&
+                    (step == AssessmentStep.review ||
+                        (step == AssessmentStep.chooseArea &&
+                            flow.controller.findings.isNotEmpty))
+              ? _primaryAction(
+                  context,
+                  editable
+                      ? () {
+                          if (step == AssessmentStep.review &&
+                              flow.findingId != null &&
+                              flow.controller
+                                      .reviewOf(flow.findingId!)
+                                      ?.state ==
+                                  FindingReviewState.needsReview) {
+                            if (!flow.controller
+                                .confirmDisplayedRecord(flow.findingId!)
+                                .applied) {
+                              return;
+                            }
+                          }
+                          onContinue!();
+                        }
+                      : null,
+                  step == AssessmentStep.review &&
+                          flow.controller.reviewOf(flow.findingId!)?.state ==
+                              FindingReviewState.needsReview
+                      ? 'Confirm and continue'
+                      : 'Continue',
+                  'assessment-continue',
+                )
+              : null,
           appBar: AppBar(
             actions: actions,
             title: Text(
@@ -111,6 +153,20 @@ class AssessmentFlowScreen extends StatelessWidget {
     AssessmentStep.review => 'Review',
   };
 
+  Widget _primaryAction(
+    BuildContext context,
+    VoidCallback? action,
+    String label,
+    String key,
+  ) => SafeArea(
+    minimum: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+    child: FilledButton(
+      key: ValueKey(key),
+      onPressed: action,
+      child: Text(context.tr(label), textAlign: TextAlign.center),
+    ),
+  );
+
   List<Widget> _chooseArea(BuildContext context) {
     final List<FindingDraft> drafts = flow.controller.drafts;
     return [
@@ -120,8 +176,27 @@ class AssessmentFlowScreen extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 16),
+      if (drafts.isNotEmpty) ...[
+        SahSectionHeading(title: context.tr('Added to your assessment')),
+        for (final FindingDraft d in drafts)
+          SahActionTile(
+            key: ValueKey('finding-${d.id}'),
+            title: _findingLocationTitle(context, d),
+            subtitle: _findingSummary(context, d),
+            status: context.tr(
+              AssessmentCopy.reviewState(flow.controller.reviewOf(d.id)!.state),
+            ),
+            statusIcon: _reviewIcon(flow.controller.reviewOf(d.id)!.state),
+            icon: Icons.sticky_note_2_outlined,
+            onTap: () => flow.openFinding(d.id),
+          ),
+      ],
       if (areaToolsFirst) ?areaTools,
-      SahSectionHeading(title: context.tr('Choose a place')),
+      SahSectionHeading(
+        title: context.tr(
+          drafts.isEmpty ? 'Choose a place' : 'Add another concern',
+        ),
+      ),
       Text(
         context.tr(
           'Add a note, a photo, or both. 3D scanning is currently for bathrooms on supported phones.',
@@ -139,36 +214,49 @@ class AssessmentFlowScreen extends StatelessWidget {
           onTap: () => flow.chooseLocation(location),
         ),
       if (!areaToolsFirst) ?areaTools,
-      if (drafts.isNotEmpty) ...[
-        SahSectionHeading(title: context.tr('Your findings')),
-        for (final FindingDraft d in drafts)
-          SahActionTile(
-            key: ValueKey('finding-${d.id}'),
-            title: d.observation.trim().isEmpty
-                ? context.tr('No observation yet')
-                : d.observation.trim(),
-            subtitle: context.tr('{area} · {photos}', {
-              'area': _findingLocationTitle(context, d),
-              'photos': context.tr(
-                d.evidence.length == 1 ? '{count} photo' : '{count} photos',
-                {'count': d.evidence.length},
-              ),
-            }),
-            status: context.tr(
-              AssessmentCopy.reviewState(flow.controller.reviewOf(d.id)!.state),
-            ),
-            statusIcon: _reviewIcon(flow.controller.reviewOf(d.id)!.state),
-            icon: Icons.sticky_note_2_outlined,
-            onTap: () => flow.openFinding(d.id),
-          ),
-      ],
     ];
+  }
+
+  String _findingSummary(BuildContext context, FindingDraft draft) {
+    final observation = _observation(context, draft);
+    if (observation.trim().isEmpty) return context.tr('No observation yet');
+    final characters = observation.runes.toList();
+    return characters.length <= 140
+        ? observation
+        : '${String.fromCharCodes(characters.take(140))}…';
+  }
+
+  String _observation(BuildContext context, FindingDraft draft) {
+    final value = draft.observation.trim();
+    if (scanFindingIds.contains(draft.id)) {
+      final source = RegExp(
+        r' Source: (?:iPhone RoomPlan|Android ARCore) partial scan '
+        r'[^;]+; resident-reviewed identification\. '
+        r'Model elements: \[.*\]\. Scene SHA-256: [0-9a-f]{64}\. '
+        r'Rule [a-z0-9_.]+ v[0-9]+\. Scan geometry is approximate; '
+        r'this is not a verified measurement or a professional determination\.$',
+      ).firstMatch(value);
+      if (source != null && source.start > 0) {
+        return context.tr(value.substring(0, source.start));
+      }
+    }
+    return localizedAssessmentObservation(
+      context,
+      observation: value,
+      room: draft.area.name,
+    );
   }
 
   List<Widget> _viewPrompt(BuildContext context) {
     final AssessmentArea area = flow.area!;
     final location = flow.location;
     return [
+      Text(
+        context.tr(
+          'Photos are optional. You can describe the concern without one.',
+        ),
+      ),
+      const SizedBox(height: 12),
       SahSectionHeading(
         title: context.tr(location?.title ?? AssessmentCopy.areaTitle(area)),
       ),
@@ -444,8 +532,15 @@ class AssessmentFlowScreen extends StatelessWidget {
           'area': _findingLocationTitle(context, draft),
         }),
       ),
-      Text(draft.observation.trim(), style: text.bodyLarge),
-      heading(context.tr('Photos')),
+      Text(_observation(context, draft), style: text.bodyLarge),
+      if (scanFindingIds.contains(id))
+        ExpansionTile(
+          key: ValueKey('scan-finding-source-$id'),
+          tilePadding: EdgeInsets.zero,
+          title: Text(context.tr('Scan source and technical details')),
+          children: [Text(draft.observation), const SizedBox(height: 12)],
+        ),
+      heading(context.tr('Photos (optional)')),
       if (draft.evidence.isEmpty)
         Text(context.tr(AssessmentCopy.noPhotos))
       else
@@ -493,7 +588,7 @@ class AssessmentFlowScreen extends StatelessWidget {
           liveRegion: false,
         ),
       const SizedBox(height: 8),
-      if (state == FindingReviewState.needsReview)
+      if (state == FindingReviewState.needsReview && onContinue == null)
         _wide(
           FilledButton(
             onPressed: () => flow.controller.confirmDisplayedRecord(id),
@@ -501,10 +596,16 @@ class AssessmentFlowScreen extends StatelessWidget {
           ),
         ),
       _wide(
-        state == FindingReviewState.needsReview
+        state == FindingReviewState.needsReview || onContinue != null
             ? OutlinedButton(
                 onPressed: flow.startAnother,
-                child: Text(context.tr('Done, add another finding')),
+                child: Text(
+                  context.tr(
+                    onContinue == null
+                        ? 'Done, add another finding'
+                        : 'Add another concern',
+                  ),
+                ),
               )
             : FilledButton(
                 onPressed: flow.startAnother,
@@ -600,8 +701,14 @@ class _Progress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int number = step.index + 1;
-    final int total = AssessmentStep.values.length;
+    final int number = switch (step) {
+      AssessmentStep.chooseArea => 1,
+      AssessmentStep.viewPrompt ||
+      AssessmentStep.preview ||
+      AssessmentStep.details => 2,
+      AssessmentStep.review => 3,
+    };
+    const int total = 3;
     return Semantics(
       container: true,
       label: context.tr('Step {number} of {total}', {
@@ -870,13 +977,14 @@ class _DetailsStepState extends State<_DetailsStep> {
           },
           decoration: InputDecoration(
             labelText: context.tr(AssessmentCopy.observationLabel),
-            helperText: context.tr(
-              flow.location?.observationExample ??
-                  AssessmentCopy.observationHintFor(flow.area!),
+            helper: Text(
+              context.tr(
+                flow.location?.observationExample ??
+                    AssessmentCopy.observationHintFor(flow.area!),
+              ),
             ),
-            helperMaxLines: 3,
-            errorText: errors.observationMissing
-                ? context.tr(AssessmentCopy.observationRequired)
+            error: errors.observationMissing
+                ? Text(context.tr(AssessmentCopy.observationRequired))
                 : null,
             border: const OutlineInputBorder(),
           ),
@@ -907,11 +1015,6 @@ class _DetailsStepState extends State<_DetailsStep> {
             ],
           ),
         ],
-        const SizedBox(height: 20),
-        FilledButton(
-          onPressed: widget.enabled ? flow.saveDetails : null,
-          child: Text(context.tr('Review')),
-        ),
       ],
     );
   }
@@ -934,6 +1037,19 @@ class _DetailsStepState extends State<_DetailsStep> {
           label: context.tr('How to measure'),
           details: [context.tr(spec.definition), context.tr(spec.howToMeasure)],
         ),
+        ExcludeSemantics(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              context.tr('{label} ({unit})', {
+                'label': context.tr(spec.label),
+                'unit': context.tr(entry.unit.symbol),
+              }),
+              key: ValueKey('measurement-full-label-$type'),
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          ),
+        ),
         TextField(
           key: ValueKey('measurement-$type'),
           controller: _values[type],
@@ -949,10 +1065,9 @@ class _DetailsStepState extends State<_DetailsStep> {
               'label': context.tr(spec.label),
               'unit': context.tr(entry.unit.symbol),
             }),
-            errorText: error == null
+            error: error == null
                 ? null
-                : context.tr(AssessmentCopy.measurementError(error)),
-            errorMaxLines: 3,
+                : Text(context.tr(AssessmentCopy.measurementError(error))),
             border: const OutlineInputBorder(),
           ),
         ),

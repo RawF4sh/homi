@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/auth/login_screen.dart';
@@ -239,12 +240,32 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('settings-sign-out')));
     await tester.pumpAndSettle();
     expect(find.text('Sign out and clear this device?'), findsOneWidget);
-    expect(
-      tester.widget<AlertDialog>(find.byType(AlertDialog)).scrollable,
-      true,
+    final dialogScroll = find.descendant(
+      of: find.byType(Dialog),
+      matching: find.byType(SingleChildScrollView),
     );
-    await tester.ensureVisible(find.text('Cancel'));
-    await tester.tap(find.text('Cancel'));
+    expect(dialogScroll, findsOneWidget);
+    final guidance = find.descendant(
+      of: dialogScroll,
+      matching: find.text(
+        'Names saved to your account will stay available on your other devices. Local drafts and staged photos will be removed. Unsynced names must finish syncing first.',
+      ),
+    );
+    expect(guidance, findsOneWidget);
+    await tester.ensureVisible(guidance);
+    await tester.pumpAndSettle();
+    expect(
+      tester.renderObject<RenderParagraph>(guidance).didExceedMaxLines,
+      false,
+    );
+    final cancel = find.descendant(
+      of: dialogScroll,
+      matching: find.text('Cancel'),
+    );
+    await tester.ensureVisible(cancel);
+    await tester.pumpAndSettle();
+    expect(cancel.hitTestable(), findsOneWidget);
+    await tester.tap(cancel);
     await tester.pumpAndSettle();
     expect(app.session.userId, 'fictional-owner');
     expect(transport.requests, isEmpty);

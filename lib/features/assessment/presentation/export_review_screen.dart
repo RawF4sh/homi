@@ -5,6 +5,7 @@ import '../../../shared/models/contracts.dart';
 import '../../../shared/models/evidence.dart';
 import '../application/export_review.dart';
 import '../domain/export/export_selection_draft.dart';
+import 'assessment_copy.dart';
 import 'photo_decode_gate.dart';
 
 class ExportReviewScreen extends StatefulWidget {
@@ -125,7 +126,7 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
 
   Widget _status(ExportReview review) {
     final List<String> messages = [
-      if (review.errorMessage != null) review.errorMessage!,
+      if (review.errorMessage != null) context.tr(review.errorMessage!),
       if (review.isStale)
         context.tr(
           'Your case changed since these photos were loaded. Reload them.',
@@ -171,6 +172,13 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
     final bool selected = review.draft.selection.any(
       (s) => s.evidenceId == c.evidenceId,
     );
+    final observation = finding == null
+        ? context.tr('Finding not found')
+        : localizedAssessmentObservation(
+            context,
+            observation: finding.observation,
+            room: finding.room,
+          );
     return PhotoDecodeGate(
       key: ValueKey(
         'decode-${review.catalog?.caseId}-${c.evidenceId}-${c.evidenceRevision}',
@@ -194,7 +202,7 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(finding?.observation ?? context.tr('Finding not found')),
+              Text(observation),
               if (!c.findingConfirmed)
                 Text(
                   context.tr(
@@ -207,7 +215,7 @@ class _ExportReviewScreenState extends State<ExportReviewScreen> {
                   container: true,
                   image: true,
                   label: context.tr('Saved photo for: {observation}', {
-                    'observation': finding?.observation ?? '',
+                    'observation': finding == null ? '' : observation,
                   }),
                   excludeSemantics: true,
                   child: Image.memory(

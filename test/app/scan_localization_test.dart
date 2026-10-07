@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:safe_at_home/features/assessment/application/bathroom_scan_adapter.dart';
 import 'package:safe_at_home/features/assessment/application/bathroom_scan_session.dart';
 import 'package:safe_at_home/features/assessment/domain/scan/bathroom_scan_scene.dart';
@@ -44,145 +45,159 @@ class _Scanner implements BathroomScanAdapter {
 }
 
 void main() {
-  testWidgets(
-    'Spanish suggestion display preserves canonical imported observation and scene identity',
-    (tester) async {
-      final scene = fictionalScanScene(
-        elements: [
-          scanElementJson(
-            id: 'toilet-1',
-            kind: 'toilet',
-            dimensions: [0.5, 0.7, 0.7],
-          ),
-        ],
-      );
-      final originalScene = jsonEncode(scene.toJson());
-      final store = _ScanStore();
-      const caseId = 'f4b1b823-f3e5-4a77-825c-9b1696f21fe6';
-      final session = BathroomScanSession(
-        store: store,
-        caseId: caseId,
-        isCurrent: () => true,
-        adapter: _Scanner(),
-      );
-      await store.writeBytes(
-        session.key,
-        Uint8List.fromList(
-          utf8.encode(
-            jsonEncode(
-              BathroomScanReview(
-                scene: scene,
-                difficulties: {ScanDifficulty.toiletTransfer},
-              ).toJson(caseId),
+  for (final locale in [
+    const Locale('es'),
+    const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+    const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
+  ]) {
+    final words = AppLocalizations(locale);
+    testWidgets(
+      '$locale suggestion display preserves canonical imported observation and scene identity',
+      (tester) async {
+        final scene = fictionalScanScene(
+          elements: [
+            scanElementJson(
+              id: 'toilet-1',
+              kind: 'toilet',
+              dimensions: [0.5, 0.7, 0.7],
+            ),
+          ],
+        );
+        final originalScene = jsonEncode(scene.toJson());
+        final store = _ScanStore();
+        const caseId = 'f4b1b823-f3e5-4a77-825c-9b1696f21fe6';
+        final session = BathroomScanSession(
+          store: store,
+          caseId: caseId,
+          isCurrent: () => true,
+          adapter: _Scanner(),
+        );
+        await store.writeBytes(
+          session.key,
+          Uint8List.fromList(
+            utf8.encode(
+              jsonEncode(
+                BathroomScanReview(
+                  scene: scene,
+                  difficulties: {ScanDifficulty.toiletTransfer},
+                ).toJson(caseId),
+              ),
             ),
           ),
-        ),
-      );
-      final expected = suggestBathroomImprovements(
-        scene: scene,
-        reviewedElementIds: {'toilet-1'},
-        difficulties: {ScanDifficulty.toiletTransfer},
-      ).single;
-      ScanSuggestion? imported;
-      await tester.pumpWidget(
-        localized(
-          const Locale('es'),
-          BathroomScanScreen(
-            session: session,
-            importedFinding: (_) =>
-                imported == null ? null : 'fictional-finding',
-            onImport: (suggestion) async {
-              imported = suggestion;
-              return 'fictional-finding';
-            },
+        );
+        final expected = suggestBathroomImprovements(
+          scene: scene,
+          reviewedElementIds: {'toilet-1'},
+          difficulties: {ScanDifficulty.toiletTransfer},
+        ).single;
+        ScanSuggestion? imported;
+        await tester.pumpWidget(
+          localized(
+            locale,
+            BathroomScanScreen(
+              session: session,
+              importedFinding: (_) =>
+                  imported == null ? null : 'fictional-finding',
+              onImport: (suggestion) async {
+                imported = suggestion;
+                return 'fictional-finding';
+              },
+            ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await reveal(
-        tester,
-        find.text('Explorar apoyos para sentarse y levantarse'),
-      );
-      expect(find.text(expected.title), findsNothing);
-      await reveal(tester, find.text('Observación que se añadirá'));
-      await tester.tap(find.text('Observación que se añadirá'));
-      await tester.pumpAndSettle();
-      const translatedDetail =
-          'El residente indica dificultad para sentarse o levantarse del inodoro y lo ha identificado en el escaneo.';
-      expect(find.text(translatedDetail), findsOneWidget);
-      await reveal(tester, find.text('Revisar y añadir observación'));
-      await tester.tap(find.text('Revisar y añadir observación'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining(translatedDetail), findsWidgets);
-      await tester.ensureVisible(find.text('Confirmar y añadir'));
-      await tester.tap(find.text('Confirmar y añadir'));
-      await tester.pumpAndSettle();
-      expect(imported, isNotNull);
-      expect(imported!.detail, expected.detail);
-      expect(imported!.observation, expected.observation);
-      expect(imported!.id, expected.id);
-      expect(jsonEncode(session.review.scene!.toJson()), originalScene);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets(
-    'long translated feature labels remain fully visible in large-text correction fields',
-    (tester) async {
-      narrowLargeText(tester, scale: 3.2);
-      final scene = fictionalScanScene(
-        elements: [scanElementJson(id: 'surface-1', kind: 'unknown')],
-      );
-      final store = _ScanStore();
-      const caseId = 'f4b1b823-f3e5-4a77-825c-9b1696f21fe6';
-      final session = BathroomScanSession(
-        store: store,
-        caseId: caseId,
-        isCurrent: () => true,
-        adapter: _Scanner(),
-      );
-      await store.writeBytes(
-        session.key,
-        Uint8List.fromList(
-          utf8.encode(
-            jsonEncode(BathroomScanReview(scene: scene).toJson(caseId)),
-          ),
-        ),
-      );
-      await tester.pumpWidget(
-        localized(
-          const Locale('es'),
-          BathroomScanScreen(
-            session: session,
-            importedFinding: (_) => null,
-            onImport: (_) async => throw StateError('Review must not import'),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final expand = find.text('Explorar o corregir el modelo 3D');
-      await reveal(tester, expand);
-      await tester.tap(expand);
-      await tester.pumpAndSettle();
-      final selector = find.byKey(const ValueKey('surface-1-unknown'));
-      for (var i = 0; i < 100 && selector.evaluate().isEmpty; i++) {
-        await tester.dragFrom(const Offset(8, 350), const Offset(0, -250));
+        );
         await tester.pumpAndSettle();
-      }
-      await tester.ensureVisible(selector);
-      await tester.pumpAndSettle();
-      final label = find.descendant(
-        of: selector,
-        matching: find.text('Superficie sin identificar'),
-      );
-      expect(label, findsOneWidget);
-      final paragraph = tester.renderObject<RenderParagraph>(label);
-      expect(paragraph.maxLines, isNull);
-      expect(paragraph.didExceedMaxLines, false);
-      expect(paragraph.size.height, greaterThan(80));
-      expect(tester.takeException(), isNull);
-    },
-  );
+        await reveal(
+          tester,
+          find.text(words.text('Explore support for sitting and standing')),
+        );
+        expect(find.text(expected.title), findsNothing);
+        await reveal(tester, find.text(words.text('Observation to add')));
+        await tester.tap(find.text(words.text('Observation to add')));
+        await tester.pumpAndSettle();
+        final translatedDetail = words.text(expected.detail);
+        expect(find.text(translatedDetail), findsOneWidget);
+        await reveal(
+          tester,
+          find.text(words.text('Review and add observation')),
+        );
+        await tester.tap(find.text(words.text('Review and add observation')));
+        await tester.pumpAndSettle();
+        expect(find.textContaining(translatedDetail), findsWidgets);
+        await tester.ensureVisible(find.text(words.text('Confirm and add')));
+        await tester.tap(find.text(words.text('Confirm and add')));
+        await tester.pumpAndSettle();
+        expect(imported, isNotNull);
+        expect(imported!.detail, expected.detail);
+        expect(imported!.observation, expected.observation);
+        expect(imported!.id, expected.id);
+        expect(jsonEncode(session.review.scene!.toJson()), originalScene);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      '$locale long translated feature labels remain fully visible in large-text correction fields',
+      (tester) async {
+        narrowLargeText(tester, scale: 3.2);
+        final scene = fictionalScanScene(
+          elements: [scanElementJson(id: 'surface-1', kind: 'unknown')],
+        );
+        final store = _ScanStore();
+        const caseId = 'f4b1b823-f3e5-4a77-825c-9b1696f21fe6';
+        final session = BathroomScanSession(
+          store: store,
+          caseId: caseId,
+          isCurrent: () => true,
+          adapter: _Scanner(),
+        );
+        await store.writeBytes(
+          session.key,
+          Uint8List.fromList(
+            utf8.encode(
+              jsonEncode(BathroomScanReview(scene: scene).toJson(caseId)),
+            ),
+          ),
+        );
+        await tester.pumpWidget(
+          localized(
+            locale,
+            BathroomScanScreen(
+              session: session,
+              importedFinding: (_) => null,
+              onImport: (_) async => throw StateError('Review must not import'),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final expand = find.text(words.text('Explore or correct the 3D model'));
+        await reveal(tester, expand);
+        final viewport = tester.getRect(find.byType(Scrollable).first);
+        expect(viewport.height, greaterThanOrEqualTo(260));
+        final visibleTitle = tester.getRect(expand).intersect(viewport);
+        expect(visibleTitle.height, greaterThanOrEqualTo(48));
+        expect(visibleTitle.width, greaterThanOrEqualTo(48));
+        await tester.tapAt(visibleTitle.center);
+        await tester.pumpAndSettle();
+        final selector = find.byKey(const ValueKey('surface-1-unknown'));
+        for (var i = 0; i < 100 && selector.evaluate().isEmpty; i++) {
+          await tester.dragFrom(const Offset(8, 350), const Offset(0, -250));
+          await tester.pumpAndSettle();
+        }
+        await tester.ensureVisible(selector);
+        await tester.pumpAndSettle();
+        final label = find.descendant(
+          of: selector,
+          matching: find.text(words.text('Unidentified surface')),
+        );
+        expect(label, findsOneWidget);
+        final paragraph = tester.renderObject<RenderParagraph>(label);
+        expect(paragraph.maxLines, isNull);
+        expect(paragraph.didExceedMaxLines, false);
+        expect(paragraph.size.height, greaterThan(80));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   for (final entry in <Locale, String>{
     const Locale('es'): 'Girar modelo a la izquierda',

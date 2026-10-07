@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../programs/program_field_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
@@ -361,7 +362,20 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 16),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            ExcludeSemantics(
+                              child: Text(
+                                administrativeFieldLabel(
+                                  context,
+                                  widget.program.programId,
+                                  _definition(key),
+                                ),
+                                key: ValueKey('form-label-$key'),
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
                             TextField(
                               controller: _fields[key],
                               enabled: !_busy && !exiting,
@@ -373,7 +387,11 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                                 _ => TextInputType.text,
                               },
                               decoration: InputDecoration(
-                                labelText: _definition(key).label,
+                                labelText: administrativeFieldLabel(
+                                  context,
+                                  widget.program.programId,
+                                  _definition(key),
+                                ),
                                 helperText: _definition(key).kind == 'date'
                                     ? 'YYYY-MM-DD'
                                     : null,
@@ -388,10 +406,14 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                               controlAffinity: ListTileControlAffinity.leading,
                               title: Text(
                                 context.tr('I reviewed this value'),
-                                semanticsLabel: context.tr(
-                                  'I reviewed {field}',
-                                  {'field': _definition(key).label},
-                                ),
+                                semanticsLabel: context
+                                    .tr('I reviewed {field}', {
+                                      'field': administrativeFieldLabel(
+                                        context,
+                                        widget.program.programId,
+                                        _definition(key),
+                                      ),
+                                    }),
                               ),
                               value: _reviewed[key] ?? false,
                               onChanged:

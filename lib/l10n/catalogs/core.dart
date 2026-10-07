@@ -1,4 +1,35 @@
 const coreTranslations = <String, Map<String, String>>{
+  "Enter any health plan. Suggestions are examples, not a complete list.": {
+    "es":
+        "Puedes escribir cualquier plan de salud. Las sugerencias son ejemplos, no una lista completa.",
+    "zh-Hans": "可以输入任何医疗保险计划。建议仅为示例，并非完整列表。",
+    "zh-Hant": "可以輸入任何醫療保險計畫。建議僅為範例，並非完整清單。",
+    "vi":
+        "Bạn có thể nhập bất kỳ chương trình bảo hiểm y tế nào. Gợi ý chỉ là ví dụ, không phải danh sách đầy đủ.",
+    "fil":
+        "Maaaring ilagay ang anumang health plan. Mga halimbawa lamang ang mga mungkahi, hindi kumpletong listahan.",
+  },
+  "Another health plan": {
+    "es": "Otro plan de salud",
+    "zh-Hans": "其他医疗保险计划",
+    "zh-Hant": "其他醫療保險計畫",
+    "vi": "Chương trình bảo hiểm y tế khác",
+    "fil": "Ibang health plan",
+  },
+  "No health coverage": {
+    "es": "Sin cobertura médica",
+    "zh-Hans": "没有医疗保险",
+    "zh-Hant": "沒有醫療保險",
+    "vi": "Không có bảo hiểm y tế",
+    "fil": "Walang saklaw na pangkalusugan",
+  },
+  "Not sure": {
+    "es": "No estoy seguro/a",
+    "zh-Hans": "不确定",
+    "zh-Hant": "不確定",
+    "vi": "Không chắc",
+    "fil": "Hindi sigurado",
+  },
   "If this address can receive beta recovery email, a link will arrive shortly.": {
     "es":
         "Si esta dirección puede recibir correos de recuperación de la beta, llegará un enlace pronto.",
@@ -1536,5 +1567,145 @@ const coreTranslations = <String, Map<String, String>>{
     "zh-Hant": "需要檢查",
     "vi": "cần xem lại",
     "fil": "kailangang suriin",
+  },
+  "Check whether changes saved": {
+    "es": "Compruebe si se guardaron los cambios",
+    "zh-Hans": "检查修改是否已保存",
+    "zh-Hant": "檢查修改是否已儲存",
+    "vi": "Kiểm tra xem thay đổi đã được lưu chưa",
+    "fil": "Tingnan kung na-save ang mga pagbabago",
+  },
+  "Device changes waiting to sync": {
+    "es": "Cambios del dispositivo pendientes de sincronizar",
+    "zh-Hans": "设备上的修改等待同步",
+    "zh-Hant": "裝置上的修改等待同步",
+    "vi": "Thay đổi trên thiết bị đang chờ đồng bộ",
+    "fil": "Naghihintay ma-sync ang mga pagbabago sa device",
+  },
+  "Name changed on another device — review": {
+    "es": "El nombre cambió en otro dispositivo: revíselo",
+    "zh-Hans": "名称已在另一设备上更改，请核对",
+    "zh-Hant": "名稱已在另一裝置上變更，請核對",
+    "vi": "Tên đã thay đổi trên thiết bị khác — hãy xem lại",
+    "fil": "Nabago ang pangalan sa ibang device — suriin",
+  },
+  "Name saved on this device — save the plan to sync": {
+    "es":
+        "Nombre guardado en este dispositivo: guarde el plan para sincronizarlo",
+    "zh-Hans": "名称已保存在此设备，请保存计划以同步",
+    "zh-Hant": "名稱已儲存在此裝置，請儲存計畫以同步",
+    "vi": "Tên đã lưu trên thiết bị này — lưu kế hoạch để đồng bộ",
+    "fil":
+        "Naka-save ang pangalan sa device na ito — i-save ang plano upang ma-sync",
+  },
+  "Name saved on this device — sync pending": {
+    "es": "Nombre guardado en este dispositivo: sincronización pendiente",
+    "zh-Hans": "名称已保存在此设备，等待同步",
+    "zh-Hant": "名稱已儲存在此裝置，等待同步",
+    "vi": "Tên đã lưu trên thiết bị này — đang chờ đồng bộ",
+    "fil": "Naka-save ang pangalan sa device na ito — naghihintay ma-sync",
+  },
+  "Name saved to your account": {
+    "es": "Nombre guardado en su cuenta",
+    "zh-Hans": "名称已保存到您的账户",
+    "zh-Hant": "名稱已儲存到您的帳戶",
+    "vi": "Tên đã lưu vào tài khoản của bạn",
+    "fil": "Naka-save ang pangalan sa iyong account",
+  },
+  "Another sign-in link is being checked. Try this link again shortly.": {
+    "es":
+        "Se está comprobando otro enlace de inicio de sesión. Vuelva a intentar este enlace en un momento.",
+    "zh-Hans": "正在检查另一个登录链接。请稍后重试此链接。",
+    "zh-Hant": "正在檢查另一個登入連結。請稍後重試此連結。",
+    "vi":
+        "Đang kiểm tra một liên kết đăng nhập khác. Hãy thử lại liên kết này sau ít phút.",
+    "fil":
+        "Sinusuri ang isa pang link sa pag-sign in. Subukan muli ang link na ito sa ilang sandali.",
+  },
+  "This sign-in link could not be completed. Open a fresh recovery link or sign in again.": {
+    "es":
+        "No se pudo completar este enlace de inicio de sesión. Abra un enlace de recuperación nuevo o vuelva a iniciar sesión.",
+    "zh-Hans": "无法完成此登录链接。请打开新的恢复链接或重新登录。",
+    "zh-Hant": "無法完成此登入連結。請開啟新的復原連結或重新登入。",
+    "vi":
+        "Không thể hoàn tất liên kết đăng nhập này. Mở liên kết khôi phục mới hoặc đăng nhập lại.",
+    "fil":
+        "Hindi makumpleto ang link na ito sa pag-sign in. Magbukas ng bagong link sa pagbawi o mag-sign in muli.",
+  },
+  "A LITTLE SUPPORT, AT HOME": {
+    "es": "UN POCO DE APOYO EN CASA",
+    "zh-Hans": "在家获得一份支持",
+    "zh-Hant": "在家獲得一份支持",
+    "vi": "MỘT CHÚT HỖ TRỢ TẠI NHÀ",
+    "fil": "KAUNTING SUPORTA, SA BAHAY",
+  },
+  "A safer home starts here.": {
+    "es": "Un hogar más seguro comienza aquí.",
+    "zh-Hans": "更安全的家，从这里开始。",
+    "zh-Hant": "更安全的家，從這裡開始。",
+    "vi": "Một ngôi nhà an toàn hơn bắt đầu từ đây.",
+    "fil": "Dito nagsisimula ang mas ligtas na tahanan.",
+  },
+  "Review your space, explore possible support, and prepare your next steps.": {
+    "es":
+        "Revise su espacio, explore posibles ayudas y prepare sus próximos pasos.",
+    "zh-Hans": "检查居家空间，了解可能的支持，并准备下一步。",
+    "zh-Hant": "檢查居家空間，了解可能的支援，並準備下一步。",
+    "vi":
+        "Xem lại không gian sống, tìm hiểu hỗ trợ có thể có và chuẩn bị các bước tiếp theo.",
+    "fil":
+        "Suriin ang iyong espasyo, alamin ang posibleng suporta, at ihanda ang mga susunod na hakbang.",
+  },
+  "Fictional demonstration": {
+    "es": "Demostración con datos ficticios",
+    "zh-Hans": "虚构示范",
+    "zh-Hant": "虛構示範",
+    "vi": "Bản minh họa hư cấu",
+    "fil": "Demonstrasyong kathang-isip",
+  },
+  "Live account access is not enabled in this build. The examples below use bundled fictional information and do not send data to a server.": {
+    "es":
+        "El acceso a cuentas en línea no está habilitado en esta versión. Los ejemplos siguientes usan información ficticia incluida en la aplicación y no envían datos a un servidor.",
+    "zh-Hans": "此版本未启用在线账户访问。以下示例使用应用内的虚构信息，不会向服务器发送数据。",
+    "zh-Hant": "此版本未啟用線上帳戶存取。以下範例使用應用程式內的虛構資訊，不會向伺服器傳送資料。",
+    "vi":
+        "Phiên bản này chưa bật truy cập tài khoản trực tuyến. Các ví dụ dưới đây dùng thông tin hư cấu có sẵn và không gửi dữ liệu đến máy chủ.",
+    "fil":
+        "Hindi pinagana ang access sa online na account sa bersyong ito. Gumagamit ang mga halimbawa sa ibaba ng kasamang kathang-isip na impormasyon at hindi nagpapadala ng datos sa server.",
+  },
+  "Open fictional examples": {
+    "es": "Abrir ejemplos ficticios",
+    "zh-Hans": "打开虚构示例",
+    "zh-Hant": "開啟虛構範例",
+    "vi": "Mở các ví dụ hư cấu",
+    "fil": "Buksan ang mga kathang-isip na halimbawa",
+  },
+  "Rooms and concerns": {
+    "es": "Habitaciones y dificultades",
+    "zh-Hans": "房间与困难",
+    "zh-Hant": "房間與困難",
+    "vi": "Các phòng và khó khăn",
+    "fil": "Mga kuwarto at alalahanin",
+  },
+  "Home safety plan": {
+    "es": "Plan de seguridad del hogar",
+    "zh-Hans": "居家安全计划",
+    "zh-Hant": "居家安全計畫",
+    "vi": "Kế hoạch an toàn tại nhà",
+    "fil": "Plano para sa kaligtasan sa bahay",
+  },
+  "Changes need review": {
+    "es": "Los cambios necesitan revisión",
+    "zh-Hans": "修改需要审核",
+    "zh-Hant": "修改需要審查",
+    "vi": "Cần xem lại thay đổi",
+    "fil": "Kailangang suriin ang mga pagbabago",
+  },
+  "Newer version online": {
+    "es": "Hay una versión más reciente en línea",
+    "zh-Hans": "线上有较新版本",
+    "zh-Hant": "線上有較新版本",
+    "vi": "Có phiên bản mới hơn trực tuyến",
+    "fil": "May mas bagong bersyon online",
   },
 };

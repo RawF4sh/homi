@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 class SavedPhotoWithMarks extends StatelessWidget {
   const SavedPhotoWithMarks({
@@ -8,16 +9,17 @@ class SavedPhotoWithMarks extends StatelessWidget {
     required this.width,
     required this.height,
     required this.marks,
-    this.semanticLabel = 'Saved photo with observations',
+    this.semanticLabel,
   });
   final Uint8List bytes;
   final int width, height;
   final List<Map<String, Object?>> marks;
-  final String semanticLabel;
+
+  final String? semanticLabel;
   @override
   Widget build(BuildContext context) => Semantics(
     label:
-        '$semanticLabel. ${marks.map((m) => m['label']).where((l) => l != '').join('. ')}',
+        '${semanticLabel ?? context.tr('Saved photo with observations')}. ${marks.map((m) => m['label']).where((l) => l != '').join('. ')}',
     child: AspectRatio(
       aspectRatio: width / height,
       child: LayoutBuilder(
@@ -29,8 +31,9 @@ class SavedPhotoWithMarks extends StatelessWidget {
                 bytes,
                 cacheWidth: 1024,
                 fit: BoxFit.contain,
-                errorBuilder: (_, _, _) =>
-                    const Center(child: Text('Photo preview unavailable')),
+                errorBuilder: (_, _, _) => Center(
+                  child: Text(context.tr('Photo preview unavailable')),
+                ),
               ),
               for (final mark in marks) _mark(mark, constraints),
             ],

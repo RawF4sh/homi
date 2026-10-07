@@ -21,6 +21,29 @@ Future<void> type(WidgetTester tester, String label, String text) async {
 
 Future<void> choose(WidgetTester tester, String key, String value) async {
   final option = suggestion(key, value);
+  final panel = find.ancestor(
+    of: option,
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is Material &&
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith(
+            'profile-suggestions-',
+          ),
+    ),
+  );
+  if (panel.evaluate().isNotEmpty) {
+    await Scrollable.of(
+      tester.element(option),
+    ).position.ensureVisible(tester.renderObject(option));
+    await tester.pumpAndSettle();
+    final visible = tester.getRect(option).intersect(tester.getRect(panel));
+    expect(visible.height, greaterThanOrEqualTo(48));
+    await tester.tapAt(visible.center);
+    await tester.pumpAndSettle();
+    return;
+  }
+
   await tester.ensureVisible(option);
   await tester.pumpAndSettle();
   await tester.tap(option);

@@ -296,7 +296,8 @@ void main() {
       final search = find.byWidgetPredicate(
         (widget) =>
             widget is TextField &&
-            widget.decoration?.labelText == 'Search loaded plans',
+            widget.decoration?.label is Text &&
+            (widget.decoration!.label! as Text).data == 'Search loaded plans',
       );
       await reveal(tester, search);
       await tester.enterText(search, 'Oak');

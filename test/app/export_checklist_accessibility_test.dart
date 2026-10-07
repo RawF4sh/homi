@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/live_app.dart';
 import 'package:safe_at_home/app/theme.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
+import 'program_localization_support.dart';
 import 'package:safe_at_home/features/requests/private_export_screen.dart';
 import 'package:safe_at_home/shared/services/matching_api_client.dart';
 import 'case_coordinator_test.dart' show FakeSession, FakeTransport;
@@ -13,9 +15,16 @@ import '../contracts/form_answers_test.dart' as forms;
 import '../services/case_evidence_api_client_test.dart' as http;
 
 void main() {
-  for (final size in [const Size(320, 812), const Size(932, 430)]) {
+  for (final config in [
+    (const Locale('en'), const Size(320, 812)),
+    (const Locale('en'), const Size(932, 430)),
+    for (final locale in programLocales) (locale, const Size(320, 812)),
+  ]) {
+    final (locale, size) = config;
+    String tr(String text, [Map<String, Object?> args = const {}]) =>
+        programText(locale, text, args);
     testWidgets(
-      'long backend checklist preserves reachable PDF and share review at 3.2x in $size',
+      'long backend checklist preserves reachable PDF and share review at 3.2x in $locale $size',
       (tester) async {
         tester.view.physicalSize = size;
         tester.view.devicePixelRatio = 1;
@@ -142,6 +151,9 @@ void main() {
         await app.coordinator.save();
         await tester.pumpWidget(
           MaterialApp(
+            locale: locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
             theme: SafeAtHomeTheme.light(),
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(
@@ -171,22 +183,33 @@ void main() {
           await tester.pumpAndSettle();
         }
 
-        final prepare = find.text('Prepare or recover this draft');
+        final prepare = find.text(tr('Prepare or recover this draft'));
         await reveal(prepare);
         await tester.tap(prepare);
         await tester.pumpAndSettle();
-        await reveal(find.text('Not ready to submit'));
-        expect(find.text('Not ready to submit').hitTestable(), findsOneWidget);
-        expect(find.textContaining('20 unresolved items'), findsOneWidget);
+        await reveal(find.text(tr('Not ready to submit')));
+        expect(
+          find.text(tr('Not ready to submit')).hitTestable(),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            tr(
+              '{count} unresolved items are listed below. Review the complete checklist before sharing. Nothing has been submitted.',
+              {'count': 20},
+            ),
+          ),
+          findsOneWidget,
+        );
         for (final warning in [
           'This draft is incomplete.',
           'No application has been submitted.',
           'Program availability or requirements still need confirmation.',
         ]) {
-          await reveal(find.text(warning));
-          expect(find.text(warning).hitTestable(), findsOneWidget);
+          await reveal(find.text(tr(warning)));
+          expect(find.text(tr(warning)).hitTestable(), findsOneWidget);
         }
-        final share = find.text('Share or save draft');
+        final share = find.text(tr('Share or save draft'));
         await reveal(share);
         expect(share.hitTestable(), findsOneWidget);
         expect(
@@ -202,8 +225,8 @@ void main() {
           isNull,
           reason: 'The share confirmation must fit at large text.',
         );
-        expect(find.text('Share an incomplete draft?'), findsOneWidget);
-        final cancel = find.text('Cancel');
+        expect(find.text(tr('Share an incomplete draft?')), findsOneWidget);
+        final cancel = find.text(tr('Cancel'));
         await tester.ensureVisible(cancel);
         await tester.pumpAndSettle();
         await tester.tap(cancel);
@@ -214,7 +237,7 @@ void main() {
         for (final item in missing) {
           expect(find.text(item['description'] as String), findsNothing);
         }
-        final expand = find.text('Unresolved draft items');
+        final expand = find.text(tr('Unresolved draft items'));
         await reveal(expand);
         await tester.tap(expand);
         await tester.pumpAndSettle();

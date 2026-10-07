@@ -87,7 +87,11 @@ AppServices services(MemoryPrivateStore store, FakeTransport transport) =>
       transport: transport,
     );
 Finder input(String label) => find.byWidgetPredicate(
-  (w) => w is TextField && w.decoration?.labelText == label,
+  (w) =>
+      w is TextField &&
+      (w.decoration?.labelText == label ||
+          (w.decoration?.label is Text &&
+              (w.decoration!.label! as Text).data == label)),
 );
 
 void main() {

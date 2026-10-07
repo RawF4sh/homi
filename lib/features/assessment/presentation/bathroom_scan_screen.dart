@@ -18,6 +18,9 @@ class BathroomScanScreen extends StatefulWidget {
     required this.importedFinding,
     this.activeImports,
     this.scope,
+    this.onContinue,
+    this.onAddOtherConcern,
+    this.onUsePhotos,
   });
   final BathroomScanSession session;
   final Future<String> Function(ScanSuggestion) onImport;
@@ -25,6 +28,9 @@ class BathroomScanScreen extends StatefulWidget {
 
   final Set<String> Function()? activeImports;
   final Listenable? scope;
+  final ValueChanged<String?>? onContinue;
+  final VoidCallback? onAddOtherConcern;
+  final VoidCallback? onUsePhotos;
   @override
   State<BathroomScanScreen> createState() => _BathroomScanScreenState();
 }
@@ -35,8 +41,19 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
   bool busy = false, canPop = false;
   bool confirming = false;
   BuildContext? dialogContext;
-  String? selectedId, notice;
+  String? selectedId, notice, latestImportedFindingId;
   bool get enabled => !busy && !scan.busy && scan.isCurrent();
+  String? get currentReviewFindingId {
+    final active = widget.activeImports?.call();
+    final current = suggestions
+        .where((item) => active == null || active.contains(item.id))
+        .map((item) => widget.importedFinding(item.id))
+        .whereType<String>()
+        .toList();
+    return current.contains(latestImportedFindingId)
+        ? latestImportedFindingId
+        : current.firstOrNull;
+  }
 
   @override
   void initState() {
@@ -157,8 +174,13 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     }
   }
 
-  Future<void> close() async {
+  Future<void> close({
+    bool continueToReview = false,
+    bool addOther = false,
+    bool usePhotos = false,
+  }) async {
     if (busy || scan.busy) return;
+    final route = ModalRoute.of(context);
     if (scan.initialized && scan.dirty && scan.isCurrent()) {
       if (!await confirm(
         context.tr('Device changes are not saved'),
@@ -175,7 +197,28 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
         return;
       }
     }
-    if (!mounted) return;
+    if (!mounted ||
+        route?.isCurrent != true ||
+        !identical(route, ModalRoute.of(context))) {
+      return;
+    }
+    try {
+      if (scan.isCurrent()) {
+        if (usePhotos) {
+          widget.onUsePhotos?.call();
+        } else if (addOther) {
+          widget.onAddOtherConcern?.call();
+        } else if (continueToReview) {
+          widget.onContinue?.call(currentReviewFindingId);
+        }
+      }
+    } catch (_) {
+      setState(
+        () => notice =
+            'This case or session has changed. Return to the case to continue.',
+      );
+      return;
+    }
     setState(() => canPop = true);
     Navigator.of(context).pop();
   }
@@ -208,6 +251,30 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
         title: Text(context.tr('Bathroom in 3D')),
         leading: BackButton(onPressed: close),
       ),
+      bottomNavigationBar:
+          scan.initialized && scan.review.scene != null && scan.isCurrent()
+          ? SafeArea(
+              minimum: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              child: FilledButton(
+                key: const ValueKey('bathroom-continue'),
+                onPressed: enabled
+                    ? () => currentReviewFindingId != null
+                          ? close(continueToReview: true)
+                          : close(
+                              addOther: widget.onAddOtherConcern != null,
+                              continueToReview:
+                                  widget.onAddOtherConcern == null,
+                            )
+                    : null,
+                child: Text(
+                  context.tr(
+                    currentReviewFindingId != null ? 'Continue' : 'Add a note',
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: FutureBuilder<void>(
           future: ready,
@@ -285,7 +352,7 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
       Text(
         scene == null
             ? context.tr('Scan your bathroom')
-            : context.tr('Make the bathroom easier to use'),
+            : context.tr('Your 3D bathroom'),
         style: Theme.of(context).textTheme.headlineMedium,
       ),
       Text(
@@ -294,7 +361,7 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
                 'Scan the layout, tell us what feels difficult, then choose the improvements to explore.',
               )
             : context.tr(
-                'Start with what the resident needs help doing. You only confirm the concerns you want to add—not every object or dimension.',
+                'Choose the help you need, then add the concerns that fit.',
               ),
       ),
       if (!scan.isCurrent())
@@ -326,7 +393,12 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
         LinearProgressIndicator(
           semanticsLabel: context.tr('Processing scan step'),
         ),
-      if (!scan.busy && !busy)
+      if (scan.canCancelCapture)
+        OutlinedButton(
+          onPressed: () => scan.cancelCapture(),
+          child: Text(context.tr('Cancel scan')),
+        ),
+      if (!scan.busy && !busy && (scene == null || !scanSupported))
         Semantics(
           liveRegion: true,
           child: Text(context.tr(_readiness(capability))),
@@ -369,40 +441,47 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
             ],
           ),
         ]),
-      Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        children: [
-          FilledButton.icon(
-            key: const ValueKey('bathroom-start-scan'),
-            onPressed: canStart ? capture : null,
-            icon: const Icon(Icons.view_in_ar),
-            label: Text(
-              needsSetup
-                  ? context.tr('Set up 3D scanning')
-                  : scene == null
-                  ? context.tr('Scan bathroom')
-                  : context.tr('Scan again'),
+      if (scene == null)
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FilledButton.icon(
+              key: const ValueKey('bathroom-start-scan'),
+              onPressed: canStart ? capture : null,
+              icon: const Icon(Icons.view_in_ar),
+              label: Text(
+                needsSetup
+                    ? context.tr('Set up 3D scanning')
+                    : scene == null
+                    ? context.tr('Scan bathroom')
+                    : context.tr('Scan again'),
+              ),
             ),
-          ),
-          OutlinedButton.icon(
-            key: const ValueKey('bathroom-use-manual'),
-            onPressed: busy || scan.busy ? null : close,
-            icon: const Icon(Icons.photo_camera_outlined),
-            label: Text(context.tr('Use photos and measurements')),
-          ),
-          OutlinedButton(
-            onPressed: enabled ? () => run(scan.refreshCapabilities) : null,
-            child: Text(context.tr('Check device')),
-          ),
-          if (scan.canCancelCapture)
-            OutlinedButton(
-              onPressed: () => scan.cancelCapture(),
-              child: Text(context.tr('Cancel scan')),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              key: const ValueKey('bathroom-use-manual'),
+              onPressed: busy || scan.busy
+                  ? null
+                  : () => close(usePhotos: true),
+              icon: const Icon(Icons.photo_camera_outlined),
+              label: Text(context.tr('Use photos and measurements')),
             ),
-        ],
-      ),
+            TextButton(
+              onPressed: enabled ? () => run(scan.refreshCapabilities) : null,
+              child: Text(context.tr('Check device')),
+            ),
+          ],
+        ),
       if (scene != null) ...[
+        BathroomModelView(
+          key: ValueKey(scene.fingerprint),
+          scene: scene,
+          selectedId: selected?.id,
+          selectedLabel: selected == null
+              ? null
+              : '${scene.elements.indexOf(selected) + 1}. ${context.tr((scan.review.labels[selected.id] ?? selected.kind).label)}',
+          onSelect: (id) => setState(() => selectedId = id),
+        ),
         Text(
           context.tr('What would you like help with?'),
           style: Theme.of(context).textTheme.titleLarge,
@@ -422,14 +501,19 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
                 ? (value) => run(() => scan.setDifficulty(difficulty, value!))
                 : null,
           ),
+        if (widget.onAddOtherConcern != null)
+          OutlinedButton.icon(
+            key: const ValueKey('bathroom-other-concern'),
+            onPressed: enabled ? () => close(addOther: true) : null,
+            icon: const Icon(Icons.edit_note),
+            label: Text(
+              context.tr('Something else — add a note'),
+              textAlign: TextAlign.center,
+            ),
+          ),
         Text(
           context.tr('Improvements to explore'),
           style: Theme.of(context).textTheme.titleLarge,
-        ),
-        Text(
-          context.tr(
-            'Choose a concern that matches the room. An assessor can help decide whether grab bars, access changes or other support would help.',
-          ),
         ),
         if (prompts.length >= 20)
           Text(
@@ -448,10 +532,12 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
                   ),
           ),
         for (final suggestion in prompts) _suggestion(context, suggestion),
-        Text(
-          context.tr(
-            'No suggestions does not mean the room is safe. You can add a concern even when the scanner misses it.',
-          ),
+        SahMoreInfo(
+          details: [
+            context.tr(
+              'No suggestions does not mean the room is safe. You can add a concern even when the scanner misses it.',
+            ),
+          ],
         ),
         ExpansionTile(
           key: const PageStorageKey('scan-model-details'),
@@ -465,15 +551,6 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            BathroomModelView(
-              key: ValueKey(scene.fingerprint),
-              scene: scene,
-              selectedId: selected?.id,
-              selectedLabel: selected == null
-                  ? null
-                  : '${scene.elements.indexOf(selected) + 1}. ${context.tr((scan.review.labels[selected.id] ?? selected.kind).label)}',
-              onSelect: (id) => setState(() => selectedId = id),
-            ),
             if (scene.warnings.isNotEmpty)
               _notice(
                 scene.warnings
@@ -521,23 +598,71 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
             const SizedBox(height: 16),
           ],
         ),
-        OutlinedButton.icon(
-          onPressed: enabled
-              ? () => run(() async {
-                  if (await confirm(
-                    context.tr('Remove the device model?'),
-                    context.tr(
-                      'The 3D model and feature reviews will be removed. Any observations already in the assessment remain there.',
-                    ),
-                    context.tr('Remove model'),
-                  )) {
-                    await scan.clearModel();
-                    selectedId = null;
-                  }
-                })
-              : null,
-          icon: const Icon(Icons.delete_outline),
-          label: Text(context.tr('Remove device model')),
+        ExpansionTile(
+          key: const PageStorageKey('scan-options'),
+          tilePadding: EdgeInsets.zero,
+          title: Text(context.tr('Scan options')),
+          children: [
+            if (currentReviewFindingId == null)
+              TextButton(
+                onPressed: enabled ? close : null,
+                child: Text(
+                  context.tr('Finish without adding a concern'),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const ValueKey('bathroom-start-scan'),
+                onPressed: canStart ? capture : null,
+                icon: const Icon(Icons.view_in_ar),
+                label: Text(
+                  context.tr(needsSetup ? 'Set up 3D scanning' : 'Scan again'),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const ValueKey('bathroom-use-manual'),
+                onPressed: enabled ? () => close(usePhotos: true) : null,
+                icon: const Icon(Icons.photo_camera_outlined),
+                label: Text(
+                  context.tr('Use photos and measurements'),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: enabled ? () => run(scan.refreshCapabilities) : null,
+                child: Text(context.tr('Check device')),
+              ),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: enabled
+                    ? () => run(() async {
+                        if (await confirm(
+                          context.tr('Remove the device model?'),
+                          context.tr(
+                            'The 3D model and feature reviews will be removed. Any observations already in the assessment remain there.',
+                          ),
+                          context.tr('Remove model'),
+                        )) {
+                          await scan.clearModel();
+                          selectedId = null;
+                        }
+                      })
+                    : null,
+                icon: const Icon(Icons.delete_outline),
+                label: Text(context.tr('Remove device model')),
+              ),
+            ),
+          ],
         ),
       ],
       Text(context.tr('The 3D model stays encrypted on this device.')),
@@ -545,16 +670,12 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
         label: context.tr('Privacy and saving'),
         details: [
           context.tr(
-            'The scanner does not save or upload raw video. Added observations use the assessment’s normal Save to my case step; the 3D model is not included in cloud backups, cross-device resume or draft PDFs.',
+            'The scanner does not save raw video. Continue from the assessment to save your findings to your account. The 3D model stays on this device; it is not included in cloud backups or PDFs.',
           ),
           context.tr(
             'Use the photo and measurement tools for close-up evidence and verified dimensions.',
           ),
         ],
-      ),
-      OutlinedButton(
-        onPressed: busy || scan.busy ? null : close,
-        child: Text(context.tr('Back to assessment')),
       ),
     ];
   }
@@ -688,10 +809,10 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
                     return;
                   }
                   final confirmed = await scan.confirmImprovement(suggestion);
-                  await widget.onImport(confirmed);
+                  latestImportedFindingId = await widget.onImport(confirmed);
                   if (mounted) {
                     notice =
-                        'Observation saved on this device. Return to the assessment and choose Save to my case when ready.';
+                        'Added to your assessment. Add another concern or continue.';
                   }
                 })
               : null,

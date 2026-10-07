@@ -28,7 +28,11 @@ const _recoveryResult =
     'If this address can receive beta recovery email, a link will arrive shortly.';
 
 Finder _input(String label) => find.byWidgetPredicate(
-  (widget) => widget is TextField && widget.decoration?.labelText == label,
+  (widget) =>
+      widget is TextField &&
+      (widget.decoration?.labelText == label ||
+          (widget.decoration?.label is Text &&
+              (widget.decoration!.label! as Text).data == label)),
 );
 
 Future<void> _show(WidgetTester tester, Finder target) async {

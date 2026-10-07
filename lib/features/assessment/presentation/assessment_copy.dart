@@ -1,8 +1,110 @@
+import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
+
 import '../application/assessment_flow.dart';
+import '../domain/assessment_location.dart';
 import '../domain/capture/capture_adapter.dart';
 import '../domain/image/image_validator.dart';
 import '../domain/measurement/measurement_input.dart';
+import '../domain/measurement/measurement_fields.dart';
 import '../domain/review/finding_review_state.dart';
+
+String localizedAssessmentObservation(
+  BuildContext context, {
+  required String observation,
+  required String room,
+}) {
+  if (room != 'other') return observation;
+  final location = AssessmentLocation.fromObservation(
+    AssessmentArea.other,
+    observation,
+  );
+  if (location == null) return observation;
+  return '${context.tr(location.title)}: ${location.observationWithoutLocation(observation)}';
+}
+
+String assessmentHistoryValue(
+  BuildContext context,
+  Object? value, {
+  String? field,
+}) {
+  if (value == null) return context.tr('None recorded');
+  if (value is List) {
+    return value
+        .map((v) => assessmentHistoryValue(context, v, field: field))
+        .join('; ');
+  }
+  if (value is Map) {
+    const labels = {
+      'room': 'Area',
+      'observation': 'Observation',
+      'measurements': 'Measurements',
+      'reviews': 'Review decisions',
+      'reviewState': 'Review state',
+      'state': 'Review state',
+      'note': 'Note',
+      'type': 'Measurement type',
+      'value': 'Value',
+      'unit': 'Unit',
+      'method': 'Measurement method',
+      'confirmed': 'Checked by you',
+      'originalText': 'Original input',
+      'originalUnit': 'Original unit',
+      'decimalSeparator': 'Decimal mark',
+      'source': 'Measurement source',
+      'recorder': 'Recorded by',
+      'recordedAt': 'Recorded at',
+    };
+    return value.entries
+        .where((e) => !{'id', 'findingId', 'evidenceIds'}.contains(e.key))
+        .map((e) {
+          final key = e.key.toString();
+          final label = labels[key];
+          return '${label == null ? key : context.tr(label)}: ${assessmentHistoryValue(context, e.value, field: key)}';
+        })
+        .join(', ');
+  }
+  if (value is bool) return context.tr(value ? 'Yes' : 'No');
+  if (value is String) {
+    final label = switch (field) {
+      'type' => measurementFieldSpecFor(value)?.label,
+      'room' => const {
+        'bathroom': 'Bathroom',
+        'entrance': 'Entrance',
+        'other': 'Other area',
+      }[value],
+      'unit' || 'originalUnit' => const {
+        'mm': 'millimetres',
+        'cm': 'centimetres',
+        'm': 'metres',
+        'in': 'inches',
+        'ft': 'feet',
+      }[value],
+      'method' || 'source' => const {
+        'manual': 'Measured',
+        'estimated': 'Your estimate',
+        'legacy_unknown': 'Original input unavailable',
+      }[value],
+      'state' || 'reviewState' => const {
+        'confirmed': 'Confirmed by you',
+        'needs_review': 'Needs your review',
+        'dismissed': 'Dismissed',
+      }[value],
+      'recorder' => const {
+        'self': 'Resident',
+        'helper': 'Helper',
+        'unknown': 'Unknown',
+      }[value],
+      'decimalSeparator' => const {
+        'point': 'Decimal point',
+        'comma': 'Decimal comma',
+      }[value],
+      _ => null,
+    };
+    if (label != null) return context.tr(label);
+  }
+  return value.toString();
+}
 
 abstract final class AssessmentCopy {
   static const String notSavedYet =

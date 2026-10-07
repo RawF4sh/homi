@@ -129,20 +129,49 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   Future<bool> _confirm(String title, String text) async =>
       await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          scrollable: true,
-          title: Text(title),
-          content: Text(text),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(context.tr('Cancel')),
+        builder: (ctx) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 12,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Semantics(
+                    namesRoute: true,
+                    header: true,
+                    child: Text(
+                      title,
+                      style: Theme.of(ctx).textTheme.headlineSmall,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(text),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: Text(ctx.tr('Cancel')),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: Text(ctx.tr('Continue')),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(context.tr('Continue')),
-            ),
-          ],
+          ),
         ),
       ) ??
       false;
@@ -517,13 +546,14 @@ class _ReauthenticateDialogState extends State<_ReauthenticateDialog> {
               ),
               const SizedBox(height: 20),
               TextField(
+                key: const ValueKey('reauth-password'),
                 controller: _password,
                 obscureText: true,
                 autocorrect: false,
                 enableSuggestions: false,
                 enabled: !_busy,
                 decoration: InputDecoration(
-                  labelText: context.tr('Current password'),
+                  label: Text(context.tr('Current password')),
                 ),
                 onSubmitted: (_) => _confirmPassword(),
               ),

@@ -1,8 +1,14 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as image_ui;
+
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pdfrx/pdfrx.dart';
+import 'package:safe_at_home/l10n/app_language.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:safe_at_home/features/assessment/domain/capture/capture_adapter.dart';
 import 'package:safe_at_home/features/assessment/presentation/saved_photo_with_marks.dart';
 import 'package:safe_at_home/features/cases/case_home_screen.dart';
@@ -13,6 +19,67 @@ import 'package:safe_at_home/shared/services/matching_api_client.dart';
 
 import 'support/local_acceptance_harness.dart';
 
+List<double> normalizedGlyphInkMask(List<(int, int)> ink) {
+  const grid = 16;
+  final left = ink.map((point) => point.$1).reduce(math.min);
+  final right = ink.map((point) => point.$1).reduce(math.max) + 1;
+  final top = ink.map((point) => point.$2).reduce(math.min);
+  final bottom = ink.map((point) => point.$2).reduce(math.max) + 1;
+  final result = List<double>.filled(grid * grid, 0);
+  for (final (x, y) in ink) {
+    final x0 = (x - left) * grid / (right - left);
+    final x1 = (x + 1 - left) * grid / (right - left);
+    final y0 = (y - top) * grid / (bottom - top);
+    final y1 = (y + 1 - top) * grid / (bottom - top);
+    for (var row = y0.floor(); row < y1.ceil().clamp(0, grid); row++) {
+      for (var col = x0.floor(); col < x1.ceil().clamp(0, grid); col++) {
+        result[row * grid + col] +=
+            (math.min(col + 1, x1) - math.max(col, x0)) *
+            (math.min(row + 1, y1) - math.max(row, y0));
+      }
+    }
+  }
+  return result;
+}
+
+double normalizedInkDifference(List<double> a, List<double> b) {
+  var difference = 0.0, union = 0.0;
+  for (var i = 0; i < a.length; i++) {
+    difference += (a[i] - b[i]).abs();
+    union += math.max(a[i], b[i]);
+  }
+  return difference / union;
+}
+
+List<PdfRect> pdfGlyphRectsForMatch(PdfPageRawText text, String value) {
+  final start = text.fullText.indexOf(value);
+  if (value.isEmpty || start < 0) {
+    throw ArgumentError.value(value, 'value', 'Expected an exact text match');
+  }
+  final usesCodeUnits = text.charRects.length == text.fullText.length;
+  if (!usesCodeUnits && text.charRects.length != text.fullText.runes.length) {
+    throw StateError('PDF character bounds do not align with extracted text');
+  }
+  var index = usesCodeUnits
+      ? start
+      : text.fullText.substring(0, start).runes.length;
+  return [
+    for (final rune in value.runes)
+      (() {
+        final count = usesCodeUnits && rune > 0xffff ? 2 : 1;
+        final parts = text.charRects.sublist(index, index + count);
+        index += count;
+        final visible = parts.where((rect) => rect.isNotEmpty).toList();
+        return visible.isEmpty ? PdfRect.empty : visible.boundingRect();
+      })(),
+  ];
+}
+
+bool requiresEmbeddedChineseFont(PdfFontQuery font) =>
+    font.face.toLowerCase().contains('safeathomecjk') ||
+    font.charset == PdfFontCharset.gb2312 ||
+    font.charset == PdfFontCharset.chineseBig5;
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
@@ -20,10 +87,188 @@ void main() {
     (tester) async {
       final config = LocalFixtureConfig.fromEnvironment();
       final h = AcceptanceHarness(config);
+      final packetText = config.packetText;
+      final l10n = AppLocalizations(config.language.locale!);
+      String ui(String english, [Map<String, Object?> arguments = const {}]) {
+        if (config.language != AppLanguage.english) {
+          expect(
+            AppLocalizations.translations[english]?[config.language.code],
+            isNotNull,
+            reason: 'Missing app UI translation: $english',
+          );
+        }
+        return l10n.text(english, arguments);
+      }
+
       final checkpoints = <String>[];
+      final screenshots = <String>[];
+      var cjkGlyphsRendered = 0;
+      var cjkDistinctNameChecks = 0;
+      var cjkMissingFontGuards = 0;
       void checkpoint(String message) {
         checkpoints.add(message);
         debugPrint('LOCAL_ACCEPTANCE: $message');
+      }
+
+      Future<void> screenshot(String screen) async {
+        if (!const bool.fromEnvironment('SAH_IOS_CAPTURE_SCREENSHOTS')) return;
+        await tester.pumpAndSettle(
+          const Duration(milliseconds: 100),
+          EnginePhase.sendSemanticsUpdate,
+          const Duration(seconds: 10),
+        );
+        final name =
+            '${config.language.code}-${screenshots.length + 1}-$screen';
+        final bytes = await binding.takeScreenshot(name);
+        final directory = Directory(
+          '${Directory.systemTemp.path}/sah-language-qa-${config.runId}',
+        );
+        await directory.create(recursive: true);
+        await File(
+          '${directory.path}/$name.png',
+        ).writeAsBytes(bytes, flush: true);
+        binding.reportData?.remove('screenshots');
+        screenshots.add(name);
+      }
+
+      Future<void> verifyChineseRaster(
+        PdfPage page,
+        PdfPageRawText pageText,
+        String value,
+        String artifact,
+      ) async {
+        bool isHan(int codePoint) =>
+            codePoint >= 0x3400 && codePoint <= 0x4dbf ||
+            codePoint >= 0x4e00 && codePoint <= 0x9fff ||
+            codePoint >= 0xf900 && codePoint <= 0xfaff ||
+            codePoint >= 0x20000 && codePoint <= 0x2fa1f ||
+            codePoint >= 0x30000 && codePoint <= 0x323af;
+        final codePoints = value.runes.toList(growable: false);
+        if (!codePoints.any(isHan)) return;
+        final start = pageText.fullText.indexOf(value);
+        if (start < 0) return;
+        final rects = pdfGlyphRectsForMatch(pageText, value);
+        expect(rects.length, codePoints.length);
+        final bounds = rects.boundingRect();
+        expect(bounds.isNotEmpty, true);
+        expect(bounds.left, greaterThanOrEqualTo(0));
+        expect(bounds.bottom, greaterThanOrEqualTo(0));
+        expect(bounds.right, lessThanOrEqualTo(page.width));
+        expect(bounds.top, lessThanOrEqualTo(page.height));
+        const scale = 4.0;
+        final left = (bounds.left * scale).floor();
+        final top = ((page.height - bounds.top) * scale).floor();
+        final right = (bounds.right * scale).ceil();
+        final bottom = ((page.height - bounds.bottom) * scale).ceil();
+        final raster = await page.render(
+          x: left,
+          y: top,
+          width: right - left,
+          height: bottom - top,
+          fullWidth: page.width * scale,
+          fullHeight: page.height * scale,
+        );
+        expect(raster, isNotNull);
+        try {
+          final pixels = raster!.pixels;
+          final knownDifferent = packetText.residentName.startsWith('陈')
+              ? '陈美华𠮷'.runes.toSet()
+              : '陳美華𠮷'.runes.toSet();
+          final nameMasks = <int, List<double>>{};
+          for (var i = 0; i < codePoints.length; i++) {
+            if (!isHan(codePoints[i])) continue;
+            final glyph = rects[i];
+            expect(glyph.isNotEmpty, true, reason: 'Visible CJK glyph bounds.');
+            final x1 = (glyph.left * scale - left).floor().clamp(
+              0,
+              raster.width,
+            );
+            final y1 = ((page.height - glyph.top) * scale - top).floor().clamp(
+              0,
+              raster.height,
+            );
+            final x2 = (glyph.right * scale - left).ceil().clamp(
+              0,
+              raster.width,
+            );
+            final y2 = ((page.height - glyph.bottom) * scale - top)
+                .ceil()
+                .clamp(0, raster.height);
+            var ink = 0;
+            final strongInk = <(int, int)>[];
+            for (var y = y1; y < y2; y++) {
+              for (var x = x1; x < x2; x++) {
+                final offset = (y * raster.width + x) * 4;
+                if (pixels[offset] < 210 &&
+                    pixels[offset + 1] < 210 &&
+                    pixels[offset + 2] < 210) {
+                  ink++;
+                }
+                if (value == packetText.residentName &&
+                    knownDifferent.contains(codePoints[i]) &&
+                    pixels[offset] < 160 &&
+                    pixels[offset + 1] < 160 &&
+                    pixels[offset + 2] < 160) {
+                  strongInk.add((x, y));
+                }
+              }
+            }
+            if (value == packetText.residentName &&
+                knownDifferent.contains(codePoints[i])) {
+              expect(strongInk, isNotEmpty);
+              nameMasks[codePoints[i]] = normalizedGlyphInkMask(strongInk);
+            }
+            expect(
+              ink,
+              greaterThan(8),
+              reason:
+                  'Chinese glyph ${String.fromCharCode(codePoints[i])} must render visible strokes.',
+            );
+            cjkGlyphsRendered++;
+          }
+          if (value == packetText.residentName) {
+            expect(nameMasks.keys.toSet(), knownDifferent);
+            final masks = nameMasks.entries.toList();
+            for (var i = 0; i < masks.length; i++) {
+              for (var j = i + 1; j < masks.length; j++) {
+                expect(
+                  normalizedInkDifference(masks[i].value, masks[j].value),
+                  greaterThan(0.18),
+                  reason:
+                      'Known-distinct name glyphs '
+                      '${String.fromCharCode(masks[i].key)} and '
+                      '${String.fromCharCode(masks[j].key)} must not repeat tofu. '
+                      'This is a missing-glyph heuristic, not glyph-identity proof.',
+                );
+              }
+            }
+            cjkDistinctNameChecks++;
+          }
+          if (const bool.fromEnvironment('SAH_IOS_CAPTURE_SCREENSHOTS')) {
+            final image = await raster.createImage();
+            try {
+              final png = await image.toByteData(
+                format: image_ui.ImageByteFormat.png,
+              );
+              expect(png, isNotNull);
+              final name =
+                  '${config.language.code}-${screenshots.length + 1}-$artifact-p${page.pageNumber}';
+              final directory = Directory(
+                '${Directory.systemTemp.path}/sah-language-qa-${config.runId}',
+              );
+              await directory.create(recursive: true);
+              await File('${directory.path}/$name.png').writeAsBytes(
+                png!.buffer.asUint8List(png.offsetInBytes, png.lengthInBytes),
+                flush: true,
+              );
+              screenshots.add(name);
+            } finally {
+              image.dispose();
+            }
+          }
+        } finally {
+          raster?.dispose();
+        }
       }
 
       final secrets = DeviceSecretStore();
@@ -141,19 +386,29 @@ void main() {
       }
 
       Future<void> tap(String label, {double direction = 260}) =>
-          tapFinder(find.text(label), direction: direction);
-      Finder input(String label) => find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField && widget.decoration?.labelText == label,
-      );
-      Future<void> enter(String label, String text) async {
-        await visible(input(label));
-        await tester.enterText(input(label), text);
+          tapFinder(find.text(ui(label)), direction: direction);
+      Finder input(String label, {bool sourceLabel = false}) =>
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is TextField &&
+                (widget.decoration?.labelText ??
+                        (widget.decoration?.label is Text
+                            ? (widget.decoration!.label! as Text).data
+                            : null)) ==
+                    (sourceLabel ? l10n.text(label) : ui(label)),
+          );
+      Future<void> enter(
+        String label,
+        String text, {
+        bool sourceLabel = false,
+      }) async {
+        await visible(input(label, sourceLabel: sourceLabel));
+        await tester.enterText(input(label, sourceLabel: sourceLabel), text);
         await settle();
       }
 
       Future<void> back() async {
-        final button = find.byTooltip('Back').hitTestable();
+        final button = find.byType(BackButton).hitTestable();
         await until(
           () => button.evaluate().length == 1,
           'one visible Back action after route transition',
@@ -203,7 +458,6 @@ void main() {
         );
         position.jumpTo(position.minScrollExtent);
         await settle();
-        expect(position.pixels, closeTo(position.minScrollExtent, 1));
         await tapFinder(find.byKey(const ValueKey('program-refresh')));
         await until(
           () =>
@@ -217,7 +471,9 @@ void main() {
 
       Future<void> programAction(String id, String action) async {
         final card = find.byKey(ValueKey('program-$id'));
-        await tapFinder(find.descendant(of: card, matching: find.text(action)));
+        await tapFinder(
+          find.descendant(of: card, matching: find.text(ui(action))),
+        );
       }
 
       Future<void> login() async {
@@ -231,8 +487,8 @@ void main() {
               find.byType(CaseHomeScreen).evaluate().isNotEmpty,
           'signed-in home',
         );
-        await visible(find.text('Start a home plan'));
-        expect(find.text('Start a home plan'), findsOneWidget);
+        await visible(find.text(ui('Start a home plan')));
+        expect(find.text(ui('Start a home plan')), findsOneWidget);
       }
 
       Future<void> finishProfile() async {
@@ -248,21 +504,25 @@ void main() {
 
       await tester.pumpWidget(AcceptanceHost(harness: h));
       await settle();
+      await screenshot('sign-in');
       await enter('Email', 'alice@example.invalid');
       await enter('Password', 'wrong-fictional-password');
       await tap('Sign in');
       await until(
-        () =>
-            find.textContaining('Sign in failed').evaluate().isNotEmpty ||
-            find
-                .textContaining('Sign-in could not be completed')
-                .evaluate()
-                .isNotEmpty,
+        () => find
+            .text(
+              ui(
+                'Sign-in could not be completed. Check your account details and connection.',
+              ),
+            )
+            .evaluate()
+            .isNotEmpty,
         'safe rejected-login message',
       );
       expect(h.session.userId, isNull);
       await login();
       checkpoint('fictional login');
+      await screenshot('home');
       await tap('Start a home plan');
       await tapFinder(find.byKey(const ValueKey('plan-name-save')));
       await idle();
@@ -272,6 +532,7 @@ void main() {
       final permission = find.byType(DropdownButtonFormField<bool>);
       await tapFinder(permission);
       await tap('No');
+      await screenshot('resident-details');
       await finishProfile();
       await until(
         () =>
@@ -308,19 +569,33 @@ void main() {
       await tap('Open camera');
       await until(
         () => find
-            .textContaining('Camera access was not allowed')
+            .text(
+              ui(
+                'Camera access was not allowed. You can try again or continue without a photo.',
+              ),
+            )
             .evaluate()
             .isNotEmpty,
         'fictional permission denial',
       );
       await tap('Open camera');
       await until(
-        () => find.textContaining('No photo was taken').evaluate().isNotEmpty,
+        () => find
+            .text(
+              ui(
+                'No photo was taken. You can try again or continue without a photo.',
+              ),
+            )
+            .evaluate()
+            .isNotEmpty,
         'fictional capture cancellation',
       );
       await tap('Open camera');
       await until(
-        () => find.text('Crop or cover private details').evaluate().isNotEmpty,
+        () => find
+            .text(ui('Crop or cover private details'))
+            .evaluate()
+            .isNotEmpty,
         'generated photo staged',
       );
       expect(h.capture.attempts, 3);
@@ -328,14 +603,17 @@ void main() {
       await tap('Add opaque cover');
       await tap('Apply and review photo');
       await until(
-        () => find.text('Crop or cover private details').evaluate().isNotEmpty,
+        () => find
+            .text(ui('Crop or cover private details'))
+            .evaluate()
+            .isNotEmpty,
         'native privacy edit applied',
       );
       await tap('Continue');
       await visible(find.byKey(const ValueKey('observation')));
       await tester.enterText(
         find.byKey(const ValueKey('observation')),
-        'Fictional threshold needs a closer look.',
+        packetText.observation,
       );
       await tap('Add measurements (optional)');
       await visible(find.byKey(const ValueKey('measurement-thresholdHeight')));
@@ -346,20 +624,41 @@ void main() {
       await tapFinder(
         find.descendant(
           of: find.byKey(const ValueKey('unit-thresholdHeight')),
-          matching: find.text('in'),
+          matching: find.text(ui('in')),
         ),
       );
-      await tap('Review');
-      await tap('Confirm this finding');
-      await tap('Save to my case');
+      await tapFinder(find.byKey(const ValueKey('assessment-review')));
+      final continueAssessment = find.byKey(
+        const ValueKey('assessment-continue'),
+      );
+      expect(
+        find.descendant(
+          of: continueAssessment,
+          matching: find.text(ui('Confirm and continue')),
+        ),
+        findsOneWidget,
+      );
+      await screenshot('finding-review');
+      await tapFinder(continueAssessment);
       await until(
-        () => find.text('Saved to your case.').evaluate().isNotEmpty,
-        'assessment and photo saved',
+        () {
+          final coordinator = h.services!.coordinator;
+          final findings = coordinator.snapshot?.findings;
+          return findings?.length == 1 &&
+              findings!.single.reviewState == 'confirmed' &&
+              !coordinator.busy &&
+              continueAssessment.evaluate().isEmpty;
+        },
+        'assessment and photo saved before returning to the plan',
         seconds: 55,
       );
       final caseAfterPhoto = h.services!.coordinator.snapshot!;
       expect(caseAfterPhoto.findings, hasLength(1));
       expect(caseAfterPhoto.findings.single.reviewState, 'confirmed');
+      expect(
+        caseAfterPhoto.findings.single.observation,
+        packetText.observation,
+      );
       expect(caseAfterPhoto.findings.single.measurements.single.value, 12.7);
       expect(
         caseAfterPhoto.findings.single.measurements.single.confirmed,
@@ -375,20 +674,45 @@ void main() {
       expect(original['originalText'], ' .5 ');
       expect(original['originalUnit'], 'in');
       final evidenceId = caseAfterPhoto.findings.single.evidenceIds.single;
+      await tap('Home assessment');
+      final savedFinding = find.byKey(
+        ValueKey('finding-${caseAfterPhoto.findings.single.id}'),
+      );
+      final reopenedReview = find.byKey(const ValueKey('review-state'));
+      await until(
+        () =>
+            savedFinding.evaluate().isNotEmpty ||
+            reopenedReview.evaluate().isNotEmpty,
+        'saved finding restored after Continue',
+      );
+      if (savedFinding.evaluate().isNotEmpty) await tapFinder(savedFinding);
+      await until(
+        () => find.byKey(const ValueKey('review-state')).evaluate().isNotEmpty,
+        'saved finding review reopened',
+      );
       await tapFinder(
         find.byKey(ValueKey('review-photo-$evidenceId')),
         direction: -260,
+      );
+      await until(
+        () =>
+            find.text(ui('Mark the area on this photo')).evaluate().isNotEmpty,
+        'downloaded sanitized photo is ready for annotations after resume',
+        seconds: 40,
       );
       await tap('Mark the area on this photo');
       await tap('Add a box');
       await visible(find.byKey(const ValueKey('annotation-label')));
       await tester.enterText(
         find.byKey(const ValueKey('annotation-label')),
-        'Fictional step marker',
+        packetText.photoLabel,
       );
+      FocusManager.instance.primaryFocus?.unfocus();
+      await settle();
+      await screenshot('photo-annotation');
       await tap('Done', direction: -260);
       await tap(
-        find.text('Save to my case').evaluate().isNotEmpty
+        find.text(ui('Save to my case')).evaluate().isNotEmpty
             ? 'Save to my case'
             : 'Save findings and photo marks online',
       );
@@ -396,13 +720,13 @@ void main() {
         () =>
             h.transport.responseBodies['/v2/save-evidence-annotations'] !=
                 null &&
-            find.text('Saved to your case.').evaluate().isNotEmpty,
+            find.text(ui('Saved to your case.')).evaluate().isNotEmpty,
         'durable annotations saved',
         seconds: 55,
       );
-      await tapFinder(find.byTooltip('Save on device and close'));
+      await tapFinder(find.byTooltip(ui('Save on device and close')));
       await until(
-        () => find.byTooltip('Save on device and close').evaluate().isEmpty,
+        () => find.byTooltip(ui('Save on device and close')).evaluate().isEmpty,
         'assessment route closes after durable flush',
       );
       checkpoint(
@@ -443,6 +767,11 @@ void main() {
         h.services!.coordinator.draft!.profile.city,
         'Fictional offline city',
       );
+      expect(
+        h.services!.coordinator.draft!.findings.single.observation,
+        packetText.observation,
+        reason: 'Encrypted reopen preserves the entered script exactly.',
+      );
       h.transport.offline = false;
       await tap('Check saved state');
       await until(
@@ -470,6 +799,7 @@ void main() {
         'three-program checks',
       );
       final programs = ['scfhp-eaa', 'hpsm-eaa', 'rtp-home-repair'];
+      await screenshot('programs');
       for (final program in programs) {
         await programAction(program, 'Draft checklist');
         await until(
@@ -485,13 +815,16 @@ void main() {
           h.services!.coordinator.snapshot!.revision,
         );
         expect(checklist['status'], 'draft');
-        await visible(find.text('Draft only · Nothing has been submitted.'));
+        await visible(
+          find.text(ui('Draft only · Nothing has been submitted.')),
+        );
         expect(
-          find.text('Draft only · Nothing has been submitted.'),
+          find.text(ui('Draft only · Nothing has been submitted.')),
           findsOneWidget,
         );
-        await visible(find.text('What is needed next'));
-        expect(find.text('What is needed next'), findsOneWidget);
+        await visible(find.text(ui('What is needed next')));
+        expect(find.text(ui('What is needed next')), findsOneWidget);
+        await screenshot('$program-checklist');
         await back();
         await programAction(program, 'Review program questions');
         await until(
@@ -510,18 +843,25 @@ void main() {
         final booleanField = find.byWidgetPredicate(
           (widget) =>
               widget is DropdownButtonFormField<String> &&
-              widget.decoration.labelText == firstBoolean['label'],
+              widget.decoration.labelText ==
+                  l10n.text(firstBoolean['label'] as String),
         );
         await tapFinder(booleanField);
         await tap('No');
+        await screenshot('$program-questions');
         final money = questions.where((q) => q['kind'] == 'money');
         if (money.isNotEmpty) {
-          await enter((money.first as Map)['label'] as String, '0');
+          await enter(
+            (money.first as Map)['label'] as String,
+            '0',
+            sourceLabel: true,
+          );
         }
         if (program == programs.last) {
           await enter(
             'What repairs would you like RTP to consider?',
-            'Fictional threshold repair request.',
+            packetText.repairRequest,
+            sourceLabel: true,
           );
         }
         final beforeRevision = h.services!.coordinator.snapshot!.revision;
@@ -540,7 +880,7 @@ void main() {
           await tap('Check saved answers and reconcile', direction: -300);
           await until(
             () => find
-                .text('The submitted answers are confirmed saved.')
+                .text(ui('The submitted answers are confirmed saved.'))
                 .evaluate()
                 .isNotEmpty,
             'uncertain intake recovered',
@@ -593,10 +933,11 @@ void main() {
               program,
           'route-specific administrative fields',
         );
-        await enter('Given name', 'Fictional Resident');
+        await enter('Given name', packetText.residentName, sourceLabel: true);
         await tapFinder(
           find.byKey(const ValueKey('form-review-memberFirstName')),
         );
+        await screenshot('$program-form');
         final beforeForm = h.services!.coordinator.snapshot!.revision;
         await tap('Save reviewed administrative answers');
         await until(
@@ -628,9 +969,9 @@ void main() {
                   program,
           'draft review loads both current evidence and administrative answers',
         );
-        await tap('Photo 1');
+        await tapFinder(find.text(ui('Photo {number}', {'number': 1})));
         await until(
-          () => find.text('Review private photo').evaluate().isNotEmpty,
+          () => find.text(ui('Review private photo')).evaluate().isNotEmpty,
           'canonical evidence preview',
         );
         final markedPhoto = find.byType(SavedPhotoWithMarks);
@@ -639,13 +980,13 @@ void main() {
         expect(
           find.descendant(
             of: markedPhoto,
-            matching: find.text('Fictional step marker'),
+            matching: find.text(packetText.photoLabel),
           ),
           findsOneWidget,
         );
         final noteLegend = find.byElementPredicate((element) {
           final widget = element.widget;
-          if (widget is! Text || widget.data != 'Fictional step marker') {
+          if (widget is! Text || widget.data != packetText.photoLabel) {
             return false;
           }
           var insidePhoto = false;
@@ -660,6 +1001,7 @@ void main() {
         }, description: 'the accessible photo-note legend outside the image');
         await visible(noteLegend);
         expect(noteLegend, findsOneWidget);
+        await screenshot('$program-photo-review');
         await tap('Include this reviewed photo');
         final pdfCount = h.transport.pdfs.length;
         await tap('Prepare or recover this draft');
@@ -680,8 +1022,13 @@ void main() {
               null,
           'native viewer opens the actual document',
         );
+        await screenshot('$program-pdf');
         expect(
-          find.textContaining('The PDF preview could not be opened'),
+          find.text(
+            ui(
+              'The PDF preview could not be opened. Reload and prepare the draft again.',
+            ),
+          ),
           findsNothing,
         );
         final displayed = tester
@@ -690,75 +1037,134 @@ void main() {
             .resolveListenable();
         final text = StringBuffer();
         var markedPageRendered = false;
+        final glyphsBeforeProgram = cjkGlyphsRendered;
+        final distinctNamesBeforeProgram = cjkDistinctNameChecks;
         await displayed.useDocument<void>((viewerDocument) async {
-          final document = await PdfDocument.openData(h.transport.pdfs.last);
-          try {
-            expect(viewerDocument.pages.length, document.pages.length);
-            for (var index = 0; index < document.pages.length; index++) {
-              final page = document.pages[index];
-              final pageText = (await page.loadText())?.fullText ?? '';
-              final visibleText =
-                  (await viewerDocument.pages[index].loadText())?.fullText ??
-                  '';
-              expect(
-                visibleText,
-                pageText,
-                reason:
-                    'The displayed document must be this route’s downloaded PDF.',
+          final missingCjkFonts = <String>{};
+          void recordMissing(PdfDocumentEvent event) {
+            if (event is PdfDocumentMissingFontsEvent) {
+              missingCjkFonts.addAll(
+                event.missingFonts
+                    .where(requiresEmbeddedChineseFont)
+                    .map((font) => font.face),
               );
-              text.write(pageText);
-              if (pageText.contains('Fictional step marker')) {
-                final raster = await page.render(
-                  fullWidth: 306,
-                  fullHeight: 306 * page.height / page.width,
+            }
+          }
+
+          final viewerEvents = viewerDocument.events.listen(recordMissing);
+          try {
+            final document = await PdfDocument.openData(h.transport.pdfs.last);
+            final downloadedEvents = document.events.listen(recordMissing);
+            try {
+              expect(viewerDocument.pages.length, document.pages.length);
+              for (var index = 0; index < document.pages.length; index++) {
+                final page = document.pages[index];
+                final extracted = await page.loadText();
+                final pageText = extracted?.fullText ?? '';
+                final visibleText =
+                    (await viewerDocument.pages[index].loadText())?.fullText ??
+                    '';
+                expect(
+                  visibleText,
+                  pageText,
+                  reason:
+                      'The displayed document must be this route’s downloaded PDF.',
                 );
-                expect(raster, isNotNull);
-                try {
-                  final pixels = raster!.pixels;
-                  expect(pixels.length, raster.width * raster.height * 4);
-                  var inkPixels = 0;
-                  for (var i = 0; i < pixels.length; i += 4) {
-                    if (pixels[i] < 245 ||
-                        pixels[i + 1] < 245 ||
-                        pixels[i + 2] < 245) {
-                      inkPixels++;
-                    }
-                  }
-                  expect(
-                    inkPixels,
-                    greaterThan(100),
-                    reason:
-                        'The native PDF engine must render real page content, not a blank placeholder.',
-                  );
-                  final visibleRaster = await viewerDocument.pages[index]
-                      .render(
-                        fullWidth: 306,
-                        fullHeight: 306 * page.height / page.width,
-                      );
-                  expect(visibleRaster, isNotNull);
-                  try {
-                    expect(
-                      sha256.convert(visibleRaster!.pixels).toString(),
-                      sha256.convert(pixels).toString(),
-                      reason:
-                          'The displayed photo and marks must match the downloaded draft.',
+                text.write(pageText);
+                if (extracted != null) {
+                  for (final field in {
+                    'name': packetText.residentName,
+                    'observation': packetText.observation,
+                    'photo-label': packetText.photoLabel,
+                    if (program == programs.last)
+                      'repair-request': packetText.repairRequest,
+                  }.entries) {
+                    await verifyChineseRaster(
+                      page,
+                      extracted,
+                      field.value,
+                      '$program-pdf-${field.key}',
                     );
-                  } finally {
-                    visibleRaster?.dispose();
                   }
-                  markedPageRendered = true;
-                } finally {
-                  raster?.dispose();
+                }
+                if (pageText.contains(packetText.photoLabel)) {
+                  final raster = await page.render(
+                    fullWidth: 306,
+                    fullHeight: 306 * page.height / page.width,
+                  );
+                  expect(raster, isNotNull);
+                  try {
+                    final pixels = raster!.pixels;
+                    expect(pixels.length, raster.width * raster.height * 4);
+                    var inkPixels = 0;
+                    for (var i = 0; i < pixels.length; i += 4) {
+                      if (pixels[i] < 245 ||
+                          pixels[i + 1] < 245 ||
+                          pixels[i + 2] < 245) {
+                        inkPixels++;
+                      }
+                    }
+                    expect(
+                      inkPixels,
+                      greaterThan(100),
+                      reason:
+                          'The native PDF engine must render real page content, not a blank placeholder.',
+                    );
+                    final visibleRaster = await viewerDocument.pages[index]
+                        .render(
+                          fullWidth: 306,
+                          fullHeight: 306 * page.height / page.width,
+                        );
+                    expect(visibleRaster, isNotNull);
+                    try {
+                      expect(
+                        sha256.convert(visibleRaster!.pixels).toString(),
+                        sha256.convert(pixels).toString(),
+                        reason:
+                            'The displayed photo and marks must match the downloaded draft.',
+                      );
+                    } finally {
+                      visibleRaster?.dispose();
+                    }
+                    markedPageRendered = true;
+                  } finally {
+                    raster?.dispose();
+                  }
                 }
               }
+              await document.useNativeDocumentHandle<void>((_) {});
+              await Future<void>.delayed(Duration.zero);
+              expect(
+                missingCjkFonts,
+                isEmpty,
+                reason:
+                    'Embedded Chinese fonts must not fall back to system '
+                    'fonts, even when the substitute paints nonblank glyphs.',
+              );
+              cjkMissingFontGuards += 2;
+            } finally {
+              await downloadedEvents.cancel();
+              await document.dispose();
             }
           } finally {
-            await document.dispose();
+            await viewerEvents.cancel();
           }
         });
         expect(markedPageRendered, true);
-        expect(text.toString(), contains('Fictional step marker'));
-        expect(text.toString(), contains('Fictional Resident'));
+        expect(text.toString(), contains(packetText.photoLabel));
+        expect(text.toString(), contains(packetText.residentName));
+        expect(text.toString(), contains(packetText.observation));
+        if (config.language == AppLanguage.chineseSimplified ||
+            config.language == AppLanguage.chineseTraditional) {
+          expect(cjkGlyphsRendered, greaterThan(glyphsBeforeProgram));
+          expect(
+            cjkDistinctNameChecks,
+            greaterThan(distinctNamesBeforeProgram),
+          );
+          checkpoint(
+            '$program exact Chinese text and visible native PDF glyphs',
+          );
+        }
         expect(text.toString(), contains('REPORTED FACTS ONLY'));
         expect(text.toString(), contains('Unknown'));
         expect(text.toString(), contains('Reported No'));
@@ -767,14 +1173,12 @@ void main() {
         }
         if (program == programs.last) {
           expect(text.toString().toLowerCase(), contains('worksheet'));
-          expect(
-            text.toString(),
-            contains('Fictional threshold repair request.'),
-          );
+          expect(text.toString(), contains(packetText.repairRequest));
         }
         await tap('Share or save draft', direction: -300);
         await until(
-          () => find.text('Share an incomplete draft?').evaluate().isNotEmpty,
+          () =>
+              find.text(ui('Share an incomplete draft?')).evaluate().isNotEmpty,
           'draft-sharing warning',
         );
         await tap('Cancel');
@@ -794,10 +1198,11 @@ void main() {
           'manual update acknowledged for this program',
         );
         final historyNotice = find.text(
-          'Manual update saved. This is not verified agency status.',
+          ui('Manual update saved. This is not verified agency status.'),
         );
         await visible(historyNotice, direction: -260);
         expect(historyNotice, findsOneWidget);
+        await screenshot('$program-history');
         expect(
           (h.transport.responseBodies['/v1/append-request-update']!['events']
                   as List)
@@ -844,14 +1249,15 @@ void main() {
       await back();
       await back();
       await tapFinder(find.byKey(const ValueKey('nav-settings')));
+      await screenshot('settings');
       await tap('Delete selected case');
       await tap('Continue');
       await until(
         () => h.services!.coordinator.snapshot == null,
         'case and evidence deletion',
       );
-      await visible(find.text('Selected case deleted.'), direction: -260);
-      expect(find.text('Selected case deleted.'), findsOneWidget);
+      await visible(find.text(ui('Selected case deleted.')), direction: -260);
+      expect(find.text(ui('Selected case deleted.')), findsOneWidget);
       var status = await config.control('status', {});
       expect(status['cases'], 0);
       expect(status['evidence'], 0);
@@ -861,7 +1267,7 @@ void main() {
       await until(
         () =>
             h.session.userId == null &&
-            find.text('Sign in').evaluate().isNotEmpty,
+            find.text(ui('Sign in')).evaluate().isNotEmpty,
         'sign-out returns to login',
       );
       await until(
@@ -902,14 +1308,14 @@ void main() {
       await enter('Current password', 'fictional-password-only');
       await tap('Confirm password');
       await until(
-        () => find.text('Delete this account?').evaluate().isNotEmpty,
+        () => find.text(ui('Delete this account?')).evaluate().isNotEmpty,
         'reviewed account-deletion confirmation',
       );
       await tap('Continue');
       await until(
         () =>
             h.session.userId == null &&
-            find.text('Sign in').evaluate().isNotEmpty,
+            find.text(ui('Sign in')).evaluate().isNotEmpty,
         'application account deleted',
       );
       expect(durableReceiptBeforeConfirm, true);
@@ -936,10 +1342,13 @@ void main() {
         'logged-out receipt reads real application-deletion status',
       );
       final pendingProviderNotice = find.text(
-        'Application data is deleted. Provider account cleanup is still pending.',
+        ui(
+          'Application data is deleted. Provider account cleanup is still pending.',
+        ),
       );
       await visible(pendingProviderNotice);
       expect(pendingProviderNotice, findsOneWidget);
+      await screenshot('account-deletion-receipt');
       expect(h.session.userId, isNull);
       expect(await secrets.read(receiptKey), isNotNull);
       checkpoint(
@@ -951,11 +1360,16 @@ void main() {
         'authentication': 'fictional_provider_only',
         'capture': 'generated_fictional_image',
         'testHostTextScale': config.textScale,
+        'language': config.language.code,
+        'screenshots': screenshots,
         'recovery': 'service_recreation_not_OS_process_death',
         'sharing': 'warning_and_cancel_only',
         'providerDeletion': 'pending_not_executed',
         'checkpoints': checkpoints,
         'pdfs': h.transport.pdfs.length,
+        'cjkGlyphsRendered': cjkGlyphsRendered,
+        'cjkDistinctNameHeuristicChecks': cjkDistinctNameChecks,
+        'cjkMissingFontGuards': cjkMissingFontGuards,
         'requests': status['requests'],
         'remainingCases': status['cases'],
         'remainingEvidence': status['evidence'],

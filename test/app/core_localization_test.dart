@@ -52,7 +52,7 @@ void main() {
           .toList();
       expect(fields[0].controller!.text, 'fictional@example.test');
       expect(fields[1].controller!.text, 'Fictional-password-42');
-      expect(fields[1].decoration!.labelText, 'Mật khẩu');
+      expect((fields[1].decoration!.label! as Text).data, 'Mật khẩu');
       expect(tester.takeException(), isNull);
     },
   );

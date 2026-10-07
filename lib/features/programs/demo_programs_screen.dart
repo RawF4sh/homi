@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../../shared/models/contracts.dart';
 import '../../shared/presentation/sah_components.dart';
@@ -46,9 +47,9 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
           future: _scenarios,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(
+              return Center(
                 child: CircularProgressIndicator(
-                  semanticsLabel: 'Loading examples',
+                  semanticsLabel: context.tr('Loading examples'),
                 ),
               );
             }
@@ -59,12 +60,14 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
                   child: SahEmptyState(
-                    title: 'Examples unavailable',
-                    message: 'The example cases could not be loaded.',
+                    title: context.tr('Examples unavailable'),
+                    message: context.tr(
+                      'The example cases could not be loaded.',
+                    ),
                     icon: Icons.cloud_off_outlined,
                     action: FilledButton(
                       onPressed: _retry,
-                      child: const Text('Try again'),
+                      child: Text(context.tr('Try again')),
                     ),
                   ),
                 ),
@@ -83,16 +86,16 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SahFeaturePanel(
-                        eyebrow: 'EXPLORE THE APP',
-                        title: 'Explore possible support',
-                        description:
-                            'Fictional demo · These saved examples show how results will work. '
-                            'They do not assess eligibility for a real program.',
+                      SahFeaturePanel(
+                        eyebrow: context.tr('EXPLORE THE APP'),
+                        title: context.tr('Explore possible support'),
+                        description: context.tr(
+                          'Fictional demo · These saved examples show how results will work. They do not assess eligibility for a real program.',
+                        ),
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        'Choose an example',
+                        context.tr('Choose an example'),
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       const SizedBox(height: 8),
@@ -125,25 +128,37 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Resident details',
+                              context.tr('Resident details'),
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'City: ${selected.caseSnapshot.profile.city ?? 'Not provided'}',
+                              context.tr('{label}: {value}', {
+                                'label': context.tr('City'),
+                                'value':
+                                    selected.caseSnapshot.profile.city ??
+                                    context.tr('Not provided'),
+                              }),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Health plan: ${selected.caseSnapshot.profile.healthPlan ?? 'Not provided'}',
+                              context.tr('{label}: {value}', {
+                                'label': context.tr('Health plan'),
+                                'value':
+                                    selected.caseSnapshot.profile.healthPlan ??
+                                    context.tr('Not provided'),
+                              }),
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 24),
                       if (selected.matchResponse.matches.isEmpty)
-                        const _Panel(
+                        _Panel(
                           child: Text(
-                            'This example contains no program results.',
+                            context.tr(
+                              'This example contains no program results.',
+                            ),
                           ),
                         ),
                       for (final match in selected.matchResponse.matches)
@@ -170,8 +185,10 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
                         ),
                       const SizedBox(height: 12),
                       Text(
-                        'Saved example from ${selected.matchResponse.evaluationDate}. '
-                        'Availability has not been checked. A program must review any real application.',
+                        context.tr(
+                          'Saved example from {date}. Availability has not been checked. A program must review any real application.',
+                          {'date': selected.matchResponse.evaluationDate},
+                        ),
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
@@ -215,7 +232,7 @@ class _ProgramCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           SahStatusBadge(
-            label: label,
+            label: context.tr(label),
             icon: icon,
             tone: match.status == 'meets_known_criteria'
                 ? SahNoticeTone.success
@@ -233,8 +250,8 @@ class _ProgramCard extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: onOpenDraft,
               icon: const Icon(Icons.checklist_outlined),
-              label: const Text(
-                'View draft checklist',
+              label: Text(
+                context.tr('View draft checklist'),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -261,7 +278,7 @@ class _CheckDetail extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label,
+          context.tr(label),
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
             color: check.status == 'pass'
                 ? Theme.of(context).colorScheme.primary
@@ -272,14 +289,16 @@ class _CheckDetail extends StatelessWidget {
         Text(check.explanation),
         if (check.status == 'unknown') ...[
           const SizedBox(height: 8),
-          Text(switch (check.resolvedBy) {
-            'resident' => 'Next step: confirm the missing resident details.',
-            'professional' =>
-              'Next step: request a qualified professional’s review.',
-            'program' =>
-              'Next step: confirm this requirement with the program.',
-            _ => 'Next step: identify who can confirm this requirement.',
-          }),
+          Text(
+            context.tr(switch (check.resolvedBy) {
+              'resident' => 'Next step: confirm the missing resident details.',
+              'professional' =>
+                'Next step: request a qualified professional’s review.',
+              'program' =>
+                'Next step: confirm this requirement with the program.',
+              _ => 'Next step: identify who can confirm this requirement.',
+            }),
+          ),
         ],
       ],
     );

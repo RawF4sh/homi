@@ -385,7 +385,15 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
       );
       if (mounted) setState(() => _pdf = Uint8List.fromList(bytes));
     } catch (error) {
-      if (mounted) setState(() => _error = safeOperationMessage(error));
+      if (mounted) {
+        setState(
+          () => _error =
+              error is MatchingApiException &&
+                  error.code == 'EXPORT_REVIEW_REQUIRED'
+              ? 'The draft could not be prepared accurately. Review the text, measurements and images. The current PDF does not support all characters or layouts. Your saved information is kept; preserve the original spelling.'
+              : safeOperationMessage(error),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

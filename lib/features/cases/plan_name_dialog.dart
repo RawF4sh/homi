@@ -179,7 +179,7 @@ class _PlanNameDialogState extends State<_PlanNameDialog> {
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.done,
               decoration: InputDecoration(
-                labelText: context.tr('Plan name (optional)'),
+                label: Text(context.tr('Plan name (optional)')),
                 hintText: context.tr('For example, Mom’s home'),
                 error: _validation == null
                     ? null

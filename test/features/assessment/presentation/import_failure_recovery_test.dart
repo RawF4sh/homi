@@ -49,6 +49,15 @@ void main() {
   late PhotoCaptureCoordinator capture;
   late InMemoryStagingStore staging;
 
+  Future<void> choosePhoto(WidgetTester tester) async {
+    final button = find.widgetWithText(OutlinedButton, 'Choose a photo');
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    expect(button.hitTestable(), findsOneWidget);
+    await tester.tap(button);
+    await tester.pump();
+  }
+
   Future<void> open(
     WidgetTester tester, {
     String errorCode = 'PHOTO_IMPORT_FAILED',
@@ -78,8 +87,7 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('area-entrance')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Choose a photo'));
-    await tester.pump();
+    await choosePhoto(tester);
     expect(flow.isBusy, isTrue);
     expect(capture.isBusy, isTrue);
     expect(picker.attempts, hasLength(1));
@@ -104,8 +112,7 @@ void main() {
     'native import failure releases busy and a second import can succeed',
     (tester) async {
       await open(tester);
-      await tester.tap(find.text('Choose a photo'));
-      await tester.pump();
+      await choosePhoto(tester);
       expect(picker.attempts, hasLength(2));
       final directory = Directory.systemTemp.createTempSync(
         'sah-import-retry-test-',

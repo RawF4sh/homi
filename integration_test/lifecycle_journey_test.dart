@@ -80,7 +80,10 @@ void main() {
       Future<void> text(String label, String value) async {
         final field = find.byWidgetPredicate(
           (widget) =>
-              widget is TextField && widget.decoration?.labelText == label,
+              widget is TextField &&
+              (widget.decoration?.labelText == label ||
+                  (widget.decoration?.label is Text &&
+                      (widget.decoration!.label! as Text).data == label)),
         );
         await reveal(field);
         await tester.enterText(field, value);

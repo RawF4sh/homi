@@ -127,6 +127,24 @@ const _healthPlans = [
     detail: 'HPSM',
     aliases: ['HPSM'],
   ),
+  ProfileSuggestion(
+    value: 'Alameda Alliance for Health',
+    label: 'Alameda Alliance for Health',
+  ),
+  ProfileSuggestion(value: 'Anthem Blue Cross', label: 'Anthem Blue Cross'),
+  ProfileSuggestion(
+    value: 'Contra Costa Health Plan',
+    label: 'Contra Costa Health Plan',
+  ),
+  ProfileSuggestion(value: 'Kaiser Permanente', label: 'Kaiser Permanente'),
+  ProfileSuggestion(
+    value: 'Partnership Health Plan of California',
+    label: 'Partnership Health Plan of California',
+  ),
+  ProfileSuggestion(
+    value: 'San Francisco Health Plan',
+    label: 'San Francisco Health Plan',
+  ),
 ];
 
 const _cities = [

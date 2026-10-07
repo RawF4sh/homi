@@ -33,6 +33,7 @@ import '../fakes/fakes.dart';
 import '../domain/scan/scan_test_fixtures.dart';
 import 'package:safe_at_home/features/assessment/domain/scan/scan_suggestions.dart';
 import 'package:safe_at_home/features/assessment/application/bathroom_scan_adapter.dart';
+import 'package:safe_at_home/features/assessment/application/bathroom_scan_session.dart';
 import 'package:safe_at_home/features/assessment/domain/scan/bathroom_scan_scene.dart';
 
 class _DraftFailStore extends LocalPrivateStore {
@@ -372,6 +373,78 @@ void main() {
       await resumed.initialize();
       expect(await resumed.importScanObservation(suggestion), id);
       expect(resumed.controller.findings, hasLength(1));
+    },
+  );
+
+  test(
+    'scan review continues after restart and saves without taking a photo',
+    () async {
+      final current = make();
+      await current.initialize();
+      final scan = BathroomScanSession(
+        store: services.store,
+        caseId: current.caseId,
+        isCurrent: () => current.isCurrent,
+        adapter: _FixtureScanner(),
+      );
+      await scan.initialize();
+      await scan.capture();
+      await scan.setDifficulty(ScanDifficulty.enteringBathroom, true);
+      final suggestion = await scan.confirmImprovement(
+        scan.suggestedImprovements.single,
+      );
+      final originalReview = scan.review.toJson(current.caseId);
+      final findingId = await current.importScanObservation(suggestion);
+
+      current.flow.openFinding(findingId);
+      expect(current.flow.step, AssessmentStep.review);
+      expect(current.flow.findingId, findingId);
+      await current.flush();
+      scan.dispose();
+      current.dispose();
+      active = null;
+
+      final resumed = make();
+      await resumed.initialize();
+      final reopenedScan = BathroomScanSession(
+        store: services.store,
+        caseId: resumed.caseId,
+        isCurrent: () => resumed.isCurrent,
+        adapter: _FixtureScanner(),
+      );
+      try {
+        await reopenedScan.initialize();
+        expect(reopenedScan.review.toJson(resumed.caseId), originalReview);
+        expect(resumed.activeScanImports, {suggestion.id});
+        expect(resumed.controller.findings, hasLength(1));
+        expect(resumed.flow.step, AssessmentStep.review);
+        expect(resumed.flow.findingId, findingId);
+        expect(resumed.flow.observationText, suggestion.observation);
+        expect(resumed.evidence.evidenceIds, isEmpty);
+        expect(capture.requests, isEmpty);
+
+        await resumed.save();
+        expect(resumed.sync.phase, SyncPhase.uncertain);
+        await resumed.recover();
+        expect(resumed.sync.phase, SyncPhase.idle);
+        expect(resumed.sync.hasUnsavedWork, isFalse);
+        expect(resumed.flow.step, AssessmentStep.review);
+        expect(resumed.flow.findingId, findingId);
+        final finding = services.coordinator.currentCase().findings.single;
+        expect(finding.id, findingId);
+        expect(finding.observation, suggestion.observation);
+        expect(finding.reviewState, 'confirmed');
+        expect(finding.measurements, isEmpty);
+        expect(finding.evidenceIds, isEmpty);
+        expect(metadata['measurements'], isEmpty);
+        expect(
+          transport.requests.where((r) => r.endpoint.path.contains('scan')),
+          isEmpty,
+        );
+        expect(reopenedScan.review.toJson(resumed.caseId), originalReview);
+      } finally {
+        reopenedScan.dispose();
+      }
     },
   );
 
@@ -1298,7 +1371,20 @@ void main() {
     'confirmed scan observation reaches the saved case and reopens as added',
     (tester) async {
       await tester.pumpWidget(
-        MaterialApp(home: LiveAssessmentScreen(services: services)),
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => LiveAssessmentScreen(services: services),
+                  ),
+                ),
+                child: const Text('Open fictional case assessment'),
+              ),
+            ),
+          ),
+        ),
       );
       Future<void> settleUntil(bool Function() done) async {
         for (var attempt = 0; attempt < 400 && !done(); attempt++) {
@@ -1330,6 +1416,9 @@ void main() {
         await tester.pump();
       }
 
+      await tester.tap(find.text('Open fictional case assessment'));
+      await tester.pump();
+
       final open = find.byKey(const ValueKey('open-bathroom-scan'));
       final start = find.byKey(const ValueKey('bathroom-start-scan'));
       Future<void> openScan() async {
@@ -1338,14 +1427,14 @@ void main() {
         await tester.pump();
         await tester.tap(open);
         await settleUntil(
-          () => enabled(
-            find.byKey(
-              const ValueKey('bathroom-start-scan'),
-              skipOffstage: false,
-            ),
-          ),
+          () =>
+              enabled(start) ||
+              find
+                  .byKey(const ValueKey('bathroom-continue'))
+                  .evaluate()
+                  .isNotEmpty,
         );
-        await reveal(start);
+        if (start.evaluate().isNotEmpty) await reveal(start);
       }
 
       Future<void> check(String label) async {
@@ -1405,20 +1494,34 @@ void main() {
             .isNotEmpty,
       );
 
-      await tester.tap(find.byType(BackButton));
+      final continueScan = find.byKey(const ValueKey('bathroom-continue'));
+      await tester.tap(continueScan);
       await settleUntil(() => find.text('Bathroom in 3D').evaluate().isEmpty);
+      expect(find.text('Step 3 of 3'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('assessment-continue')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(find.text('Open camera'), findsNothing);
+      expect(find.text('Photos (optional)'), findsOneWidget);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pump();
       await openScan();
       await reveal(added);
       expect(added, findsOneWidget);
       expect(find.text('Review and add observation'), findsNothing);
-      await tester.tap(find.byType(BackButton));
+      await tester.tap(continueScan);
       await settleUntil(() => find.text('Bathroom in 3D').evaluate().isEmpty);
-
-      final save = find.text('Save to my case');
-      await settleUntil(() => save.evaluate().isNotEmpty);
-      await Scrollable.ensureVisible(tester.element(save), alignment: .5);
+      expect(find.text('Step 3 of 3'), findsOneWidget);
+      await settleUntil(
+        () => enabled(find.byKey(const ValueKey('assessment-continue'))),
+      );
+      await Scrollable.ensureVisible(
+        tester.element(find.text('Other changes')),
+        alignment: .5,
+      );
       await tester.pump();
-      await tester.tap(save);
+      await tester.tap(find.byKey(const ValueKey('assessment-continue')));
       await settleUntil(
         () => transport.requests.any(
           (r) => r.endpoint.path == '/v2/save-assessment',
@@ -1442,6 +1545,36 @@ void main() {
       expect(metadata['measurements'], isEmpty);
       final requests = transport.requests.map((r) => r.endpoint.path);
       expect(requests.where((p) => p.contains('scan')), isEmpty);
+      expect(requests.where((p) => p.contains('write-evidence')), isEmpty);
+      final recover = find.text('Check what is saved');
+      await settleUntil(() => recover.evaluate().isNotEmpty);
+      expect(find.text('Open fictional case assessment'), findsNothing);
+      await settleUntil(() => recover.hitTestable().evaluate().isNotEmpty);
+      await settleUntil(
+        () => enabled(
+          find.ancestor(of: recover, matching: find.byType(OutlinedButton)),
+        ),
+      );
+      await tester.tap(recover);
+      await settleUntil(() => recover.evaluate().isEmpty);
+      final continueAssessment = find.byKey(
+        const ValueKey('assessment-continue'),
+      );
+      await settleUntil(() => enabled(continueAssessment));
+      await tester.tap(continueAssessment);
+      await settleUntil(
+        () => find
+            .text('Open fictional case assessment')
+            .hitTestable()
+            .evaluate()
+            .isNotEmpty,
+      );
+      expect(
+        transport.requests.where(
+          (r) => r.endpoint.path == '/v2/save-assessment',
+        ),
+        hasLength(1),
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       await settleUntil(() => true);
     },

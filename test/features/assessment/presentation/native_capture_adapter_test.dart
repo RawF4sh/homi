@@ -8,6 +8,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:safe_at_home/features/assessment/application/native_capture_adapter.dart';
 import 'package:safe_at_home/features/assessment/domain/capture/capture_adapter.dart';
 import 'package:safe_at_home/features/assessment/domain/image/private_media_platform.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
+import '../../../app/app_design_test.dart' show narrowLargeText;
+import '../../../app/core_localization_test.dart' show localized;
 import '../fakes/image_bytes.dart';
 
 const _camera = CameraDescription(
@@ -99,6 +102,81 @@ const _libraryRequest = CaptureRequest(
 );
 
 void main() {
+  for (final locale in [
+    const Locale('es'),
+    const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans'),
+    const Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
+  ]) {
+    testWidgets(
+      '$locale real camera route translates preparation, shutter and interruption at 320px/3.2x',
+      (tester) async {
+        narrowLargeText(tester, scale: 3.2);
+        final words = AppLocalizations(locale);
+        final cameras = Completer<List<CameraDescription>>();
+        final camera = _Camera();
+        late BuildContext host;
+        await tester.pumpWidget(
+          localized(
+            locale,
+            Builder(
+              builder: (context) {
+                host = context;
+                return const Scaffold();
+              },
+            ),
+          ),
+        );
+        final adapter = NativeCaptureAdapter(
+          context: () => host,
+          media: _Media(),
+          loadCameras: () => cameras.future,
+          cameraControllerFactory: (_) => camera,
+        );
+        final pending = adapter.capture(_request);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.text(words.text('Take a home photo')), findsOneWidget);
+        expect(
+          tester
+              .widget<CircularProgressIndicator>(
+                find.byType(CircularProgressIndicator),
+              )
+              .semanticsLabel,
+          words.text('Preparing camera'),
+        );
+        expect(
+          find.text(
+            words.text(
+              'Keep people, mail, medicines and account details out of the picture.',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        cameras.complete([_camera]);
+        await tester.pumpAndSettle();
+        final shutter = find.text(words.text('Take photo'));
+        expect(shutter.hitTestable(), findsOneWidget);
+        await tester.tap(shutter);
+        await tester.pumpAndSettle();
+        expect(find.text(words.text('Taking photo…')), findsOneWidget);
+        camera.picture.completeError(
+          CameraException('fictional', 'Private native failure'),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.text(words.text('The photo was interrupted. Please try again.')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Private native failure'), findsNothing);
+        expect(tester.takeException(), isNull);
+        Navigator.of(host).pop();
+        await tester.pumpAndSettle();
+        expect(await pending, isA<CaptureCancelled>());
+      },
+    );
+  }
+
   for (final request in [_request, _libraryRequest]) {
     test(
       'expired ${request.source.name} preparation never opens native UI',

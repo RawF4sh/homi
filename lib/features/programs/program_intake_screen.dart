@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'program_field_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
@@ -392,7 +393,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                         children: [
                           for (final q in _response!.definition.questions)
                             ListTile(
-                              title: Text(q.label),
+                              title: Text(
+                                programQuestionLabel(
+                                  context,
+                                  _response!.definition,
+                                  q,
+                                ),
+                              ),
                               subtitle: Text(_savedLabel(q.key)),
                             ),
                         ],
@@ -409,7 +416,11 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                           children: [
                             ExcludeSemantics(
                               child: Text(
-                                q.label,
+                                programQuestionLabel(
+                                  context,
+                                  _response!.definition,
+                                  q,
+                                ),
                                 key: ValueKey('intake-question-${q.key}'),
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
@@ -417,7 +428,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                             if (q.description.isNotEmpty)
                               SahMoreInfo(
                                 label: context.tr('About this question'),
-                                details: [q.description],
+                                details: [
+                                  programQuestionDescription(
+                                    context,
+                                    _response!.definition,
+                                    q,
+                                  ),
+                                ],
                               )
                             else
                               const SizedBox(height: 12),
@@ -429,7 +446,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                                 isExpanded: true,
                                 isDense: false,
                                 itemHeight: null,
-                                decoration: InputDecoration(labelText: q.label),
+                                decoration: InputDecoration(
+                                  labelText: programQuestionLabel(
+                                    context,
+                                    _response!.definition,
+                                    q,
+                                  ),
+                                ),
                                 items: [
                                   DropdownMenuItem(
                                     value: 'unknown',
@@ -469,7 +492,11 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                                     : context.tr(_errors[q.key]!),
                                 enabled: !_busy && !_uncertain && !exiting,
                                 decoration: InputDecoration(
-                                  labelText: q.label,
+                                  labelText: programQuestionLabel(
+                                    context,
+                                    _response!.definition,
+                                    q,
+                                  ),
                                   helperText: context.tr('Blank means unknown'),
                                 ),
                                 keyboardType: q.kind == 'money'
@@ -502,9 +529,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                         key: const ValueKey('intake-validation-feedback'),
                         title: context.tr('Check this answer'),
                         message: context.tr('{field}: {message}', {
-                          'field': _response!.definition.questions
-                              .firstWhere((q) => q.key == _errors.keys.first)
-                              .label,
+                          'field': programQuestionLabel(
+                            context,
+                            _response!.definition,
+                            _response!.definition.questions.firstWhere(
+                              (q) => q.key == _errors.keys.first,
+                            ),
+                          ),
                           'message': context.tr(_errors.values.first),
                         }),
                         tone: SahNoticeTone.error,

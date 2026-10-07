@@ -39,12 +39,19 @@ void main() {
     WidgetTester tester, {
     double textScale = 1,
     bool enabled = true,
+    VoidCallback? onContinue,
+    Set<String> scanFindingIds = const {},
   }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: MediaQuery(
           data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
-          child: AssessmentFlowScreen(flow: flow, enabled: enabled),
+          child: AssessmentFlowScreen(
+            flow: flow,
+            enabled: enabled,
+            onContinue: onContinue,
+            scanFindingIds: scanFindingIds,
+          ),
         ),
       ),
     );
@@ -68,6 +75,62 @@ void main() {
 
   CaptureSucceeded photo() =>
       CaptureSucceeded(jpegHeader(width: 4032, height: 3024));
+
+  testWidgets(
+    'photo-free flow has stable stages and visible review and continue',
+    (tester) async {
+      var continued = 0;
+      await pumpScreen(tester, onContinue: () => continued++);
+      expect(find.text('Step 1 of 3'), findsOneWidget);
+      await tapText(tester, 'Bathroom');
+      expect(find.text('Step 2 of 3'), findsOneWidget);
+      await tapText(tester, 'Continue without a photo');
+      expect(find.text('Step 2 of 3'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('observation')),
+        'I need support getting into the bath.',
+      );
+      expect(
+        find.byKey(const ValueKey('assessment-review')).hitTestable(),
+        findsOneWidget,
+      );
+      await tap(tester, find.byKey(const ValueKey('assessment-review')));
+      expect(find.text('Step 3 of 3'), findsOneWidget);
+      final next = find.byKey(const ValueKey('assessment-continue'));
+      expect(next.hitTestable(), findsOneWidget);
+      await tap(tester, next);
+      expect(continued, 1);
+      expect(controller.findings.single.reviewState, 'confirmed');
+      expect(controller.findings.single.evidenceIds, isEmpty);
+      expect(adapter.requests, isEmpty);
+    },
+  );
+
+  testWidgets('scan review simplifies provenance without changing the record', (
+    tester,
+  ) async {
+    const detail = 'Getting through the bathroom doorway feels difficult.';
+    final original =
+        '$detail Source: iPhone RoomPlan partial scan fictional-scan; '
+        'resident-reviewed identification. Model elements: ["door-1"]. '
+        'Scene SHA-256: ${'a' * 64}. Rule bathroom.doorway_report v1. '
+        'Scan geometry is approximate; this is not a verified measurement or a professional determination.';
+    final id = controller.startFinding(AssessmentArea.bathroom);
+    controller.setObservation(id, original);
+    flow.openFinding(id);
+    await pumpScreen(tester, scanFindingIds: {id});
+    expect(find.text(detail), findsOneWidget);
+    expect(find.text(original), findsNothing);
+    await tap(tester, find.text('Scan source and technical details'));
+    expect(find.text(original), findsOneWidget);
+    expect(controller.draftOf(id)!.observation, original);
+
+    const edited = 'I need a railing. Source: advice from my neighbor.';
+    controller.setObservation(id, edited);
+    await tester.pump();
+    expect(find.text(edited), findsWidgets);
+    expect(controller.draftOf(id)!.observation, edited);
+  });
 
   testWidgets('stairs concern needs neither a photo nor measurements', (
     tester,
@@ -592,7 +655,7 @@ void main() {
         greaterThanOrEqualTo(96),
       );
       await check(tester);
-      expect(find.bySemanticsLabel('Step 5 of 5'), findsOneWidget);
+      expect(find.bySemanticsLabel('Step 3 of 3'), findsOneWidget);
       scroll.position.jumpTo(scroll.position.maxScrollExtent);
       await tester.pumpAndSettle();
       expect(find.text('Delete this finding').hitTestable(), findsOneWidget);
@@ -663,7 +726,7 @@ void main() {
       tester,
     ) async {
       final String id = await finishOne(tester);
-      expect(find.text('Your findings'), findsOneWidget);
+      expect(find.text('Added to your assessment'), findsOneWidget);
       await tap(tester, find.byKey(ValueKey('finding-$id')));
       expect(find.text('Needs your review'), findsOneWidget);
 

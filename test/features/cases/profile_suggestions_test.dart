@@ -62,6 +62,32 @@ void main() {
     expect(profileSuggestions('healthPlan', 'uninsured'), isEmpty);
   });
 
+  test('other verified plan names stay distinct from SCFHP and HPSM', () {
+    for (final name in [
+      'Alameda Alliance for Health',
+      'Anthem Blue Cross',
+      'Contra Costa Health Plan',
+      'Kaiser Permanente',
+      'Partnership Health Plan of California',
+      'San Francisco Health Plan',
+    ]) {
+      final selected = profileSuggestions('healthPlan', name).single;
+      expect(selected.value, name);
+      expect(selected.county, isNull);
+      expect(selected.aliases, isEmpty);
+      expect(selected.value, isNot('Santa Clara Family Health Plan'));
+      expect(selected.value, isNot('Health Plan of San Mateo'));
+    }
+    expect(
+      profileSuggestions('healthPlan', 'Kaiser').single.value,
+      'Kaiser Permanente',
+    );
+    expect(
+      profileSuggestions('healthPlan', 'San Francisco').single.value,
+      'San Francisco Health Plan',
+    );
+  });
+
   test('only city suggestions carry a county mapping', () {
     for (final field in ['county', 'healthPlan']) {
       final suggestions = profileSuggestions(field, '');

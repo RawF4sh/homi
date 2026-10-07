@@ -173,7 +173,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(CaseWorkspaceScreen), findsOneWidget);
-      expect(find.text('San José home plan'), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('case-plan-title'))).data,
+        'San José home plan',
+      );
       expect(app.coordinator.draft!.caseId, _first);
       expect(app.coordinator.generation, generation);
       expect(jsonEncode(store.records), retained);

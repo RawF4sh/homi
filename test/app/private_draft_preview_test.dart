@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/requests/private_draft_preview.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
+import 'program_localization_support.dart';
 
 void main() {
   for (final example in [
@@ -36,6 +37,7 @@ void main() {
     testWidgets('translated PDF controls preserve source text in ${example.$1}', (
       tester,
     ) async {
+      largeProgramViewport(tester);
       var advances = 0, retries = 0;
       const original =
           'Next page\nPrivate original note: Casa de María {count} — 照片';
@@ -82,6 +84,8 @@ void main() {
             .onPressed,
         isNull,
       );
+      await tester.ensureVisible(find.text(example.$3));
+      await tester.pumpAndSettle();
       await tester.tap(find.text(example.$3));
       expect(advances, 1);
       await tester.pumpWidget(

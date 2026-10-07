@@ -89,7 +89,7 @@ void main() {
     await tester.pump();
     final open = find.byKey(const ValueKey('open-bathroom-scan'));
     expect(tester.widget(open), isA<FilledButton>());
-    expect(find.text('Scan bathroom in 3D'), findsOneWidget);
+    expect(find.text('Open 3D bathroom'), findsOneWidget);
     expect(adapter.starts, 0);
     await tester.tap(open);
     expect(opens, 1);

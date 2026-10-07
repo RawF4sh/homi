@@ -673,4 +673,196 @@ const errorsTranslations = <String, Map<String, String>>{
     "vi": "Không tìm thấy điểm cuối. Kiểm tra cấu hình dịch vụ.",
     "fil": "Hindi mahanap ang endpoint. Suriin ang configuration ng serbisyo.",
   },
+  "Sign-out could not be confirmed. Try again, or unlock your phone and restart the app.": {
+    "es":
+        "No se pudo confirmar el cierre de sesión. Inténtelo de nuevo o desbloquee el teléfono y reinicie la aplicación.",
+    "zh-Hans": "无法确认是否已退出登录。请重试，或解锁手机后重新启动应用。",
+    "zh-Hant": "無法確認是否已登出。請重試，或解鎖手機後重新啟動應用程式。",
+    "vi":
+        "Không thể xác nhận việc đăng xuất. Hãy thử lại hoặc mở khóa điện thoại rồi khởi động lại ứng dụng.",
+    "fil":
+        "Hindi makumpirma ang pag-sign out. Subukang muli, o i-unlock ang telepono at i-restart ang app.",
+  },
+  "Restored on this device. Check saved state before continuing.": {
+    "es":
+        "Restaurado en este dispositivo. Compruebe el estado guardado antes de continuar.",
+    "zh-Hans": "已在此设备上恢复。继续前请检查保存状态。",
+    "zh-Hant": "已在此裝置上復原。繼續前請檢查儲存狀態。",
+    "vi":
+        "Đã khôi phục trên thiết bị này. Kiểm tra trạng thái đã lưu trước khi tiếp tục.",
+    "fil":
+        "Naibalik sa device na ito. Suriin ang naka-save na kalagayan bago magpatuloy.",
+  },
+  "Restored on this device. Its custom name could not be loaded.": {
+    "es":
+        "Restaurado en este dispositivo. No se pudo cargar su nombre personalizado.",
+    "zh-Hans": "已在此设备上恢复。无法加载其自定义名称。",
+    "zh-Hant": "已在此裝置上復原。無法載入其自訂名稱。",
+    "vi": "Đã khôi phục trên thiết bị này. Không tải được tên tùy chỉnh.",
+    "fil":
+        "Naibalik sa device na ito. Hindi ma-load ang pasadyang pangalan nito.",
+  },
+  "This plan’s custom name could not be loaded.": {
+    "es": "No se pudo cargar el nombre personalizado de este plan.",
+    "zh-Hans": "无法加载此计划的自定义名称。",
+    "zh-Hant": "無法載入此計畫的自訂名稱。",
+    "vi": "Không tải được tên tùy chỉnh của kế hoạch này.",
+    "fil": "Hindi ma-load ang pasadyang pangalan ng planong ito.",
+  },
+  "The saved case changed. Compare it with your local edits before saving.": {
+    "es":
+        "El caso guardado cambió. Compárelo con sus cambios locales antes de guardar.",
+    "zh-Hans": "已保存的个案发生变化。保存前请将其与本地修改进行比较。",
+    "zh-Hant": "已儲存的個案發生變更。儲存前請將其與本機修改進行比較。",
+    "vi":
+        "Hồ sơ đã lưu đã thay đổi. So sánh với chỉnh sửa trên thiết bị trước khi lưu.",
+    "fil":
+        "Nagbago ang naka-save na kaso. Ihambing ito sa mga lokal mong pagbabago bago mag-save.",
+  },
+  "Saved on this device; not yet saved online.": {
+    "es": "Guardado en este dispositivo; aún no está guardado en línea.",
+    "zh-Hans": "已保存在此设备上，尚未保存到线上。",
+    "zh-Hant": "已儲存在此裝置上，尚未儲存至線上。",
+    "vi": "Đã lưu trên thiết bị này; chưa lưu trực tuyến.",
+    "fil": "Na-save sa device na ito; hindi pa naka-save online.",
+  },
+  "The latest changes were not saved on this device. Keep this screen open and retry.": {
+    "es":
+        "Los últimos cambios no se guardaron en este dispositivo. Mantenga esta pantalla abierta e inténtelo de nuevo.",
+    "zh-Hans": "最新修改未保存在此设备上。请保持此页面打开并重试。",
+    "zh-Hant": "最新修改未儲存在此裝置上。請保持此頁面開啟並重試。",
+    "vi":
+        "Các thay đổi mới nhất chưa được lưu trên thiết bị này. Giữ màn hình này mở rồi thử lại.",
+    "fil":
+        "Hindi na-save sa device na ito ang mga pinakabagong pagbabago. Panatilihing bukas ang screen na ito at subukang muli.",
+  },
+  "Saved on this device. Check the unresolved saved-state result before another online save.": {
+    "es":
+        "Guardado en este dispositivo. Revise el resultado de guardado pendiente de resolver antes de volver a guardar en línea.",
+    "zh-Hans": "已保存在此设备上。再次保存到线上前，请检查尚未确认的保存结果。",
+    "zh-Hant": "已儲存在此裝置上。再次儲存至線上前，請檢查尚未確認的儲存結果。",
+    "vi":
+        "Đã lưu trên thiết bị này. Kiểm tra kết quả lưu chưa được giải quyết trước khi lưu trực tuyến lần nữa.",
+    "fil":
+        "Na-save sa device na ito. Suriin ang hindi pa nalilinaw na resulta ng pag-save bago mag-save muli online.",
+  },
+  "Earlier changes saved online. Newer edits are kept on this device.": {
+    "es":
+        "Los cambios anteriores se guardaron en línea. Los más recientes se conservan en este dispositivo.",
+    "zh-Hans": "较早的修改已保存到线上。较新的修改保留在此设备上。",
+    "zh-Hant": "較早的修改已儲存至線上。較新的修改保留在此裝置上。",
+    "vi":
+        "Các thay đổi trước đã lưu trực tuyến. Chỉnh sửa mới hơn được giữ trên thiết bị này.",
+    "fil":
+        "Na-save online ang mga naunang pagbabago. Nananatili sa device na ito ang mas bagong mga pagbabago.",
+  },
+  "Saved online.": {
+    "es": "Guardado en línea.",
+    "zh-Hans": "已保存到线上。",
+    "zh-Hant": "已儲存至線上。",
+    "vi": "Đã lưu trực tuyến.",
+    "fil": "Na-save online.",
+  },
+  "The save could not be confirmed. Check saved state before trying again.": {
+    "es":
+        "No se pudo confirmar el guardado. Compruebe el estado guardado antes de volver a intentarlo.",
+    "zh-Hans": "无法确认保存是否成功。重试前请检查保存状态。",
+    "zh-Hant": "無法確認儲存是否成功。重試前請檢查儲存狀態。",
+    "vi":
+        "Không thể xác nhận việc lưu. Kiểm tra trạng thái đã lưu trước khi thử lại.",
+    "fil":
+        "Hindi makumpirma ang pag-save. Suriin ang naka-save na kalagayan bago subukang muli.",
+  },
+  "Your changes are saved online.": {
+    "es": "Sus cambios están guardados en línea.",
+    "zh-Hans": "您的修改已保存到线上。",
+    "zh-Hant": "您的修改已儲存至線上。",
+    "vi": "Các thay đổi của bạn đã được lưu trực tuyến.",
+    "fil": "Naka-save online ang iyong mga pagbabago.",
+  },
+  "The server and this device differ. Choose which version to keep.": {
+    "es":
+        "El servidor y este dispositivo tienen versiones distintas. Elija cuál conservar.",
+    "zh-Hans": "服务器与此设备的版本不同。请选择要保留的版本。",
+    "zh-Hant": "伺服器與此裝置的版本不同。請選擇要保留的版本。",
+    "vi":
+        "Máy chủ và thiết bị này có dữ liệu khác nhau. Chọn phiên bản muốn giữ.",
+    "fil":
+        "Magkaiba ang bersyon sa server at sa device na ito. Piliin kung alin ang pananatilihin.",
+  },
+  "No saved case was found. You can retry saving this same draft.": {
+    "es":
+        "No se encontró ningún caso guardado. Puede volver a intentar guardar este mismo borrador.",
+    "zh-Hans": "未找到已保存的个案。您可以重试保存这份草稿。",
+    "zh-Hant": "未找到已儲存的個案。您可以重試儲存這份草稿。",
+    "vi":
+        "Không tìm thấy hồ sơ đã lưu. Bạn có thể thử lưu lại cùng bản nháp này.",
+    "fil":
+        "Walang nakitang naka-save na kaso. Maaari mong subukang i-save muli ang parehong draft na ito.",
+  },
+  "Local edits retained. Review and save them explicitly.": {
+    "es":
+        "Se conservaron los cambios locales. Revíselos y guárdelos mediante la acción de guardar.",
+    "zh-Hans": "已保留本地修改。请审核后主动保存。",
+    "zh-Hant": "已保留本機修改。請審查後主動儲存。",
+    "vi": "Đã giữ chỉnh sửa trên thiết bị. Xem lại rồi chủ động lưu.",
+    "fil":
+        "Napanatili ang mga lokal na pagbabago. Suriin ang mga ito at piliing i-save.",
+  },
+  "Using the saved version.": {
+    "es": "Se está usando la versión guardada.",
+    "zh-Hans": "正在使用已保存的版本。",
+    "zh-Hant": "正在使用已儲存的版本。",
+    "vi": "Đang dùng phiên bản đã lưu.",
+    "fil": "Ginagamit ang naka-save na bersyon.",
+  },
+  "A server operation completed while local edits changed. Review both versions.": {
+    "es":
+        "Se completó una operación del servidor mientras cambiaban los datos locales. Revise ambas versiones.",
+    "zh-Hans": "服务器操作完成时，本地修改已发生变化。请检查两个版本。",
+    "zh-Hant": "伺服器操作完成時，本機修改已發生變更。請檢查兩個版本。",
+    "vi":
+        "Một thao tác trên máy chủ hoàn tất trong khi chỉnh sửa trên thiết bị thay đổi. Xem lại cả hai phiên bản.",
+    "fil":
+        "Natapos ang isang operasyon sa server habang nagbabago ang mga lokal na edit. Suriin ang dalawang bersyon.",
+  },
+  "The private local save could not finish.": {
+    "es": "No se pudo completar el guardado privado en este dispositivo.",
+    "zh-Hans": "无法完成私密本地保存。",
+    "zh-Hant": "無法完成私密本機儲存。",
+    "vi": "Không thể hoàn tất việc lưu riêng tư trên thiết bị.",
+    "fil": "Hindi matapos ang pribadong pag-save sa device.",
+  },
+  "A photo is saved, but we cannot prove it is your upload. Review it before choosing which version to keep.": {
+    "es":
+        "Hay una foto guardada, pero no podemos confirmar que sea la que usted subió. Revísela antes de elegir qué versión conservar.",
+    "zh-Hans": "有一张照片已保存，但无法确认是否为您上传的照片。选择保留哪个版本前，请先查看。",
+    "zh-Hant": "有一張照片已儲存，但無法確認是否為您上傳的照片。選擇保留哪個版本前，請先查看。",
+    "vi":
+        "Có ảnh đã lưu nhưng chưa thể xác nhận đó là ảnh bạn tải lên. Xem lại trước khi chọn phiên bản muốn giữ.",
+    "fil":
+        "May naka-save na larawan, pero hindi namin mapatunayan na iyon ang na-upload mo. Suriin ito bago pumili ng bersyong pananatilihin.",
+  },
+  "The saved state could not be recorded privately on this device. Free device space, then check again.": {
+    "es":
+        "No se pudo registrar de forma privada el estado guardado en este dispositivo. Libere espacio y vuelva a comprobarlo.",
+    "zh-Hans": "无法在此设备上私密记录保存状态。请释放设备空间，然后重新检查。",
+    "zh-Hant": "無法在此裝置上私密記錄儲存狀態。請釋放裝置空間，然後重新檢查。",
+    "vi":
+        "Không thể ghi lại trạng thái đã lưu một cách riêng tư trên thiết bị này. Giải phóng dung lượng rồi kiểm tra lại.",
+    "fil":
+        "Hindi maitala nang pribado sa device na ito ang naka-save na kalagayan. Magbakante ng espasyo, pagkatapos ay suriin muli.",
+  },
+  "The draft could not be prepared accurately. Review the text, measurements and images. The current PDF does not support all characters or layouts. Your saved information is kept; preserve the original spelling.": {
+    "es":
+        "No se pudo preparar el borrador con precisión. Revise el texto, las medidas y las imágenes. El PDF actual no admite todos los caracteres ni todos los diseños. Su información guardada se conserva; mantenga la escritura original.",
+    "zh-Hans":
+        "无法准确生成草稿。请检查文字、测量值和图片。当前 PDF 并不支持所有字符或版式。您的已保存信息仍保留，请保留原来的文字写法。",
+    "zh-Hant":
+        "無法準確產生草稿。請檢查文字、測量值和圖片。目前的 PDF 並不支援所有字元或版面。您的已儲存資訊仍保留，請保留原來的文字寫法。",
+    "vi":
+        "Không thể tạo bản nháp chính xác. Xem lại văn bản, số đo và hình ảnh. PDF hiện tại không hỗ trợ mọi ký tự hoặc bố cục. Thông tin đã lưu được giữ nguyên; hãy giữ cách viết ban đầu.",
+    "fil":
+        "Hindi magawang ihanda nang tumpak ang draft. Suriin ang teksto, mga sukat at mga larawan. Hindi sinusuportahan ng kasalukuyang PDF ang lahat ng character o layout. Nananatili ang naka-save mong impormasyon; panatilihin ang orihinal na baybay.",
+  },
 };

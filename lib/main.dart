@@ -5,6 +5,7 @@ import 'app/appearance.dart';
 import 'app/live_app.dart';
 import 'app/safe_at_home_app.dart';
 import 'app/theme.dart';
+import 'features/settings/language_section.dart';
 import 'shared/presentation/sah_components.dart';
 
 Future<void> main() async {
@@ -14,11 +15,11 @@ Future<void> main() async {
     AppLanguageController.instance.load(),
   ]);
   const live = bool.fromEnvironment('SAH_LIVE_BACKEND');
-  runApp(live ? const LiveAppBootstrap() : const _DemoEntry());
+  runApp(live ? const LiveAppBootstrap() : const DemoEntry());
 }
 
-class _DemoEntry extends StatelessWidget {
-  const _DemoEntry();
+class DemoEntry extends StatelessWidget {
+  const DemoEntry({super.key});
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([
@@ -36,7 +37,10 @@ class _DemoEntry extends StatelessWidget {
       localeListResolutionCallback: AppLocalizations.resolveLocales,
       debugShowCheckedModeBanner: false,
       home: Scaffold(
-        appBar: AppBar(title: const Text('Safe at Home')),
+        appBar: AppBar(
+          title: const Text('Safe at Home'),
+          actions: const [LanguageButton()],
+        ),
         body: SafeArea(
           child: Builder(
             builder: (context) => SahContent(
@@ -46,16 +50,18 @@ class _DemoEntry extends StatelessWidget {
                 children: [
                   const SahHomeIllustration(height: 160),
                   const SizedBox(height: 16),
-                  const SahPageHeader(
-                    eyebrow: 'A LITTLE SUPPORT, AT HOME',
-                    title: 'A safer home starts here.',
-                    description:
-                        'Review your space, explore possible support, and prepare your next steps.',
+                  SahPageHeader(
+                    eyebrow: context.tr('A LITTLE SUPPORT, AT HOME'),
+                    title: context.tr('A safer home starts here.'),
+                    description: context.tr(
+                      'Review your space, explore possible support, and prepare your next steps.',
+                    ),
                   ),
-                  const SahNotice(
-                    title: 'Fictional demonstration',
-                    message:
-                        'Live account access is not enabled in this build. The examples below use bundled fictional information and do not send data to a server.',
+                  SahNotice(
+                    title: context.tr('Fictional demonstration'),
+                    message: context.tr(
+                      'Live account access is not enabled in this build. The examples below use bundled fictional information and do not send data to a server.',
+                    ),
                     icon: Icons.science_outlined,
                   ),
                   const SizedBox(height: 16),
@@ -66,7 +72,7 @@ class _DemoEntry extends StatelessWidget {
                       ),
                     ),
                     icon: const Icon(Icons.arrow_forward_rounded),
-                    label: const Text('Open fictional examples'),
+                    label: Text(context.tr('Open fictional examples')),
                   ),
                 ],
               ),

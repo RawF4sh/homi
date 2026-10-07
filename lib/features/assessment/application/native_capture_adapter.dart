@@ -3,6 +3,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../domain/capture/capture_adapter.dart';
 import '../domain/image/private_media_platform.dart';
@@ -138,6 +139,7 @@ class _CameraScreenState extends State<_CameraScreen>
     with WidgetsBindingObserver {
   CameraController? _controller;
   bool _taking = false;
+  bool _interrupted = false;
   bool _foreground = true;
   int _generation = 0;
 
@@ -225,7 +227,10 @@ class _CameraScreenState extends State<_CameraScreen>
         !controller.value.isInitialized) {
       return;
     }
-    setState(() => _taking = true);
+    setState(() {
+      _taking = true;
+      _interrupted = false;
+    });
     try {
       final file = await controller.takePicture();
       if (mounted &&
@@ -250,12 +255,10 @@ class _CameraScreenState extends State<_CameraScreen>
           widget.isCurrent() &&
           generation == _generation &&
           identical(controller, _controller)) {
-        setState(() => _taking = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('The photo was interrupted. Please try again.'),
-          ),
-        );
+        setState(() {
+          _taking = false;
+          _interrupted = true;
+        });
       }
     }
   }
@@ -270,34 +273,56 @@ class _CameraScreenState extends State<_CameraScreen>
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Take a home photo')),
+    appBar: AppBar(title: Text(context.tr('Take a home photo'))),
     body: SafeArea(
-      child: Column(
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'Keep people, mail, medicines and account details out of the picture.',
-            ),
-          ),
-          Expanded(
-            child: _controller == null
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      semanticsLabel: 'Preparing camera',
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: Column(
+            children: [
+              if (_interrupted)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      context.tr(
+                        'The photo was interrupted. Please try again.',
+                      ),
                     ),
-                  )
-                : Center(child: CameraPreview(_controller!)),
+                  ),
+                ),
+              Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  context.tr(
+                    'Keep people, mail, medicines and account details out of the picture.',
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: (constraints.maxHeight * .7).clamp(80.0, 600.0),
+                child: _controller == null
+                    ? Center(
+                        child: CircularProgressIndicator(
+                          semanticsLabel: context.tr('Preparing camera'),
+                        ),
+                      )
+                    : Center(child: CameraPreview(_controller!)),
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: FilledButton.icon(
-              onPressed: _taking || _controller == null ? null : _take,
-              icon: const Icon(Icons.camera_alt),
-              label: Text(_taking ? 'Taking photo…' : 'Take photo'),
-            ),
-          ),
-        ],
+        ),
+      ),
+    ),
+    bottomNavigationBar: SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FilledButton.icon(
+          onPressed: _taking || _controller == null ? null : _take,
+          icon: const Icon(Icons.camera_alt),
+          label: Text(context.tr(_taking ? 'Taking photo…' : 'Take photo')),
+        ),
       ),
     ),
   );

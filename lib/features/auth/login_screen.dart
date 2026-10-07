@@ -162,6 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       if (!recovering)
                         TextField(
+                          key: const ValueKey('login-email'),
                           controller: _email,
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
@@ -171,12 +172,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           enabled: !_busy,
                           onChanged: _clearFeedback,
                           decoration: InputDecoration(
-                            labelText: context.tr('Email'),
+                            label: Text(context.tr('Email')),
                             prefixIcon: Icon(Icons.alternate_email_rounded),
                           ),
                         ),
                       if (!recovering) const SizedBox(height: 20),
                       TextField(
+                        key: const ValueKey('login-password'),
                         controller: _password,
                         obscureText: !_passwordVisible,
                         textInputAction: TextInputAction.done,
@@ -190,9 +192,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         enabled: !_busy,
                         onChanged: _clearFeedback,
                         decoration: InputDecoration(
-                          labelText: recovering
-                              ? context.tr('New password (12+ characters)')
-                              : context.tr('Password'),
+                          label: Text(
+                            recovering
+                                ? context.tr('New password (12+ characters)')
+                                : context.tr('Password'),
+                          ),
                           prefixIcon: const Icon(Icons.lock_outline_rounded),
                           suffixIcon: IconButton(
                             tooltip: _passwordVisible

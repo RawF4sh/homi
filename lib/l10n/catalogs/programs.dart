@@ -1658,4 +1658,498 @@ const programsTranslations = <String, Map<String, String>>{
     "fil":
         "Hindi mabasa ang teksto sa pahinang ito. Subukang muli o suriin ang larawan ng pahina.",
   },
+  "Do you believe your membership is currently active?": {
+    "es": "¿Cree que su afiliación está activa actualmente?",
+    "zh-Hans": "您认为自己的参保资格目前有效吗？",
+    "zh-Hant": "您認為自己的參保資格目前有效嗎？",
+    "vi":
+        "Bạn có cho rằng tư cách thành viên của mình hiện còn hiệu lực không?",
+    "fil": "Sa palagay mo, aktibo pa ba ang iyong pagiging miyembro?",
+  },
+  "The health plan must verify enrollment and applicable coverage.": {
+    "es":
+        "El plan de salud debe verificar la afiliación y la cobertura aplicable.",
+    "zh-Hans": "健康计划须核实参保资格和适用保障范围。",
+    "zh-Hant": "健康計畫須核實參保資格和適用保障範圍。",
+    "vi":
+        "Chương trình bảo hiểm y tế phải xác minh việc tham gia và phạm vi bảo hiểm áp dụng.",
+    "fil":
+        "Dapat beripikahin ng planong pangkalusugan ang pagpapatala at naaangkop na saklaw.",
+  },
+  "Are you interested in receiving home adaptation services?": {
+    "es": "¿Le interesa recibir servicios de adaptación del hogar?",
+    "zh-Hans": "您是否有兴趣接受居家改造服务？",
+    "zh-Hant": "您是否有興趣接受居家改造服務？",
+    "vi": "Bạn có muốn nhận dịch vụ cải tạo nhà phù hợp nhu cầu không?",
+    "fil":
+        "Interesado ka bang tumanggap ng mga serbisyo ng pag-aangkop ng bahay?",
+  },
+  "Interest is not a signed consent or authorization.": {
+    "es":
+        "El interés no equivale a un consentimiento ni una autorización firmados.",
+    "zh-Hans": "表示兴趣不等于已签署同意书或授权书。",
+    "zh-Hant": "表示興趣不等於已簽署同意書或授權書。",
+    "vi": "Bày tỏ sự quan tâm không phải là đồng ý hoặc ủy quyền đã ký.",
+    "fil":
+        "Ang pagpapakita ng interes ay hindi katumbas ng nilagdaang pahintulot o awtorisasyon.",
+  },
+  "Do you have a professional home or therapy evaluation?": {
+    "es": "¿Tiene una evaluación profesional del hogar o de terapia?",
+    "zh-Hans": "您是否有专业人员出具的居家或治疗评估？",
+    "zh-Hant": "您是否有專業人員出具的居家或治療評估？",
+    "vi": "Bạn có bản đánh giá chuyên môn về nhà ở hoặc trị liệu không?",
+    "fil": "Mayroon ka bang propesyonal na pagsusuri sa bahay o sa therapy?",
+  },
+  "Record whether a document is available. The app does not evaluate medical necessity.": {
+    "es":
+        "Indique si dispone del documento. La aplicación no evalúa la necesidad médica.",
+    "zh-Hans": "请记录是否有相关文件。本应用不评估医疗必要性。",
+    "zh-Hant": "請記錄是否有相關文件。本應用程式不評估醫療必要性。",
+    "vi":
+        "Ghi nhận tài liệu có sẵn hay không. Ứng dụng không đánh giá sự cần thiết về y tế.",
+    "fil":
+        "Itala kung may makukuhang dokumento. Hindi sinusuri ng app ang medikal na pangangailangan.",
+  },
+  "Do you have a professional order for the requested work?": {
+    "es": "¿Tiene una orden profesional para el trabajo solicitado?",
+    "zh-Hans": "您是否有专业人员为所申请工程开具的医嘱或指示？",
+    "zh-Hant": "您是否有專業人員為所申請工程開具的醫囑或指示？",
+    "vi": "Bạn có chỉ định của chuyên gia cho công việc yêu cầu không?",
+    "fil":
+        "Mayroon ka bang kautusan ng propesyonal para sa hinihiling na trabaho?",
+  },
+  "The responsible professional and health plan determine whether the order is sufficient.": {
+    "es":
+        "El profesional responsable y el plan de salud determinan si la orden es suficiente.",
+    "zh-Hans": "由负责的专业人员和健康计划判断该医嘱或指示是否充分。",
+    "zh-Hant": "由負責的專業人員和健康計畫判斷該醫囑或指示是否充分。",
+    "vi":
+        "Chuyên gia phụ trách và chương trình bảo hiểm y tế xác định chỉ định có đầy đủ hay không.",
+    "fil":
+        "Ang responsableng propesyonal at planong pangkalusugan ang magpapasya kung sapat ang kautusan.",
+  },
+  "Is another source paying for the same requested work?": {
+    "es": "¿Otra fuente está pagando el mismo trabajo solicitado?",
+    "zh-Hans": "是否有其他来源支付同一项申请工程的费用？",
+    "zh-Hant": "是否有其他來源支付同一項申請工程的費用？",
+    "vi": "Có nguồn khác đang chi trả cho cùng công việc được yêu cầu không?",
+    "fil":
+        "May ibang pinagmumulan ba ng pondo na nagbabayad para sa parehong hinihiling na trabaho?",
+  },
+  "The plan reviews overlapping services and other coverage.": {
+    "es": "El plan revisa los servicios que se superponen y otras coberturas.",
+    "zh-Hans": "健康计划会审核重叠服务和其他保障。",
+    "zh-Hant": "健康計畫會審查重疊服務和其他保障。",
+    "vi": "Chương trình bảo hiểm xem xét dịch vụ trùng lặp và bảo hiểm khác.",
+    "fil":
+        "Sinusuri ng plano ang magkakapatong na serbisyo at iba pang saklaw.",
+  },
+  "Estimated project cost, if known": {
+    "es": "Costo estimado del proyecto, si lo sabe",
+    "zh-Hans": "预计工程费用（如已知）",
+    "zh-Hant": "預計工程費用（如已知）",
+    "vi": "Chi phí dự án ước tính, nếu biết",
+    "fil": "Tinatayang halaga ng proyekto, kung alam",
+  },
+  "Prior EAA payments, if known": {
+    "es": "Pagos anteriores de EAA, si los sabe",
+    "zh-Hans": "以往 EAA 付款金额（如已知）",
+    "zh-Hant": "以往 EAA 付款金額（如已知）",
+    "vi": "Các khoản EAA đã chi trả trước đây, nếu biết",
+    "fil": "Mga nakaraang bayad ng EAA, kung alam",
+  },
+  "US dollars, up to two decimal places. Unknown is different from zero. A reported amount does not establish funding eligibility.": {
+    "es":
+        "Dólares estadounidenses, con hasta dos decimales. Desconocido no es lo mismo que cero. Un monto declarado no demuestra la elegibilidad para recibir fondos.",
+    "zh-Hans": "金额以美元计，最多两位小数。未知不同于零。报告金额并不代表符合资助资格。",
+    "zh-Hant": "金額以美元計，最多兩位小數。未知不同於零。報告金額並不代表符合資助資格。",
+    "vi":
+        "Đô la Mỹ, tối đa hai chữ số thập phân. Chưa biết khác với số không. Số tiền khai báo không xác lập điều kiện nhận tài trợ.",
+    "fil":
+        "Dolyar ng US, hanggang dalawang decimal. Ang hindi alam ay iba sa zero. Ang iniulat na halaga ay hindi patunay na kuwalipikado sa pagpopondo.",
+  },
+  "Are you working with a care manager?": {
+    "es": "¿Está trabajando con un coordinador de atención?",
+    "zh-Hans": "您是否正在与照护协调员合作？",
+    "zh-Hant": "您是否正在與照護協調員合作？",
+    "vi": "Bạn có đang làm việc với người quản lý chăm sóc không?",
+    "fil": "Nakikipagtulungan ka ba sa isang tagapamahala ng pangangalaga?",
+  },
+  "HPSM must confirm its current care-management and referral requirements.": {
+    "es":
+        "HPSM debe confirmar sus requisitos actuales de coordinación de atención y derivación.",
+    "zh-Hans": "HPSM 须确认其当前的照护管理及转介要求。",
+    "zh-Hant": "HPSM 須確認其目前的照護管理及轉介要求。",
+    "vi":
+        "HPSM phải xác nhận các yêu cầu hiện hành về quản lý chăm sóc và giới thiệu.",
+    "fil":
+        "Dapat kumpirmahin ng HPSM ang kasalukuyang mga kinakailangan nito sa pamamahala ng pangangalaga at referral.",
+  },
+  "Do you own and live in the home?": {
+    "es": "¿Es propietario de la vivienda y vive en ella?",
+    "zh-Hans": "您是否拥有并居住在这所房屋中？",
+    "zh-Hant": "您是否擁有並居住在這所房屋中？",
+    "vi": "Bạn có sở hữu và sống trong căn nhà không?",
+    "fil": "Pagmamay-ari mo ba ang bahay at dito ka rin nakatira?",
+  },
+  "RTP must verify ownership, residence and its current service area.": {
+    "es":
+        "RTP debe verificar la propiedad, la residencia y su área de servicio actual.",
+    "zh-Hans": "RTP 须核实房屋所有权、居住情况及其当前服务区域。",
+    "zh-Hant": "RTP 須核實房屋所有權、居住情況及其目前服務區域。",
+    "vi":
+        "RTP phải xác minh quyền sở hữu, nơi cư trú và khu vực phục vụ hiện tại.",
+    "fil":
+        "Dapat beripikahin ng RTP ang pagmamay-ari, paninirahan at kasalukuyang lugar ng serbisyo nito.",
+  },
+  "Do you own other real estate?": {
+    "es": "¿Es propietario de otros inmuebles?",
+    "zh-Hans": "您是否拥有其他房地产？",
+    "zh-Hant": "您是否擁有其他不動產？",
+    "vi": "Bạn có sở hữu bất động sản khác không?",
+    "fil": "May pagmamay-ari ka bang ibang ari-ariang lupa o gusali?",
+  },
+  "RTP must confirm whether and how this affects the currently accepted application.": {
+    "es":
+        "RTP debe confirmar si esto afecta la solicitud aceptada actualmente y de qué manera.",
+    "zh-Hans": "RTP 须确认这是否以及如何影响目前受理的申请。",
+    "zh-Hant": "RTP 須確認這是否以及如何影響目前受理的申請。",
+    "vi":
+        "RTP phải xác nhận điều này có ảnh hưởng đến đơn đang được chấp nhận hay không và như thế nào.",
+    "fil":
+        "Dapat kumpirmahin ng RTP kung at paano nito naaapektuhan ang kasalukuyang tinatanggap na aplikasyon.",
+  },
+  "Do you intend to remain in this home for at least two years?": {
+    "es": "¿Tiene intención de permanecer en esta vivienda al menos dos años?",
+    "zh-Hans": "您是否打算在这所房屋中继续居住至少两年？",
+    "zh-Hant": "您是否打算在這所房屋中繼續居住至少兩年？",
+    "vi": "Bạn có dự định tiếp tục sống trong nhà này ít nhất hai năm không?",
+    "fil":
+        "Balak mo bang manatili sa bahay na ito nang hindi bababa sa dalawang taon?",
+  },
+  "This prepares a discussion with RTP; the app has not verified the current annual eligibility rules.": {
+    "es":
+        "Esto sirve para preparar una conversación con RTP; la aplicación no ha verificado las reglas de elegibilidad del año en curso.",
+    "zh-Hans": "此信息用于准备与 RTP 沟通；本应用尚未核实当前年度的资格规则。",
+    "zh-Hant": "此資訊用於準備與 RTP 溝通；本應用程式尚未核實目前年度的資格規則。",
+    "vi":
+        "Thông tin này giúp chuẩn bị trao đổi với RTP; ứng dụng chưa xác minh quy định đủ điều kiện của năm hiện tại.",
+    "fil":
+        "Paghahanda ito para sa pag-uusap sa RTP; hindi pa nabeberipika ng app ang kasalukuyang taunang mga tuntunin sa pagiging kuwalipikado.",
+  },
+  "Are household income documents ready?": {
+    "es": "¿Están listos los documentos de ingresos del hogar?",
+    "zh-Hans": "家庭收入证明文件是否已准备好？",
+    "zh-Hant": "家庭收入證明文件是否已準備好？",
+    "vi": "Giấy tờ thu nhập của hộ gia đình đã sẵn sàng chưa?",
+    "fil": "Handa na ba ang mga dokumento ng kita ng sambahayan?",
+  },
+  "Follow RTP instructions for adults in the household. Do not upload bank statements or tax records to this app.": {
+    "es":
+        "Siga las instrucciones de RTP para los adultos del hogar. No suba estados de cuenta bancarios ni registros fiscales a esta aplicación.",
+    "zh-Hans": "请按照 RTP 对家庭成年成员的要求准备。请勿向本应用上传银行账单或税务记录。",
+    "zh-Hant": "請按照 RTP 對家庭成年成員的要求準備。請勿向本應用程式上傳銀行帳單或稅務紀錄。",
+    "vi":
+        "Làm theo hướng dẫn của RTP cho người lớn trong hộ gia đình. Không tải sao kê ngân hàng hoặc hồ sơ thuế lên ứng dụng này.",
+    "fil":
+        "Sundin ang mga tagubilin ng RTP para sa mga nasa hustong gulang sa sambahayan. Huwag mag-upload ng bank statement o rekord ng buwis sa app na ito.",
+  },
+  "Is proof of ownership ready?": {
+    "es": "¿Está listo el comprobante de propiedad?",
+    "zh-Hans": "房屋所有权证明是否已准备好？",
+    "zh-Hant": "房屋所有權證明是否已準備好？",
+    "vi": "Giấy tờ chứng minh quyền sở hữu đã sẵn sàng chưa?",
+    "fil": "Handa na ba ang patunay ng pagmamay-ari?",
+  },
+  "Submit supporting documents through RTP’s official intake process.": {
+    "es":
+        "Presente los documentos de respaldo mediante el proceso oficial de recepción de solicitudes de RTP.",
+    "zh-Hans": "请通过 RTP 官方受理流程提交证明文件。",
+    "zh-Hant": "請透過 RTP 官方受理流程提交證明文件。",
+    "vi": "Nộp giấy tờ hỗ trợ qua quy trình tiếp nhận chính thức của RTP.",
+    "fil":
+        "Isumite ang mga pansuportang dokumento sa opisyal na proseso ng pagtanggap ng RTP.",
+  },
+  "Is proof of residence ready?": {
+    "es": "¿Está listo el comprobante de residencia?",
+    "zh-Hans": "居住证明是否已准备好？",
+    "zh-Hant": "居住證明是否已準備好？",
+    "vi": "Giấy tờ chứng minh nơi cư trú đã sẵn sàng chưa?",
+    "fil": "Handa na ba ang patunay ng paninirahan?",
+  },
+  "Follow official instructions and obscure unnecessary account or Social Security numbers.": {
+    "es":
+        "Siga las instrucciones oficiales y oculte los números de cuenta o del Seguro Social que no sean necesarios.",
+    "zh-Hans": "请遵循官方说明，并遮盖不必要的账号或社会安全号码。",
+    "zh-Hant": "請遵循官方說明，並遮蓋不必要的帳號或社會安全號碼。",
+    "vi":
+        "Làm theo hướng dẫn chính thức và che số tài khoản hoặc số An sinh Xã hội không cần thiết.",
+    "fil":
+        "Sundin ang mga opisyal na tagubilin at takpan ang hindi kinakailangang numero ng account o Social Security.",
+  },
+  "What repairs would you like RTP to consider?": {
+    "es": "¿Qué reparaciones le gustaría que RTP considerara?",
+    "zh-Hans": "您希望 RTP 考虑哪些维修项目？",
+    "zh-Hant": "您希望 RTP 考慮哪些維修項目？",
+    "vi": "Bạn muốn RTP xem xét những hạng mục sửa chữa nào?",
+    "fil": "Anong mga pagkukumpuni ang nais mong isaalang-alang ng RTP?",
+  },
+  "Describe observed issues and requested help. Avoid account numbers, diagnoses or unsupported structural claims.": {
+    "es":
+        "Describa los problemas observados y la ayuda solicitada. Evite números de cuenta, diagnósticos o afirmaciones estructurales sin respaldo.",
+    "zh-Hans": "请描述观察到的问题和所需帮助。请勿包含账号、诊断或缺乏依据的结构安全断言。",
+    "zh-Hant": "請描述觀察到的問題和所需協助。請勿包含帳號、診斷或缺乏依據的結構安全斷言。",
+    "vi":
+        "Mô tả vấn đề quan sát được và sự giúp đỡ mong muốn. Tránh số tài khoản, chẩn đoán hoặc nhận định kết cấu chưa có căn cứ.",
+    "fil":
+        "Ilarawan ang mga napansing problema at hinihiling na tulong. Iwasan ang mga numero ng account, diyagnosis o pahayag tungkol sa istruktura na walang batayan.",
+  },
+  "Given name": {
+    "es": "Nombre",
+    "zh-Hans": "名字",
+    "zh-Hant": "名字",
+    "vi": "Tên",
+    "fil": "Pangalan",
+  },
+  "Family name": {
+    "es": "Apellido",
+    "zh-Hans": "姓氏",
+    "zh-Hant": "姓氏",
+    "vi": "Họ",
+    "fil": "Apelyido",
+  },
+  "Date of birth (YYYY-MM-DD)": {
+    "es": "Fecha de nacimiento (AAAA-MM-DD)",
+    "zh-Hans": "出生日期（YYYY-MM-DD）",
+    "zh-Hant": "出生日期（YYYY-MM-DD）",
+    "vi": "Ngày sinh (YYYY-MM-DD)",
+    "fil": "Petsa ng kapanganakan (YYYY-MM-DD)",
+  },
+  "Plan member identifier": {
+    "es": "Identificador de miembro del plan",
+    "zh-Hans": "健康计划会员编号",
+    "zh-Hant": "健康計畫會員編號",
+    "vi": "Mã thành viên chương trình bảo hiểm",
+    "fil": "Numero ng miyembro ng plano",
+  },
+  "Contact phone": {
+    "es": "Teléfono de contacto",
+    "zh-Hans": "联系电话",
+    "zh-Hant": "聯絡電話",
+    "vi": "Số điện thoại liên hệ",
+    "fil": "Telepono sa pakikipag-ugnayan",
+  },
+  "Preferred spoken language": {
+    "es": "Idioma hablado preferido",
+    "zh-Hans": "首选口语语言",
+    "zh-Hant": "偏好的口語語言",
+    "vi": "Ngôn ngữ nói ưu tiên",
+    "fil": "Gustong wikang gamitin sa pakikipag-usap",
+  },
+  "Authorized representative name": {
+    "es": "Nombre del representante autorizado",
+    "zh-Hans": "授权代表姓名",
+    "zh-Hant": "授權代表姓名",
+    "vi": "Tên người đại diện được ủy quyền",
+    "fil": "Pangalan ng awtorisadong kinatawan",
+  },
+  "Authorized representative email": {
+    "es": "Correo electrónico del representante autorizado",
+    "zh-Hans": "授权代表电子邮箱",
+    "zh-Hant": "授權代表電子郵件",
+    "vi": "Email người đại diện được ủy quyền",
+    "fil": "Email ng awtorisadong kinatawan",
+  },
+  "Authorized representative phone": {
+    "es": "Teléfono del representante autorizado",
+    "zh-Hans": "授权代表电话",
+    "zh-Hant": "授權代表電話",
+    "vi": "Điện thoại người đại diện được ủy quyền",
+    "fil": "Telepono ng awtorisadong kinatawan",
+  },
+  "Referral date (YYYY-MM-DD)": {
+    "es": "Fecha de derivación (AAAA-MM-DD)",
+    "zh-Hans": "转介日期（YYYY-MM-DD）",
+    "zh-Hant": "轉介日期（YYYY-MM-DD）",
+    "vi": "Ngày giới thiệu (YYYY-MM-DD)",
+    "fil": "Petsa ng referral (YYYY-MM-DD)",
+  },
+  "Referral source": {
+    "es": "Fuente de la derivación",
+    "zh-Hans": "转介来源",
+    "zh-Hant": "轉介來源",
+    "vi": "Nguồn giới thiệu",
+    "fil": "Pinagmulan ng referral",
+  },
+  "Referring organization": {
+    "es": "Organización que deriva",
+    "zh-Hans": "转介机构",
+    "zh-Hant": "轉介機構",
+    "vi": "Tổ chức giới thiệu",
+    "fil": "Organisasyong nag-refer",
+  },
+  "Referring organization phone": {
+    "es": "Teléfono de la organización que deriva",
+    "zh-Hans": "转介机构电话",
+    "zh-Hant": "轉介機構電話",
+    "vi": "Điện thoại tổ chức giới thiệu",
+    "fil": "Telepono ng organisasyong nag-refer",
+  },
+  "Referring individual name": {
+    "es": "Nombre de la persona que deriva",
+    "zh-Hans": "转介人姓名",
+    "zh-Hant": "轉介人姓名",
+    "vi": "Tên người giới thiệu",
+    "fil": "Pangalan ng taong nag-refer",
+  },
+  "Referring individual title": {
+    "es": "Cargo de la persona que deriva",
+    "zh-Hans": "转介人职务",
+    "zh-Hant": "轉介人職務",
+    "vi": "Chức danh người giới thiệu",
+    "fil": "Katungkulan ng taong nag-refer",
+  },
+  "Referring individual organization": {
+    "es": "Organización de la persona que deriva",
+    "zh-Hans": "转介人所属机构",
+    "zh-Hant": "轉介人所屬機構",
+    "vi": "Tổ chức của người giới thiệu",
+    "fil": "Organisasyon ng taong nag-refer",
+  },
+  "Referring individual email": {
+    "es": "Correo electrónico de la persona que deriva",
+    "zh-Hans": "转介人电子邮箱",
+    "zh-Hant": "轉介人電子郵件",
+    "vi": "Email người giới thiệu",
+    "fil": "Email ng taong nag-refer",
+  },
+  "Referring individual phone": {
+    "es": "Teléfono de la persona que deriva",
+    "zh-Hans": "转介人电话",
+    "zh-Hant": "轉介人電話",
+    "vi": "Điện thoại người giới thiệu",
+    "fil": "Telepono ng taong nag-refer",
+  },
+  "Loading examples": {
+    "es": "Cargando ejemplos",
+    "zh-Hans": "正在加载示例",
+    "zh-Hant": "正在載入範例",
+    "vi": "Đang tải ví dụ",
+    "fil": "Naglo-load ng mga halimbawa",
+  },
+  "Examples unavailable": {
+    "es": "Ejemplos no disponibles",
+    "zh-Hans": "示例不可用",
+    "zh-Hant": "範例無法使用",
+    "vi": "Không có ví dụ",
+    "fil": "Hindi available ang mga halimbawa",
+  },
+  "The example cases could not be loaded.": {
+    "es": "No se pudieron cargar los casos de ejemplo.",
+    "zh-Hans": "无法加载示例个案。",
+    "zh-Hant": "無法載入範例個案。",
+    "vi": "Không tải được các hồ sơ mẫu.",
+    "fil": "Hindi na-load ang mga halimbawang kaso.",
+  },
+  "EXPLORE THE APP": {
+    "es": "EXPLORAR LA APLICACIÓN",
+    "zh-Hans": "探索应用",
+    "zh-Hant": "探索應用程式",
+    "vi": "KHÁM PHÁ ỨNG DỤNG",
+    "fil": "TUKLASIN ANG APP",
+  },
+  "Explore possible support": {
+    "es": "Explore posibles apoyos",
+    "zh-Hans": "了解可能的支持",
+    "zh-Hant": "了解可能的支援",
+    "vi": "Khám phá hỗ trợ có thể có",
+    "fil": "Tuklasin ang posibleng suporta",
+  },
+  "Fictional demo · These saved examples show how results will work. They do not assess eligibility for a real program.": {
+    "es":
+        "Demostración ficticia · Estos ejemplos guardados muestran cómo serán los resultados. No evalúan la elegibilidad para un programa real.",
+    "zh-Hans": "虚构演示 · 这些已保存的示例展示结果的呈现方式，并不评估真实项目的申请资格。",
+    "zh-Hant": "虛構示範 · 這些已儲存的範例展示結果的呈現方式，並不評估真實計畫的申請資格。",
+    "vi":
+        "Bản demo giả định · Các ví dụ đã lưu cho thấy cách hiển thị kết quả. Chúng không đánh giá điều kiện cho một chương trình thực tế.",
+    "fil":
+        "Kathang-isip na demo · Ipinapakita ng mga naka-save na halimbawang ito kung paano gagana ang mga resulta. Hindi nito sinusuri ang pagiging kuwalipikado sa totoong programa.",
+  },
+  "Choose an example": {
+    "es": "Elija un ejemplo",
+    "zh-Hans": "选择示例",
+    "zh-Hant": "選擇範例",
+    "vi": "Chọn một ví dụ",
+    "fil": "Pumili ng halimbawa",
+  },
+  "This example contains no program results.": {
+    "es": "Este ejemplo no contiene resultados de programas.",
+    "zh-Hans": "此示例没有项目结果。",
+    "zh-Hant": "此範例沒有計畫結果。",
+    "vi": "Ví dụ này không có kết quả chương trình.",
+    "fil": "Walang resulta ng programa ang halimbawang ito.",
+  },
+  "Saved example from {date}. Availability has not been checked. A program must review any real application.": {
+    "es":
+        "Ejemplo guardado del {date}. No se ha comprobado la disponibilidad. El programa debe revisar toda solicitud real.",
+    "zh-Hans": "保存于 {date} 的示例。尚未核实服务是否可用。任何真实申请均须由项目审核。",
+    "zh-Hant": "儲存於 {date} 的範例。尚未核實服務是否可用。任何真實申請均須由計畫審查。",
+    "vi":
+        "Ví dụ được lưu ngày {date}. Chưa kiểm tra tình trạng tiếp nhận. Chương trình phải xem xét mọi đơn thực tế.",
+    "fil":
+        "Naka-save na halimbawa mula {date}. Hindi pa nasuri ang pagiging available. Dapat suriin ng programa ang anumang totoong aplikasyon.",
+  },
+  "Meets the example criteria": {
+    "es": "Cumple los criterios del ejemplo",
+    "zh-Hans": "符合示例条件",
+    "zh-Hant": "符合範例條件",
+    "vi": "Đáp ứng tiêu chí của ví dụ",
+    "fil": "Tumutugon sa pamantayan ng halimbawa",
+  },
+  "An example criterion is not met": {
+    "es": "No se cumple un criterio del ejemplo",
+    "zh-Hans": "不符合某项示例条件",
+    "zh-Hant": "不符合某項範例條件",
+    "vi": "Chưa đáp ứng một tiêu chí của ví dụ",
+    "fil": "May pamantayan ng halimbawa na hindi natugunan",
+  },
+  "View draft checklist": {
+    "es": "Ver lista del borrador",
+    "zh-Hans": "查看草稿核对清单",
+    "zh-Hant": "查看草稿核對清單",
+    "vi": "Xem danh sách kiểm tra bản nháp",
+    "fil": "Tingnan ang checklist ng draft",
+  },
+  "Next step: confirm the missing resident details.": {
+    "es": "Siguiente paso: confirme los datos faltantes del residente.",
+    "zh-Hans": "下一步：确认缺失的住户信息。",
+    "zh-Hant": "下一步：確認缺少的住戶資訊。",
+    "vi": "Bước tiếp theo: xác nhận thông tin cư dân còn thiếu.",
+    "fil":
+        "Susunod na hakbang: kumpirmahin ang kulang na detalye ng residente.",
+  },
+  "Next step: request a qualified professional’s review.": {
+    "es": "Siguiente paso: solicite la revisión de un profesional cualificado.",
+    "zh-Hans": "下一步：请合格的专业人员审核。",
+    "zh-Hant": "下一步：請合格的專業人員審查。",
+    "vi": "Bước tiếp theo: yêu cầu chuyên gia có chuyên môn xem xét.",
+    "fil":
+        "Susunod na hakbang: humiling ng pagsusuri ng kuwalipikadong propesyonal.",
+  },
+  "Next step: confirm this requirement with the program.": {
+    "es": "Siguiente paso: confirme este requisito con el programa.",
+    "zh-Hans": "下一步：向项目确认此项要求。",
+    "zh-Hant": "下一步：向計畫確認此項要求。",
+    "vi": "Bước tiếp theo: xác nhận yêu cầu này với chương trình.",
+    "fil":
+        "Susunod na hakbang: kumpirmahin ang kinakailangang ito sa programa.",
+  },
+  "Next step: identify who can confirm this requirement.": {
+    "es": "Siguiente paso: identifique quién puede confirmar este requisito.",
+    "zh-Hans": "下一步：确定谁可以确认此项要求。",
+    "zh-Hant": "下一步：確定誰可以確認此項要求。",
+    "vi": "Bước tiếp theo: xác định người có thể xác nhận yêu cầu này.",
+    "fil":
+        "Susunod na hakbang: alamin kung sino ang makapagkukumpirma sa kinakailangang ito.",
+  },
 };

@@ -57,7 +57,7 @@ class SaveStatusCard extends StatelessWidget {
           ),
           SyncPhase.failed => (
             context.tr('{error} Your findings are still here.', {
-              'error': sync.errorMessage ?? context.tr('Saving failed.'),
+              'error': context.tr(sync.errorMessage ?? 'Saving failed.'),
             }),
             'Try saving again',
             onSave ?? sync.save,
