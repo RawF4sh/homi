@@ -1,7 +1,7 @@
 import {
   PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream,
   PDFRef, PDFStream, StandardFonts, rgb,
-  type PDFField, type PDFFont, type PDFPage, type PDFWidgetAnnotation,
+  type PDFField, type PDFPage, type PDFWidgetAnnotation,
 } from 'pdf-lib';
 import type { CaseSnapshot } from '../types.ts';
 import {
@@ -10,13 +10,13 @@ import {
   type VerifiedFormTemplate,
 } from './field-mapping.ts';
 import { MAX_TEMPLATE_BYTES, verifyTemplateBytes } from './template-artifact.ts';
+import { embedReviewedTextFont, type ReviewedTextFont, type ReviewedTextFontSession, type TextInkBounds } from '../pdf/reviewed-text-font.ts';
 
 const BANNER_HEIGHT = 32;
 const DRAFT_LABEL = 'INCOMPLETE DRAFT - NOT SUBMITTED';
 const TEXT_INSET = 2;
 const MIN_TEXT_SIZE = 8;
 const MAX_TEXT_SIZE = 10;
-const HELVETICA_BOUNDS = { left: -0.166, bottom: -0.225, right: 1, top: 0.931 };
 
 export interface DraftRenderIssue {
   readonly fieldName: string;
@@ -43,6 +43,7 @@ export async function renderDraftPreview(
   templateBytes: Uint8Array,
   context: FormPlanningContext,
   answersInput?: unknown,
+  fontSession?: ReviewedTextFontSession,
 ): Promise<DraftPreview> {
   try {
     const detachedCase = structuredClone(snapshot);
@@ -59,7 +60,10 @@ export async function renderDraftPreview(
     check(!source.isEncrypted);
     rejectActiveDocumentFeatures(source);
     const inventory = verifyInventory(source, template);
-    const textFont = source.embedStandardFont(StandardFonts.Helvetica);
+    const reviewedFont = await embedReviewedTextFont(source, plan.fields
+      .filter(decision => decision.status === 'mapped' && typeof decision.value === 'string')
+      .map(decision => decision.value as string), fontSession, 'form');
+    const textFont = reviewedFont.font;
     const renderIssues: DraftRenderIssue[] = [];
 
     for (const [index, definition] of template.fields.entries()) {
@@ -70,7 +74,7 @@ export async function renderDraftPreview(
         check(decision.origin?.kind === 'reviewed_form_answer'
           && !['clinical', 'consent', 'signature', 'layout', 'routing'].includes(definition.semantic)
           && typeof decision.value === 'string');
-        const prepared = prepareTextLayout(decision.value, widgets, field, textFont, definition.maxLength);
+        const prepared = prepareTextLayout(decision.value, widgets, field, reviewedFont, definition.maxLength);
         if (typeof prepared === 'string') {
           renderIssues.push(Object.freeze({ fieldName: definition.fieldName, code: prepared, message: issueMessage(prepared) }));
         } else textLayout = prepared;
@@ -90,10 +94,10 @@ export async function renderDraftPreview(
           widget.setAppearanceState(PDFName.of(state));
         } else if (textLayout) {
           const rect = widget.getRectangle();
-          const { fontSize, encoded } = textLayout;
-          const textHeight = (HELVETICA_BOUNDS.top - HELVETICA_BOUNDS.bottom) * fontSize;
-          const x = TEXT_INSET - HELVETICA_BOUNDS.left * fontSize;
-          const y = (rect.height - textHeight) / 2 - HELVETICA_BOUNDS.bottom * fontSize;
+          const { fontSize, encoded, bounds } = textLayout;
+          const textHeight = (bounds.top - bounds.bottom) * fontSize;
+          const x = TEXT_INSET - bounds.left * fontSize;
+          const y = (rect.height - textHeight) / 2 - bounds.bottom * fontSize;
           appearance = source.context.register(source.context.flateStream(
             `BT\n/SafeAtHomeReviewedText ${fontSize} Tf\n0 g\n1 0 0 1 ${x} ${y} Tm\n${encoded} Tj\nET\n`,
             { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, rect.width, rect.height],
@@ -143,10 +147,10 @@ export async function renderDraftPreview(
 
 interface InventoryEntry { field: PDFField; widgets: PDFWidgetAnnotation[] }
 
-interface TextLayout { fontSize: number; encoded: string }
+interface TextLayout { fontSize: number; encoded: string; bounds: TextInkBounds }
 
 function prepareTextLayout(
-  value: string, widgets: PDFWidgetAnnotation[], field: PDFField, font: PDFFont, maxLength: number | null,
+  value: string, widgets: PDFWidgetAnnotation[], field: PDFField, reviewedFont: ReviewedTextFont, maxLength: number | null,
 ): TextLayout | DraftRenderIssue['code'] {
   const unsupportedFlags = (1 << 13) | (1 << 20) | (1 << 24) | (1 << 25);
   if (/[\r\n\u2028\u2029]/.test(value) || (field.acroField.getFlags() & unsupportedFlags) !== 0
@@ -154,14 +158,11 @@ function prepareTextLayout(
     return 'UNSUPPORTED_TEXT_LAYOUT';
   }
   const characters = Array.from(value);
-  const charset = new Set(font.getCharacterSet());
-  if (characters.some(character => !charset.has(character.codePointAt(0)!))) return 'UNSUPPORTED_CHARACTERS';
+  if (!reviewedFont.supports(value)) return 'UNSUPPORTED_CHARACTERS';
   if (characters.length === 0 || (maxLength !== null && characters.length > maxLength)) return 'TEXT_DOES_NOT_FIT';
-  const widths = characters.map(character => font.widthOfTextAtSize(character, 1));
-  const advanceWidth = widths.reduce((sum, width) => sum + width, 0);
-  const inkWidth = advanceWidth - widths[widths.length - 1]
-    + HELVETICA_BOUNDS.right - HELVETICA_BOUNDS.left;
-  const inkHeight = HELVETICA_BOUNDS.top - HELVETICA_BOUNDS.bottom;
+  const bounds = reviewedFont.inkBounds(value);
+  const inkWidth = bounds.right - bounds.left;
+  const inkHeight = bounds.top - bounds.bottom;
   let fontSize = MAX_TEXT_SIZE;
   for (const widget of widgets) {
     const rect = widget.getRectangle();
@@ -170,7 +171,7 @@ function prepareTextLayout(
   }
   fontSize = Math.floor(fontSize * 100) / 100;
   if (!Number.isFinite(fontSize) || fontSize < MIN_TEXT_SIZE) return 'TEXT_DOES_NOT_FIT';
-  return { fontSize, encoded: font.encodeText(value).toString() };
+  return { fontSize, encoded: reviewedFont.font.encodeText(value).toString(), bounds };
 }
 
 function issueMessage(code: DraftRenderIssue['code']): string {

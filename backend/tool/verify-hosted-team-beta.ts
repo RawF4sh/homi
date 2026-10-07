@@ -4,7 +4,7 @@ import { lstat, mkdir, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as pause } from 'node:timers/promises';
-import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
+import { FICTIONAL_CHINESE_PACKET, verifyTeamBetaPdf } from './check-team-beta-pdf.ts';
 import { hostedApiEnvironment } from './verify-hosted-api.ts';
 import type { HostedApiConfiguration } from '../src/auth/hosted-api-verifier.ts';
 import { createSupabaseAuthenticator } from '../src/auth/supabase-auth.ts';
@@ -43,6 +43,7 @@ export interface TeamBetaReport {
   pdfCount: 3; generatedPhotoCount: 1; metadataHistoryVerified: true; exactRetriesVerified: true;
   ownerIsolationVerified: true; staleDownloadsDenied: true; annotationsBakedIntoPdfs: true;
   intakeUnknownFalseZeroPreserved: true; protectedFieldsUnresolved: true;
+  exactChineseTextVerified: true; scriptsPreserved: readonly ['zh-Hans', 'zh-Hant'];
   caseDeleted: true; localSignOuts: 2;
 }
 export class TeamBetaVerificationError extends Error {
@@ -72,6 +73,14 @@ export async function createTeamBetaJournal(directory: string, initial: {
   return {
     async journal(event: Readonly<TeamBetaEvent>) { await handle.writeFile(`${JSON.stringify(event)}\n`); await handle.sync(); },
     async report(report: TeamBetaReport) { await handle.writeFile(`${JSON.stringify({ kind: 'report', ...report })}\n`); await handle.sync(); },
+    async retainPdf(program: string, bytes: Uint8Array) {
+      requireValue(PROGRAMS.includes(program as typeof PROGRAMS[number]) && bytes.length <= MAX_PDF_BYTES);
+      const current = await lstat(directory); requireValue(current.isDirectory() && !current.isSymbolicLink() && (current.mode & 0o077) === 0);
+      const file = await open(join(directory, `${program}-chinese-draft.pdf`), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      try { await file.writeFile(bytes); await file.sync(); } finally { await file.close(); }
+      const parent = await open(directory, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try { await parent.sync(); } finally { await parent.close(); }
+    },
     close: () => handle.close(),
   };
 }
@@ -118,23 +127,9 @@ function assessment(value: unknown, caseId: string): AssessmentState {
   return { schemaVersion: '2', case: snapshot, caseFingerprint: v.caseFingerprint, catalogRevision: v.catalogRevision,
     assessment: record, acknowledgedMutationId: v.acknowledgedMutationId };
 }
-async function verifyPdf(bytes: Uint8Array, program: string, basePages: number) {
-  requireValue(Buffer.from(bytes.subarray(0, 5)).toString('ascii') === '%PDF-');
-  const pdf = await PDFDocument.load(bytes); requireValue(pdf.getPageCount() >= basePages + 2 && pdf.getPageCount() <= basePages + 8 && pdf.getForm().getFields().length === 0);
-  const content = (index: number) => { const page = pdf.getPage(index), refs = page.node.Contents(); requireValue((page.node.Annots()?.size() ?? 0) === 0);
-    return (refs instanceof PDFArray ? refs.asArray() : [refs]).map(ref => { const stream = pdf.context.lookup(ref); requireValue(stream instanceof PDFRawStream);
-      return Buffer.from(decodePDFRawStream(stream).decode()).toString('latin1'); }).join('\n'); };
-  for (let i = 0; i < basePages; i++) content(i);
-  const contains = (operators: string, text: string) => operators.includes(Buffer.from(text).toString('hex').toUpperCase());
-  const image = content(basePages); requireValue(contains(image, '1: Fictional step marker') && /0\.7 0\.08 0\.08 RG/.test(image) && /1\.5 w/.test(image));
-  const appendix = Array.from({ length: pdf.getPageCount() - basePages - 1 }, (_, i) => content(basePages + 1 + i)).join('\n');
-  for (const text of ['PROGRAM PREPARATION - REPORTED FACTS ONLY', 'Reported No', 'Unknown / not provided', 'The case changed after these answers were saved.']) requireValue(contains(appendix, text));
-  if (program === 'rtp-home-repair') requireValue(contains(appendix, 'App-generated worksheet; not an official RTP application.') && contains(appendix, 'Reported: Fictional repair discussion only.'));
-  else requireValue(contains(appendix, 'Reported USD 0.00'));
-}
-
 export async function verifyHostedTeamBeta(input: TeamBetaConfiguration, options: {
   journal(event: Readonly<TeamBetaEvent>): Promise<void>; fetchImpl?: typeof fetch;
+  retainPdf?(program: string, bytes: Uint8Array): Promise<void>;
   testNoPacing?: boolean;
 }): Promise<TeamBetaReport> {
   let config: TeamBetaConfiguration;
@@ -216,7 +211,7 @@ export async function verifyHostedTeamBeta(input: TeamBetaConfiguration, options
     stage = 'assessment'; const initial = assessment(await read('v2/read-assessment', { schemaVersion: '2', caseId: config.newCaseId }), config.newCaseId);
     requireValue(initial.assessment.assessmentRevision === 0 && initial.catalogRevision === 0 && same(initial.case, snapshot));
     const evidenceId = `${config.runId}-photo`, findingId = `${config.runId}-finding`;
-    const assessed: CaseDraft = { ...draft, findings: [{ id: findingId, room: 'entrance', observation: 'Fictional generated step for hosted acceptance.', reviewState: 'confirmed', evidenceIds: [evidenceId],
+    const assessed: CaseDraft = { ...draft, findings: [{ id: findingId, room: 'entrance', observation: FICTIONAL_CHINESE_PACKET.observation!, reviewState: 'confirmed', evidenceIds: [evidenceId],
       measurements: [{ type: 'thresholdHeight', value: 12.7, unit: 'mm', method: 'manual', confirmed: true }, { type: 'clearOpening', value: 25, unit: 'mm', method: 'manual', confirmed: true }] }] };
     const metadata: AssessmentMetadata = { measurements: [
       { findingId, type: 'thresholdHeight', originalText: ' .5 ', originalUnit: 'in', decimalSeparator: 'point', source: 'manual', recorder: 'self', recordedAt: null },
@@ -240,7 +235,7 @@ export async function verifyHostedTeamBeta(input: TeamBetaConfiguration, options
       requireValue(v.caseId === config.newCaseId && v.caseRevision === snapshot!.revision && v.catalogRevision === 1 && descriptor.caseId === config.newCaseId
         && descriptor.evidenceId === evidenceId && descriptor.findingId === findingId && descriptor.evidenceRevision === 1 && descriptor.width === 320 && descriptor.height === 200); catalog = v.catalogRevision; });
     let annotation!: AnnotationRecord;
-    const marks = [{ id: 'fictional-box', rect: [100000, 200000, 400000, 300000], label: 'Fictional step marker' }];
+    const marks = [{ id: 'fictional-box', rect: [100000, 200000, 400000, 300000], label: FICTIONAL_CHINESE_PACKET.photoLabel }];
     const annotationRead = () => ({ ...base(), expectedCatalogRevision: catalog, evidenceId, expectedEvidenceRevision: descriptor.evidenceRevision });
     const readAnnotation = async () => { const v = await read('v2/read-evidence-annotations', annotationRead()); const a = parseAnnotations(v.annotation);
       requireValue(v.caseId === config.newCaseId && v.caseRevision === snapshot!.revision && v.catalogRevision === catalog && a.caseId === config.newCaseId && a.evidenceId === evidenceId
@@ -265,7 +260,7 @@ export async function verifyHostedTeamBeta(input: TeamBetaConfiguration, options
       const answers: IntakeAnswer[] = definition.questions.map(q => { let value: IntakeAnswer['value'] = null;
         if (q.kind === 'boolean' && firstBoolean) { value = false; firstBoolean = false; }
         if (q.kind === 'money' && firstMoney) { value = 0; firstMoney = false; }
-        if (q.kind === 'text') value = 'Fictional repair discussion only.';
+        if (q.kind === 'text') value = FICTIONAL_CHINESE_PACKET.repairRequest;
         return { key: q.key, value, reviewState: value === null ? 'unknown' : 'reported' }; });
       const intakeRequest = { ...input, expectedIntakeRevision: 0, expectedQuestionnaireVersion: definition.questionnaireVersion, answers };
       await mutation(intakeRequest, async () => { const v = await read('v2/save-program-intake', intakeRequest), s = parseSavedProgramIntake(v.saved);
@@ -278,11 +273,15 @@ export async function verifyHostedTeamBeta(input: TeamBetaConfiguration, options
         && form.artifactKind === formArtifactKind(program) && same(object(form).fieldDefinitions.map((f: any) => ({ key: f.key, kind: f.kind, maxLength: f.maxLength })),
           formAnswerFieldsForProgram(program).map(f => ({ key: f.key, kind: f.kind, maxLength: f.maxLength }))));
       errorIs(await api('v2/read-form-answers', formRead, 1), 404, 'CASE_NOT_FOUND');
-      const formRequest = { ...formRead, expectedFormContextId: context.formContextId, expectedAnswerRevision: 0, answers: [{ key: 'memberFirstName', value: 'Alex', reviewState: 'reviewed' }] };
+      const formRequest = { ...formRead, expectedFormContextId: context.formContextId, expectedAnswerRevision: 0, answers: [
+        { key: 'memberFirstName', value: FICTIONAL_CHINESE_PACKET.names![0], reviewState: 'reviewed' },
+        { key: 'memberLastName', value: FICTIONAL_CHINESE_PACKET.names![1], reviewState: 'reviewed' }] };
       await mutation(formRequest, async () => { const v = await read('v2/save-form-answers', formRequest), s = parseSavedFormAnswers(v.saved);
         requireValue(v.caseId === config.newCaseId && v.caseRevision === snapshot!.revision + 1 && v.isCurrent === true && same(v.context, context)
           && s.caseId === config.newCaseId && s.caseRevision === v.caseRevision && s.programId === program && s.answerRevision === 1 && s.updatedBy === alice.userId
-          && s.answers.length === 1 && s.answers[0].value === 'Alex' && s.answers[0].reviewedBy === alice.userId && s.formContextId === context.formContextId); await confirmedSnapshot(v.caseRevision); });
+          && s.answers.length === 2 && formRequest.answers.every(expected => s.answers.some(actual => actual.key === expected.key
+            && actual.value === expected.value && actual.reviewState === 'reviewed' && actual.reviewedBy === alice.userId))
+          && s.formContextId === context.formContextId); await confirmedSnapshot(v.caseRevision); });
       const staleIntake = await read('v2/read-program-intake', { ...base(), programId: program });
       requireValue(staleIntake.isCurrent === false && same(parseSavedProgramIntake(staleIntake.saved).answers, answers));
       stage = `${program}_export`;
@@ -308,7 +307,8 @@ export async function verifyHostedTeamBeta(input: TeamBetaConfiguration, options
       const pdf = await api('v2/download-draft-export', download, 0, true);
       requireValue(pdf.status === 200 && pdf.bytes && pdf.bytes.length === artifact.byteLength && sha(pdf.bytes) === artifact.sha256
         && pdf.headers.get('x-content-sha256') === artifact.sha256 && pdf.headers.get('x-content-type-options') === 'nosniff');
-      await verifyPdf(pdf.bytes, program, pinned.template.pageCount);
+      await verifyTeamBetaPdf(pdf.bytes, program, pinned.template.pageCount, FICTIONAL_CHINESE_PACKET);
+      await options.retainPdf?.(program, pdf.bytes);
       errorIs(await api('v2/download-draft-export', download, 1, true), 404, 'ARTIFACT_NOT_FOUND'); artifacts.push(artifact);
     }
     stage = 'cross_device_metadata'; const resumed = assessment(await read('v2/read-assessment', { schemaVersion: '2', caseId: config.newCaseId }), config.newCaseId);
@@ -346,7 +346,8 @@ export async function verifyHostedTeamBeta(input: TeamBetaConfiguration, options
   stage = 'complete'; await journal('confirmed');
   return { status: 'passed', programs: PROGRAMS, requests, elapsedMs: Math.round(performance.now() - started), pdfCount: 3, generatedPhotoCount: 1,
     metadataHistoryVerified: true, exactRetriesVerified: true, ownerIsolationVerified: true, staleDownloadsDenied: true, annotationsBakedIntoPdfs: true,
-    intakeUnknownFalseZeroPreserved: true, protectedFieldsUnresolved: true, caseDeleted: true, localSignOuts: 2 };
+    intakeUnknownFalseZeroPreserved: true, protectedFieldsUnresolved: true, exactChineseTextVerified: true, scriptsPreserved: ['zh-Hans', 'zh-Hant'],
+    caseDeleted: true, localSignOuts: 2 };
 }
 
 async function main() {

@@ -9,6 +9,7 @@ import { renderDraftPreview, DraftPreviewError } from '../src/forms/render-draft
 import { defineVerifiedFormTemplate, type FormPlanningContext, type VerifiedFormTemplate } from '../src/forms/field-mapping.ts';
 import { createFormAnswerContext, createSavedFormAnswers, type FormAnswerInput, type SavedFormAnswerSet } from '../src/forms/form-answers.ts';
 import type { CaseSnapshot } from '../src/types.ts';
+import { paintedTextRuns } from '../tool/pdf-verification-text.ts';
 
 const CASE: CaseSnapshot = { schemaVersion: '1', caseId: 'private-fictional-case-id', revision: 4,
   profile: { city: 'Private fictional city', county: null, healthPlan: 'Private fictional plan', tenure: 'owner',
@@ -374,7 +375,7 @@ test('overflow leaves the entire answer blank and reports a safe issue on every 
 
 test('unsupported scripts and combining marks stay exact in the logical plan, never transliterated into the PDF', async () => {
   const f = await reviewedFixture();
-  for (const value of ['李', 'Zoë😀', 'e\u0301']) {
+  for (const value of ['Zoë😀', 'e\u0301', '王\uFE00']) {
     const result = await reviewedPreview(f, value);
     assert.equal(result.plan.fields.find(field => field.fieldName === 'First Name')!.value, value);
     assert.equal(result.renderIssues.length, 1);
@@ -477,4 +478,32 @@ test('vertical bounds include accented ink and reject a box below the readable m
   assert.equal(result.renderIssues[0].code, 'TEXT_DOES_NOT_FIT');
   const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
   assert.doesNotMatch(streamText(document), /\/SafeAtHomeReviewedText/);
+});
+
+
+test('Chinese names in both scripts and compatibility characters fill only the reviewed field', async () => {
+  const f = await reviewedFixture();
+  for (const value of ['陈秀兰', '陳秀蘭', '陳秀蘭 José', '兀兀', '王𠮷']) {
+    const result = await reviewedPreview(f, value);
+    assert.deepEqual(result.renderIssues, []);
+    assert.equal(result.plan.fields.find(field => field.fieldName === 'First Name')!.value, value);
+    const document = await PDFDocument.load(result.bytes, { updateMetadata: false });
+    const runs = paintedTextRuns(document, 0);
+    const answer = runs.filter(run => run.text === value);
+    assert.equal(answer.length, 1);
+    assert.ok(answer[0].fontSize >= 8 && answer[0].fontSize <= 10);
+    assert.ok(runs.every(run => !run.text.includes('PRIVATE')));
+    assert.ok(paintedTextRuns(document, 1).every(run => !run.text.includes(value)));
+    assert.equal(document.catalog.has(PDFName.of('AcroForm')), false);
+  }
+});
+
+test('long Chinese names are kept exact and rejected whole when the form cannot fit them', async () => {
+  const f = await reviewedFixture();
+  const value = '陳'.repeat(30);
+  const result = await reviewedPreview(f, value);
+  assert.equal(result.plan.fields.find(field => field.fieldName === 'First Name')!.value, value);
+  assert.equal(result.renderIssues[0].code, 'TEXT_DOES_NOT_FIT');
+  const document = await PDFDocument.load(result.bytes);
+  assert.ok(paintedTextRuns(document, 0).every(run => !run.text.includes('陳')));
 });

@@ -13,7 +13,8 @@ const NODE_IMAGE = 'node:24.22.0-bookworm-slim';
 const FIXTURES = '/lab/sah-memory-fixtures';
 const LABEL = 'safeathome.synthetic-team-memory';
 const runtimeFiles = ['package.json', 'package-lock.json', 'src', 'migrations', 'certs/supabase-root-2021.crt',
-  'assets/forms/scfhp-41567.pdf', 'assets/forms/hpsm-eaa-inert.pdf', 'assets/forms/rtp-preparation-worksheet.pdf'];
+  'assets/forms/scfhp-41567.pdf', 'assets/forms/hpsm-eaa-inert.pdf', 'assets/forms/rtp-preparation-worksheet.pdf',
+      'assets/fonts/SafeAtHomeCJK-Regular.otf', 'assets/fonts/SafeAtHomeCJK-Regular.metrics.bin', 'assets/fonts/OFL.txt'];
 
 export function parseTeamLinuxOptions(args: string[]) {
   if (![6, 8].includes(args.length) || args.filter((_, index) => index % 2 === 0)

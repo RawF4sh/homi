@@ -14,6 +14,7 @@ import { loadRuntimeBenefitsBundle } from '../src/programs/runtime-bundle.ts';
 import type { LifecycleRepository } from '../src/lifecycle/types.ts';
 import { createTeamBetaJournal, fictionalTeamDraft, verifyHostedTeamBeta, TeamBetaVerificationError,
   type TeamBetaConfiguration, type TeamBetaEvent } from '../tool/verify-hosted-team-beta.ts';
+import { FICTIONAL_CHINESE_PACKET } from '../tool/check-team-beta-pdf.ts';
 
 const apiOrigin = 'https://beta.example.invalid', projectOrigin = 'https://fictional.supabase.co';
 const users = ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
@@ -105,9 +106,18 @@ async function expectFailure(task: Promise<unknown>, stage: string, uncertain: b
 
 test('all three hosted v2 workflows traverse real HTTP, inspect pinned PDF bytes, retry exactly and clean only the new case', async t => {
   const state = await setup(t);
-  const report = await verifyHostedTeamBeta(state.configuration, state.options);
+  const retained: string[] = [];
+  const report = await verifyHostedTeamBeta(state.configuration, { ...state.options,
+    retainPdf: async (program, bytes) => { assert.equal(Buffer.from(bytes.subarray(0, 5)).toString('ascii'), '%PDF-'); retained.push(program); } });
   assert.equal(report.status, 'passed'); assert.equal(report.pdfCount, 3); assert.equal(report.caseDeleted, true);
   assert.ok(report.requests <= 100); assert.deepEqual(report.programs, ['scfhp-eaa', 'hpsm-eaa', 'rtp-home-repair']);
+  assert.deepEqual(retained, report.programs); assert.equal(report.exactChineseTextVerified, true);
+  assert.deepEqual(report.scriptsPreserved, ['zh-Hans', 'zh-Hant']);
+  for (const call of state.calls.filter(c => c.path === '/v2/save-form-answers')) {
+    assert.deepEqual(call.body.answers.map((answer: { value: string }) => answer.value), FICTIONAL_CHINESE_PACKET.names);
+  }
+  assert.equal(state.calls.find(c => c.path === '/v2/save-assessment')!.body.draft.findings[0].observation, FICTIONAL_CHINESE_PACKET.observation);
+  assert.equal(state.calls.find(c => c.path === '/v2/save-evidence-annotations')!.body.marks[0].label, FICTIONAL_CHINESE_PACKET.photoLabel);
   assert.deepEqual(state.deletions, [state.configuration.newCaseId]); assert.equal(await state.cases.loadForUser(users[0], state.configuration.newCaseId), null);
   for (const owned of state.existing) assert.deepEqual(await state.cases.loadForUser(owned.userId, owned.snapshot.caseId), owned.snapshot);
   assert.equal(state.calls.filter(c => c.path === '/v1/create-case').length, 1);
@@ -219,6 +229,15 @@ test('a corrupt downloaded digest cannot pass or trigger later program writes', 
   assert.equal(state.calls.some(c => c.path === '/v2/save-program-intake' && c.body.programId === 'hpsm-eaa'), false);
 });
 
+test('private PDF retention failure stops later writes and retains only the journaled fictional case', async t => {
+  const state = await setup(t);
+  await expectFailure(verifyHostedTeamBeta(state.configuration, { ...state.options,
+    retainPdf: async () => { throw new Error('PRIVATE_RESPONSE'); } }), 'scfhp-eaa_download', false, true);
+  assert.deepEqual(state.deletions, []);
+  assert.equal(state.calls.some(c => c.path === '/v2/save-program-intake' && c.body.programId === 'hpsm-eaa'), false);
+  assert.equal(state.calls.filter(c => c.path.endsWith('/logout?scope=local')).length, 2);
+});
+
 test('oversized response declarations stop before a new case is created', async t => {
   const state = await setup(t, async (call, response) => {
     if (call.path === '/v1/read-case' && response.status === 200) response.headers.set('Content-Length', String(320 * 1024 + 1));
@@ -244,7 +263,15 @@ test('journal is exclusive and private; configuration rejects reuse of an existi
   const directory = await mkdtemp(join(tmpdir(), 'sah-beta-')); const configuration = config();
   try {
     const initial = { apiOrigin, projectOrigin, caseId: configuration.newCaseId, runId: configuration.runId };
-    const local = await createTeamBetaJournal(directory, initial); await local.close();
+    const local = await createTeamBetaJournal(directory, initial);
+    const fictionalBytes = Buffer.from('%PDF-fictional-private-retention');
+    await local.retainPdf('scfhp-eaa', fictionalBytes);
+    assert.equal((await stat(join(directory, 'scfhp-eaa-chinese-draft.pdf'))).mode & 0o777, 0o600);
+    assert.deepEqual(await readFile(join(directory, 'scfhp-eaa-chinese-draft.pdf')), fictionalBytes);
+    await assert.rejects(local.retainPdf('scfhp-eaa', fictionalBytes));
+    await assert.rejects(local.retainPdf('../outside', fictionalBytes));
+    await assert.rejects(local.retainPdf('hpsm-eaa', new Uint8Array(4 * 1024 * 1024 + 1)));
+    await local.close();
     assert.equal((await stat(join(directory, 'hosted-team-beta-check.jsonl'))).mode & 0o777, 0o600);
     assert.ok((await readFile(join(directory, 'hosted-team-beta-check.jsonl'), 'utf8')).includes(configuration.newCaseId));
     await assert.rejects(createTeamBetaJournal(directory, initial));

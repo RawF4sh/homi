@@ -17,6 +17,9 @@ COPY --chown=node:node certs/supabase-root-2021.crt ./certs/supabase-root-2021.c
 COPY --chown=node:node assets/forms/scfhp-41567.pdf ./assets/forms/scfhp-41567.pdf
 COPY --chown=node:node assets/forms/hpsm-eaa-inert.pdf ./assets/forms/hpsm-eaa-inert.pdf
 COPY --chown=node:node assets/forms/rtp-preparation-worksheet.pdf ./assets/forms/rtp-preparation-worksheet.pdf
+COPY --chown=node:node assets/fonts/SafeAtHomeCJK-Regular.otf ./assets/fonts/SafeAtHomeCJK-Regular.otf
+COPY --chown=node:node assets/fonts/SafeAtHomeCJK-Regular.metrics.bin ./assets/fonts/SafeAtHomeCJK-Regular.metrics.bin
+COPY --chown=node:node assets/fonts/OFL.txt ./assets/fonts/OFL.txt
 USER node
 
 EXPOSE 8788

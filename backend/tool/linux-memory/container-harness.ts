@@ -252,7 +252,8 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
     report.images = imageDetails;
     const context = join(temporary, 'runtime-context'); await mkdir(context, { mode: 0o700 });
     for (const path of ['package.json', 'package-lock.json', 'src', 'migrations', 'certs/supabase-root-2021.crt',
-      'assets/forms/scfhp-41567.pdf', 'assets/forms/hpsm-eaa-inert.pdf', 'assets/forms/rtp-preparation-worksheet.pdf']) {
+      'assets/forms/scfhp-41567.pdf', 'assets/forms/hpsm-eaa-inert.pdf', 'assets/forms/rtp-preparation-worksheet.pdf',
+      'assets/fonts/SafeAtHomeCJK-Regular.otf', 'assets/fonts/SafeAtHomeCJK-Regular.metrics.bin', 'assets/fonts/OFL.txt']) {
       await mkdir(dirname(join(context, path)), { recursive: true }); await cp(join(BACKEND, path), join(context, path), { recursive: true, dereference: false });
     }
     const nodeDigest = (imageDetails[NODE_IMAGE] as { digest: string }).digest;

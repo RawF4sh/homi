@@ -8,7 +8,7 @@ import { readFixture } from './memory/fixture.ts';
 import { profileChildEnvironment, PROFILE_WORKER_NODE_ARGS, PROFILE_NODE_VERSION } from './memory/profile-harness.ts';
 import { MemoryCaseRepository } from '../src/api/memory-case-repository.ts';
 import { loadRuntimeBenefitsBundle } from '../src/programs/runtime-bundle.ts';
-import { createFormAnswerContext } from '../src/forms/form-answers.ts';
+import { createFormAnswerContext, createSavedFormAnswers } from '../src/forms/form-answers.ts';
 import { handleDraftExport, type DraftExportDependencies } from '../src/api/draft-export.ts';
 import { intakeDefinition } from '../src/programs/intake.ts';
 import type { CaseSnapshot } from '../src/types.ts';
@@ -17,10 +17,15 @@ export const scenarios = ['scfhp-six', 'hpsm-six', 'rtp-six', 'hpsm-near24-repea
 type Scenario = typeof scenarios[number];
 const owner = 'fictional-memory-owner', caseId = 'fictional-v2-memory', at = '2026-10-22T22:00:00.000Z';
 const sha = (v: Uint8Array) => createHash('sha256').update(v).digest('hex');
+const chineseGlyphs = (offset: number, count: number) => Array.from({ length: count },
+  (_, index) => String.fromCodePoint(0x4e00 + offset + index)).join('');
+export const TEAM_MEMORY_OBSERVATION = '虚构測試：门槛、門檻。' + chineseGlyphs(0, 200);
+export const teamMemoryLabel = (index: number) => chineseGlyphs(200 + index * 40, 40);
+export const TEAM_MEMORY_INTAKE = '虚构維修說明：' + chineseGlyphs(1000, 580);
 async function seed(directory: string, programId: string, repeated: boolean, count: number) {
   const snapshot: CaseSnapshot = { schemaVersion: '1', caseId, revision: 1,
     profile: { city: null, county: null, healthPlan: null, tenure: null, ageYears: null, householdSize: null, annualIncomeUsd: null, ownerConsentReported: null }, unresolvedFields: [],
-    findings: [{ id: 'fictional-finding', room: 'entrance', observation: 'Generated capacity-test pixels only.', reviewState: 'confirmed', measurements: [],
+    findings: [{ id: 'fictional-finding', room: 'entrance', observation: TEAM_MEMORY_OBSERVATION, reviewState: 'confirmed', measurements: [],
       evidenceIds: Array.from({ length: count }, (_, i) => `photo-${i}`) }] };
   const cases = new MemoryCaseRepository([{ userId: owner, snapshot }]);
   const fixture = await readFixture(directory, repeated ? 'near24.png' : 'six.png');
@@ -38,14 +43,23 @@ async function seed(directory: string, programId: string, repeated: boolean, cou
   const intake = await cases.saveProgramIntakeIfCurrent({ userId: owner, caseId, revision: 1, programId, expectedIntakeRevision: 0,
     intake: { schemaVersion: '2', caseId, caseRevision: 2, programId, questionnaireVersion: definition.questionnaireVersion,
       intakeRevision: 1, updatedAt: at, updatedBy: owner, answers: definition.questions.map(q => ({ key: q.key,
-        value: q.kind === 'money' ? 9000 : q.kind === 'boolean' ? false : 'Fictional repair question. '.repeat(20).trim(), reviewState: 'reported' })) } });
+        value: q.kind === 'money' ? 9000 : q.kind === 'boolean' ? false : TEAM_MEMORY_INTAKE, reviewState: 'reported' })) } });
   if (intake.status !== 'saved') throw new Error('Fixture intake failed.');
+  const bundle = await loadRuntimeBenefitsBundle('team-beta-drafts-v2');
+  const form = (await bundle.loadFormTemplate(programId))!;
+  const answerSave = await cases.saveFormAnswersIfCurrent({ userId: owner, caseId, revision: 2,
+    programId, expectedAnswerRevision: 0, answers: createSavedFormAnswers({
+      snapshot: { ...snapshot, revision: 3 }, context: createFormAnswerContext(form.template), answerRevision: 1,
+      answers: [{ key: 'memberFirstName', value: '陈美华 陳美華', reviewState: 'reviewed' }],
+      updatedAt: at, updatedBy: owner,
+    }) });
+  if (answerSave.status !== 'saved') throw new Error('Fixture form answers failed.');
   for (const d of descriptors) {
-    const result = await cases.saveAnnotationsForUser(owner, { schemaVersion: '2', caseId, expectedCaseRevision: 2,
+    const result = await cases.saveAnnotationsForUser(owner, { schemaVersion: '2', caseId, expectedCaseRevision: 3,
       expectedCatalogRevision: catalogRevision, evidenceId: d.evidenceId, expectedEvidenceRevision: 1,
       expectedAnnotationRevision: 0, expectedImageSha256: d.sha256, expectedImageWidth: d.width, expectedImageHeight: d.height,
       marks: Array.from({ length: 20 }, (_, i) => ({ id: `box-${i}`, rect: [(i % 4) * 200000, Math.floor(i / 4) * 150000, 150000, 100000] as [number, number, number, number],
-        label: `Fictional observed marker ${String(i + 1).padStart(2, '0')}`.padEnd(40, '.') })), reviewedForExport: true }, at);
+        label: teamMemoryLabel(i) })), reviewedForExport: true }, at);
     if (result.status !== 'found') throw new Error('Fixture annotations failed.');
     catalogRevision++;
   }
@@ -62,7 +76,7 @@ async function exportAndVerify(request: unknown, deps: DraftExportDependencies,
   const m = result.body;
   if (m.schemaVersion !== '2' || m.selectedEvidence.length !== count || m.pageCount < minimumPages ||
     (retained !== undefined && retained !== m.artifactId)) throw new Error('Invalid v2 export binding.');
-  const file = await handleDraftExport({ body: { schemaVersion: '2', caseId, expectedCaseRevision: 2, artifactId: m.artifactId }, bearerToken: 'fictional' }, deps, 'download-draft-export', 2);
+  const file = await handleDraftExport({ body: { schemaVersion: '2', caseId, expectedCaseRevision: 3, artifactId: m.artifactId }, bearerToken: 'fictional' }, deps, 'download-draft-export', 2);
   if (file.status !== 200 || !(file.body instanceof Uint8Array) || file.body.length !== m.byteLength ||
     Buffer.from(file.body.subarray(0, 5)).toString('ascii') !== '%PDF-' || sha(file.body) !== m.sha256 ||
     file.headers['Cache-Control'] !== 'no-store' || file.headers['X-Content-Type-Options'] !== 'nosniff') {
@@ -79,8 +93,8 @@ async function measureTeamWorkload(directory: string, scenario: Scenario, explic
   const form = (await bundle.loadFormTemplate(programId))!;
   const deps = { cases, authenticate: async () => ({ userId: owner }), loadRegistry: bundle.loadRegistry,
     loadFormTemplate: bundle.loadFormTemplate, now: () => new Date(at) };
-  const request = { schemaVersion: '2', caseId, expectedCaseRevision: 2, programId,
-    expectedFormContextId: createFormAnswerContext(form.template).formContextId, expectedAnswerRevision: 0,
+  const request = { schemaVersion: '2', caseId, expectedCaseRevision: 3, programId,
+    expectedFormContextId: createFormAnswerContext(form.template).formContextId, expectedAnswerRevision: 1,
     expectedEvidenceCatalogRevision: catalogRevision, generationKey: 'fictional-v2-memory-attempt',
     selectedEvidence: descriptors.map(d => ({ evidenceId: d.evidenceId, expectedEvidenceRevision: 1, expectedAnnotationRevision: 1, reviewedForExport: true })) };
   const rss = [], pages = [], digests = []; let retained: string | undefined;

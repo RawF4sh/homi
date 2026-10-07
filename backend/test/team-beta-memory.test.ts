@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolve } from 'node:path';
 import { parseTeamLinuxOptions, validateTeamLinuxResult } from '../tool/profile-team-beta-linux.ts';
+import { TEAM_MEMORY_OBSERVATION, TEAM_MEMORY_INTAKE, teamMemoryLabel } from '../tool/profile-team-beta.ts';
 import { runTeamSession } from '../tool/memory/team-session.ts';
 
 function snapshot() {
@@ -83,4 +84,13 @@ test('Linux soak requires the complete same-process duration plus independent li
     const changed = structuredClone(report); change(changed);
     assert.equal(validateTeamLinuxResult(changed, inspection(), 'hpsm-near24-repeat', 'arm64', 'soak'), false);
   }
+});
+
+
+test('memory fixture exercises both Chinese scripts and 800 distinct annotation glyphs', () => {
+  assert.match(TEAM_MEMORY_OBSERVATION, /门槛、門檻/);
+  assert.ok([...TEAM_MEMORY_INTAKE].length <= 600);
+  const labels = Array.from({ length: 20 }, (_, index) => teamMemoryLabel(index));
+  assert.equal(labels.reduce((sum, label) => sum + [...label].length, 0), 800);
+  assert.equal(new Set(labels.join('')).size, 800);
 });

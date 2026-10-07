@@ -9,6 +9,7 @@ import { createFormAnswerContext, formAnswersAreCurrent, parseSavedFormAnswers, 
 import { MAX_TEMPLATE_BYTES, verifyTemplateBytes } from '../forms/template-artifact.ts';
 import { planPacketWithForm } from '../forms/prepare-form-packet.ts';
 import { renderDraftExport, DraftExportRenderError } from '../exports/render-draft-export.ts';
+import { REVIEWED_TEXT_RENDERING_VERSION } from '../pdf/reviewed-text-font.ts';
 import type { ExportArtifactMetadata } from '../exports/types.ts';
 import { EXPORT_LIFETIME_MS, MAX_EXPORT_BYTES, parseStoredExportArtifactMetadata as parseExportArtifactMetadata } from '../exports/validation.ts';
 import type { EvidenceRepository, EvidenceRepositoryFailure, ExportReviewSnapshot } from '../evidence/repository.ts';
@@ -233,7 +234,7 @@ async function loadContext(userId: string, request: CreateRequest, deps: DraftEx
   const evaluatedAt = clock(deps);
   if (instantMicros(evaluatedAt) < instantMicros(validatedAt)) fail('INTERNAL_ERROR');
   const match = matchPrograms(snapshot, [program], { evaluatedAt, evaluationDate: evaluatedAt.slice(0, 10) }).matches[0];
-  const fingerprint = hash({ renderingVersion: request.annotationRevisions?'draft-export-annotations-v2':'draft-export-v1', ...(request.annotationRevisions?{annotations, intake:intake??null, intakeRenderingVersion:'reported-intake-v1'}:{}), snapshot, program, match, template,
+  const fingerprint = hash({ renderingVersion: request.annotationRevisions?'draft-export-annotations-v2':'draft-export-v1', textRenderingVersion: REVIEWED_TEXT_RENDERING_VERSION, ...(request.annotationRevisions?{annotations, intake:intake??null, intakeRenderingVersion:'reported-intake-v1'}:{}), snapshot, program, match, template,
     formAnswers: source.answers, catalogRevision: source.catalogRevision,
     evidence: source.evidence, evaluationDate: evaluatedAt.slice(0, 10) });
   return { source, assets, intake, annotations, annotationVersion:request.annotationRevisions!==undefined, template, templateBytes: detachedForm.bytes, program, match, fingerprint, evaluatedAt, formContextId: formContext.formContextId };

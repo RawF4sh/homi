@@ -12,6 +12,10 @@ import { MemoryCaseRepository } from '../src/api/memory-case-repository.ts';
 import { createFormAnswerContext, createSavedFormAnswers } from '../src/forms/form-answers.ts';
 import type { CaseSnapshot } from '../src/types.ts';
 import type { ExportArtifactMetadata } from '../src/exports/types.ts';
+import type { ExportPublishInput } from '../src/evidence/repository.ts';
+import { canonicalJson } from '../src/evidence/validation.ts';
+import { matchPrograms } from '../src/matcher.ts';
+import { REVIEWED_TEXT_RENDERING_VERSION } from '../src/pdf/reviewed-text-font.ts';
 
 const NOW = '2026-10-17T22:00:00.000Z';
 function makeCase(): CaseSnapshot {
@@ -98,6 +102,36 @@ test('empty explicit selection exports only the incomplete form and exact-key re
   error(await state.send('create-draft-export'), 409, 'EXPORT_GENERATION_CONFLICT');
 });
 
+test('font renderer identity invalidates legacy artifacts without changing their readable metadata schema', async () => {
+  const state = await setup();
+  const publish = state.repository.publishExportIfCurrent.bind(state.repository);
+  let published: ExportPublishInput | undefined;
+  state.repository.publishExportIfCurrent = async input => { published = structuredClone(input); return publish(input); };
+  const current = metadata(await state.send('create-draft-export'));
+  assert.ok(published);
+  const review = await state.repository.loadExportReviewForUser({ userId: 'alice', caseId: state.snapshot.caseId,
+    revision: 1, expectedCatalogRevision: 1, programId: state.program.programId, selections: published.selections });
+  assert.equal(review.status, 'found'); if (review.status !== 'found') return;
+  const { snapshot, answers, evidence, catalogRevision } = review.snapshot;
+  const legacyContext = { renderingVersion: 'draft-export-v1', snapshot, program: state.program,
+    match: matchPrograms(snapshot, [state.program], { evaluatedAt: NOW, evaluationDate: NOW.slice(0, 10) }).matches[0],
+    template: state.form.template, formAnswers: answers, catalogRevision, evidence, evaluationDate: NOW.slice(0, 10) };
+  const digest = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
+  const oldFingerprint = digest(legacyContext);
+  assert.notEqual(current.exportContextId, oldFingerprint);
+  assert.equal(current.exportContextId, digest({ ...legacyContext, textRenderingVersion: REVIEWED_TEXT_RENDERING_VERSION }));
+  const legacy = structuredClone(published);
+  legacy.contextFingerprint = oldFingerprint;
+  legacy.generationKey = 'legacy-renderer-export';
+  legacy.artifact.metadata.exportContextId = oldFingerprint;
+  legacy.artifact.metadata.artifactId = 'legacy-renderer-artifact';
+  assert.equal((await publish(legacy)).status, 'saved');
+  error(await state.download(legacy.artifact.metadata), 409, 'EXPORT_GENERATION_CONFLICT');
+  error(await state.send('create-draft-export', { ...state.request, generationKey: legacy.generationKey }), 409, 'EXPORT_GENERATION_CONFLICT');
+  assert.equal((await state.download(current)).status, 200);
+  metadata(await state.send('create-draft-export', { ...state.request, generationKey: 'new-renderer-export' }));
+});
+
 test('artifact expiry is exclusive and cannot be revived by reusing its generation key', async () => {
   const state = await setup(), artifact = metadata(await state.send('create-draft-export'));
   state.setNow(artifact.expiresAt);
@@ -120,7 +154,7 @@ test('known past or exact policy recheck boundaries return an expiry error, not 
 test('unsupported reviewed form text fails without publishing a partial draft', async () => {
   const state = await setup();
   const answers = createSavedFormAnswers({ snapshot: { ...state.snapshot, revision: 2 }, context: createFormAnswerContext(state.form.template),
-    answerRevision: 1, answers: [{ key: 'memberFirstName', value: '示例', reviewState: 'reviewed' }], updatedAt: NOW, updatedBy: 'alice' });
+    answerRevision: 1, answers: [{ key: 'memberFirstName', value: 'Example \u0378', reviewState: 'reviewed' }], updatedAt: NOW, updatedBy: 'alice' });
   await state.repository.saveFormAnswersIfCurrent({ userId: 'alice', caseId: state.snapshot.caseId, revision: 1,
     programId: state.program.programId, expectedAnswerRevision: 0, answers });
   error(await state.send('create-draft-export', { ...state.request, expectedCaseRevision: 2, expectedAnswerRevision: 1 }), 422, 'EXPORT_REVIEW_REQUIRED');
