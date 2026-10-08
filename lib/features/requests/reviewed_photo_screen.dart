@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../../app/theme.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../assessment/presentation/saved_photo_with_marks.dart';
@@ -99,7 +100,7 @@ class _ReviewedPhotoScreenState extends State<ReviewedPhotoScreen> {
               SizedBox(
                 height: (constraints.maxHeight * .55).clamp(240, 480),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(SahRadius.large),
                   child: ColoredBox(
                     color: Theme.of(context).colorScheme.surfaceContainer,
                     child: InteractiveViewer(

@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/theme.dart';
+
 const double sahFloatingNavHeight = 72;
 
 double sahFloatingNavClearance(BuildContext context) =>
@@ -34,7 +36,7 @@ class SahFloatingNavBar extends StatelessWidget {
     final bar = DecoratedBox(
       decoration: BoxDecoration(
         color: surface,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outlineVariant),
         boxShadow: [
           BoxShadow(
@@ -56,6 +58,9 @@ class SahFloatingNavBar extends StatelessWidget {
           shadowColor: Colors.transparent,
           elevation: 0,
           indicatorColor: scheme.primaryContainer,
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(SahRadius.medium),
+          ),
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           selectedIndex: selectedIndex,
           onDestinationSelected: onDestinationSelected,
@@ -71,7 +76,7 @@ class SahFloatingNavBar extends StatelessWidget {
         media.padding.bottom > 0 ? media.padding.bottom : 12,
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(16),
         child: opaque || kIsWeb
             ? bar
             : BackdropFilter(

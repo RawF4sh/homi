@@ -106,21 +106,14 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await reveal(
+        await revealPastModel(
           tester,
           find.text(words.text('Explore support for sitting and standing')),
         );
         expect(find.text(expected.title), findsNothing);
-        await reveal(tester, find.text(words.text('Observation to add')));
-        await tester.tap(find.text(words.text('Observation to add')));
-        await tester.pumpAndSettle();
         final translatedDetail = words.text(expected.detail);
-        expect(find.text(translatedDetail), findsOneWidget);
-        await reveal(
-          tester,
-          find.text(words.text('Review and add observation')),
-        );
-        await tester.tap(find.text(words.text('Review and add observation')));
+        await reveal(tester, find.text(words.text('Add this concern')));
+        await tester.tap(find.text(words.text('Add this concern')));
         await tester.pumpAndSettle();
         expect(find.textContaining(translatedDetail), findsWidgets);
         await tester.ensureVisible(find.text(words.text('Confirm and add')));
@@ -169,14 +162,23 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        final expand = find.text(words.text('Explore or correct the 3D model'));
-        await reveal(tester, expand);
-        final viewport = tester.getRect(find.byType(Scrollable).first);
-        expect(viewport.height, greaterThanOrEqualTo(260));
-        final visibleTitle = tester.getRect(expand).intersect(viewport);
-        expect(visibleTitle.height, greaterThanOrEqualTo(48));
-        expect(visibleTitle.width, greaterThanOrEqualTo(48));
-        await tester.tapAt(visibleTitle.center);
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            const FakeAccessibilityFeatures(accessibleNavigation: true);
+        addTearDown(
+          tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
+        await tester.pumpAndSettle();
+        final list = find.byKey(const ValueKey('scan-selection-surface-1'));
+        await revealPastModel(tester, list);
+        await tester.tap(list);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find
+              .byWidgetPredicate(
+                (w) => w is DropdownMenuItem<String> && w.value == 'surface-1',
+              )
+              .last,
+        );
         await tester.pumpAndSettle();
         final selector = find.byKey(const ValueKey('surface-1-unknown'));
         for (var i = 0; i < 100 && selector.evaluate().isEmpty; i++) {
@@ -242,4 +244,24 @@ void main() {
       },
     );
   }
+}
+
+Future<void> revealPastModel(WidgetTester tester, Finder finder) async {
+  await tester.pumpAndSettle();
+  for (var i = 0; i < 100 && finder.hitTestable().evaluate().isEmpty; i++) {
+    if (finder.evaluate().isNotEmpty) {
+      await Scrollable.ensureVisible(
+        tester.element(finder.first),
+        alignment: .5,
+      );
+    } else {
+      final list = tester.getRect(find.byType(Scrollable).first);
+      await tester.dragFrom(
+        Offset(list.left + 4, list.center.dy),
+        const Offset(0, -250),
+      );
+    }
+    await tester.pumpAndSettle();
+  }
+  expect(finder.hitTestable(), findsWidgets);
 }

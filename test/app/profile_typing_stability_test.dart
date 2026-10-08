@@ -291,10 +291,7 @@ void main() {
       await tester.tap(button);
       await settleAutosave(tester);
       expect(app.coordinator.currentCase().profile.healthPlan, choice.$2);
-      expect(
-        field('Health plan'),
-        choice.$2 == null ? findsOneWidget : findsNothing,
-      );
+      expect(field('Health plan'), findsNothing);
     }
     final none = find.byKey(const ValueKey('profile-no-health-coverage'));
     await tester.ensureVisible(none);

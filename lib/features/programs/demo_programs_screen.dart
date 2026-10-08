@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../app/theme.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../../shared/models/contracts.dart';
@@ -122,7 +123,7 @@ class _DemoProgramsScreenState extends State<DemoProgramsScreen> {
                           color: Theme.of(
                             context,
                           ).colorScheme.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: BorderRadius.circular(SahRadius.large),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,

@@ -16,9 +16,12 @@ class ProgramIntakeScreen extends StatefulWidget {
     super.key,
     required this.services,
     required this.program,
+    this.onNext,
   });
   final AppServices services;
   final ProgramMatch program;
+
+  final VoidCallback? onNext;
   @override
   State<ProgramIntakeScreen> createState() => _ProgramIntakeScreenState();
 }
@@ -581,9 +584,15 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                       if (_justSaved)
                         FilledButton(
                           key: const ValueKey('intake-done'),
-                          onPressed: exiting ? null : requestExit,
+                          onPressed: exiting
+                              ? null
+                              : widget.onNext ?? requestExit,
                           child: Text(
-                            context.tr('Back to possible assistance'),
+                            context.tr(
+                              widget.onNext == null
+                                  ? 'Back to possible assistance'
+                                  : 'Continue',
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         )

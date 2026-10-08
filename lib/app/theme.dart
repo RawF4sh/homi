@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 abstract final class SahRadius {
-  static const double small = 8;
-  static const double medium = 12;
-  static const double large = 16;
+  static const double small = 4;
+  static const double medium = 6;
+  static const double large = 8;
 }
 
 abstract final class SafeAtHomeTheme {
@@ -161,13 +161,15 @@ abstract final class SafeAtHomeTheme {
         helperMaxLines: 5,
         errorMaxLines: 5,
         labelStyle: TextStyle(color: scheme.onSurfaceVariant),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(SahRadius.medium),
+        ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SahRadius.medium),
           borderSide: BorderSide(color: scheme.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SahRadius.medium),
           borderSide: BorderSide(color: scheme.primary, width: 2),
         ),
       ),
@@ -210,7 +212,9 @@ abstract final class SafeAtHomeTheme {
           color: scheme.onInverseSurface,
         ),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(SahRadius.medium),
+        ),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: scheme.primary),
       expansionTileTheme: ExpansionTileThemeData(

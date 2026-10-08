@@ -13,6 +13,13 @@ Finder suggestion(String field, String value) =>
     find.byKey(ValueKey('profile-suggestion-$field-$value'));
 
 Future<void> type(WidgetTester tester, String label, String text) async {
+  if (label == 'Health plan' && field(label).evaluate().isEmpty) {
+    final hasPlan = find.byKey(const ValueKey('profile-has-health-plan'));
+    await tester.ensureVisible(hasPlan);
+    await tester.pumpAndSettle();
+    await tester.tap(hasPlan);
+    await tester.pumpAndSettle();
+  }
   await tester.ensureVisible(field(label));
   await tester.pumpAndSettle();
   await tester.enterText(field(label), text);
@@ -89,7 +96,12 @@ void main() {
       expect(saved.city, 'San José');
       expect(saved.county, 'Santa Clara');
       expect(saved.healthPlan, 'Santa Clara Family Health Plan');
-      expect((app.transport as FakeTransport).requests, hasLength(1));
+      expect(
+        (app.transport as FakeTransport).requests.where(
+          (r) => r.endpoint.path == '/v1/create-case',
+        ),
+        hasLength(1),
+      );
       expect(app.coordinator.currentCase().profile.county, 'Santa Clara');
     },
   );

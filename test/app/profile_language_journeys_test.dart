@@ -57,7 +57,6 @@ void main() {
           );
           await tester.pumpAndSettle();
           for (final text in [
-            'Type for suggestions, or enter another plan.',
             'Has a health plan',
             'No health coverage',
             'Not sure',
@@ -69,13 +68,7 @@ void main() {
             'annualIncomeUsd',
             'tenure',
             'consent',
-            if (large) ...[
-              'city',
-              'county',
-              'healthPlan',
-              'ageYears',
-              'householdSize',
-            ],
+            if (large) ...['city', 'county', 'ageYears', 'householdSize'],
           ]) {
             final label = find.byKey(ValueKey('profile-full-label-$key'));
             await tester.ensureVisible(label);
@@ -166,6 +159,10 @@ void main() {
           tester.widget<TextFormField>(field('County')).controller!.text,
           'Santa Clara',
         );
+        await tap(
+          tester,
+          find.byKey(const ValueKey('profile-has-health-plan')),
+        );
         await type('Health plan', 'scfhp');
         await tap(
           tester,
@@ -191,20 +188,6 @@ void main() {
         await type('Annual household income (USD)', '0');
         FocusManager.instance.primaryFocus?.unfocus();
         await tester.pumpAndSettle();
-        for (final help in [
-          'Type for suggestions, or enter another name.',
-          'Yearly household total, US dollars',
-          'Reported only, not a signed authorization.',
-        ]) {
-          for (final element in find.text(tr(help)).evaluate()) {
-            expect(
-              (element.findRenderObject()! as RenderParagraph)
-                  .didExceedMaxLines,
-              false,
-              reason: help,
-            );
-          }
-        }
         await tap(tester, find.byKey(const ValueKey('profile-keep-edits')));
         expect(app.coordinator.currentDraft().profile.city, 'San José');
         expect(app.coordinator.currentDraft().profile.county, 'Santa Clara');

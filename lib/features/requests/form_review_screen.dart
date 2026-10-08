@@ -15,9 +15,12 @@ class FormReviewScreen extends StatefulWidget {
     super.key,
     required this.services,
     required this.program,
+    this.onNext,
   });
   final AppServices services;
   final ProgramMatch program;
+
+  final VoidCallback? onNext;
   @override
   State<FormReviewScreen> createState() => _FormReviewScreenState();
 }
@@ -34,6 +37,7 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
   late final int _generation;
   late final DraftSaveTracker _draftSaves;
   bool _leaving = false;
+  bool _justSaved = false;
   String get _key => 'form.$_caseId.${widget.program.programId}';
   @override
   void initState() {
@@ -233,6 +237,7 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
       if (mounted) {
         _error =
             'Administrative answers saved. Clinical review, consent and signatures remain separate.';
+        _justSaved = true;
       }
     } catch (error) {
       if (mounted) _error = safeOperationMessage(error);
@@ -246,6 +251,7 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
     setState(() {
       _reviewed[key] = false;
       _error = null;
+      _justSaved = false;
     });
     try {
       await _persist();
@@ -455,16 +461,23 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                           key: const ValueKey('form-save-feedback'),
                           message: context.tr(_error!),
                         ),
-                      FilledButton(
-                        key: const ValueKey('form-save'),
-                        onPressed: _busy || _uncertain || exiting
-                            ? null
-                            : _save,
-                        child: Text(
-                          context.tr('Save reviewed administrative answers'),
-                          textAlign: TextAlign.center,
+                      if (_justSaved && widget.onNext != null)
+                        FilledButton(
+                          key: const ValueKey('form-next'),
+                          onPressed: exiting ? null : widget.onNext,
+                          child: Text(context.tr('Continue')),
+                        )
+                      else
+                        FilledButton(
+                          key: const ValueKey('form-save'),
+                          onPressed: _busy || _uncertain || exiting
+                              ? null
+                              : _save,
+                          child: Text(
+                            context.tr('Save reviewed administrative answers'),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                      ),
                     ],
                   ],
                 ),

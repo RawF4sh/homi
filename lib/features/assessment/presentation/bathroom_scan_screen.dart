@@ -2,8 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 
-import '../../../shared/presentation/sah_components.dart';
-
 import '../application/bathroom_scan_adapter.dart';
 import '../application/bathroom_scan_session.dart';
 import '../domain/scan/bathroom_scan_scene.dart';
@@ -338,22 +336,20 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           'services_update_required',
           'permission_denied',
         }.contains(capability?.reason);
+    final tapped = selectedId == null ? null : scene?.elementById(selectedId!);
+    final screenReader = MediaQuery.of(context).accessibleNavigation;
     return [
-      Text(
-        scene == null
-            ? context.tr('Scan your bathroom')
-            : context.tr('Your 3D bathroom'),
-        style: Theme.of(context).textTheme.headlineMedium,
-      ),
-      Text(
-        scene == null
-            ? context.tr(
-                'Scan the layout, tell us what feels difficult, then choose the improvements to explore.',
-              )
-            : context.tr(
-                'Choose the help you need, then add the concerns that fit.',
-              ),
-      ),
+      if (scene == null) ...[
+        Text(
+          context.tr('Scan your bathroom'),
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        Text(
+          context.tr(
+            'Scan the layout, tell us what feels difficult, then choose the improvements to explore.',
+          ),
+        ),
+      ],
       if (!scan.isCurrent())
         Text(
           context.tr(
@@ -413,23 +409,6 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
               'Stop if moving feels unsafe. Someone else can scan for you.',
             ),
           ),
-          SahMoreInfo(
-            details: [
-              context.tr(
-                'Include the entry, floor, bath, toilet and sink from several angles. Stay on dry, stable ground.',
-              ),
-              context.tr(
-                'Mirrors, glass, small fittings and hidden areas may be missed.',
-              ),
-              capability?.source == 'arcore'
-                  ? context.tr(
-                      'Android uses ARCore surfaces and available depth samples. You identify what a surface represents; the scanner does not recognize bathroom fixtures.',
-                    )
-                  : context.tr(
-                      'iPhone uses RoomPlan on supported LiDAR devices with iOS 16 or later. Other devices keep the photo and manual assessment flow.',
-                    ),
-            ],
-          ),
         ]),
       if (scene == null)
         Column(
@@ -463,6 +442,10 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           ],
         ),
       if (scene != null) ...[
+        if (scene.warnings.isNotEmpty)
+          _notice(
+            scene.warnings.map((code) => context.tr(_warning(code))).join('\n'),
+          ),
         BathroomModelView(
           key: ValueKey(scene.fingerprint),
           scene: scene,
@@ -472,14 +455,30 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
               : '${scene.elements.indexOf(selected) + 1}. ${context.tr((scan.review.labels[selected.id] ?? selected.kind).label)}',
           onSelect: (id) => setState(() => selectedId = id),
         ),
+        if (screenReader && scene.elements.isNotEmpty)
+          DropdownButtonFormField<String>(
+            key: ValueKey('scan-selection-${selected?.id}'),
+            initialValue: tapped?.id,
+            isExpanded: true,
+            isDense: false,
+            decoration: InputDecoration(
+              labelText: context.tr('Detected feature'),
+            ),
+            items: [
+              for (var i = 0; i < scene.elements.length; i++)
+                DropdownMenuItem(
+                  value: scene.elements[i].id,
+                  child: Text(
+                    '${i + 1}. ${context.tr((scan.review.labels[scene.elements[i].id] ?? scene.elements[i].kind).label)}',
+                  ),
+                ),
+            ],
+            onChanged: enabled ? (id) => setState(() => selectedId = id) : null,
+          ),
+        if (tapped != null) _feature(context, tapped),
         Text(
           context.tr('What would you like help with?'),
           style: Theme.of(context).textTheme.titleLarge,
-        ),
-        Text(
-          context.tr(
-            'Choose what feels difficult. Leave anything unanswered if you are not sure.',
-          ),
         ),
         for (final difficulty in ScanDifficulty.values)
           CheckboxListTile(
@@ -514,80 +513,12 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
         if (prompts.isEmpty)
           Text(
             scan.review.difficulties.isEmpty
-                ? context.tr(
-                    'Choose a difficulty above to get started. You do not need to check room dimensions.',
-                  )
+                ? context.tr('Choose a difficulty above to see ideas.')
                 : context.tr(
-                    'The scan has not identified a matching feature yet. You can label it in the optional model review below, or add this concern with a photo or note in the assessment.',
+                    'Nothing in the scan matched. That does not mean there is no problem. You can still add a note.',
                   ),
           ),
         for (final suggestion in prompts) _suggestion(context, suggestion),
-        SahMoreInfo(
-          details: [
-            context.tr(
-              'No suggestions does not mean the room is safe. You can add a concern even when the scanner misses it.',
-            ),
-          ],
-        ),
-        ExpansionTile(
-          key: const PageStorageKey('scan-model-details'),
-          tilePadding: EdgeInsets.zero,
-          title: Text(context.tr('Explore or correct the 3D model')),
-          subtitle: Text(context.tr('Optional · no dimension checks required')),
-          children: [
-            Text(
-              context.tr(
-                'This is a rough layout, not a construction plan. Drag to turn it, pinch to zoom, or tap a feature to see its label. Use the list below if tapping is difficult.',
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (scene.warnings.isNotEmpty)
-              _notice(
-                scene.warnings
-                    .map((code) => context.tr(_warning(code)))
-                    .join('\n'),
-              ),
-            if (selected != null) ...[
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                key: ValueKey('scan-selection-${selected.id}'),
-                initialValue: selected.id,
-                isExpanded: true,
-                isDense: false,
-                decoration: InputDecoration(
-                  labelText: context.tr('Detected feature'),
-                ),
-                items: [
-                  for (var i = 0; i < scene.elements.length; i++)
-                    DropdownMenuItem(
-                      value: scene.elements[i].id,
-                      child: Text(
-                        '${i + 1}. ${context.tr((scan.review.labels[scene.elements[i].id] ?? scene.elements[i].kind).label)}',
-                      ),
-                    ),
-                ],
-                onChanged: enabled
-                    ? (id) => setState(() => selectedId = id)
-                    : null,
-              ),
-              _feature(context, selected),
-            ] else
-              Text(
-                context.tr(
-                  'This capture contains point samples only. Add photos or notes for anything the scan missed.',
-                ),
-              ),
-            Text(
-              context.tr('{source} · {features} features · {samples} samples', {
-                'source': scene.sourceLabel,
-                'features': scene.elements.length,
-                'samples': scene.points.length,
-              }),
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
         ExpansionTile(
           key: const PageStorageKey('scan-options'),
           tilePadding: EdgeInsets.zero,
@@ -655,25 +586,13 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           ],
         ),
       ],
-      Text(context.tr('The 3D model stays encrypted on this device.')),
-      SahMoreInfo(
-        label: context.tr('Privacy and saving'),
-        details: [
-          context.tr(
-            'The scanner does not save raw video. Continue from the assessment to save your findings to your account. The 3D model stays on this device; it is not included in cloud backups or PDFs.',
-          ),
-          context.tr(
-            'Use the photo and measurement tools for close-up evidence and verified dimensions.',
-          ),
-        ],
-      ),
+      Text(context.tr('The 3D model stays on this phone.')),
     ];
   }
 
   Widget _feature(BuildContext context, ScanElement element) {
     final label = scan.review.labels[element.id] ?? element.kind;
     final reviewed = scan.review.reviewed.contains(element.id);
-    final dims = element.dimensions;
     return _card([
       DropdownButtonFormField<ScanElementKind>(
         key: ValueKey('${element.id}-${label.name}'),
@@ -695,49 +614,11 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
               )
             : null,
       ),
-      Text(
-        context.tr('Scanner says: {kind} ({confidence} confidence)', {
-          'kind': context.tr(element.kind.label),
-          'confidence': context.tr(element.classificationConfidence.name),
-        }),
-      ),
-      ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        title: Text(context.tr('Approximate model dimensions')),
-        subtitle: Text(context.tr('Optional technical detail')),
-        children: [
-          Text(
-            context.tr('About {x} × {y} × {z} m · not a verified measurement', {
-              'x': dims.x.toStringAsFixed(2),
-              'y': dims.y.toStringAsFixed(2),
-              'z': dims.z.toStringAsFixed(2),
-            }),
-          ),
-          Text(
-            context.tr(
-              'These bounds draw the 3D model. You do not need to verify toilet size, wall dimensions or ceiling height to ask about support. Only take a specific measurement if it helps assess a concern.',
-            ),
-          ),
-          SahMoreInfo(
-            details: [
-              context.tr(
-                'Confidence is about the label, not measurement accuracy.',
-              ),
-              context.tr(
-                'Sizes are local-axis bounds, not verified height or clear opening. A zero axis means a flat surface with unknown thickness.',
-              ),
-            ],
-          ),
-        ],
-      ),
       CheckboxListTile(
         contentPadding: EdgeInsets.zero,
         controlAffinity: ListTileControlAffinity.leading,
         value: reviewed,
         title: Text(context.tr('I checked this feature’s identity')),
-        subtitle: Text(
-          context.tr('Optional. This does not verify its dimensions.'),
-        ),
         onChanged: enabled
             ? (value) =>
                   run(() => scan.reviewElement(element.id, confirmed: value!))
@@ -772,28 +653,12 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
         Text(context.tr('Dismissed for this review.'))
       else ...[
         Text(context.tr(suggestion.nextAction)),
-        SahMoreInfo(
-          label: context.tr('Why this is suggested'),
-          details: [
-            context.tr(
-              'Based on the resident’s answers and proposed scan features. Confirm that these describe the room before adding the concern.',
-            ),
-          ],
-        ),
-        ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          title: Text(context.tr('Observation to add')),
-          children: [
-            Text(_suggestionDetail(context, suggestion)),
-            const SizedBox(height: 12),
-          ],
-        ),
         FilledButton(
           onPressed: enabled && !scan.dirty
               ? () => run(() async {
                   if (!await confirm(
                     context.tr('Confirm this observation?'),
-                    '${_suggestionDetail(context, suggestion)}\n\n${context.tr('Confirm that this describes the resident and the named feature in the room. This adds one concern; it does not verify dimensions or approve an installation.')}',
+                    '${_suggestionDetail(context, suggestion)}\n\n${context.tr('Check that this fits the resident and the room. It adds one concern. It does not check sizes or approve any work.')}',
                     context.tr('Confirm and add'),
                   )) {
                     return;
@@ -806,7 +671,7 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
                   }
                 })
               : null,
-          child: Text(context.tr('Review and add observation')),
+          child: Text(context.tr('Add this concern')),
         ),
         TextButton(
           onPressed: enabled

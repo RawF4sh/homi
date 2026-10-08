@@ -1475,7 +1475,7 @@ void main() {
             .isNotEmpty,
       );
       await check(ScanDifficulty.enteringBathroom.label);
-      final add = find.text('Review and add observation');
+      final add = find.text('Add this concern');
       await reveal(add);
       await settleUntil(
         () => enabled(
@@ -1512,10 +1512,9 @@ void main() {
       await tester.pump();
       final bathroom = find.byKey(const ValueKey('area-bathroom'));
       await settleUntil(
-        () =>
-            find.textContaining('3D scan saved').evaluate().isNotEmpty &&
-            enabled(open),
+        () => find.textContaining('3D scan saved').evaluate().isNotEmpty,
       );
+      expect(open, findsNothing);
       await Scrollable.ensureVisible(tester.element(bathroom), alignment: .5);
       await tester.pump();
       await tester.tap(bathroom);
@@ -1528,7 +1527,7 @@ void main() {
       expect(find.text('Open camera'), findsNothing);
       await reveal(added);
       expect(added, findsOneWidget);
-      expect(find.text('Review and add observation'), findsNothing);
+      expect(find.text('Add this concern'), findsNothing);
       await tester.tap(continueScan);
       await settleUntil(() => find.text('Bathroom in 3D').evaluate().isEmpty);
       expect(find.text('Step 3 of 3'), findsOneWidget);

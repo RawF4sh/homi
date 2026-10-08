@@ -296,4 +296,66 @@ const redesignTranslations = <String, Map<String, String>>{
     'vi': 'Khó với tới đồ vật.',
     'fil': 'Mahirap abutin ang mga bagay.',
   },
+  '3D scan saved': {
+    'es': 'Escaneo 3D guardado',
+    'zh-Hans': '3D 扫描已保存',
+    'zh-Hant': '3D 掃描已儲存',
+    'vi': 'Đã lưu bản quét 3D',
+    'fil': 'Na-save ang 3D scan',
+  },
+  'Details': {
+    'es': 'Detalles',
+    'zh-Hans': '详细信息',
+    'zh-Hant': '詳細資訊',
+    'vi': 'Chi tiết',
+    'fil': 'Mga detalye',
+  },
+  'Open one step': {
+    'es': 'Abrir un paso',
+    'zh-Hans': '打开某一步',
+    'zh-Hant': '開啟某一步',
+    'vi': 'Mở một bước',
+    'fil': 'Buksan ang isang hakbang',
+  },
+  'Add this concern': {
+    'es': 'Añadir esta inquietud',
+    'zh-Hans': '添加这个问题',
+    'zh-Hant': '新增這個問題',
+    'vi': 'Thêm mối lo này',
+    'fil': 'Idagdag ang alalahaning ito',
+  },
+  'Choose a difficulty above to see ideas.': {
+    'es': 'Elija una dificultad arriba para ver ideas.',
+    'zh-Hans': '在上方选择一个困难以查看建议。',
+    'zh-Hant': '在上方選擇一個困難以查看建議。',
+    'vi': 'Chọn một khó khăn ở trên để xem gợi ý.',
+    'fil': 'Pumili ng hirap sa itaas para makakita ng mga ideya.',
+  },
+  'Nothing in the scan matched. That does not mean there is no problem. You can still add a note.': {
+    'es':
+        'Nada del escaneo coincidió. Eso no significa que no haya un problema. Aún puede añadir una nota.',
+    'zh-Hans': '扫描中没有匹配项。这并不代表没有问题。您仍可添加备注。',
+    'zh-Hant': '掃描中沒有相符項目。這並不代表沒有問題。您仍可新增備註。',
+    'vi':
+        'Không có gì trong bản quét khớp. Điều đó không có nghĩa là không có vấn đề. Bạn vẫn có thể thêm ghi chú.',
+    'fil':
+        'Walang tumugma sa scan. Hindi ibig sabihin na walang problema. Maaari ka pa ring magdagdag ng tala.',
+  },
+  'The 3D model stays on this phone.': {
+    'es': 'El modelo 3D se queda en este teléfono.',
+    'zh-Hans': '3D 模型保留在这部手机上。',
+    'zh-Hant': '3D 模型保留在這支手機上。',
+    'vi': 'Mô hình 3D chỉ lưu trên điện thoại này.',
+    'fil': 'Nananatili ang 3D model sa teleponong ito.',
+  },
+  'Check that this fits the resident and the room. It adds one concern. It does not check sizes or approve any work.': {
+    'es':
+        'Compruebe que esto corresponde a la persona residente y al cuarto. Añade una inquietud. No revisa medidas ni aprueba ningún trabajo.',
+    'zh-Hans': '请确认这符合住户和房间的情况。这会添加一个问题。它不检查尺寸，也不批准任何工程。',
+    'zh-Hant': '請確認這符合住戶和房間的情況。這會新增一個問題。它不檢查尺寸，也不核准任何工程。',
+    'vi':
+        'Kiểm tra xem điều này có phù hợp với cư dân và căn phòng không. Thao tác này thêm một mối lo. Nó không kiểm tra kích thước hay phê duyệt công việc nào.',
+    'fil':
+        'Tiyaking akma ito sa residente at sa kuwarto. Nagdadagdag ito ng isang alalahanin. Hindi nito sinusuri ang sukat o inaaprubahan ang anumang trabaho.',
+  },
 };

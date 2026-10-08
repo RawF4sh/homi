@@ -20,7 +20,10 @@ class DraftPacketScreen extends StatefulWidget {
     required this.currentCase,
     this.caseChanges,
     this.now,
+    this.onNext,
   });
+
+  final VoidCallback? onNext;
 
   final CaseSnapshot snapshot;
   final ProgramMatch program;
@@ -179,6 +182,16 @@ class _DraftPacketScreenState extends State<DraftPacketScreen>
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(context.tr('Draft checklist'))),
+    bottomNavigationBar: widget.onNext == null
+        ? null
+        : SafeArea(
+            minimum: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+            child: FilledButton(
+              key: const ValueKey('checklist-next'),
+              onPressed: widget.onNext,
+              child: Text(context.tr('Continue')),
+            ),
+          ),
     body: SafeArea(
       child: FutureBuilder<DraftPacket>(
         future: _preparation,

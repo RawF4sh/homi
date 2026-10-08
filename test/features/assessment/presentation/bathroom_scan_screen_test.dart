@@ -239,9 +239,21 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
 }
 
 Future<void> _openModel(WidgetTester tester) async {
-  final title = find.text('Explore or correct the 3D model');
-  await _reveal(tester, title);
-  await tester.tap(title);
+  tester.platformDispatcher.accessibilityFeaturesTestValue =
+      const FakeAccessibilityFeatures(accessibleNavigation: true);
+  addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+  await tester.pumpAndSettle();
+  final list = find.byKey(const ValueKey('scan-selection-door-1'));
+  await _reveal(tester, list);
+  await tester.tap(list);
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find
+        .byWidgetPredicate(
+          (w) => w is DropdownMenuItem<String> && w.value == 'door-1',
+        )
+        .last,
+  );
   await tester.pumpAndSettle();
 }
 
@@ -470,7 +482,7 @@ void main() {
       expect(harness.session.review.reviewed, isEmpty);
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);
       expect(harness.imports, isEmpty);
-      final add = find.text('Review and add observation');
+      final add = find.text('Add this concern');
       await _reveal(tester, add);
       await tester.tap(add);
       await tester.pump(const Duration(milliseconds: 300));
@@ -636,7 +648,7 @@ void main() {
         difficulties: {ScanDifficulty.enteringBathroom},
       ).single.detail;
       await _open(tester, harness);
-      final add = find.text('Review and add observation');
+      final add = find.text('Add this concern');
       await _reveal(tester, add);
       await tester.tap(add);
       await tester.pump(const Duration(milliseconds: 300));
@@ -689,11 +701,9 @@ void main() {
       expect(harness.imports, isEmpty);
       await _reveal(
         tester,
-        find.textContaining(
-          'The scan has not identified a matching feature yet.',
-        ),
+        find.textContaining('Nothing in the scan matched.'),
       );
-      expect(find.text('Review and add observation'), findsNothing);
+      expect(find.text('Add this concern'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
@@ -751,7 +761,7 @@ void main() {
         tester,
         find.textContaining('Previously added, then dismissed or removed'),
       );
-      expect(find.text('Review and add observation'), findsNothing);
+      expect(find.text('Add this concern'), findsNothing);
       expect(earlierNotice, findsNothing);
       expect(harness.imports, hasLength(1));
       expect(find.text('Continue'), findsOneWidget);
@@ -806,7 +816,7 @@ void main() {
       await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
       await expectLater(tester, meetsGuideline(textContrastGuideline));
-      await _reveal(tester, find.text('Review and add observation'));
+      await _reveal(tester, find.text('Add this concern'));
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
       await expectLater(tester, meetsGuideline(textContrastGuideline));
@@ -837,8 +847,8 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(harness.session.review.reviewed, isEmpty);
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);
-      await _reveal(tester, find.text('Review and add observation'));
-      await tester.tap(find.text('Review and add observation'));
+      await _reveal(tester, find.text('Add this concern'));
+      await tester.tap(find.text('Add this concern'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Confirm this observation?'), findsOneWidget);
       expect(tester.takeException(), isNull);

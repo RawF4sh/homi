@@ -113,6 +113,220 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
     }
   }
 
+  void _replace(Widget screen) => Navigator.of(
+    context,
+  ).pushReplacement(MaterialPageRoute<void>(builder: (_) => screen));
+
+  void _start(ProgramMatch match) {
+    final c = widget.services.coordinator;
+    void export() => _replace(
+      PrivateExportScreen(services: widget.services, program: match),
+    );
+    void answers() => _replace(
+      FormReviewScreen(
+        services: widget.services,
+        program: match,
+        onNext: export,
+      ),
+    );
+    void checklist() => _replace(
+      DraftPacketScreen(
+        snapshot: c.currentCase(),
+        program: match,
+        service: ApiPacketPreparationService(widget.services.packets),
+        currentCase: c.currentCase,
+        caseChanges: c,
+        onNext: answers,
+      ),
+    );
+    _open(
+      ProgramIntakeScreen(
+        services: widget.services,
+        program: match,
+        onNext: checklist,
+      ),
+    );
+  }
+
+  Widget _details(BuildContext context, ProgramMatch match, bool same) {
+    final c = widget.services.coordinator;
+    Widget step(String key, String label, Widget Function() screen) => Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: TextButton(
+        key: key.isEmpty ? null : ValueKey(key),
+        onPressed: same ? () => _open(screen()) : null,
+        child: Text(context.tr(label)),
+      ),
+    );
+    return ExpansionTile(
+      key: ValueKey('program-${match.programId}-details'),
+      tilePadding: EdgeInsets.zero,
+      title: Text(context.tr('Details')),
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          child: Text(
+            context.tr('Open one step'),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        ),
+        step(
+          'program-${match.programId}-intake',
+          'Review program questions',
+          () => ProgramIntakeScreen(services: widget.services, program: match),
+        ),
+        step(
+          '',
+          'Draft checklist',
+          () => DraftPacketScreen(
+            snapshot: c.currentCase(),
+            program: match,
+            service: ApiPacketPreparationService(widget.services.packets),
+            currentCase: c.currentCase,
+            caseChanges: c,
+          ),
+        ),
+        step(
+          'program-${match.programId}-answers',
+          'Review administrative answers',
+          () => FormReviewScreen(services: widget.services, program: match),
+        ),
+        step(
+          'program-${match.programId}-export',
+          'Review evidence and draft PDF',
+          () => PrivateExportScreen(services: widget.services, program: match),
+        ),
+        step(
+          'program-${match.programId}-history',
+          'Manual request history',
+          () => RequestHistoryScreen(services: widget.services, program: match),
+        ),
+        if (widget.services.config.trackingEnabled)
+          TextButton.icon(
+            onPressed: !same
+                ? null
+                : () async {
+                    try {
+                      await widget.services.progressReady;
+                      if (!mounted || !c.isCurrent) return;
+                      final id = c.currentCase().caseId,
+                          revision = c.currentCase().revision;
+                      await widget.services.progress!.refresh(id);
+                      await widget.services.progress!.mutate(id, revision, {
+                        'type': 'track_program',
+                        'programId': match.programId,
+                      });
+                      if (mounted && c.isCurrent) {
+                        _open(ProgramProgressScreen(services: widget.services));
+                      }
+                    } catch (error) {
+                      if (context.mounted) {
+                        await showOperationError(context, error);
+                      }
+                    }
+                  },
+            icon: const Icon(Icons.playlist_add),
+            label: Text(context.tr('Track program')),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          child: Text(
+            context.tr('Eligibility checks'),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        ),
+        for (final check in match.checks)
+          ListTile(
+            key: ValueKey('program-${match.programId}-check-${check.id}'),
+            contentPadding: EdgeInsets.zero,
+            minLeadingWidth: 24,
+            leading: ExcludeSemantics(
+              child: Icon(
+                switch (check.status) {
+                  'pass' => Icons.check_circle_outline_rounded,
+                  'fail' => Icons.do_not_disturb_on_outlined,
+                  _ => Icons.help_outline_rounded,
+                },
+                color: check.status == 'pass'
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.tertiary,
+              ),
+            ),
+            title: Text(switch (check.status) {
+              'pass' => context.tr('Met'),
+              'fail' => context.tr('Not met'),
+              _ => context.tr('Needs confirmation'),
+            }),
+            subtitle: Text(check.explanation),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          child: Text(
+            context.tr('Program sources and review dates'),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+        ),
+        ListTile(
+          title: Text(
+            context.tr('Availability: {availability}', {
+              'availability': context.tr(switch (match.availability) {
+                'accepting' => 'accepting',
+                'not_accepting' => 'not accepting',
+                _ => 'unverified',
+              }),
+            }),
+          ),
+          subtitle: Text(
+            context.tr('Rule version: {version}', {
+              'version': match.ruleVersion,
+            }),
+          ),
+        ),
+        for (final source in match.sources)
+          ListTile(
+            title: Text(source.title),
+            trailing: Icon(
+              Icons.open_in_new,
+              semanticLabel: context.tr('Opens in your browser'),
+            ),
+            onTap: () => _openSource(source.url),
+            subtitle: SelectableText(
+              context.tr(
+                'Reviewed {reviewed}\nEffective from: {from}\nEffective until: {until}\n{url}',
+                {
+                  'reviewed': source.reviewedOn,
+                  'from': source.effectiveFrom ?? context.tr('not specified'),
+                  'until': source.effectiveUntil ?? context.tr('not specified'),
+                  'url': source.url,
+                },
+              ),
+            ),
+          ),
+        if (match.sources.isEmpty)
+          ListTile(
+            title: Text(
+              context.tr(
+                'No verified source references are supplied for this route.',
+              ),
+            ),
+          ),
+        if (match.intake != null) ...[
+          const SizedBox(height: 12),
+          Text(match.intake!),
+        ],
+        if (match.programId == 'rtp-home-repair')
+          OutlinedButton.icon(
+            onPressed: () => _openSource(
+              'https://rebuildingtogetherpeninsula.my.salesforce-sites.com/HomeownerApplication',
+            ),
+            icon: const Icon(Icons.open_in_new),
+            label: Text(context.tr('Open RTP’s official application')),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = widget.services.coordinator;
@@ -278,259 +492,16 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                               },
                             ),
                           ),
-                          SahSectionHeading(
-                            title: context.tr('Prepare a draft'),
-                          ),
-                          OutlinedButton(
-                            key: ValueKey('program-${match.programId}-intake'),
-                            style: _preparationActionStyle(context),
-                            onPressed: !same
-                                ? null
-                                : () => _open(
-                                    ProgramIntakeScreen(
-                                      services: widget.services,
-                                      program: match,
-                                    ),
-                                  ),
-                            child: _PreparationActionLabel(
-                              number: '01',
-                              title: context.tr('Review program questions'),
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          OutlinedButton(
-                            style: _preparationActionStyle(context),
-                            onPressed: !same
-                                ? null
-                                : () => _open(
-                                    DraftPacketScreen(
-                                      snapshot: c.currentCase(),
-                                      program: match,
-                                      service: ApiPacketPreparationService(
-                                        widget.services.packets,
-                                      ),
-                                      currentCase: c.currentCase,
-                                      caseChanges: c,
-                                    ),
-                                  ),
-                            child: _PreparationActionLabel(
-                              number: '02',
-                              title: context.tr('Draft checklist'),
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          OutlinedButton(
-                            key: ValueKey('program-${match.programId}-answers'),
-                            style: _preparationActionStyle(context),
-                            onPressed: !same
-                                ? null
-                                : () => _open(
-                                    FormReviewScreen(
-                                      services: widget.services,
-                                      program: match,
-                                    ),
-                                  ),
-                            child: _PreparationActionLabel(
-                              number: '03',
-                              title: context.tr(
-                                'Review administrative answers',
-                              ),
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          OutlinedButton(
-                            key: ValueKey('program-${match.programId}-export'),
-                            style: _preparationActionStyle(context),
-                            onPressed: !same
-                                ? null
-                                : () => _open(
-                                    PrivateExportScreen(
-                                      services: widget.services,
-                                      program: match,
-                                    ),
-                                  ),
-                            child: _PreparationActionLabel(
-                              number: '04',
-                              title: context.tr(
-                                'Review evidence and draft PDF',
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            key: ValueKey('program-${match.programId}-history'),
-                            onPressed: !same
-                                ? null
-                                : () => _open(
-                                    RequestHistoryScreen(
-                                      services: widget.services,
-                                      program: match,
-                                    ),
-                                  ),
-                            child: Text(context.tr('Manual request history')),
-                          ),
-                          if (widget.services.config.trackingEnabled)
-                            TextButton.icon(
-                              onPressed: !same
-                                  ? null
-                                  : () async {
-                                      try {
-                                        await widget.services.progressReady;
-                                        if (!mounted || !c.isCurrent) return;
-                                        final id = c.currentCase().caseId,
-                                            revision = c.currentCase().revision;
-                                        await widget.services.progress!.refresh(
-                                          id,
-                                        );
-                                        await widget.services.progress!
-                                            .mutate(id, revision, {
-                                              'type': 'track_program',
-                                              'programId': match.programId,
-                                            });
-                                        if (mounted && c.isCurrent) {
-                                          _open(
-                                            ProgramProgressScreen(
-                                              services: widget.services,
-                                            ),
-                                          );
-                                        }
-                                      } catch (error) {
-                                        if (context.mounted) {
-                                          await showOperationError(
-                                            context,
-                                            error,
-                                          );
-                                        }
-                                      }
-                                    },
-                              icon: const Icon(Icons.playlist_add),
-                              label: Text(context.tr('Track program')),
-                            ),
                           const SizedBox(height: 16),
-                          const Divider(height: 1),
-                          ExpansionTile(
-                            key: ValueKey('program-${match.programId}-checks'),
-                            tilePadding: EdgeInsets.zero,
-                            title: Text(context.tr('Eligibility checks')),
-                            subtitle: Text(
-                              context.tr('{count} reasons to review', {
-                                'count': match.checks.length,
-                              }),
+                          FilledButton(
+                            key: ValueKey('program-${match.programId}-start'),
+                            onPressed: same ? () => _start(match) : null,
+                            child: Text(
+                              context.tr('Prepare a draft'),
+                              textAlign: TextAlign.center,
                             ),
-                            children: [
-                              for (final check in match.checks)
-                                ListTile(
-                                  key: ValueKey(
-                                    'program-${match.programId}-check-${check.id}',
-                                  ),
-                                  contentPadding: EdgeInsets.zero,
-                                  minLeadingWidth: 24,
-                                  leading: ExcludeSemantics(
-                                    child: Icon(
-                                      switch (check.status) {
-                                        'pass' =>
-                                          Icons.check_circle_outline_rounded,
-                                        'fail' =>
-                                          Icons.do_not_disturb_on_outlined,
-                                        _ => Icons.help_outline_rounded,
-                                      },
-                                      color: check.status == 'pass'
-                                          ? Theme.of(
-                                              context,
-                                            ).colorScheme.primary
-                                          : Theme.of(
-                                              context,
-                                            ).colorScheme.tertiary,
-                                    ),
-                                  ),
-                                  title: Text(switch (check.status) {
-                                    'pass' => context.tr('Met'),
-                                    'fail' => context.tr('Not met'),
-                                    _ => context.tr('Needs confirmation'),
-                                  }),
-                                  subtitle: Text(check.explanation),
-                                ),
-                            ],
                           ),
-                          ExpansionTile(
-                            tilePadding: EdgeInsets.zero,
-                            title: Text(
-                              context.tr('Program sources and review dates'),
-                            ),
-                            subtitle: Text(
-                              context.tr(
-                                'Official references and current availability',
-                              ),
-                            ),
-                            children: [
-                              ListTile(
-                                title: Text(
-                                  context.tr('Availability: {availability}', {
-                                    'availability': context.tr(
-                                      switch (match.availability) {
-                                        'accepting' => 'accepting',
-                                        'not_accepting' => 'not accepting',
-                                        _ => 'unverified',
-                                      },
-                                    ),
-                                  }),
-                                ),
-                                subtitle: Text(
-                                  context.tr('Rule version: {version}', {
-                                    'version': match.ruleVersion,
-                                  }),
-                                ),
-                              ),
-                              for (final source in match.sources)
-                                ListTile(
-                                  title: Text(source.title),
-                                  trailing: Icon(
-                                    Icons.open_in_new,
-                                    semanticLabel: context.tr(
-                                      'Opens in your browser',
-                                    ),
-                                  ),
-                                  onTap: () => _openSource(source.url),
-                                  subtitle: SelectableText(
-                                    context.tr(
-                                      'Reviewed {reviewed}\nEffective from: {from}\nEffective until: {until}\n{url}',
-                                      {
-                                        'reviewed': source.reviewedOn,
-                                        'from':
-                                            source.effectiveFrom ??
-                                            context.tr('not specified'),
-                                        'until':
-                                            source.effectiveUntil ??
-                                            context.tr('not specified'),
-                                        'url': source.url,
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              if (match.sources.isEmpty)
-                                ListTile(
-                                  title: Text(
-                                    context.tr(
-                                      'No verified source references are supplied for this route.',
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          if (match.intake != null) ...[
-                            const SizedBox(height: 12),
-                            Text(match.intake!),
-                          ],
-                          if (match.programId == 'rtp-home-repair')
-                            OutlinedButton.icon(
-                              onPressed: () => _openSource(
-                                'https://rebuildingtogetherpeninsula.my.salesforce-sites.com/HomeownerApplication',
-                              ),
-                              icon: const Icon(Icons.open_in_new),
-                              label: Text(
-                                context.tr('Open RTP’s official application'),
-                              ),
-                            ),
+                          _details(context, match, same),
                         ],
                       ),
                     ),
@@ -541,42 +512,4 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
       ),
     );
   }
-}
-
-ButtonStyle _preparationActionStyle(BuildContext context) =>
-    OutlinedButton.styleFrom(
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
-      side: BorderSide.none,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      foregroundColor: Theme.of(context).colorScheme.onSurface,
-    );
-
-class _PreparationActionLabel extends StatelessWidget {
-  const _PreparationActionLabel({required this.number, required this.title});
-  final String number, title;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Padding(
-        padding: const EdgeInsets.only(top: 3),
-        child: ExcludeSemantics(
-          child: Text(
-            number,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ),
-      const SizedBox(width: 14),
-      Expanded(child: Text(title)),
-      const SizedBox(width: 8),
-      const ExcludeSemantics(
-        child: Icon(Icons.arrow_forward_rounded, size: 19),
-      ),
-    ],
-  );
 }

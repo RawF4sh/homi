@@ -1,5 +1,7 @@
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../../../app/theme.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../domain/scan/bathroom_scan_scene.dart';
@@ -24,13 +26,53 @@ class BathroomModelView extends StatefulWidget {
 
 class _BathroomModelViewState extends State<BathroomModelView> {
   double yaw = -.65, pitch = .55, zoom = 1, startZoom = 1;
+  Offset? tapStart;
+  double travelled = 0;
+
+  void _bind(
+    _ModelGestureRecognizer recognizer,
+    double width,
+    ScanProjection projection,
+  ) {
+    recognizer.onStart = (details) {
+      startZoom = zoom;
+      tapStart = details.localFocalPoint;
+      travelled = 0;
+    };
+    recognizer.onUpdate = (details) {
+      setState(() {
+        travelled += details.focalPointDelta.distance;
+        zoom = (startZoom * details.scale).clamp(.7, 2.5);
+        if (details.pointerCount == 1) {
+          yaw += details.focalPointDelta.dx * .008;
+          pitch = (pitch + details.focalPointDelta.dy * .008).clamp(
+            -math.pi / 2,
+            math.pi / 2,
+          );
+        }
+      });
+    };
+    recognizer.onEnd = (_) {
+      final start = tapStart;
+      tapStart = null;
+      if (start == null || travelled > kTouchSlop) return;
+      final middle = Offset(width / 2, 150);
+      final at = (start - middle) / zoom + middle;
+      for (final face in projection.faces.reversed) {
+        if (_facePath(face).contains(at)) {
+          widget.onSelect(face.elementId);
+          return;
+        }
+      }
+    };
+  }
 
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(SahRadius.large),
         child: ColoredBox(
           color: const Color(0xFF123F3C),
           child: SizedBox(
@@ -57,26 +99,16 @@ class _BathroomModelViewState extends State<BathroomModelView> {
                       'samples': widget.scene.points.length,
                     },
                   ),
-                  child: GestureDetector(
-                    onScaleStart: (_) => startZoom = zoom,
-                    onScaleUpdate: (details) => setState(() {
-                      zoom = (startZoom * details.scale).clamp(.7, 2.5);
-                      if (details.pointerCount == 1) {
-                        yaw += details.focalPointDelta.dx * .008;
-                        pitch = (pitch + details.focalPointDelta.dy * .008)
-                            .clamp(-math.pi / 2, math.pi / 2);
-                      }
-                    }),
-                    onTapUp: (details) {
-                      final middle = Offset(bounds.maxWidth / 2, 150);
-                      final at =
-                          (details.localPosition - middle) / zoom + middle;
-                      for (final face in projection.faces.reversed) {
-                        if (_facePath(face).contains(at)) {
-                          widget.onSelect(face.elementId);
-                          return;
-                        }
-                      }
+                  child: RawGestureDetector(
+                    gestures: {
+                      _ModelGestureRecognizer:
+                          GestureRecognizerFactoryWithHandlers<
+                            _ModelGestureRecognizer
+                          >(
+                            _ModelGestureRecognizer.new,
+                            (recognizer) =>
+                                _bind(recognizer, bounds.maxWidth, projection),
+                          ),
                     },
                     child: CustomPaint(
                       painter: _ModelPainter(
@@ -227,4 +259,12 @@ class _ModelPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ModelPainter oldDelegate) => true;
+}
+
+class _ModelGestureRecognizer extends ScaleGestureRecognizer {
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
+  }
 }

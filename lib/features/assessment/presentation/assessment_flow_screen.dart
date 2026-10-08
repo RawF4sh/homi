@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../../../app/theme.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../application/assessment_controller.dart';
@@ -61,8 +62,24 @@ class AssessmentFlowScreen extends StatelessWidget {
             bottomNavigationBar: step == AssessmentStep.details
                 ? _primaryAction(
                     context,
-                    editable ? flow.saveDetails : null,
-                    'Review',
+                    !editable
+                        ? null
+                        : onContinue == null
+                        ? flow.saveDetails
+                        : () {
+                            if (!flow.saveDetails()) return;
+                            final id = flow.findingId;
+                            if (id != null &&
+                                flow.controller.reviewOf(id)?.state ==
+                                    FindingReviewState.needsReview &&
+                                !flow.controller
+                                    .confirmDisplayedRecord(id)
+                                    .applied) {
+                              return;
+                            }
+                            onContinue!();
+                          },
+                    onContinue == null ? 'Review' : 'Done',
                     'assessment-review',
                   )
                 : onContinue != null &&
@@ -1189,7 +1206,7 @@ class _Panel extends StatelessWidget {
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surface,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(SahRadius.large),
       border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
     ),
     child: Column(

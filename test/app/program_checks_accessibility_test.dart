@@ -94,7 +94,7 @@ void main() {
         await tester.pumpAndSettle();
         final scroll = find.byType(Scrollable).first;
         final action = find.byKey(
-          const ValueKey('program-fictional-program-intake'),
+          const ValueKey('program-fictional-program-start'),
         );
         await tester.scrollUntilVisible(
           action,
@@ -105,7 +105,7 @@ void main() {
         await Scrollable.ensureVisible(tester.element(action), alignment: .5);
         await tester.pumpAndSettle();
         expect(action.hitTestable(), findsOneWidget);
-        expect(tester.widget<OutlinedButton>(action).onPressed, isNotNull);
+        expect(tester.widget<FilledButton>(action).onPressed, isNotNull);
         expect(
           find.text(
             tr('{met} met · {notMet} not met · {unknown} need confirmation', {
@@ -120,7 +120,10 @@ void main() {
         for (final reason in reasons) {
           expect(find.text(reason), findsNothing);
         }
-        final title = find.text(tr('Eligibility checks'));
+        final title = find.descendant(
+          of: find.byKey(const ValueKey('program-fictional-program-details')),
+          matching: find.text(tr('Details')),
+        );
         expect(
           tester.getTopLeft(action).dy,
           lessThan(tester.getTopLeft(title).dy),

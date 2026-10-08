@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../app/theme.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import 'profile_suggestions.dart';
@@ -164,7 +165,7 @@ class _ProfileSuggestionFieldState extends State<ProfileSuggestionField> {
                 key: ValueKey('profile-suggestions-${widget.field}'),
                 color: theme.colorScheme.surfaceContainerLow,
                 elevation: 6,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(SahRadius.medium),
                 clipBehavior: Clip.antiAlias,
                 child: ListView(
                   shrinkWrap: true,

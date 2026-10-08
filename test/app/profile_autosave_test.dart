@@ -61,10 +61,7 @@ void main() {
     expect(server.transport.requests, hasLength(1));
     expect(find.byType(ProfileEditorScreen), findsOneWidget);
     expect(tester.widget<TextFormField>(cityField()).enabled, true);
-    expect(
-      find.text('Saved online · changes save automatically.'),
-      findsOneWidget,
-    );
+    expect(find.text('Saved online'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -302,7 +302,7 @@ void main() {
       expect((serverCase!['profile'] as Map)['annualIncomeUsd'], 0);
       expect((serverCase!['profile'] as Map)['ageYears'], isNull);
       await tap('Possible assistance and drafts');
-      await tap('Eligibility checks');
+      await tap('Details');
       await tester.scrollUntilVisible(
         find.text('A professional must review medical necessity.'),
         250,
@@ -312,13 +312,13 @@ void main() {
         find.text('A professional must review medical necessity.'),
         findsOneWidget,
       );
-      await tap('Eligibility checks', direction: -250);
-      await tap('Review program questions');
+      await tap('Details', direction: -250);
+      await tap('Prepare a draft', direction: -250);
       await tap('Save these reported answers');
       expect(revision(), 3);
-      await tap('Back to possible assistance');
-      expect(find.textContaining('The case changed.'), findsNothing);
-      await tap('Review administrative answers');
+      await tap('Continue');
+      expect(find.text('Draft checklist'), findsWidgets);
+      await tap('Continue');
       await tester.scrollUntilVisible(
         input('Given name'),
         250,
@@ -347,9 +347,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      await back();
-      expect(find.textContaining('The case changed.'), findsNothing);
-      await tap('Review evidence and draft PDF');
+      await tap('Continue');
       await tap('Prepare or recover this draft');
       expect(exportRequest!['schemaVersion'], '2');
       expect(exportRequest!['expectedCaseRevision'], 4);
@@ -377,6 +375,8 @@ void main() {
         findsOneWidget,
       );
       await back();
+      expect(find.textContaining('The case changed.'), findsNothing);
+      await tap('Details');
       await tap('Manual request history');
       await tester.scrollUntilVisible(
         input('Optional note'),

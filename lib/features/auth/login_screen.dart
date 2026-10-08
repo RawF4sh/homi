@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../app/theme.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../../shared/services/session_service.dart';
@@ -154,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surface,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(SahRadius.large),
                     border: Border.all(color: theme.colorScheme.outlineVariant),
                   ),
                   child: Column(

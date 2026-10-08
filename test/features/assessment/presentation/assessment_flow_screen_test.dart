@@ -95,10 +95,6 @@ void main() {
         findsOneWidget,
       );
       await tap(tester, find.byKey(const ValueKey('assessment-review')));
-      expect(find.text('Step 3 of 3'), findsOneWidget);
-      final next = find.byKey(const ValueKey('assessment-continue'));
-      expect(next.hitTestable(), findsOneWidget);
-      await tap(tester, next);
       expect(continued, 1);
       expect(controller.findings.single.reviewState, 'confirmed');
       expect(controller.findings.single.evidenceIds, isEmpty);

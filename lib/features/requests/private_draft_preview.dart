@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../../app/theme.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../../shared/models/case_draft.dart';
@@ -200,7 +201,7 @@ class _PrivateDraftPreviewState extends State<PrivateDraftPreview> {
         ),
         const SizedBox(height: 8),
         ClipRRect(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(SahRadius.large),
           child: SizedBox(
             height: (MediaQuery.sizeOf(context).height * .68).clamp(360, 640),
             child: Stack(

@@ -359,19 +359,18 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
               onChooseLocation: chooseLocation,
               locationStatus: {
                 if (_hasSavedModel)
-                  AssessmentLocation.bathroom:
-                      savedScan == SavedScanState.unreviewed
-                      ? '3D scan saved · not reviewed yet'
-                      : '3D scan saved · reviewed',
+                  AssessmentLocation.bathroom: '3D scan saved',
               },
-              areaTools: AssessmentScanEntry(
-                availability: scanAvailability,
-                saved: savedScan,
-                onCheck: busy || !session.isCurrent
-                    ? null
-                    : scanAvailability.refresh,
-                onOpen: _canOpenScan ? openBathroomScan : null,
-              ),
+              areaTools: _hasSavedModel
+                  ? null
+                  : AssessmentScanEntry(
+                      availability: scanAvailability,
+                      saved: savedScan,
+                      onCheck: busy || !session.isCurrent
+                          ? null
+                          : scanAvailability.refresh,
+                      onOpen: _canOpenScan ? openBathroomScan : null,
+                    ),
               status: Column(
                 key: saveStatusKey,
                 crossAxisAlignment: CrossAxisAlignment.stretch,

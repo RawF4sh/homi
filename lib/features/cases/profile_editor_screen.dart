@@ -569,7 +569,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     if (_syncFailed || c.hasUnsavedChanges) {
       return context.tr('Saved on this device.');
     }
-    return context.tr('Saved online · changes save automatically.');
+    return context.tr('Saved online');
   }
 
   String _display(Object? value, {bool housing = false}) => switch (value) {
@@ -813,12 +813,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                   'city': _countyAutofillCity,
                 }),
               )
-            : key == 'annualIncomeUsd'
-            ? Text(context.tr('Yearly household total, US dollars'))
-            : key == 'healthPlan'
-            ? Text(context.tr(_healthPlanHelp()))
-            : ['city', 'county'].contains(key)
-            ? Text(context.tr('Type for suggestions, or enter another name.'))
             : null,
       ),
       textInputAction: TextInputAction.next,
@@ -841,7 +835,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (key == 'healthPlan') _coverageChoices(),
-        if (key != 'healthPlan' || _coverage() != _Coverage.none) ...[
+        if (key != 'healthPlan' || _coverage() == _Coverage.plan) ...[
           if (key == 'annualIncomeUsd' ||
               MediaQuery.textScalerOf(context).scale(16) > 24)
             _fullFieldLabel(labels[key]!, key),
@@ -861,14 +855,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     if (_noCoverageAnswers.contains(text)) return _Coverage.none;
     if (text.isNotEmpty || _choosingHealthPlan) return _Coverage.plan;
     return _Coverage.unknown;
-  }
-
-  String _healthPlanHelp() {
-    final text = _fields['healthPlan']!.text.trim();
-    if (text.isEmpty) return 'Type for suggestions, or enter another plan.';
-    return profileSuggestions('healthPlan', text).any((s) => s.value == text)
-        ? 'Listed plan'
-        : 'Other plan, saved as typed';
   }
 
   Widget _coverageChoices() {
@@ -955,7 +941,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       for (final status in [
         'Saving changes on this device…',
         'Saved on this device · syncing online…',
-        'Saved online · changes save automatically.',
+        'Saved online',
       ]) {
         final painter = TextPainter(
           text: TextSpan(text: context.tr(status), style: style),
@@ -1001,12 +987,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SahPageHeader(
-                        title: context.tr('About the resident'),
-                        description: context.tr(
-                          'Changes save automatically. All answers are optional; blank means unknown, not 0 or No.',
-                        ),
-                      ),
+                      SahPageHeader(title: context.tr('About the resident')),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 20),
                         child: ListenableBuilder(
@@ -1090,11 +1071,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                         itemHeight: null,
                         decoration: InputDecoration(
                           labelText: context.tr('Owner permission reported?'),
-                          helper: Text(
-                            context.tr(
-                              'Reported only, not a signed authorization.',
-                            ),
-                          ),
                         ),
                         items: [
                           DropdownMenuItem(
