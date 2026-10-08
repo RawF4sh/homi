@@ -265,200 +265,209 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
     tracker: _draftSaves,
     builder: (context, requestExit, exiting) {
       _leaving = exiting;
-      return Scaffold(
-        appBar: AppBar(
-          leading: BackButton(onPressed: requestExit),
-          title: Text(context.tr('Administrative answers')),
-        ),
-        body: SafeArea(
-          child: SahContent(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SahPageHeader(
-                    title: widget.program.programName,
-                    description: context.tr(
-                      'Check details that may appear in your draft.',
-                    ),
-                  ),
-                  if (Localizations.localeOf(context).languageCode != 'en')
-                    SahNotice(
-                      message: context.tr(
-                        'Program information and official forms may remain in English. Your saved answers are not translated.',
+      return SahKeyboardDismissal(
+        child: Scaffold(
+          appBar: AppBar(
+            leading: BackButton(onPressed: requestExit),
+            title: Text(context.tr('Administrative answers')),
+          ),
+          body: SafeArea(
+            child: SahContent(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SahPageHeader(
+                      title: widget.program.programName,
+                      description: context.tr(
+                        'Check details that may appear in your draft.',
                       ),
                     ),
-                  SahMoreInfo(
-                    details: [
-                      context.tr(
-                        'These answers do not supply diagnoses, medical necessity, consent or signatures. Review each supplied value yourself.',
-                      ),
-                    ],
-                  ),
-                  if (_busy)
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: LinearProgressIndicator(
-                        semanticsLabel: context.tr(
-                          'Updating administrative answers',
-                        ),
-                      ),
-                    ),
-                  if (_error != null && !_feedbackAtAction)
-                    SahNotice(message: context.tr(_error!)),
-                  if (_uncertain)
-                    SahNotice(
-                      title: context.tr('Check the last save'),
-                      message: context.tr(
-                        'A save may have succeeded. Check saved answers before another save.',
-                      ),
-                      tone: SahNoticeTone.warning,
-                    ),
-                  const SizedBox(height: 8),
-                  OutlinedButton(
-                    key: const ValueKey('form-reconcile'),
-                    onPressed: _busy || exiting ? null : () => _read(),
-                    child: Text(
-                      context.tr('Reload saved answers and reconcile'),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  if (_answers != null) ...[
-                    SahStatusBadge(
-                      label: _answers!.artifactKind == 'preparation_worksheet'
-                          ? context.tr('Worksheet · not an official form')
-                          : context.tr('Official-form draft · not submitted'),
-                      icon: Icons.description_outlined,
-                    ),
-                    if (!_answers!.isCurrent)
+                    if (Localizations.localeOf(context).languageCode != 'en')
                       SahNotice(
                         message: context.tr(
-                          'Saved answers need review for the current case and form.',
+                          'Program information and official forms may remain in English. Your saved answers are not translated.',
+                        ),
+                      ),
+                    SahMoreInfo(
+                      details: [
+                        context.tr(
+                          'These answers do not supply diagnoses, medical necessity, consent or signatures. Review each supplied value yourself.',
+                        ),
+                      ],
+                    ),
+                    if (_busy)
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: LinearProgressIndicator(
+                          semanticsLabel: context.tr(
+                            'Updating administrative answers',
+                          ),
+                        ),
+                      ),
+                    if (_error != null && !_feedbackAtAction)
+                      SahNotice(message: context.tr(_error!)),
+                    if (_uncertain)
+                      SahNotice(
+                        title: context.tr('Check the last save'),
+                        message: context.tr(
+                          'A save may have succeeded. Check saved answers before another save.',
                         ),
                         tone: SahNoticeTone.warning,
                       ),
-                    SahSectionHeading(
-                      title: context.tr('Review your answers'),
-                      description: context.tr(
-                        '{reviewed} of {total} checked · blank stays unknown',
-                        {
-                          'reviewed': _activeKeys
-                              .where(
-                                (key) =>
-                                    _fields[key]!.text.trim().isNotEmpty &&
-                                    _reviewed[key] == true,
-                              )
-                              .length,
-                          'total': _activeKeys
-                              .where(
-                                (key) => _fields[key]!.text.trim().isNotEmpty,
-                              )
-                              .length,
-                        },
-                      ),
-                    ),
-                    for (final key in _activeKeys)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ExcludeSemantics(
-                              child: Text(
-                                administrativeFieldLabel(
-                                  context,
-                                  widget.program.programId,
-                                  _definition(key),
-                                ),
-                                key: ValueKey('form-label-$key'),
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: _fields[key],
-                              enabled: !_busy && !exiting,
-                              autocorrect: false,
-                              textInputAction: TextInputAction.next,
-                              keyboardType: switch (_definition(key).kind) {
-                                'date' => TextInputType.datetime,
-                                'email' => TextInputType.emailAddress,
-                                _ => TextInputType.text,
-                              },
-                              decoration: InputDecoration(
-                                labelText: administrativeFieldLabel(
-                                  context,
-                                  widget.program.programId,
-                                  _definition(key),
-                                ),
-                                helperText: _definition(key).kind == 'date'
-                                    ? 'YYYY-MM-DD'
-                                    : null,
-                                counterText: '',
-                              ),
-                              maxLength: _definition(key).maxLength,
-                              onChanged: (_) => _edited(key),
-                            ),
-                            CheckboxListTile(
-                              key: ValueKey('form-review-$key'),
-                              contentPadding: EdgeInsets.zero,
-                              controlAffinity: ListTileControlAffinity.leading,
-                              title: Text(
-                                context.tr('I reviewed this value'),
-                                semanticsLabel: context
-                                    .tr('I reviewed {field}', {
-                                      'field': administrativeFieldLabel(
-                                        context,
-                                        widget.program.programId,
-                                        _definition(key),
-                                      ),
-                                    }),
-                              ),
-                              value: _reviewed[key] ?? false,
-                              onChanged:
-                                  _busy ||
-                                      exiting ||
-                                      _fields[key]!.text.trim().isEmpty
-                                  ? null
-                                  : (v) async {
-                                      if (_leaving || _busy || !_scopeCurrent) {
-                                        return;
-                                      }
-                                      setState(() {
-                                        _reviewed[key] = v ?? false;
-                                        _error = null;
-                                      });
-                                      try {
-                                        await _persist();
-                                      } catch (error) {
-                                        if (context.mounted) {
-                                          await showOperationError(
-                                            context,
-                                            error,
-                                          );
-                                        }
-                                      }
-                                    },
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (_error != null && _feedbackAtAction)
-                      SahActionFeedback(
-                        key: const ValueKey('form-save-feedback'),
-                        message: context.tr(_error!),
-                      ),
-                    FilledButton(
-                      key: const ValueKey('form-save'),
-                      onPressed: _busy || _uncertain || exiting ? null : _save,
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      key: const ValueKey('form-reconcile'),
+                      onPressed: _busy || exiting ? null : () => _read(),
                       child: Text(
-                        context.tr('Save reviewed administrative answers'),
+                        context.tr('Reload saved answers and reconcile'),
                         textAlign: TextAlign.center,
                       ),
                     ),
+                    if (_answers != null) ...[
+                      SahStatusBadge(
+                        label: _answers!.artifactKind == 'preparation_worksheet'
+                            ? context.tr('Worksheet · not an official form')
+                            : context.tr('Official-form draft · not submitted'),
+                        icon: Icons.description_outlined,
+                      ),
+                      if (!_answers!.isCurrent)
+                        SahNotice(
+                          message: context.tr(
+                            'Saved answers need review for the current case and form.',
+                          ),
+                          tone: SahNoticeTone.warning,
+                        ),
+                      SahSectionHeading(
+                        title: context.tr('Review your answers'),
+                        description: context.tr(
+                          '{reviewed} of {total} checked · blank stays unknown',
+                          {
+                            'reviewed': _activeKeys
+                                .where(
+                                  (key) =>
+                                      _fields[key]!.text.trim().isNotEmpty &&
+                                      _reviewed[key] == true,
+                                )
+                                .length,
+                            'total': _activeKeys
+                                .where(
+                                  (key) => _fields[key]!.text.trim().isNotEmpty,
+                                )
+                                .length,
+                          },
+                        ),
+                      ),
+                      for (final key in _activeKeys)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ExcludeSemantics(
+                                child: Text(
+                                  administrativeFieldLabel(
+                                    context,
+                                    widget.program.programId,
+                                    _definition(key),
+                                  ),
+                                  key: ValueKey('form-label-$key'),
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _fields[key],
+                                enabled: !_busy && !exiting,
+                                autocorrect: false,
+                                textInputAction: TextInputAction.next,
+                                keyboardType: switch (_definition(key).kind) {
+                                  'date' => TextInputType.datetime,
+                                  'email' => TextInputType.emailAddress,
+                                  _ => TextInputType.text,
+                                },
+                                decoration: InputDecoration(
+                                  labelText: administrativeFieldLabel(
+                                    context,
+                                    widget.program.programId,
+                                    _definition(key),
+                                  ),
+                                  helperText: _definition(key).kind == 'date'
+                                      ? 'YYYY-MM-DD'
+                                      : null,
+                                  counterText: '',
+                                ),
+                                maxLength: _definition(key).maxLength,
+                                onChanged: (_) => _edited(key),
+                              ),
+                              CheckboxListTile(
+                                key: ValueKey('form-review-$key'),
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                title: Text(
+                                  context.tr('I reviewed this value'),
+                                  semanticsLabel: context
+                                      .tr('I reviewed {field}', {
+                                        'field': administrativeFieldLabel(
+                                          context,
+                                          widget.program.programId,
+                                          _definition(key),
+                                        ),
+                                      }),
+                                ),
+                                value: _reviewed[key] ?? false,
+                                onChanged:
+                                    _busy ||
+                                        exiting ||
+                                        _fields[key]!.text.trim().isEmpty
+                                    ? null
+                                    : (v) async {
+                                        if (_leaving ||
+                                            _busy ||
+                                            !_scopeCurrent) {
+                                          return;
+                                        }
+                                        setState(() {
+                                          _reviewed[key] = v ?? false;
+                                          _error = null;
+                                        });
+                                        try {
+                                          await _persist();
+                                        } catch (error) {
+                                          if (context.mounted) {
+                                            await showOperationError(
+                                              context,
+                                              error,
+                                            );
+                                          }
+                                        }
+                                      },
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (_error != null && _feedbackAtAction)
+                        SahActionFeedback(
+                          key: const ValueKey('form-save-feedback'),
+                          message: context.tr(_error!),
+                        ),
+                      FilledButton(
+                        key: const ValueKey('form-save'),
+                        onPressed: _busy || _uncertain || exiting
+                            ? null
+                            : _save,
+                        child: Text(
+                          context.tr('Save reviewed administrative answers'),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),

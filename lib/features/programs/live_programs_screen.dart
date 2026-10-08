@@ -27,6 +27,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
   bool _busy = false;
   String? _error;
   Timer? _timer;
+  int? _autoRevision;
   @override
   void initState() {
     super.initState();
@@ -37,7 +38,21 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    final c = widget.services.coordinator;
+    final snapshot = c.snapshot, result = _result;
+    if (_busy ||
+        result == null ||
+        snapshot == null ||
+        c.hasUnsavedChanges ||
+        (result.caseId == snapshot.caseId &&
+            result.caseRevision == snapshot.revision) ||
+        _autoRevision == snapshot.revision) {
+      return;
+    }
+    _autoRevision = snapshot.revision;
+    _load();
   }
 
   @override
@@ -66,6 +81,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
         currentCase: c.currentCase,
       );
       if (mounted) setState(() => _result = result);
+      if (mounted) scheduleMicrotask(_changed);
     } catch (error) {
       if (mounted) setState(() => _error = safeOperationMessage(error));
     } finally {
@@ -117,22 +133,25 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              if (widget.services.config.trackingEnabled)
-                OutlinedButton.icon(
-                  onPressed: same
-                      ? () => _open(
-                          ProgramProgressScreen(services: widget.services),
-                        )
-                      : null,
-                  icon: const Icon(Icons.view_list_outlined),
-                  label: Text(context.tr('Program progress')),
-                ),
               SahPageHeader(
                 title: context.tr('Possible assistance'),
                 description: context.tr(
                   'Checks, not decisions. Each program still reviews the case.',
                 ),
               ),
+              if (widget.services.config.trackingEnabled)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    onPressed: same
+                        ? () => _open(
+                            ProgramProgressScreen(services: widget.services),
+                          )
+                        : null,
+                    icon: const Icon(Icons.view_list_outlined),
+                    label: Text(context.tr('Program progress')),
+                  ),
+                ),
               if (Localizations.localeOf(context).languageCode != 'en')
                 SahNotice(
                   message: context.tr(
@@ -151,10 +170,12 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                   message: context.tr(_error!),
                   tone: SahNoticeTone.warning,
                 ),
-              if (result != null && !same)
+              if (result != null && !same && !_busy)
                 SahNotice(
                   message: context.tr(
-                    'The case changed. Refresh these results before preparing a draft.',
+                    c.hasUnsavedChanges
+                        ? 'These results update once the case changes are saved.'
+                        : 'The case changed. Refresh these results before preparing a draft.',
                   ),
                   tone: SahNoticeTone.warning,
                 ),
@@ -169,16 +190,22 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                   icon: Icons.info_outline_rounded,
                   tone: SahNoticeTone.warning,
                 ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                key: const ValueKey('program-refresh'),
-                onPressed: _busy ? null : _load,
-                icon: const Icon(Icons.refresh_rounded),
-                label: Text(
-                  context.tr('Refresh program checks'),
-                  textAlign: TextAlign.center,
+              if (!_busy &&
+                  (_error != null ||
+                      result == null ||
+                      (!same && !c.hasUnsavedChanges)))
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    key: const ValueKey('program-refresh'),
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: Text(
+                      context.tr('Refresh program checks'),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
-              ),
               if (result != null && result.matches.isEmpty)
                 SahEmptyState(
                   title: context.tr('No routes to review yet'),
@@ -310,9 +337,10 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                               ),
                             ),
                           ),
-                          const SizedBox(height: 16),
-                          FilledButton(
+                          const Divider(height: 1),
+                          OutlinedButton(
                             key: ValueKey('program-${match.programId}-export'),
+                            style: _preparationActionStyle(context),
                             onPressed: !same
                                 ? null
                                 : () => _open(
@@ -321,9 +349,11 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                                       program: match,
                                     ),
                                   ),
-                            child: Text(
-                              context.tr('Review evidence and draft PDF'),
-                              textAlign: TextAlign.center,
+                            child: _PreparationActionLabel(
+                              number: '04',
+                              title: context.tr(
+                                'Review evidence and draft PDF',
+                              ),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -340,7 +370,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
                             child: Text(context.tr('Manual request history')),
                           ),
                           if (widget.services.config.trackingEnabled)
-                            OutlinedButton.icon(
+                            TextButton.icon(
                               onPressed: !same
                                   ? null
                                   : () async {

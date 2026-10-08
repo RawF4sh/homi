@@ -257,19 +257,9 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
               minimum: const EdgeInsets.fromLTRB(20, 12, 20, 12),
               child: FilledButton(
                 key: const ValueKey('bathroom-continue'),
-                onPressed: enabled
-                    ? () => currentReviewFindingId != null
-                          ? close(continueToReview: true)
-                          : close(
-                              addOther: widget.onAddOtherConcern != null,
-                              continueToReview:
-                                  widget.onAddOtherConcern == null,
-                            )
-                    : null,
+                onPressed: enabled ? () => close(continueToReview: true) : null,
                 child: Text(
-                  context.tr(
-                    currentReviewFindingId != null ? 'Continue' : 'Add a note',
-                  ),
+                  context.tr('Continue'),
                   textAlign: TextAlign.center,
                 ),
               ),

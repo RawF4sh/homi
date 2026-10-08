@@ -58,7 +58,7 @@ void main() {
       );
       expect(
         tester
-            .widget<FilledButton>(find.byKey(const ValueKey('case-start')))
+            .widget<ButtonStyleButton>(find.byKey(const ValueKey('case-start')))
             .onPressed,
         isNull,
       );
@@ -101,7 +101,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester
-            .widget<FilledButton>(find.byKey(const ValueKey('case-start')))
+            .widget<ButtonStyleButton>(find.byKey(const ValueKey('case-start')))
             .onPressed,
         isNotNull,
       );

@@ -270,15 +270,11 @@ void main() {
       app.coordinator.currentCase().profile.healthPlan,
       'Kaiser Permanente',
     );
-    final other = find.byKey(const ValueKey('profile-other-health-plan'));
-    await tester.ensureVisible(other);
-    await tester.tap(other);
+    final hasPlan = find.byKey(const ValueKey('profile-has-health-plan'));
+    await tester.ensureVisible(field('Health plan'));
+    await tester.tap(field('Health plan'));
     await tester.pump();
     expectEditing(tester, 'Health plan');
-    expect(
-      tester.widget<TextFormField>(field('Health plan')).controller!.selection,
-      const TextSelection(baseOffset: 0, extentOffset: 17),
-    );
     await tester.enterText(field('Health plan'), 'Fictional employer coverage');
     await settleAutosave(tester);
     expect(
@@ -295,7 +291,25 @@ void main() {
       await tester.tap(button);
       await settleAutosave(tester);
       expect(app.coordinator.currentCase().profile.healthPlan, choice.$2);
+      expect(
+        field('Health plan'),
+        choice.$2 == null ? findsOneWidget : findsNothing,
+      );
     }
+    final none = find.byKey(const ValueKey('profile-no-health-coverage'));
+    await tester.ensureVisible(none);
+    await tester.pumpAndSettle();
+    await tester.tap(none);
+    await settleAutosave(tester);
+    await tester.ensureVisible(hasPlan);
+    await tester.pumpAndSettle();
+    await tester.tap(hasPlan);
+    await tester.pumpAndSettle();
+    expectEditing(tester, 'Health plan');
+    expect(
+      tester.widget<TextFormField>(field('Health plan')).controller!.text,
+      isEmpty,
+    );
     expect(tester.takeException(), isNull);
   });
 }

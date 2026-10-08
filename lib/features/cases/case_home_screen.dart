@@ -5,10 +5,10 @@ import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/case_list.dart';
 import '../../shared/presentation/sah_components.dart';
+import '../../shared/presentation/sah_floating_nav.dart';
 import '../settings/account_settings_screen.dart';
 import 'case_display_details.dart';
 import 'case_workspace_screen.dart';
-import 'home_plan_journey.dart';
 import 'plan_deletion_action.dart';
 import 'plan_deletion_dialog.dart';
 import 'plan_name_dialog.dart';
@@ -343,12 +343,22 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       !_selectionBlocked &&
       _removalsReady;
 
-  Widget _newPlanButton() => FilledButton.icon(
-    key: const ValueKey('case-start'),
-    onPressed: _canChoose ? _create : null,
-    icon: const Icon(Icons.add_rounded),
-    label: Text(context.tr('Start a home plan')),
-  );
+  bool get _hasPlans =>
+      _local.isNotEmpty || _cases.isNotEmpty || _removals.isNotEmpty;
+
+  Widget _newPlanButton() => _hasPlans
+      ? OutlinedButton.icon(
+          key: const ValueKey('case-start'),
+          onPressed: _canChoose ? _create : null,
+          icon: const Icon(Icons.add_rounded),
+          label: Text(context.tr('Start a new plan')),
+        )
+      : FilledButton.icon(
+          key: const ValueKey('case-start'),
+          onPressed: _canChoose ? _create : null,
+          icon: const Icon(Icons.add_rounded),
+          label: Text(context.tr('Start a home plan')),
+        );
 
   List<Widget> _status() => [
     if (_selectionBlocked && widget.services.coordinator.draft != null) ...[
@@ -399,74 +409,149 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     ],
   ];
 
+  List<({String id, CaseSummary? online})> _otherPlans(String? current) => [
+    for (final id in _local)
+      if (id != current &&
+          !_removals.containsKey(id) &&
+          !_cases.any((c) => c.caseId == id))
+        (id: id, online: null),
+    for (final item in _cases)
+      if (item.caseId != current && !_removals.containsKey(item.caseId))
+        (id: item.caseId, online: item),
+  ];
+
+  String _planStatus(String id) {
+    final details = _details[id];
+    if (details == null) return homePlanReference(id, context: context);
+    final concerns = details.draft.findings.length;
+    return [
+      context.tr(details.status),
+      if (concerns > 0)
+        context.tr(
+          concerns == 1 ? '1 concern recorded' : '{count} concerns recorded',
+          {'count': concerns},
+        ),
+    ].join(' · ');
+  }
+
   List<Widget> _home() {
+    final theme = Theme.of(context);
     final draft = widget.services.coordinator.draft;
     final pending = draft != null && _removals.containsKey(draft.caseId);
-    final hasPlans =
-        _local.isNotEmpty || _cases.isNotEmpty || _removals.isNotEmpty;
+    final others = _otherPlans(draft?.caseId);
+    final hasPlans = _hasPlans;
+    final canOpen =
+        _isCurrent &&
+        !_opening &&
+        !widget.services.coordinator.busy &&
+        _removalsReady;
     return [
-      SahPageHeader(title: context.tr('A safer home, one step at a time')),
       ..._status(),
-      SahFeaturePanel(
-        title: draft != null
-            ? _title(draft.caseId)
-            : context.tr('Your home safety plan'),
-        description: pending
-            ? context.tr('Check the removal of this plan before continuing.')
-            : draft != null
-            ? context.tr(
-                'Continue with your saved details, rooms and possible improvements.',
-              )
-            : context.tr(
-                'Tell us what is difficult at home, record the areas that matter, and explore possible support.',
-              ),
-        illustration: const SahHomeIllustration(),
-        action: draft != null
-            ? FilledButton.icon(
-                key: const ValueKey('home-continue-plan'),
-                onPressed:
-                    !_isCurrent ||
-                        _opening ||
-                        widget.services.coordinator.busy ||
-                        !_removalsReady
-                    ? null
-                    : pending
-                    ? () => _remove(draft.caseId)
-                    : () => _open(
-                        () async {},
-                        changesSelection: false,
-                        targetId: widget.services.coordinator.draft?.caseId,
-                      ),
-                icon: Icon(pending ? Icons.sync_problem : Icons.arrow_forward),
-                label: Text(
-                  pending
-                      ? context.tr('Check removal')
-                      : context.tr('Continue this plan'),
-                ),
-              )
-            : hasPlans
-            ? FilledButton.icon(
-                key: const ValueKey('home-open-plans'),
-                onPressed: () => setState(() => _tab = 1),
-                icon: const Icon(Icons.folder_open_outlined),
-                label: Text(context.tr('Open a saved plan')),
-              )
-            : _newPlanButton(),
-      ),
-      if (draft != null || hasPlans) ...[
-        const SizedBox(height: 12),
-        Align(alignment: Alignment.centerLeft, child: _newPlanButton()),
-      ],
-      SahSectionHeading(title: context.tr('How your plan comes together')),
-      const HomePlanJourney(),
-      const SizedBox(height: 16),
-      SahNotice(
-        title: context.tr('Start where you need help'),
-        message: context.tr(
-          'Bathroom, entrance, stairs, hallways and living spaces, bedroom, kitchen, or outdoor paths. You do not need to check every room. Bathroom 3D scanning is available on supported phones; use photos and notes anywhere.',
+      if (draft != null) ...[
+        Semantics(
+          header: true,
+          child: Text(
+            context.tr('Continue where you left off'),
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ),
-      ),
-      const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        Text(
+          _title(draft.caseId),
+          key: const ValueKey('home-current-plan-title'),
+          style: theme.textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          pending
+              ? context.tr('Check the removal of this plan before continuing.')
+              : _planStatus(draft.caseId),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          key: const ValueKey('home-continue-plan'),
+          onPressed: !canOpen
+              ? null
+              : pending
+              ? () => _remove(draft.caseId)
+              : () => _open(
+                  () async {},
+                  changesSelection: false,
+                  targetId: widget.services.coordinator.draft?.caseId,
+                ),
+          icon: Icon(pending ? Icons.sync_problem : Icons.arrow_forward),
+          label: Text(
+            pending
+                ? context.tr('Check removal')
+                : context.tr('Continue this plan'),
+          ),
+        ),
+      ] else if (!hasPlans) ...[
+        Semantics(
+          header: true,
+          child: Text(
+            context.tr('Start your first home plan'),
+            style: theme.textTheme.headlineSmall,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          context.tr(
+            'A plan keeps the resident’s details, the places you check at home, and possible help in one place.',
+          ),
+          style: theme.textTheme.bodyLarge,
+        ),
+        const SizedBox(height: 20),
+        _newPlanButton(),
+      ] else ...[
+        Semantics(
+          header: true,
+          child: Text(
+            context.tr('Choose a plan to continue'),
+            style: theme.textTheme.headlineSmall,
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (others.isNotEmpty) ...[
+        SahSectionHeading(
+          title: draft == null
+              ? context.tr('Your plans')
+              : context.tr('Other plans'),
+        ),
+        for (final plan in others.take(3)) _plan(plan.id, online: plan.online),
+        if (others.length > 3 || _removals.isNotEmpty || _cursor != null)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(
+              key: const ValueKey('home-open-plans'),
+              onPressed: () => setState(() => _tab = 1),
+              child: Text(context.tr('See all plans')),
+            ),
+          ),
+      ] else if (draft == null && hasPlans)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FilledButton.icon(
+            key: const ValueKey('home-open-plans'),
+            onPressed: () => setState(() => _tab = 1),
+            icon: const Icon(Icons.folder_open_outlined),
+            label: Text(context.tr('Open a saved plan')),
+          ),
+        ),
+      if (draft != null || hasPlans) ...[
+        const SizedBox(height: 16),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: _newPlanButton(),
+        ),
+      ],
+      const SizedBox(height: 28),
       SahStatusBadge(
         label: context.tr('Private team beta · Fictional information only'),
         icon: Icons.lock_outline_rounded,
@@ -567,14 +652,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         .toList();
     final pending = _removals.keys.where(_matches).toList();
     return [
-      SahPageHeader(title: context.tr('Your home plans')),
       ..._status(),
-      Text(
-        context.tr(
-          'Open a plan to continue. Use its ⋮ menu to rename or delete it.',
-        ),
-      ),
-      const SizedBox(height: 16),
       TextField(
         key: const ValueKey('plan-search'),
         decoration: InputDecoration(
@@ -641,11 +719,15 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     ];
   }
 
+  static const _tabTitles = ['Home', 'Your home plans', 'Settings'];
+
   @override
   Widget build(BuildContext context) => Scaffold(
+    extendBody: true,
     appBar: _tab == 2
         ? null
         : AppBar(
+            title: Text(context.tr(_tabTitles[_tab])),
             actions: [
               if (widget.services.config.permissionSharingEnabled)
                 IconButton(
@@ -659,37 +741,29 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                   ),
                 ),
             ],
-            title: Row(
-              children: [
-                const SahBrandMark(size: 32),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Safe at Home',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-              ],
-            ),
           ),
     body: _tab == 2
         ? AccountSettingsScreen(services: widget.services)
         : SafeArea(
+            bottom: false,
             child: SahContent(
               child: RefreshIndicator(
                 onRefresh: _load,
                 child: ListView(
-                  key: ValueKey('root-tab-$_tab'),
-                  padding: const EdgeInsets.all(20),
+                  key: PageStorageKey('root-tab-$_tab'),
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    12,
+                    20,
+                    sahFloatingNavClearance(context),
+                  ),
                   physics: const AlwaysScrollableScrollPhysics(),
                   children: _tab == 0 ? _home() : _plans(),
                 ),
               ),
             ),
           ),
-    bottomNavigationBar: NavigationBar(
+    bottomNavigationBar: SahFloatingNavBar(
       selectedIndex: _tab,
       onDestinationSelected: (index) {
         if (index == _tab || _opening || !_isCurrent) return;

@@ -316,14 +316,8 @@ void main() {
       await tap('Review program questions');
       await tap('Save these reported answers');
       expect(revision(), 3);
-      await back();
-      await tester.scrollUntilVisible(
-        find.textContaining('The case changed.'),
-        -250,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.textContaining('The case changed.'), findsOneWidget);
-      await tap('Refresh program checks', direction: -250);
+      await tap('Back to possible assistance');
+      expect(find.textContaining('The case changed.'), findsNothing);
       await tap('Review administrative answers');
       await tester.scrollUntilVisible(
         input('Given name'),
@@ -354,7 +348,7 @@ void main() {
         findsOneWidget,
       );
       await back();
-      await tap('Refresh program checks', direction: -250);
+      expect(find.textContaining('The case changed.'), findsNothing);
       await tap('Review evidence and draft PDF');
       await tap('Prepare or recover this draft');
       expect(exportRequest!['schemaVersion'], '2');

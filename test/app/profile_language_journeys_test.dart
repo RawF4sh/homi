@@ -57,8 +57,8 @@ void main() {
           );
           await tester.pumpAndSettle();
           for (final text in [
-            'Enter any health plan. Suggestions are examples, not a complete list.',
-            'Another health plan',
+            'Type for suggestions, or enter another plan.',
+            'Has a health plan',
             'No health coverage',
             'Not sure',
           ]) {

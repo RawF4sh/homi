@@ -15,6 +15,7 @@ import 'catalogs/journey.dart';
 import 'catalogs/lifecycle.dart';
 import 'catalogs/native_scan.dart';
 import 'catalogs/programs.dart';
+import 'catalogs/redesign.dart';
 import 'catalogs/scan.dart';
 import 'catalogs/system.dart';
 
@@ -44,6 +45,7 @@ class AppLocalizations {
     scanTranslations,
     systemTranslations,
     journeyTranslations,
+    redesignTranslations,
     lifecycleTranslations,
     nativeScanTranslations,
     commonTranslations,

@@ -19,6 +19,7 @@ import 'package:safe_at_home/features/assessment/domain/capture/photo_capture_co
 import 'package:safe_at_home/features/assessment/domain/capture/staging_store.dart';
 import 'package:safe_at_home/features/assessment/domain/measurement/length_unit.dart';
 import 'package:safe_at_home/features/assessment/presentation/live_assessment_screen.dart';
+import 'package:safe_at_home/features/assessment/presentation/assessment_flow_screen.dart';
 import 'package:safe_at_home/shared/models/case_draft.dart';
 import 'package:safe_at_home/shared/models/contracts.dart';
 import 'package:safe_at_home/shared/services/local_private_store.dart';
@@ -1340,6 +1341,9 @@ void main() {
       }
 
       await settleUntil(() => checkpoint.isCompleted);
+      await settleUntil(
+        () => find.byType(AssessmentFlowScreen).evaluate().isNotEmpty,
+      );
       var persisted = false;
       services.store.flush().then((_) => persisted = true);
       await settleUntil(() => persisted);
@@ -1506,7 +1510,22 @@ void main() {
       expect(find.text('Photos (optional)'), findsOneWidget);
       await tester.tap(find.byTooltip('Back'));
       await tester.pump();
-      await openScan();
+      final bathroom = find.byKey(const ValueKey('area-bathroom'));
+      await settleUntil(
+        () =>
+            find.textContaining('3D scan saved').evaluate().isNotEmpty &&
+            enabled(open),
+      );
+      await Scrollable.ensureVisible(tester.element(bathroom), alignment: .5);
+      await tester.pump();
+      await tester.tap(bathroom);
+      await settleUntil(
+        () => find
+            .byKey(const ValueKey('bathroom-continue'))
+            .evaluate()
+            .isNotEmpty,
+      );
+      expect(find.text('Open camera'), findsNothing);
       await reveal(added);
       expect(added, findsOneWidget);
       expect(find.text('Review and add observation'), findsNothing);

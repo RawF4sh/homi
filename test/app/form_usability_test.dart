@@ -14,8 +14,7 @@ import 'live_workflows_test.dart'
 import '../contracts/form_answers_test.dart' as form;
 import '../services/case_evidence_api_client_test.dart' as http;
 
-const _intakeSuccess =
-    'Reported program answers saved. Refresh the program checks to use the new case revision.';
+const _intakeSuccess = 'Answers saved. Program checks update on their own.';
 const _formSuccess =
     'Administrative answers saved. Clinical review, consent and signatures remain separate.';
 const _historySuccess =

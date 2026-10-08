@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 
+abstract final class SahRadius {
+  static const double small = 8;
+  static const double medium = 12;
+  static const double large = 16;
+}
+
 abstract final class SafeAtHomeTheme {
   static const ivory = Color(0xFFF7F7F2);
   static const teal = Color(0xFF204D43);
@@ -140,7 +146,7 @@ abstract final class SafeAtHomeTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(SahRadius.medium),
           side: BorderSide(color: scheme.outlineVariant),
         ),
         clipBehavior: Clip.antiAlias,
@@ -170,7 +176,7 @@ abstract final class SafeAtHomeTheme {
           minimumSize: const Size(48, 52),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(SahRadius.medium),
           ),
         ),
       ),
@@ -180,7 +186,7 @@ abstract final class SafeAtHomeTheme {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           side: BorderSide(color: scheme.outline),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(SahRadius.medium),
           ),
         ),
       ),
@@ -219,13 +225,17 @@ abstract final class SafeAtHomeTheme {
       chipTheme: ChipThemeData(
         backgroundColor: scheme.surfaceContainerLow,
         side: BorderSide.none,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(SahRadius.small),
+        ),
         labelStyle: text.labelMedium?.copyWith(color: scheme.onSurface),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: scheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(SahRadius.large),
+        ),
       ),
     );
   }

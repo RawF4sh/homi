@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../app/theme.dart';
 import '../../l10n/app_localizations.dart';
 
 class SahBrandMark extends StatelessWidget {
@@ -175,7 +176,7 @@ class SahStatusBadge extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
         decoration: BoxDecoration(
           color: background,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(SahRadius.small),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -231,7 +232,7 @@ class SahFeaturePanel extends StatelessWidget {
       padding: EdgeInsets.all(enlarged ? 16 : 24),
       decoration: BoxDecoration(
         color: panel,
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(SahRadius.large),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -284,7 +285,7 @@ class SahFeaturePanel extends StatelessWidget {
                         vertical: 14,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(SahRadius.medium),
                       ),
                     ),
                   ),
@@ -498,7 +499,7 @@ class SahNotice extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: background,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(SahRadius.medium),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -645,7 +646,7 @@ class SahActionTile extends StatelessWidget {
       child: Material(
         color: theme.colorScheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(SahRadius.medium),
           side: BorderSide(color: theme.colorScheme.outlineVariant),
         ),
         clipBehavior: Clip.antiAlias,
@@ -663,17 +664,11 @@ class SahActionTile extends StatelessWidget {
                   children: [
                     if (showIcon) ...[
                       ExcludeSemantics(
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: active
-                                ? theme.colorScheme.primaryContainer
-                                : theme.colorScheme.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 1),
                           child: Icon(
                             icon,
+                            size: 24,
                             color: active
                                 ? theme.colorScheme.primary
                                 : theme.colorScheme.onSurfaceVariant,
@@ -804,4 +799,61 @@ class SahEmptyState extends StatelessWidget {
       ],
     ),
   );
+}
+
+class SahKeyboardDismissal extends StatelessWidget {
+  const SahKeyboardDismissal({super.key, required this.child});
+  final Widget child;
+
+  static const double _barHeight = 44;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final keyboard = media.viewInsets.bottom;
+    final bar =
+        keyboard > 0 && Theme.of(context).platform == TargetPlatform.iOS;
+    return Actions(
+      actions: {
+        EditableTextTapOutsideIntent:
+            CallbackAction<EditableTextTapOutsideIntent>(
+              onInvoke: (intent) {
+                intent.focusNode.unfocus();
+                return null;
+              },
+            ),
+      },
+      child: Stack(
+        children: [
+          MediaQuery(
+            data: media.copyWith(
+              viewInsets: media.viewInsets.copyWith(
+                bottom: bar ? keyboard + _barHeight : keyboard,
+              ),
+            ),
+            child: child,
+          ),
+          if (bar)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: keyboard,
+              height: _barHeight,
+              child: Material(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: TextButton(
+                    key: const ValueKey('keyboard-done'),
+                    onPressed: () =>
+                        FocusManager.instance.primaryFocus?.unfocus(),
+                    child: Text(context.tr('Done')),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

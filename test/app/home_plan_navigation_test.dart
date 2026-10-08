@@ -134,7 +134,7 @@ void main() {
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
       0,
     );
-    expect(find.text('A safer home, one step at a time'), findsOneWidget);
+    expect(find.text('Start your first home plan'), findsOneWidget);
     expect(find.byKey(const ValueKey('plan-search')), findsNothing);
     expect(app.coordinator.draft, isNull);
     final generation = app.coordinator.generation;
@@ -145,7 +145,7 @@ void main() {
     await _tab(tester, 'settings');
     expect(find.byType(AccountSettingsScreen), findsOneWidget);
     await _tab(tester, 'home');
-    expect(find.text('A safer home, one step at a time'), findsOneWidget);
+    expect(find.text('Start your first home plan'), findsOneWidget);
     expect(find.byType(AccountSettingsScreen), findsNothing);
 
     expect(app.coordinator.generation, generation);
@@ -337,9 +337,9 @@ void main() {
     final retained = jsonEncode(store.records);
     await _mount(tester, app);
     expect(tester.takeException(), isNull);
-    await _reveal(tester, find.text('Start where you need help'));
+    await _reveal(tester, find.byKey(const ValueKey('case-start')));
     expect(
-      find.text('Start where you need help').hitTestable(),
+      find.byKey(const ValueKey('case-start')).hitTestable(),
       findsOneWidget,
     );
     await _tab(tester, 'plans');

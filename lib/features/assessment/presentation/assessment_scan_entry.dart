@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 
+import '../../../app/theme.dart';
 import '../application/bathroom_scan_availability.dart';
+
+enum SavedScanState { loading, none, unreviewed, reviewed, otherDevice }
 
 class AssessmentScanEntry extends StatelessWidget {
   const AssessmentScanEntry({
@@ -9,22 +12,36 @@ class AssessmentScanEntry extends StatelessWidget {
     required this.availability,
     required this.onOpen,
     required this.onCheck,
+    this.saved = SavedScanState.none,
   });
 
   final BathroomScanAvailability availability;
   final VoidCallback? onOpen, onCheck;
+  final SavedScanState saved;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final capability = availability.capabilities;
-    final primary = availability.prefersScan;
-    final title = primary
+    final hasModel =
+        saved == SavedScanState.unreviewed || saved == SavedScanState.reviewed;
+    final primary = availability.prefersScan || hasModel;
+    final title = hasModel
+        ? 'Bathroom scan saved'
+        : saved == SavedScanState.otherDevice
+        ? 'Bathroom scanned on another phone'
+        : primary
         ? 'Scan or view your bathroom'
-        : availability.checking
+        : availability.checking || saved == SavedScanState.loading
         ? 'Checking 3D scan support'
         : 'Photos and measurements work here';
-    final description = availability.checking
+    final description = saved == SavedScanState.unreviewed
+        ? 'Not reviewed yet. Open it to choose what feels difficult.'
+        : saved == SavedScanState.reviewed
+        ? 'Open it to check what was found or add another concern.'
+        : saved == SavedScanState.otherDevice
+        ? 'The 3D model stays on the phone that made it. Its findings are listed above.'
+        : availability.checking || saved == SavedScanState.loading
         ? 'You can start with photos or measurements while we check this phone.'
         : availability.failed
         ? 'The scanner check could not finish. Try again, or use photos and measurements.'
@@ -57,7 +74,7 @@ class AssessmentScanEntry extends StatelessWidget {
         color: primary
             ? theme.colorScheme.primaryContainer
             : theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(SahRadius.large),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -75,7 +92,9 @@ class AssessmentScanEntry extends StatelessWidget {
               onPressed: onOpen,
               icon: const Icon(Icons.view_in_ar),
               label: Text(
-                context.tr('Open 3D bathroom'),
+                context.tr(
+                  hasModel ? 'Review bathroom scan' : 'Open 3D bathroom',
+                ),
                 textAlign: TextAlign.center,
               ),
             )

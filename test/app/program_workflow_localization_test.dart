@@ -149,11 +149,7 @@ void main() {
         expect(answers['cost']['value'], 0);
         expect(answers['note']['value'], _original);
         expect(
-          find.text(
-            tr(
-              'Reported program answers saved. Refresh the program checks to use the new case revision.',
-            ),
-          ),
+          find.text(tr('Answers saved. Program checks update on their own.')),
           findsOneWidget,
         );
         expect(tester.takeException(), isNull);

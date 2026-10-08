@@ -54,6 +54,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   String? _pendingProfileFingerprint;
   Map<String, Object?>? _recovered;
   int _fieldVersion = 0;
+  bool _choosingHealthPlan = false;
   String get _editKey => 'profile-edit.$_caseId';
   static const labels = {
     'city': 'City',
@@ -662,6 +663,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   void _fieldChanged(String key) {
     if (!_editable) return;
     if (_errors.containsKey(key) ||
+        key == 'healthPlan' ||
         (_countyAutofillCity != null && (key == 'city' || key == 'county'))) {
       setState(() {
         if (key == 'city' || key == 'county') _countyAutofillCity = null;
@@ -814,11 +816,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
             : key == 'annualIncomeUsd'
             ? Text(context.tr('Yearly household total, US dollars'))
             : key == 'healthPlan'
-            ? Text(
-                context.tr(
-                  'Enter any health plan. Suggestions are examples, not a complete list.',
-                ),
-              )
+            ? Text(context.tr(_healthPlanHelp()))
             : ['city', 'county'].contains(key)
             ? Text(context.tr('Type for suggestions, or enter another name.'))
             : null,
@@ -842,46 +840,100 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (key == 'annualIncomeUsd' ||
-            MediaQuery.textScalerOf(context).scale(16) > 24)
-          _fullFieldLabel(labels[key]!, key),
-        input,
-        if (key == 'healthPlan')
-          Wrap(
-            spacing: 8,
-            children: [
-              TextButton(
-                key: const ValueKey('profile-other-health-plan'),
-                onPressed: !_editable
-                    ? null
-                    : () {
-                        _fieldFocus[key]!.requestFocus();
-                        _fields[key]!.selection = TextSelection(
-                          baseOffset: 0,
-                          extentOffset: _fields[key]!.text.length,
-                        );
-                      },
-                child: Text(context.tr('Another health plan')),
-              ),
-              TextButton(
-                key: const ValueKey('profile-no-health-coverage'),
-                onPressed: !_editable
-                    ? null
-                    : () => _applySuggestionValues({
-                        key: context.tr('No health coverage'),
-                      }),
-                child: Text(context.tr('No health coverage')),
-              ),
-              TextButton(
-                key: const ValueKey('profile-unknown-health-coverage'),
-                onPressed: !_editable
-                    ? null
-                    : () => _applySuggestionValues({key: ''}),
-                child: Text(context.tr('Not sure')),
-              ),
-            ],
-          ),
+        if (key == 'healthPlan') _coverageChoices(),
+        if (key != 'healthPlan' || _coverage() != _Coverage.none) ...[
+          if (key == 'annualIncomeUsd' ||
+              MediaQuery.textScalerOf(context).scale(16) > 24)
+            _fullFieldLabel(labels[key]!, key),
+          input,
+        ],
       ],
+    );
+  }
+
+  static final _noCoverageAnswers = {
+    for (final locale in AppLocalizations.supportedLocales)
+      AppLocalizations(locale).text('No health coverage'),
+  };
+
+  _Coverage _coverage() {
+    final text = _fields['healthPlan']!.text.trim();
+    if (_noCoverageAnswers.contains(text)) return _Coverage.none;
+    if (text.isNotEmpty || _choosingHealthPlan) return _Coverage.plan;
+    return _Coverage.unknown;
+  }
+
+  String _healthPlanHelp() {
+    final text = _fields['healthPlan']!.text.trim();
+    if (text.isEmpty) return 'Type for suggestions, or enter another plan.';
+    return profileSuggestions('healthPlan', text).any((s) => s.value == text)
+        ? 'Listed plan'
+        : 'Other plan, saved as typed';
+  }
+
+  Widget _coverageChoices() {
+    final current = _coverage();
+    void choose(_Coverage choice) {
+      if (!_editable) return;
+      final focus = _fieldFocus['healthPlan']!;
+      final field = _fields['healthPlan']!;
+      setState(() => _choosingHealthPlan = choice == _Coverage.plan);
+      if (choice == _Coverage.plan) {
+        if (current == _Coverage.none) {
+          _applySuggestionValues({'healthPlan': ''});
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          focus.requestFocus();
+          field.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: field.text.length,
+          );
+        });
+        return;
+      }
+      focus.unfocus();
+      _applySuggestionValues({
+        'healthPlan': choice == _Coverage.none
+            ? context.tr('No health coverage')
+            : '',
+      });
+    }
+
+    Widget option(_Coverage choice, String key, String label) =>
+        RadioListTile<_Coverage>(
+          key: ValueKey(key),
+          value: choice,
+          contentPadding: EdgeInsets.zero,
+          title: Text(context.tr(label)),
+        );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: RadioGroup<_Coverage>(
+        groupValue: current,
+        onChanged: (choice) {
+          if (choice != null) choose(choice);
+        },
+        child: Column(
+          children: [
+            option(
+              _Coverage.plan,
+              'profile-has-health-plan',
+              'Has a health plan',
+            ),
+            option(
+              _Coverage.none,
+              'profile-no-health-coverage',
+              'No health coverage',
+            ),
+            option(
+              _Coverage.unknown,
+              'profile-unknown-health-coverage',
+              'Not sure',
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -931,169 +983,173 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     builder: (context, requestExit, exiting) {
       _leaving = exiting;
       _requestExit = requestExit;
-      return Scaffold(
-        appBar: AppBar(
-          leading: Navigator.of(context).canPop()
-              ? BackButton(onPressed: requestExit)
-              : null,
-          title: Text(context.tr('Resident details')),
-        ),
-        body: SafeArea(
-          child: Form(
-            key: _form,
-            child: SahContent(
-              child: SingleChildScrollView(
-                controller: _scroll,
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SahPageHeader(
-                      title: context.tr('About the resident'),
-                      description: context.tr(
-                        'Changes save automatically. All answers are optional; blank means unknown, not 0 or No.',
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 20),
-                      child: ListenableBuilder(
-                        listenable: _draftSaves,
-                        builder: (context, _) => _statusText(),
-                      ),
-                    ),
-                    if (_notice != null)
-                      SahNotice(message: context.tr(_notice!)),
-                    if (!_sameBase && !_restoring && !_saving)
-                      SahNotice(
-                        title: context.tr('This case changed'),
-                        message: context.tr(
-                          'Return to the case and reopen Resident details to compare your unfinished work with its current details.',
+      return SahKeyboardDismissal(
+        child: Scaffold(
+          appBar: AppBar(
+            leading: Navigator.of(context).canPop()
+                ? BackButton(onPressed: requestExit)
+                : null,
+            title: Text(context.tr('Resident details')),
+          ),
+          body: SafeArea(
+            child: Form(
+              key: _form,
+              child: SahContent(
+                child: SingleChildScrollView(
+                  controller: _scroll,
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SahPageHeader(
+                        title: context.tr('About the resident'),
+                        description: context.tr(
+                          'Changes save automatically. All answers are optional; blank means unknown, not 0 or No.',
                         ),
-                        tone: SahNoticeTone.warning,
                       ),
-                    if (_restoring)
-                      LinearProgressIndicator(
-                        semanticsLabel: context.tr('Restoring private edits'),
-                      ),
-                    if (_recovered != null) _comparison(),
-                    for (final key in labels.keys) ...[
-                      if (key == 'city')
-                        SahSectionHeading(title: context.tr('Location')),
-                      if (key == 'healthPlan')
-                        SahSectionHeading(title: context.tr('Health coverage')),
-                      if (key == 'ageYears')
-                        SahSectionHeading(title: context.tr('Household')),
                       Padding(
-                        key: ValueKey('profile-field-$key'),
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: _profileField(key),
-                      ),
-                    ],
-                    SahSectionHeading(title: context.tr('Housing')),
-                    _fullFieldLabel('Do you own or rent?', 'tenure'),
-                    DropdownButtonFormField<String>(
-                      key: ValueKey(
-                        'tenure-$_restoring${_fieldVersion == 0 ? '' : '-$_fieldVersion'}',
-                      ),
-                      initialValue: _tenure,
-                      isExpanded: true,
-                      isDense: false,
-                      itemHeight: null,
-                      decoration: InputDecoration(
-                        labelText: context.tr('Do you own or rent?'),
-                      ),
-                      items: [
-                        DropdownMenuItem(
-                          value: null,
-                          child: Text(context.tr('Not provided')),
+                        padding: const EdgeInsets.only(bottom: 20),
+                        child: ListenableBuilder(
+                          listenable: _draftSaves,
+                          builder: (context, _) => _statusText(),
                         ),
-                        DropdownMenuItem(
-                          value: 'owner',
-                          child: Text(context.tr('Own')),
+                      ),
+                      if (_notice != null)
+                        SahNotice(message: context.tr(_notice!)),
+                      if (!_sameBase && !_restoring && !_saving)
+                        SahNotice(
+                          title: context.tr('This case changed'),
+                          message: context.tr(
+                            'Return to the case and reopen Resident details to compare your unfinished work with its current details.',
+                          ),
+                          tone: SahNoticeTone.warning,
                         ),
-                        DropdownMenuItem(
-                          value: 'renter',
-                          child: Text(context.tr('Rent')),
+                      if (_restoring)
+                        LinearProgressIndicator(
+                          semanticsLabel: context.tr('Restoring private edits'),
+                        ),
+                      if (_recovered != null) _comparison(),
+                      for (final key in labels.keys) ...[
+                        if (key == 'city')
+                          SahSectionHeading(title: context.tr('Location')),
+                        if (key == 'healthPlan')
+                          SahSectionHeading(
+                            title: context.tr('Health coverage'),
+                          ),
+                        if (key == 'ageYears')
+                          SahSectionHeading(title: context.tr('Household')),
+                        Padding(
+                          key: ValueKey('profile-field-$key'),
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: _profileField(key),
                         ),
                       ],
-                      onChanged: !_editable
-                          ? null
-                          : (v) => setState(() {
-                              _tenure = v;
-                              _stash();
-                            }),
-                    ),
-                    const SizedBox(height: 16),
-                    _fullFieldLabel('Owner permission reported?', 'consent'),
-                    DropdownButtonFormField<bool>(
-                      key: ValueKey(
-                        'consent-$_restoring${_fieldVersion == 0 ? '' : '-$_fieldVersion'}',
+                      SahSectionHeading(title: context.tr('Housing')),
+                      _fullFieldLabel('Do you own or rent?', 'tenure'),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(
+                          'tenure-$_restoring${_fieldVersion == 0 ? '' : '-$_fieldVersion'}',
+                        ),
+                        initialValue: _tenure,
+                        isExpanded: true,
+                        isDense: false,
+                        itemHeight: null,
+                        decoration: InputDecoration(
+                          labelText: context.tr('Do you own or rent?'),
+                        ),
+                        items: [
+                          DropdownMenuItem(
+                            value: null,
+                            child: Text(context.tr('Not provided')),
+                          ),
+                          DropdownMenuItem(
+                            value: 'owner',
+                            child: Text(context.tr('Own')),
+                          ),
+                          DropdownMenuItem(
+                            value: 'renter',
+                            child: Text(context.tr('Rent')),
+                          ),
+                        ],
+                        onChanged: !_editable
+                            ? null
+                            : (v) => setState(() {
+                                _tenure = v;
+                                _stash();
+                              }),
                       ),
-                      initialValue: _consent,
-                      isExpanded: true,
-                      isDense: false,
-                      itemHeight: null,
-                      decoration: InputDecoration(
-                        labelText: context.tr('Owner permission reported?'),
-                        helper: Text(
-                          context.tr(
-                            'Reported only, not a signed authorization.',
+                      const SizedBox(height: 16),
+                      _fullFieldLabel('Owner permission reported?', 'consent'),
+                      DropdownButtonFormField<bool>(
+                        key: ValueKey(
+                          'consent-$_restoring${_fieldVersion == 0 ? '' : '-$_fieldVersion'}',
+                        ),
+                        initialValue: _consent,
+                        isExpanded: true,
+                        isDense: false,
+                        itemHeight: null,
+                        decoration: InputDecoration(
+                          labelText: context.tr('Owner permission reported?'),
+                          helper: Text(
+                            context.tr(
+                              'Reported only, not a signed authorization.',
+                            ),
                           ),
                         ),
+                        items: [
+                          DropdownMenuItem(
+                            value: null,
+                            child: Text(context.tr('Not known')),
+                          ),
+                          DropdownMenuItem(
+                            value: true,
+                            child: Text(context.tr('Yes')),
+                          ),
+                          DropdownMenuItem(
+                            value: false,
+                            child: Text(context.tr('No')),
+                          ),
+                        ],
+                        onChanged: !_editable
+                            ? null
+                            : (v) => setState(() {
+                                _consent = v;
+                                _stash();
+                              }),
                       ),
-                      items: [
-                        DropdownMenuItem(
-                          value: null,
-                          child: Text(context.tr('Not known')),
+                      const SizedBox(height: 24),
+                      if (_errors.isNotEmpty)
+                        SahActionFeedback(
+                          key: const ValueKey('profile-validation-feedback'),
+                          title: context.tr('Check this answer'),
+                          message: context.tr('{field}: {error}', {
+                            'field': context.tr(labels[_errors.keys.first]!),
+                            'error': context.tr(_errors.values.first),
+                          }),
+                          tone: SahNoticeTone.error,
+                          onReview: _reviewInvalid,
+                          revealRevision: _validationAttempt,
                         ),
-                        DropdownMenuItem(
-                          value: true,
-                          child: Text(context.tr('Yes')),
+                      if (_syncFailed &&
+                          _sameBase &&
+                          !widget.services.coordinator.uncertain &&
+                          !widget.services.coordinator.conflict)
+                        OutlinedButton(
+                          key: const ValueKey('profile-retry-online'),
+                          onPressed: _onlineSave == null ? _saveOnline : null,
+                          child: Text(context.tr('Retry sync')),
                         ),
-                        DropdownMenuItem(
-                          value: false,
-                          child: Text(context.tr('No')),
+                      FilledButton(
+                        key: const ValueKey('profile-keep-edits'),
+                        onPressed: _editable && !_saving ? _save : null,
+                        child: Text(
+                          context.tr('Done'),
+                          textAlign: TextAlign.center,
                         ),
-                      ],
-                      onChanged: !_editable
-                          ? null
-                          : (v) => setState(() {
-                              _consent = v;
-                              _stash();
-                            }),
-                    ),
-                    const SizedBox(height: 24),
-                    if (_errors.isNotEmpty)
-                      SahActionFeedback(
-                        key: const ValueKey('profile-validation-feedback'),
-                        title: context.tr('Check this answer'),
-                        message: context.tr('{field}: {error}', {
-                          'field': context.tr(labels[_errors.keys.first]!),
-                          'error': context.tr(_errors.values.first),
-                        }),
-                        tone: SahNoticeTone.error,
-                        onReview: _reviewInvalid,
-                        revealRevision: _validationAttempt,
                       ),
-                    if (_syncFailed &&
-                        _sameBase &&
-                        !widget.services.coordinator.uncertain &&
-                        !widget.services.coordinator.conflict)
-                      OutlinedButton(
-                        key: const ValueKey('profile-retry-online'),
-                        onPressed: _onlineSave == null ? _saveOnline : null,
-                        child: Text(context.tr('Retry sync')),
-                      ),
-                    FilledButton(
-                      key: const ValueKey('profile-keep-edits'),
-                      onPressed: _editable && !_saving ? _save : null,
-                      child: Text(
-                        context.tr('Done'),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(height: 72),
-                  ],
+                      const SizedBox(height: 72),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1103,3 +1159,5 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     },
   );
 }
+
+enum _Coverage { plan, none, unknown }

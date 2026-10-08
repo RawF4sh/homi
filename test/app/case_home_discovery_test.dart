@@ -385,7 +385,7 @@ void main() {
       await _reveal(tester, find.byKey(const ValueKey('case-start')));
       expect(
         tester
-            .widget<FilledButton>(find.byKey(const ValueKey('case-start')))
+            .widget<ButtonStyleButton>(find.byKey(const ValueKey('case-start')))
             .onPressed,
         isNull,
       );

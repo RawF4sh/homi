@@ -152,19 +152,23 @@ class BathroomScanSession extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  static Future<BathroomScanReview?> readSaved(
+    LocalPrivateStore store,
+    String caseId,
+  ) async {
+    final bytes = await store.readBytes('assessment:$caseId:bathroom-scan');
+    if (bytes == null) return null;
+    if (bytes.length > 768 * 1024) {
+      throw const FormatException('Private scan exceeds its storage bound.');
+    }
+    return BathroomScanReview.fromJson(jsonDecode(utf8.decode(bytes)), caseId);
+  }
+
   Future<void> initialize() async {
     guard();
-    final bytes = await store.readBytes(key);
+    final saved = await readSaved(store, caseId);
     guard();
-    if (bytes != null) {
-      if (bytes.length > 768 * 1024) {
-        throw const FormatException('Private scan exceeds its storage bound.');
-      }
-      review = BathroomScanReview.fromJson(
-        jsonDecode(utf8.decode(bytes)),
-        caseId,
-      );
-    }
+    if (saved != null) review = saved;
     if (review.pendingScanId != null) {
       notice =
           'The previous scan was interrupted. Your saved model is retained. Start a new scan when ready.';

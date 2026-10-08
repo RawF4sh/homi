@@ -29,7 +29,13 @@ class AssessmentFlowScreen extends StatelessWidget {
     this.keptOnDevice = false,
     this.onContinue,
     this.scanFindingIds = const {},
+    this.onChooseLocation,
+    this.locationStatus = const {},
   });
+
+  final ValueChanged<AssessmentLocation>? onChooseLocation;
+
+  final Map<AssessmentLocation, String> locationStatus;
 
   final AssessmentFlow flow;
   final Widget? status;
@@ -45,103 +51,105 @@ class AssessmentFlowScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: Listenable.merge([flow, flow.controller]),
-      builder: (context, _) {
-        final AssessmentStep step = flow.step;
-        final bool editable = enabled && !flow.isBusy;
-        return Scaffold(
-          bottomNavigationBar: step == AssessmentStep.details
-              ? _primaryAction(
-                  context,
-                  editable ? flow.saveDetails : null,
-                  'Review',
-                  'assessment-review',
-                )
-              : onContinue != null &&
-                    (step == AssessmentStep.review ||
-                        (step == AssessmentStep.chooseArea &&
-                            flow.controller.findings.isNotEmpty))
-              ? _primaryAction(
-                  context,
-                  editable
-                      ? () {
-                          if (step == AssessmentStep.review &&
-                              flow.findingId != null &&
-                              flow.controller
-                                      .reviewOf(flow.findingId!)
-                                      ?.state ==
-                                  FindingReviewState.needsReview) {
-                            if (!flow.controller
-                                .confirmDisplayedRecord(flow.findingId!)
-                                .applied) {
-                              return;
+    return SahKeyboardDismissal(
+      child: ListenableBuilder(
+        listenable: Listenable.merge([flow, flow.controller]),
+        builder: (context, _) {
+          final AssessmentStep step = flow.step;
+          final bool editable = enabled && !flow.isBusy;
+          return Scaffold(
+            bottomNavigationBar: step == AssessmentStep.details
+                ? _primaryAction(
+                    context,
+                    editable ? flow.saveDetails : null,
+                    'Review',
+                    'assessment-review',
+                  )
+                : onContinue != null &&
+                      (step == AssessmentStep.review ||
+                          (step == AssessmentStep.chooseArea &&
+                              flow.controller.findings.isNotEmpty))
+                ? _primaryAction(
+                    context,
+                    editable
+                        ? () {
+                            if (step == AssessmentStep.review &&
+                                flow.findingId != null &&
+                                flow.controller
+                                        .reviewOf(flow.findingId!)
+                                        ?.state ==
+                                    FindingReviewState.needsReview) {
+                              if (!flow.controller
+                                  .confirmDisplayedRecord(flow.findingId!)
+                                  .applied) {
+                                return;
+                              }
                             }
+                            onContinue!();
                           }
-                          onContinue!();
-                        }
-                      : null,
-                  step == AssessmentStep.review &&
-                          flow.controller.reviewOf(flow.findingId!)?.state ==
-                              FindingReviewState.needsReview
-                      ? 'Confirm and continue'
-                      : 'Continue',
-                  'assessment-continue',
-                )
-              : null,
-          appBar: AppBar(
-            actions: actions,
-            title: Text(
-              step == AssessmentStep.chooseArea && areaTools != null
-                  ? context.tr('Home assessment')
-                  : context.tr(_title(step)),
-            ),
-            leading: flow.canGoBack
-                ? IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    tooltip: context.tr('Back'),
-                    onPressed: enabled ? flow.back : null,
+                        : null,
+                    step == AssessmentStep.review &&
+                            flow.controller.reviewOf(flow.findingId!)?.state ==
+                                FindingReviewState.needsReview
+                        ? 'Confirm and continue'
+                        : 'Continue',
+                    'assessment-continue',
                   )
                 : null,
-          ),
-          body: SafeArea(
-            child: SingleChildScrollView(
-              key: ValueKey('assessment-scroll-${step.name}'),
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ?status,
-                  _Progress(step: step),
-                  const SizedBox(height: 16),
-                  ExcludeFocus(
-                    excluding: !editable,
-                    child: AbsorbPointer(
-                      absorbing: !editable,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: switch (step) {
-                          AssessmentStep.chooseArea => _chooseArea(context),
-                          AssessmentStep.viewPrompt => _viewPrompt(context),
-                          AssessmentStep.preview => _preview(context),
-                          AssessmentStep.details => [
-                            _DetailsStep(
-                              key: ValueKey('details-${flow.findingId}'),
-                              flow: flow,
-                              enabled: editable,
-                            ),
-                          ],
-                          AssessmentStep.review => _review(context),
-                        },
+            appBar: AppBar(
+              actions: actions,
+              title: Text(
+                step == AssessmentStep.chooseArea && areaTools != null
+                    ? context.tr('Home assessment')
+                    : context.tr(_title(step)),
+              ),
+              leading: flow.canGoBack
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      tooltip: context.tr('Back'),
+                      onPressed: enabled ? flow.back : null,
+                    )
+                  : null,
+            ),
+            body: SafeArea(
+              child: SingleChildScrollView(
+                key: ValueKey('assessment-scroll-${step.name}'),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ?status,
+                    _Progress(step: step),
+                    const SizedBox(height: 16),
+                    ExcludeFocus(
+                      excluding: !editable,
+                      child: AbsorbPointer(
+                        absorbing: !editable,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: switch (step) {
+                            AssessmentStep.chooseArea => _chooseArea(context),
+                            AssessmentStep.viewPrompt => _viewPrompt(context),
+                            AssessmentStep.preview => _preview(context),
+                            AssessmentStep.details => [
+                              _DetailsStep(
+                                key: ValueKey('details-${flow.findingId}'),
+                                flow: flow,
+                                enabled: editable,
+                              ),
+                            ],
+                            AssessmentStep.review => _review(context),
+                          },
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -207,11 +215,15 @@ class AssessmentFlowScreen extends StatelessWidget {
         SahActionTile(
           key: ValueKey('area-${location.name}'),
           title: context.tr(location.title),
-          subtitle: context.tr('{description}\nNotes & photos', {
-            'description': context.tr(location.description),
-          }),
+          subtitle: locationStatus[location] == null
+              ? context.tr('{description}\nNotes & photos', {
+                  'description': context.tr(location.description),
+                })
+              : '${context.tr(location.description)}\n${context.tr(locationStatus[location]!)}',
           icon: location.icon,
-          onTap: () => flow.chooseLocation(location),
+          onTap: () => onChooseLocation != null
+              ? onChooseLocation!(location)
+              : flow.chooseLocation(location),
         ),
       if (!areaToolsFirst) ?areaTools,
     ];
@@ -966,6 +978,8 @@ class _DetailsStepState extends State<_DetailsStep> {
             flow.location?.title ?? AssessmentCopy.areaTitle(flow.area!),
           ),
         ),
+        _concernChoices(context),
+        const SizedBox(height: 16),
         TextField(
           key: const ValueKey('observation'),
           controller: _observation,
@@ -973,7 +987,10 @@ class _DetailsStepState extends State<_DetailsStep> {
           minLines: 3,
           maxLines: 6,
           onChanged: (text) {
-            if (widget.enabled && !flow.isBusy) flow.setObservationText(text);
+            if (widget.enabled && !flow.isBusy) {
+              setState(() {});
+              flow.setObservationText(text);
+            }
           },
           decoration: InputDecoration(
             labelText: context.tr(AssessmentCopy.observationLabel),
@@ -1015,6 +1032,47 @@ class _DetailsStepState extends State<_DetailsStep> {
             ],
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _concernChoices(BuildContext context) {
+    final AssessmentFlow flow = widget.flow;
+    final text = _observation.text;
+    void toggle(String sentence, bool add) {
+      final next = add
+          ? [text.trim(), sentence].where((p) => p.isNotEmpty).join(' ')
+          : text
+                .replaceFirst(sentence, '')
+                .replaceAll(RegExp(r' {2,}'), ' ')
+                .trim();
+      setState(
+        () => _observation.value = TextEditingValue(
+          text: next,
+          selection: TextSelection.collapsed(offset: next.length),
+        ),
+      );
+      flow.setObservationText(next);
+    }
+
+    return Column(
+      children: [
+        for (final concern in AssessmentCopy.concernChoicesFor(flow.area!))
+          Builder(
+            builder: (context) {
+              final sentence = context.tr(concern);
+              return CheckboxListTile(
+                key: ValueKey('concern-$concern'),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(sentence),
+                value: text.contains(sentence),
+                onChanged: widget.enabled && !flow.isBusy
+                    ? (selected) => toggle(sentence, selected!)
+                    : null,
+              );
+            },
+          ),
       ],
     );
   }

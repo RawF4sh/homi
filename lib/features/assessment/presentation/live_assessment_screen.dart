@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../local_help/local_help_screen.dart';
@@ -50,12 +51,14 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
   String? notice;
   final saveStatusKey = GlobalKey();
   Uint8List? recoveredPhoto;
+  SavedScanState savedScan = SavedScanState.loading;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    ready = session.initialize().then((_) {
+    ready = session.initialize().then((_) async {
+      await refreshSavedScan();
       initialized = true;
       final findingId = widget.initialFindingId;
       if (findingId != null && session.controller.draftOf(findingId) != null) {
@@ -64,6 +67,55 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       if (mounted) scanAvailability.refresh();
     });
   }
+
+  static final _scanSource = RegExp(
+    r' Source: (?:iPhone RoomPlan|Android ARCore) partial scan ',
+  );
+
+  Future<void> refreshSavedScan() async {
+    SavedScanState next;
+    try {
+      final review = await BathroomScanSession.readSaved(
+        widget.services.store,
+        session.caseId,
+      );
+      next = review?.scene == null
+          ? session.controller.drafts.any(
+                  (d) => _scanSource.hasMatch(d.observation),
+                )
+                ? SavedScanState.otherDevice
+                : SavedScanState.none
+          : review!.difficulties.isEmpty &&
+                review.reviewed.isEmpty &&
+                review.dismissed.isEmpty &&
+                session.activeScanImports.isEmpty
+          ? SavedScanState.unreviewed
+          : SavedScanState.reviewed;
+    } catch (_) {
+      next = SavedScanState.unreviewed;
+    }
+    if (mounted && session.isCurrent) setState(() => savedScan = next);
+  }
+
+  bool get _hasSavedModel =>
+      savedScan == SavedScanState.unreviewed ||
+      savedScan == SavedScanState.reviewed;
+
+  void chooseLocation(AssessmentLocation location) {
+    if (location == AssessmentLocation.bathroom &&
+        _hasSavedModel &&
+        _canOpenScan) {
+      openBathroomScan();
+      return;
+    }
+    session.flow.chooseLocation(location);
+  }
+
+  bool get _canOpenScan =>
+      !busy &&
+      !session.flow.isBusy &&
+      !session.localConflict &&
+      session.sync.canSave;
 
   Future<void> run(Future<void> Function() action) async {
     if (busy || session.flow.isBusy) return;
@@ -184,6 +236,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     session.guard();
     await session.flush();
     scanAvailability.refresh();
+    await refreshSavedScan();
   });
 
   @override
@@ -302,19 +355,22 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                   icon: const Icon(Icons.close),
                 ),
               ],
-              areaToolsFirst: scanAvailability.prefersScan,
+              areaToolsFirst: scanAvailability.prefersScan || _hasSavedModel,
+              onChooseLocation: chooseLocation,
+              locationStatus: {
+                if (_hasSavedModel)
+                  AssessmentLocation.bathroom:
+                      savedScan == SavedScanState.unreviewed
+                      ? '3D scan saved · not reviewed yet'
+                      : '3D scan saved · reviewed',
+              },
               areaTools: AssessmentScanEntry(
                 availability: scanAvailability,
+                saved: savedScan,
                 onCheck: busy || !session.isCurrent
                     ? null
                     : scanAvailability.refresh,
-                onOpen:
-                    busy ||
-                        session.flow.isBusy ||
-                        session.localConflict ||
-                        !session.sync.canSave
-                    ? null
-                    : openBathroomScan,
+                onOpen: _canOpenScan ? openBathroomScan : null,
               ),
               status: Column(
                 key: saveStatusKey,

@@ -40,6 +40,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
   late final int _generation;
   late final DraftSaveTracker _draftSaves;
   bool _leaving = false;
+  bool _justSaved = false;
   String get _key => 'intake.$_caseId.${widget.program.programId}';
   @override
   void initState() {
@@ -100,8 +101,11 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
     if (_leaving || _restoring || !_current(_response?.caseRevision ?? -1)) {
       return;
     }
-    if (_feedbackAtAction && _notice != null) {
-      setState(() => _notice = null);
+    if ((_feedbackAtAction && _notice != null) || _justSaved) {
+      setState(() {
+        _notice = null;
+        _justSaved = false;
+      });
     }
     unawaited(
       _persist().catchError((Object _) {
@@ -311,8 +315,8 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
         await _persist();
       });
       if (mounted) {
-        _notice =
-            'Reported program answers saved. Refresh the program checks to use the new case revision.';
+        _notice = 'Answers saved. Program checks update on their own.';
+        _justSaved = true;
       }
     } catch (error) {
       if (mounted) _notice = safeOperationMessage(error);
@@ -326,240 +330,281 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
     tracker: _draftSaves,
     builder: (context, requestExit, exiting) {
       _leaving = exiting;
-      return Scaffold(
-        appBar: AppBar(
-          leading: BackButton(onPressed: requestExit),
-          title: Text(context.tr('Program questions')),
-        ),
-        body: SafeArea(
-          child: Form(
-            key: _form,
-            child: SahContent(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SahPageHeader(
-                      title: widget.program.programName,
-                      description: context.tr(
-                        'Answer what you know. Unknown is different from No or 0.',
-                      ),
-                    ),
-                    if (Localizations.localeOf(context).languageCode != 'en')
-                      SahNotice(
-                        message: context.tr(
-                          'Program information and official forms may remain in English. Your saved answers are not translated.',
+      return SahKeyboardDismissal(
+        child: Scaffold(
+          appBar: AppBar(
+            leading: BackButton(onPressed: requestExit),
+            title: Text(context.tr('Program questions')),
+          ),
+          body: SafeArea(
+            child: Form(
+              key: _form,
+              child: SahContent(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SahPageHeader(
+                        title: widget.program.programName,
+                        description: context.tr(
+                          'Answer what you know. Unknown is different from No or 0.',
                         ),
                       ),
-                    SahMoreInfo(
-                      details: [
-                        context.tr(
-                          'These are reported facts, not a diagnosis, professional determination or funding decision.',
-                        ),
-                      ],
-                    ),
-                    if (_busy)
-                      Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: LinearProgressIndicator(
-                          semanticsLabel: context.tr(
-                            'Updating program answers',
+                      if (Localizations.localeOf(context).languageCode != 'en')
+                        SahNotice(
+                          message: context.tr(
+                            'Program information and official forms may remain in English. Your saved answers are not translated.',
                           ),
                         ),
-                      ),
-                    if (_notice != null && !_feedbackAtAction)
-                      SahNotice(message: context.tr(_notice!)),
-                    if (_uncertain)
-                      SahNotice(
-                        title: context.tr('Check the last save'),
-                        message: context.tr(
-                          'A save may already have succeeded. Check saved answers before another save.',
-                        ),
-                        tone: SahNoticeTone.warning,
-                      ),
-                    const SizedBox(height: 8),
-                    OutlinedButton(
-                      key: const ValueKey('intake-reconcile'),
-                      onPressed: _busy || exiting ? null : () => _read(),
-                      child: Text(
-                        context.tr('Check saved answers and reconcile'),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    if (_response?.saved != null)
-                      ExpansionTile(
-                        title: Text(context.tr('Compare saved answers')),
-                        children: [
-                          for (final q in _response!.definition.questions)
-                            ListTile(
-                              title: Text(
-                                programQuestionLabel(
-                                  context,
-                                  _response!.definition,
-                                  q,
-                                ),
-                              ),
-                              subtitle: Text(_savedLabel(q.key)),
-                            ),
+                      SahMoreInfo(
+                        details: [
+                          context.tr(
+                            'These are reported facts, not a diagnosis, professional determination or funding decision.',
+                          ),
                         ],
                       ),
-                    if (_response != null)
-                      SahSectionHeading(title: context.tr('Reported answers')),
-                    for (final q
-                        in _response?.definition.questions ??
-                            <IntakeQuestion>[])
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ExcludeSemantics(
-                              child: Text(
-                                programQuestionLabel(
-                                  context,
-                                  _response!.definition,
-                                  q,
-                                ),
-                                key: ValueKey('intake-question-${q.key}'),
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
+                      if (_busy)
+                        Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: LinearProgressIndicator(
+                            semanticsLabel: context.tr(
+                              'Updating program answers',
                             ),
-                            if (q.description.isNotEmpty)
-                              SahMoreInfo(
-                                label: context.tr('About this question'),
-                                details: [
-                                  programQuestionDescription(
-                                    context,
-                                    _response!.definition,
-                                    q,
-                                  ),
-                                ],
-                              )
-                            else
-                              const SizedBox(height: 12),
-                            if (q.kind == 'boolean')
-                              DropdownButtonFormField<String>(
-                                key: ValueKey('${q.key}-$_restoring'),
-                                initialValue:
-                                    _booleans[q.key]?.toString() ?? 'unknown',
-                                isExpanded: true,
-                                isDense: false,
-                                itemHeight: null,
-                                decoration: InputDecoration(
-                                  labelText: programQuestionLabel(
+                          ),
+                        ),
+                      if (_notice != null && !_feedbackAtAction)
+                        SahNotice(message: context.tr(_notice!)),
+                      if (_uncertain)
+                        SahNotice(
+                          title: context.tr('Check the last save'),
+                          message: context.tr(
+                            'A save may already have succeeded. Check saved answers before another save.',
+                          ),
+                          tone: SahNoticeTone.warning,
+                        ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        key: const ValueKey('intake-reconcile'),
+                        onPressed: _busy || exiting ? null : () => _read(),
+                        child: Text(
+                          context.tr('Check saved answers and reconcile'),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      if (_response?.saved != null)
+                        ExpansionTile(
+                          title: Text(context.tr('Compare saved answers')),
+                          children: [
+                            for (final q in _response!.definition.questions)
+                              ListTile(
+                                title: Text(
+                                  programQuestionLabel(
                                     context,
                                     _response!.definition,
                                     q,
                                   ),
                                 ),
-                                items: [
-                                  DropdownMenuItem(
-                                    value: 'unknown',
-                                    child: Text(context.tr('Unknown')),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'true',
-                                    child: Text(context.tr('Yes')),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'false',
-                                    child: Text(context.tr('No')),
-                                  ),
-                                ],
-                                onChanged: _busy || _uncertain || exiting
-                                    ? null
-                                    : (v) {
-                                        if (_leaving || _busy || _uncertain) {
-                                          return;
-                                        }
-                                        setState(
-                                          () =>
-                                              _booleans[q.key] = v == 'unknown'
-                                              ? null
-                                              : v == 'true',
-                                        );
-                                        _stash();
-                                      },
-                              )
-                            else
-                              TextFormField(
-                                key: _fieldAnchors[q.key],
-                                controller: _text[q.key],
-                                focusNode: _fieldFocus[q.key],
-                                forceErrorText: _errors[q.key] == null
-                                    ? null
-                                    : context.tr(_errors[q.key]!),
-                                enabled: !_busy && !_uncertain && !exiting,
-                                decoration: InputDecoration(
-                                  labelText: programQuestionLabel(
-                                    context,
-                                    _response!.definition,
-                                    q,
-                                  ),
-                                  helperText: context.tr('Blank means unknown'),
-                                ),
-                                keyboardType: q.kind == 'money'
-                                    ? const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      )
-                                    : TextInputType.text,
-                                textInputAction: TextInputAction.next,
-                                maxLength: q.maxLength ?? 20,
-                                onChanged: (_) {
-                                  if (_leaving || _busy || _uncertain) return;
-                                  if (_errors.containsKey(q.key)) {
-                                    setState(() {
-                                      final error = _validateQuestion(q);
-                                      if (error == null) {
-                                        _errors.remove(q.key);
-                                      } else {
-                                        _errors[q.key] = error;
-                                      }
-                                    });
-                                  }
-                                  _stash();
-                                },
+                                subtitle: Text(_savedLabel(q.key)),
                               ),
                           ],
                         ),
-                      ),
-                    if (_errors.isNotEmpty)
-                      SahActionFeedback(
-                        key: const ValueKey('intake-validation-feedback'),
-                        title: context.tr('Check this answer'),
-                        message: context.tr('{field}: {message}', {
-                          'field': programQuestionLabel(
-                            context,
-                            _response!.definition,
-                            _response!.definition.questions.firstWhere(
-                              (q) => q.key == _errors.keys.first,
-                            ),
+                      if (_response != null)
+                        SahSectionHeading(
+                          title: context.tr('Reported answers'),
+                        ),
+                      for (final q
+                          in _response?.definition.questions ??
+                              <IntakeQuestion>[])
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ExcludeSemantics(
+                                child: Text(
+                                  programQuestionLabel(
+                                    context,
+                                    _response!.definition,
+                                    q,
+                                  ),
+                                  key: ValueKey('intake-question-${q.key}'),
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
+                              ),
+                              if (q.description.isNotEmpty)
+                                SahMoreInfo(
+                                  label: context.tr('About this question'),
+                                  details: [
+                                    programQuestionDescription(
+                                      context,
+                                      _response!.definition,
+                                      q,
+                                    ),
+                                  ],
+                                )
+                              else
+                                const SizedBox(height: 12),
+                              if (q.kind == 'boolean')
+                                DropdownButtonFormField<String>(
+                                  key: ValueKey('${q.key}-$_restoring'),
+                                  initialValue:
+                                      _booleans[q.key]?.toString() ?? 'unknown',
+                                  isExpanded: true,
+                                  isDense: false,
+                                  itemHeight: null,
+                                  decoration: InputDecoration(
+                                    labelText: programQuestionLabel(
+                                      context,
+                                      _response!.definition,
+                                      q,
+                                    ),
+                                  ),
+                                  items: [
+                                    DropdownMenuItem(
+                                      value: 'unknown',
+                                      child: Text(context.tr('Unknown')),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'true',
+                                      child: Text(context.tr('Yes')),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'false',
+                                      child: Text(context.tr('No')),
+                                    ),
+                                  ],
+                                  onChanged: _busy || _uncertain || exiting
+                                      ? null
+                                      : (v) {
+                                          if (_leaving || _busy || _uncertain) {
+                                            return;
+                                          }
+                                          setState(
+                                            () => _booleans[q.key] =
+                                                v == 'unknown'
+                                                ? null
+                                                : v == 'true',
+                                          );
+                                          _stash();
+                                        },
+                                )
+                              else
+                                TextFormField(
+                                  key: _fieldAnchors[q.key],
+                                  controller: _text[q.key],
+                                  focusNode: _fieldFocus[q.key],
+                                  forceErrorText: _errors[q.key] == null
+                                      ? null
+                                      : context.tr(_errors[q.key]!),
+                                  enabled: !_busy && !_uncertain && !exiting,
+                                  decoration: InputDecoration(
+                                    labelText: programQuestionLabel(
+                                      context,
+                                      _response!.definition,
+                                      q,
+                                    ),
+                                    helperText: context.tr(
+                                      'Blank means unknown',
+                                    ),
+                                  ),
+                                  keyboardType: q.kind == 'money'
+                                      ? const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        )
+                                      : TextInputType.text,
+                                  textInputAction: TextInputAction.next,
+                                  maxLength: q.maxLength ?? 20,
+                                  onChanged: (_) {
+                                    if (_leaving || _busy || _uncertain) return;
+                                    if (_errors.containsKey(q.key)) {
+                                      setState(() {
+                                        final error = _validateQuestion(q);
+                                        if (error == null) {
+                                          _errors.remove(q.key);
+                                        } else {
+                                          _errors[q.key] = error;
+                                        }
+                                      });
+                                    } else if (q.kind == 'money') {
+                                      setState(() {});
+                                    }
+                                    _stash();
+                                  },
+                                ),
+                              if (q.kind == 'money')
+                                Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: ChoiceChip(
+                                    key: ValueKey('intake-unknown-${q.key}'),
+                                    label: Text(context.tr('Not known yet')),
+                                    selected: _text[q.key]!.text.trim().isEmpty,
+                                    onSelected: _busy || _uncertain || exiting
+                                        ? null
+                                        : (_) {
+                                            setState(() {
+                                              _text[q.key]!.clear();
+                                              _errors.remove(q.key);
+                                            });
+                                            _stash();
+                                          },
+                                  ),
+                                ),
+                            ],
                           ),
-                          'message': context.tr(_errors.values.first),
-                        }),
-                        tone: SahNoticeTone.error,
-                        onReview: _reviewInvalid,
-                        revealRevision: _validationAttempt,
-                      ),
-                    if (_feedbackAtAction && _notice != null)
-                      SahActionFeedback(
-                        key: const ValueKey('intake-save-feedback'),
-                        message: context.tr(_notice!),
-                      ),
-                    FilledButton(
-                      key: const ValueKey('intake-save'),
-                      onPressed:
-                          _busy || _uncertain || _response == null || exiting
-                          ? null
-                          : _save,
-                      child: Text(
-                        context.tr('Save these reported answers'),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+                        ),
+                      if (_errors.isNotEmpty)
+                        SahActionFeedback(
+                          key: const ValueKey('intake-validation-feedback'),
+                          title: context.tr('Check this answer'),
+                          message: context.tr('{field}: {message}', {
+                            'field': programQuestionLabel(
+                              context,
+                              _response!.definition,
+                              _response!.definition.questions.firstWhere(
+                                (q) => q.key == _errors.keys.first,
+                              ),
+                            ),
+                            'message': context.tr(_errors.values.first),
+                          }),
+                          tone: SahNoticeTone.error,
+                          onReview: _reviewInvalid,
+                          revealRevision: _validationAttempt,
+                        ),
+                      if (_feedbackAtAction && _notice != null)
+                        SahActionFeedback(
+                          key: const ValueKey('intake-save-feedback'),
+                          message: context.tr(_notice!),
+                        ),
+                      if (_justSaved)
+                        FilledButton(
+                          key: const ValueKey('intake-done'),
+                          onPressed: exiting ? null : requestExit,
+                          child: Text(
+                            context.tr('Back to possible assistance'),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      else
+                        FilledButton(
+                          key: const ValueKey('intake-save'),
+                          onPressed:
+                              _busy ||
+                                  _uncertain ||
+                                  _response == null ||
+                                  exiting
+                              ? null
+                              : _save,
+                          child: Text(
+                            context.tr('Save these reported answers'),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
                 ),
               ),
             ),

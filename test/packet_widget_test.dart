@@ -71,9 +71,15 @@ void main() {
           );
         }
         if (scenario.id == 'unknown') {
-          expect(find.text('Who can help: resident'), findsNWidgets(3));
+          expect(
+            find.text('For the resident · 3 still needed'),
+            findsOneWidget,
+          );
         } else {
-          expect(find.text('Who can help: resident'), findsOneWidget);
+          expect(
+            find.text('For the resident · 1 still needed'),
+            findsOneWidget,
+          );
         }
         expect(find.text('Submit'), findsNothing);
         expect(find.text('Export'), findsNothing);
@@ -171,10 +177,10 @@ void main() {
       );
       await tester.pumpWidget(screen(examples.last));
       await tester.pumpAndSettle();
-      expect(find.text('Who can help: resident'), findsNWidgets(3));
+      expect(find.text('For the resident · 3 still needed'), findsOneWidget);
       await tester.pumpWidget(screen(examples.first));
       await tester.pumpAndSettle();
-      expect(find.text('Who can help: resident'), findsOneWidget);
+      expect(find.text('For the resident · 1 still needed'), findsOneWidget);
       expect(service.keys.toSet(), hasLength(2));
     },
   );

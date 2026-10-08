@@ -336,36 +336,69 @@ class _Checklist extends StatelessWidget {
                     'No checklist items were returned. The program must still review any application.',
                   ),
                 ),
-              for (final item in packet.missingItems)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Divider(height: 1),
-                      const SizedBox(height: 16),
-                      Text(item.description, style: theme.textTheme.bodyLarge),
-                      const SizedBox(height: 12),
-                      SahStatusBadge(
-                        icon: switch (item.resolvedBy) {
-                          'resident' => Icons.person_outline_rounded,
-                          'professional' => Icons.badge_outlined,
-                          _ => Icons.groups_outlined,
-                        },
-                        label: switch (item.resolvedBy) {
-                          'resident' => context.tr('Who can help: resident'),
-                          'professional' => context.tr(
-                            'Who can help: qualified professional',
-                          ),
-                          _ => context.tr('Who can help: program team'),
-                        },
-                      ),
-                    ],
+              for (final role in const ['resident', 'professional', 'program'])
+                if (packet.missingItems.any((i) => i.resolvedBy == role)) ...[
+                  const SizedBox(height: 8),
+                  _RoleHeading(
+                    role: role,
+                    count: packet.missingItems
+                        .where((i) => i.resolvedBy == role)
+                        .length,
                   ),
-                ),
+                  for (final item in packet.missingItems.where(
+                    (i) => i.resolvedBy == role,
+                  ))
+                    Padding(
+                      padding: const EdgeInsets.only(left: 36, bottom: 12),
+                      child: Text(
+                        item.description,
+                        style: theme.textTheme.bodyLarge,
+                      ),
+                    ),
+                ],
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _RoleHeading extends StatelessWidget {
+  const _RoleHeading({required this.role, required this.count});
+  final String role;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ExcludeSemantics(
+            child: Icon(switch (role) {
+              'resident' => Icons.person_outline_rounded,
+              'professional' => Icons.badge_outlined,
+              _ => Icons.groups_outlined,
+            }, color: theme.colorScheme.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Semantics(
+              header: true,
+              child: Text(
+                '${context.tr(switch (role) {
+                  'resident' => 'For the resident',
+                  'professional' => 'For a qualified professional',
+                  _ => 'For the program team',
+                })} · ${context.tr('{count} still needed', {'count': count})}',
+                style: theme.textTheme.titleMedium,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

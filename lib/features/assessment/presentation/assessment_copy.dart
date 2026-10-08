@@ -215,7 +215,29 @@ abstract final class AssessmentCopy {
   static const String observationHint =
       'For example, “a raised threshold”. Note anything unknown too.';
   static const String observationRequired =
-      'Describe what you notice before continuing.';
+      'Choose a concern or describe what you notice.';
+
+  static List<String> concernChoicesFor(AssessmentArea area) => switch (area) {
+    AssessmentArea.bathroom => const [
+      'Getting in or out of the tub or shower is hard.',
+      'Getting on or off the toilet is hard.',
+      'The floor gets slippery.',
+      'There is nothing steady to hold on to.',
+      'The doorway is hard to get through.',
+    ],
+    AssessmentArea.entrance => const [
+      'The steps are hard to manage.',
+      'The handrail is missing or loose.',
+      'The threshold is hard to get over.',
+      'The lighting is too dim.',
+    ],
+    AssessmentArea.other => const [
+      'Moving around here feels unsafe.',
+      'Something on the floor could cause a trip.',
+      'The lighting is too dim.',
+      'Things are hard to reach.',
+    ],
+  };
 
   static const String measurementsIntro =
       'Only add a size if it helps explain this concern. You can continue '

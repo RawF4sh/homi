@@ -754,11 +754,11 @@ void main() {
       expect(find.text('Review and add observation'), findsNothing);
       expect(earlierNotice, findsNothing);
       expect(harness.imports, hasLength(1));
-      expect(find.text('Add a note'), findsOneWidget);
+      expect(find.text('Continue'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('bathroom-continue')));
       await tester.pumpAndSettle();
-      expect(harness.otherConcern, isTrue);
-      expect(harness.continued, isFalse);
+      expect(harness.otherConcern, isFalse);
+      expect(harness.continued, isTrue);
       expect(harness.continuedFindingId, isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
