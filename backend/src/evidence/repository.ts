@@ -4,7 +4,7 @@ import type { ExportArtifactMetadata } from '../exports/types.ts';
 import type { EvidenceAsset, EvidenceCatalog, EvidenceSelection, SanitizedEvidenceImage } from './types.ts';
 
 export type EvidenceRepositoryFailure = { status: 'not_found' | 'conflict' | 'evidence_conflict'
-  | 'answers_conflict' | 'generation_conflict' | 'expired' | 'quota_exceeded' };
+  | 'answers_conflict' | 'generation_conflict' | 'expired' | 'quota_exceeded' | 'selection_too_large' };
 
 export interface EvidenceCaseBinding {
   userId: string;

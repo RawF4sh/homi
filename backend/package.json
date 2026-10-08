@@ -23,7 +23,8 @@
     "verify:hosted-draft": "node tool/verify-hosted-draft.ts",
     "test:postgres": "node --test test/postgres/*.test.ts",
     "research:scfhp": "node src/research-scfhp.ts",
-    "backup": "node tool/backup.ts"
+    "backup": "node tool/backup.ts",
+    "capacity": "node tool/capacity.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

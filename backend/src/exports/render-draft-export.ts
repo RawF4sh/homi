@@ -5,7 +5,8 @@ import { renderDraftPreview } from '../forms/render-draft-preview.ts';
 import type { FormPlanningContext, FormPreparationPlan } from '../forms/field-mapping.ts';
 import { MAX_TEMPLATE_BYTES } from '../forms/template-artifact.ts';
 import { MAX_SELECTED_EVIDENCE, type EvidenceAsset, type EvidenceDescriptor } from '../evidence/types.ts';
-import { parseEvidenceAsset } from '../evidence/validation.ts';
+import { parseEvidenceAsset, parseEvidenceDescriptor } from '../evidence/validation.ts';
+import { exportEvidenceFitsBudget } from '../evidence/export-budget.ts';
 import { MAX_SANITIZED_IMAGE_BYTES } from '../evidence/image-sanitizer.ts';
 import { instantMicros } from '../packets.ts';
 
@@ -57,13 +58,15 @@ export async function renderDraftExport(
     check(templateBytesInput instanceof Uint8Array && templateBytesInput.byteLength >= 8
       && templateBytesInput.byteLength <= MAX_TEMPLATE_BYTES, 'RENDER_FAILED');
     check(Array.isArray(evidenceAssetsInput) && evidenceAssetsInput.length <= MAX_SELECTED_EVIDENCE);
-    let total = 0;
+    const descriptors: EvidenceDescriptor[] = [];
     for (const asset of evidenceAssetsInput) {
       check(asset !== null && typeof asset === 'object' && asset.bytes instanceof Uint8Array);
       check(asset.bytes.byteLength <= MAX_SANITIZED_IMAGE_BYTES, 'CONTENT_TOO_LARGE');
-      total += asset.bytes.byteLength;
-      check(total <= MAX_DRAFT_EXPORT_BYTES, 'CONTENT_TOO_LARGE');
+      const descriptor = parseEvidenceDescriptor(asset.descriptor);
+      check(asset.bytes.byteLength === descriptor.byteLength);
+      descriptors.push(descriptor);
     }
+    check(exportEvidenceFitsBudget(descriptors), 'CONTENT_TOO_LARGE');
     const snapshot = structuredClone(snapshotInput);
     const template = structuredClone(templateInput);
     const templateBytes = Uint8Array.from(templateBytesInput);
