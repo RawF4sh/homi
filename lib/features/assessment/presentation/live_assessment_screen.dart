@@ -199,45 +199,47 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     if (!photo) session.flow.continueWithoutPhoto();
   }
 
-  Future<void> openBathroomScan() => run(() async {
-    session.guard();
-    await session.flush();
-    session.guard();
-    if (!mounted) return;
-    final scanner = BathroomScanSession(
-      store: widget.services.store,
-      caseId: session.caseId,
-      isCurrent: () => session.isCurrent,
-      adapter:
-          widget.services.bathroomScanAdapter ??
-          const NativeBathroomScanAdapter(),
-    );
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => BathroomScanScreen(
-          session: scanner,
-          scope: session,
-          importedFinding: (id) =>
-              session.localSaveFailed ? null : session.importedScanFinding(id),
-          activeImports: () => session.activeScanImports,
-          onImport: session.importScanObservation,
-          onContinue: (findingId) {
-            session.guard();
-            if (findingId != null &&
-                session.flow.step == AssessmentStep.chooseArea) {
-              session.flow.openFinding(findingId);
-            }
-          },
-          onAddOtherConcern: () => openManualConcern(photo: false),
-          onUsePhotos: () => openManualConcern(photo: true),
+  Future<void> openBathroomScan() async {
+    var finish = false;
+    await run(() async {
+      session.guard();
+      await session.flush();
+      session.guard();
+      if (!mounted) return;
+      final scanner = BathroomScanSession(
+        store: widget.services.store,
+        caseId: session.caseId,
+        isCurrent: () => session.isCurrent,
+        adapter:
+            widget.services.bathroomScanAdapter ??
+            const NativeBathroomScanAdapter(),
+      );
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => BathroomScanScreen(
+            session: scanner,
+            scope: session,
+            importedFinding: (id) => session.localSaveFailed
+                ? null
+                : session.importedScanFinding(id),
+            activeImports: () => session.activeScanImports,
+            onImport: session.importScanObservation,
+            onContinue: (_) {
+              session.guard();
+              finish = true;
+            },
+            onAddOtherConcern: () => openManualConcern(photo: false),
+            onUsePhotos: () => openManualConcern(photo: true),
+          ),
         ),
-      ),
-    );
-    session.guard();
-    await session.flush();
-    scanAvailability.refresh();
-    await refreshSavedScan();
-  });
+      );
+      session.guard();
+      await session.flush();
+      scanAvailability.refresh();
+      await refreshSavedScan();
+    });
+    if (finish && mounted) await continueToCase();
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {

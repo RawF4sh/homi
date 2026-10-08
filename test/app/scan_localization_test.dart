@@ -111,13 +111,12 @@ void main() {
           find.text(words.text('Explore support for sitting and standing')),
         );
         expect(find.text(expected.title), findsNothing);
-        final translatedDetail = words.text(expected.detail);
-        await reveal(tester, find.text(words.text('Add this concern')));
-        await tester.tap(find.text(words.text('Add this concern')));
-        await tester.pumpAndSettle();
-        expect(find.textContaining(translatedDetail), findsWidgets);
-        await tester.ensureVisible(find.text(words.text('Confirm and add')));
-        await tester.tap(find.text(words.text('Confirm and add')));
+        final idea = find.ancestor(
+          of: find.text(words.text('Explore support for sitting and standing')),
+          matching: find.byType(CheckboxListTile),
+        );
+        await revealPastModel(tester, idea);
+        await tester.tap(idea);
         await tester.pumpAndSettle();
         expect(imported, isNotNull);
         expect(imported!.detail, expected.detail);

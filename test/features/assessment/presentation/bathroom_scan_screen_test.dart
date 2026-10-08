@@ -238,6 +238,13 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
   await tester.pump();
 }
 
+final _suggestionBox = find.byWidgetPredicate(
+  (w) =>
+      w is CheckboxListTile &&
+      w.key is ValueKey<String> &&
+      (w.key! as ValueKey<String>).value.startsWith('scan-suggestion-'),
+);
+
 Future<void> _openModel(WidgetTester tester) async {
   tester.platformDispatcher.accessibilityFeaturesTestValue =
       const FakeAccessibilityFeatures(accessibleNavigation: true);
@@ -482,20 +489,8 @@ void main() {
       expect(harness.session.review.reviewed, isEmpty);
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);
       expect(harness.imports, isEmpty);
-      final add = find.text('Add this concern');
-      await _reveal(tester, add);
-      await tester.tap(add);
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Confirm this observation?'), findsOneWidget);
-      expect(harness.imports, isEmpty);
-      await _tapDialogAction(tester, 'Cancel');
-      await tester.pumpAndSettle();
-      expect(harness.imports, isEmpty);
-      expect(harness.session.review.reviewed, isEmpty);
-      await _reveal(tester, add);
-      await tester.tap(add);
-      await tester.pump(const Duration(milliseconds: 300));
-      await _tapDialogAction(tester, 'Confirm and add');
+      await _reveal(tester, _suggestionBox);
+      await tester.tap(_suggestionBox);
       await _idle(tester, harness);
       expect(harness.imports, hasLength(1));
       expect(harness.session.review.reviewed, {'door-1'});
@@ -507,12 +502,7 @@ void main() {
         harness.imports.single.observation,
         contains('not a verified measurement'),
       );
-      expect(
-        find.text(
-          'Previously added. Review its current status in the assessment.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('Added to your plan'), findsOneWidget);
       final next = find.byKey(const ValueKey('bathroom-continue'));
       expect(next.hitTestable(), findsOneWidget);
       await tester.tap(next);
@@ -630,7 +620,7 @@ void main() {
   );
 
   testWidgets(
-    'scope expiry hides a pending observation confirmation on its first frame',
+    'scope expiry hides scan ideas and the model on its first frame',
     (tester) async {
       final scene = fictionalScanScene();
       await tester.runAsync(
@@ -642,26 +632,13 @@ void main() {
           ),
         ),
       );
-      final observation = suggestBathroomImprovements(
-        scene: scene,
-        reviewedElementIds: {'door-1'},
-        difficulties: {ScanDifficulty.enteringBathroom},
-      ).single.detail;
       await _open(tester, harness);
-      final add = find.text('Add this concern');
-      await _reveal(tester, add);
-      await tester.tap(add);
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Confirm this observation?'), findsOneWidget);
-      expect(find.textContaining(observation), findsOneWidget);
+      await _reveal(tester, _suggestionBox);
       expect(harness.imports, isEmpty);
       harness.current.value = false;
       await tester.pump();
-      expect(find.textContaining(observation), findsNothing);
-      expect(find.text('Confirm this observation?'), findsNothing);
-      expect(find.text('Confirm and add'), findsNothing);
+      expect(_suggestionBox, findsNothing);
       expect(find.byType(BathroomModelView), findsNothing);
-      expect(harness.imports, isEmpty);
       await tester.pumpAndSettle();
       expect(harness.imports, isEmpty);
       expect(
@@ -703,7 +680,7 @@ void main() {
         tester,
         find.textContaining('Nothing in the scan matched.'),
       );
-      expect(find.text('Add this concern'), findsNothing);
+      expect(_suggestionBox, findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
@@ -728,12 +705,7 @@ void main() {
       await tester.runAsync(() => harness.seed(doorReview()));
       harness.imports.add(doorSuggestion());
       await _open(tester, harness);
-      await _reveal(
-        tester,
-        find.text(
-          'Previously added. Review its current status in the assessment.',
-        ),
-      );
+      await _reveal(tester, find.text('Added to your plan'));
       expect(earlierNotice, findsNothing);
       await _openModel(tester);
       final dropdown = find.byKey(const ValueKey('door-1-door'));
@@ -757,11 +729,8 @@ void main() {
       harness.imports.add(doorSuggestion());
       harness.removed.add(doorSuggestion().id);
       await _open(tester, harness);
-      await _reveal(
-        tester,
-        find.textContaining('Previously added, then dismissed or removed'),
-      );
-      expect(find.text('Add this concern'), findsNothing);
+      await _reveal(tester, find.text('Removed from your plan'));
+      expect(tester.widget<CheckboxListTile>(_suggestionBox).onChanged, isNull);
       expect(earlierNotice, findsNothing);
       expect(harness.imports, hasLength(1));
       expect(find.text('Continue'), findsOneWidget);
@@ -816,7 +785,7 @@ void main() {
       await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
       await expectLater(tester, meetsGuideline(textContrastGuideline));
-      await _reveal(tester, find.text('Add this concern'));
+      await _reveal(tester, _suggestionBox);
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
       await expectLater(tester, meetsGuideline(textContrastGuideline));
@@ -847,31 +816,10 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(harness.session.review.reviewed, isEmpty);
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);
-      await _reveal(tester, find.text('Add this concern'));
-      await tester.tap(find.text('Add this concern'));
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Confirm this observation?'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await Scrollable.ensureVisible(
-        tester.element(find.text('Cancel')),
-        alignment: .5,
-      );
-      await tester.pump();
-      expect(
-        const Rect.fromLTWH(
-          0,
-          0,
-          320,
-          812,
-        ).contains(tester.getCenter(find.text('Cancel'))),
-        true,
-        reason:
-            'The actual dialog cancellation action remains reachable at large text',
-      );
-      expect(tester.takeException(), isNull);
-      await _tapDialogAction(tester, 'Cancel');
-      await tester.pumpAndSettle();
-      expect(harness.imports, isEmpty);
+      await _reveal(tester, _suggestionBox);
+      await tester.tap(_suggestionBox);
+      await _idle(tester, harness);
+      expect(harness.imports, hasLength(1));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

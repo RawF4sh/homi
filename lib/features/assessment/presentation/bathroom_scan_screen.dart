@@ -344,11 +344,6 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           context.tr('Scan your bathroom'),
           style: Theme.of(context).textTheme.headlineMedium,
         ),
-        Text(
-          context.tr(
-            'Scan the layout, tell us what feels difficult, then choose the improvements to explore.',
-          ),
-        ),
       ],
       if (!scan.isCurrent())
         Text(
@@ -507,7 +502,7 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
         if (prompts.length >= 20)
           Text(
             context.tr(
-              'Showing the first 20 suggestions. This is not a complete assessment; add other concerns with photos or notes.',
+              'Showing the first 20 ideas. Add anything else with a photo or note.',
             ),
           ),
         if (prompts.isEmpty)
@@ -631,56 +626,30 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     final added = widget.importedFinding(suggestion.id) != null;
     final active =
         widget.activeImports?.call().contains(suggestion.id) ?? added;
-    final dismissed = scan.review.dismissed.contains(suggestion.id);
-    return _card([
-      Text(
-        context.tr(suggestion.title),
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      if (added && busy)
-        Text(context.tr('Saving this concern on your device…'))
-      else if (added)
-        Text(
-          active
-              ? context.tr(
-                  'Previously added. Review its current status in the assessment.',
-                )
-              : context.tr(
-                  'Previously added, then dismissed or removed in the assessment. It will not be added again from here; change it in the assessment if it still applies.',
-                ),
-        )
-      else if (dismissed)
-        Text(context.tr('Dismissed for this review.'))
-      else ...[
-        Text(context.tr(suggestion.nextAction)),
-        FilledButton(
-          onPressed: enabled && !scan.dirty
-              ? () => run(() async {
-                  if (!await confirm(
-                    context.tr('Confirm this observation?'),
-                    '${_suggestionDetail(context, suggestion)}\n\n${context.tr('Check that this fits the resident and the room. It adds one concern. It does not check sizes or approve any work.')}',
-                    context.tr('Confirm and add'),
-                  )) {
-                    return;
-                  }
-                  final confirmed = await scan.confirmImprovement(suggestion);
-                  latestImportedFindingId = await widget.onImport(confirmed);
-                  if (mounted) {
-                    notice =
-                        'Added to your assessment. Add another concern or continue.';
-                  }
-                })
-              : null,
-          child: Text(context.tr('Add this concern')),
-        ),
-        TextButton(
-          onPressed: enabled
-              ? () => run(() => scan.dismiss(suggestion.id))
-              : null,
-          child: Text(context.tr('Dismiss suggestion')),
-        ),
-      ],
-    ]);
+    return CheckboxListTile(
+      key: ValueKey('scan-suggestion-${suggestion.id}'),
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      value: added && active,
+      title: Text(context.tr(suggestion.title)),
+      subtitle: !added
+          ? null
+          : Text(
+              context.tr(
+                busy
+                    ? 'Saving this concern on your device…'
+                    : active
+                    ? 'Added to your plan'
+                    : 'Removed from your plan',
+              ),
+            ),
+      onChanged: added || !enabled || scan.dirty
+          ? null
+          : (_) => run(() async {
+              final confirmed = await scan.confirmImprovement(suggestion);
+              latestImportedFindingId = await widget.onImport(confirmed);
+            }),
+    );
   }
 
   Widget _card(List<Widget> children) => Card(
@@ -701,24 +670,6 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
       Semantics(liveRegion: true, child: _card([Text(context.tr(text))]));
 }
 
-String _suggestionDetail(
-  BuildContext context,
-  ScanSuggestionCandidate candidate,
-) {
-  const prefix = 'The partial model places a reviewed ';
-  const suffix =
-      ' across part of a reviewed doorway span. This modeled overlap needs an in-person check and may reflect scan approximation.';
-  for (final kind in ScanElementKind.values) {
-    if (candidate.detail == '$prefix${kind.label.toLowerCase()}$suffix') {
-      return context.tr(
-        'The partial model places a reviewed {feature} across part of a reviewed doorway span. This modeled overlap needs an in-person check and may reflect scan approximation.',
-        {'feature': context.tr(kind.label)},
-      );
-    }
-  }
-  return context.tr(candidate.detail);
-}
-
 String _readiness(BathroomScanCapabilities? capability) {
   if (capability == null) {
     return 'Scanner availability could not be confirmed. Check device, or use photos and measurements.';
@@ -727,7 +678,7 @@ String _readiness(BathroomScanCapabilities? capability) {
     'available' when capability.supported =>
       capability.source == 'roomplan'
           ? 'LiDAR scanning is ready on this iPhone. RoomPlan builds an approximate model for you to review.'
-          : 'ARCore scanning is ready on this phone. It maps surfaces; you identify the bathroom features during review.',
+          : 'ARCore scanning is ready on this phone. It maps surfaces, and you name the bathroom features.',
     'permission_denied' when capability.source == 'roomplan' =>
       'Camera access is blocked. Review Camera access for Safe at Home in iPhone Settings, then return and choose Check device. Photos and manual measurements remain available.',
     'permission_denied' =>
@@ -751,11 +702,11 @@ String _warning(String code) => switch (code) {
   'curved_surfaces_approximated' => 'Curved surfaces are only approximated.',
   'geometry_omitted' => 'Some detected geometry could not be included.',
   'depth_unavailable' =>
-    'Depth is unavailable; this model uses tracked surfaces and feature samples.',
+    'Depth was not available. This model uses surfaces only.',
   'depth_partial' => 'Depth samples cover only part of the room.',
   'tracking_limited' =>
     'Tracking was limited during part of this scan. Check positions carefully.',
   'count_limit' =>
     'The model reached a capture bound. Some geometry is omitted.',
-  _ => 'This capture has limitations; review it carefully.',
+  _ => 'This scan may be incomplete.',
 };

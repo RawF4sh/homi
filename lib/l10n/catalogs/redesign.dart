@@ -358,4 +358,59 @@ const redesignTranslations = <String, Map<String, String>>{
     'fil':
         'Tiyaking akma ito sa residente at sa kuwarto. Nagdadagdag ito ng isang alalahanin. Hindi nito sinusuri ang sukat o inaaprubahan ang anumang trabaho.',
   },
+  'Added to your plan': {
+    'es': 'Añadido a su plan',
+    'zh-Hans': '已添加到您的计划',
+    'zh-Hant': '已新增到您的計畫',
+    'vi': 'Đã thêm vào kế hoạch',
+    'fil': 'Naidagdag sa iyong plano',
+  },
+  'Removed from your plan': {
+    'es': 'Quitado de su plan',
+    'zh-Hans': '已从您的计划中移除',
+    'zh-Hant': '已從您的計畫中移除',
+    'vi': 'Đã xóa khỏi kế hoạch',
+    'fil': 'Inalis sa iyong plano',
+  },
+  'ARCore scanning is ready on this phone. It maps surfaces, and you name the bathroom features.': {
+    'es':
+        'El escaneo con ARCore está listo en este teléfono. Mapea superficies y usted nombra las partes del baño.',
+    'zh-Hans': '此手机已可使用 ARCore 扫描。它会绘制表面，由您标注浴室设施。',
+    'zh-Hant': '此手機已可使用 ARCore 掃描。它會繪製表面，由您標註浴室設施。',
+    'vi':
+        'Điện thoại này đã sẵn sàng quét bằng ARCore. Nó lập bản đồ bề mặt, và bạn đặt tên các bộ phận phòng tắm.',
+    'fil':
+        'Handa na ang ARCore scanning sa teleponong ito. Minamapa nito ang mga surface, at ikaw ang magpapangalan sa mga bahagi ng banyo.',
+  },
+  'Showing the first 20 ideas. Add anything else with a photo or note.': {
+    'es':
+        'Se muestran las primeras 20 ideas. Añada lo demás con una foto o nota.',
+    'zh-Hans': '显示前 20 条建议。其他内容可用照片或备注添加。',
+    'zh-Hant': '顯示前 20 條建議。其他內容可用照片或備註新增。',
+    'vi': 'Đang hiện 20 gợi ý đầu tiên. Thêm điều khác bằng ảnh hoặc ghi chú.',
+    'fil':
+        'Ipinapakita ang unang 20 ideya. Idagdag ang iba gamit ang larawan o tala.',
+  },
+  'Depth was not available. This model uses surfaces only.': {
+    'es': 'No hubo datos de profundidad. Este modelo usa solo superficies.',
+    'zh-Hans': '无法获取深度信息。此模型仅使用表面。',
+    'zh-Hant': '無法取得深度資訊。此模型僅使用表面。',
+    'vi': 'Không có dữ liệu chiều sâu. Mô hình này chỉ dùng bề mặt.',
+    'fil':
+        'Walang depth na makuha. Mga surface lang ang gamit ng model na ito.',
+  },
+  'This scan may be incomplete.': {
+    'es': 'Este escaneo puede estar incompleto.',
+    'zh-Hans': '此扫描可能不完整。',
+    'zh-Hant': '此掃描可能不完整。',
+    'vi': 'Bản quét này có thể chưa đầy đủ.',
+    'fil': 'Maaaring hindi kumpleto ang scan na ito.',
+  },
+  '{reviewed} of {total} checked': {
+    'es': '{reviewed} de {total} revisados',
+    'zh-Hans': '已检查 {reviewed}/{total}',
+    'zh-Hant': '已檢查 {reviewed}/{total}',
+    'vi': 'Đã kiểm tra {reviewed}/{total}',
+    'fil': '{reviewed} sa {total} ang nasuri',
+  },
 };

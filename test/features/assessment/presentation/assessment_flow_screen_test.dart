@@ -81,11 +81,11 @@ void main() {
     (tester) async {
       var continued = 0;
       await pumpScreen(tester, onContinue: () => continued++);
-      expect(find.text('Step 1 of 3'), findsOneWidget);
+      expect(find.textContaining('Step '), findsNothing);
       await tapText(tester, 'Bathroom');
-      expect(find.text('Step 2 of 3'), findsOneWidget);
+      expect(find.text('Step 1 of 2'), findsOneWidget);
       await tapText(tester, 'Continue without a photo');
-      expect(find.text('Step 2 of 3'), findsOneWidget);
+      expect(find.text('Step 2 of 2'), findsOneWidget);
       await tester.enterText(
         find.byKey(const ValueKey('observation')),
         'I need support getting into the bath.',
@@ -651,7 +651,7 @@ void main() {
         greaterThanOrEqualTo(96),
       );
       await check(tester);
-      expect(find.bySemanticsLabel('Step 3 of 3'), findsOneWidget);
+      expect(find.bySemanticsLabel('Step 3 of 3'), findsNothing);
       scroll.position.jumpTo(scroll.position.maxScrollExtent);
       await tester.pumpAndSettle();
       expect(find.text('Delete this finding').hitTestable(), findsOneWidget);

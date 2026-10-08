@@ -261,7 +261,6 @@ class _Checklist extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SahFeaturePanel(
-                eyebrow: context.tr('DRAFT CHECKLIST'),
                 title: program.programName,
                 description: context.tr(
                   'Draft only · Nothing has been submitted.',

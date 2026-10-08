@@ -1463,9 +1463,7 @@ void main() {
         );
       }
 
-      final added = find.text(
-        'Previously added. Review its current status in the assessment.',
-      );
+      final added = find.text('Added to your plan');
       await openScan();
       await tester.tap(start);
       await settleUntil(
@@ -1475,25 +1473,20 @@ void main() {
             .isNotEmpty,
       );
       await check(ScanDifficulty.enteringBathroom.label);
-      final add = find.text('Add this concern');
-      await reveal(add);
-      await settleUntil(
-        () => enabled(
-          find.ancestor(of: add, matching: find.byType(FilledButton)),
-        ),
+      final idea = find.byWidgetPredicate(
+        (w) =>
+            w is CheckboxListTile &&
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('scan-suggestion-'),
       );
-      await tester.tap(add);
-      await tester.pump(const Duration(milliseconds: 300));
-      final confirm = find.text('Confirm and add');
-      await Scrollable.ensureVisible(tester.element(confirm), alignment: .5);
-      await tester.pump();
-      await tester.tap(confirm);
+      await reveal(idea);
+      await settleUntil(
+        () => tester.widget<CheckboxListTile>(idea).onChanged != null,
+      );
+      await tester.tap(idea);
       await settleUntil(
         () => find
-            .text(
-              'Previously added. Review its current status in the assessment.',
-              skipOffstage: false,
-            )
+            .text('Added to your plan', skipOffstage: false)
             .evaluate()
             .isNotEmpty,
       );
@@ -1501,45 +1494,8 @@ void main() {
       final continueScan = find.byKey(const ValueKey('bathroom-continue'));
       await tester.tap(continueScan);
       await settleUntil(() => find.text('Bathroom in 3D').evaluate().isEmpty);
-      expect(find.text('Step 3 of 3'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('assessment-continue')).hitTestable(),
-        findsOneWidget,
-      );
       expect(find.text('Open camera'), findsNothing);
-      expect(find.text('Photos (optional)'), findsOneWidget);
-      await tester.tap(find.byTooltip('Back'));
-      await tester.pump();
-      final bathroom = find.byKey(const ValueKey('area-bathroom'));
-      await settleUntil(
-        () => find.textContaining('3D scan saved').evaluate().isNotEmpty,
-      );
-      expect(open, findsNothing);
-      await Scrollable.ensureVisible(tester.element(bathroom), alignment: .5);
-      await tester.pump();
-      await tester.tap(bathroom);
-      await settleUntil(
-        () => find
-            .byKey(const ValueKey('bathroom-continue'))
-            .evaluate()
-            .isNotEmpty,
-      );
-      expect(find.text('Open camera'), findsNothing);
-      await reveal(added);
-      expect(added, findsOneWidget);
-      expect(find.text('Add this concern'), findsNothing);
-      await tester.tap(continueScan);
-      await settleUntil(() => find.text('Bathroom in 3D').evaluate().isEmpty);
-      expect(find.text('Step 3 of 3'), findsOneWidget);
-      await settleUntil(
-        () => enabled(find.byKey(const ValueKey('assessment-continue'))),
-      );
-      await Scrollable.ensureVisible(
-        tester.element(find.text('Other changes')),
-        alignment: .5,
-      );
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('assessment-continue')));
+      expect(find.text('Step 3 of 3'), findsNothing);
       await settleUntil(
         () => transport.requests.any(
           (r) => r.endpoint.path == '/v2/save-assessment',
@@ -1575,11 +1531,27 @@ void main() {
       );
       await tester.tap(recover);
       await settleUntil(() => recover.evaluate().isEmpty);
-      final continueAssessment = find.byKey(
-        const ValueKey('assessment-continue'),
+      final bathroom = find.byKey(const ValueKey('area-bathroom'));
+      await settleUntil(
+        () => find.textContaining('3D scan saved').evaluate().isNotEmpty,
       );
-      await settleUntil(() => enabled(continueAssessment));
-      await tester.tap(continueAssessment);
+      expect(open, findsNothing);
+      await Scrollable.ensureVisible(tester.element(bathroom), alignment: .5);
+      await tester.pump();
+      await settleUntil(
+        () => enabled(find.byKey(const ValueKey('assessment-continue'))),
+      );
+      await tester.tap(bathroom);
+      await settleUntil(
+        () => find
+            .byKey(const ValueKey('bathroom-continue'))
+            .evaluate()
+            .isNotEmpty,
+      );
+      expect(find.text('Open camera'), findsNothing);
+      await reveal(added);
+      expect(added, findsOneWidget);
+      await tester.tap(continueScan);
       await settleUntil(
         () => find
             .text('Open fictional case assessment')

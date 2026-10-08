@@ -284,25 +284,14 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SahPageHeader(
-                      title: widget.program.programName,
-                      description: context.tr(
-                        'Check details that may appear in your draft.',
-                      ),
-                    ),
+                    SahPageHeader(title: widget.program.programName),
                     if (Localizations.localeOf(context).languageCode != 'en')
                       SahNotice(
                         message: context.tr(
                           'Program information and official forms may remain in English. Your saved answers are not translated.',
                         ),
                       ),
-                    SahMoreInfo(
-                      details: [
-                        context.tr(
-                          'These answers do not supply diagnoses, medical necessity, consent or signatures. Review each supplied value yourself.',
-                        ),
-                      ],
-                    ),
+
                     if (_busy)
                       Padding(
                         padding: EdgeInsets.symmetric(vertical: 12),
@@ -347,23 +336,22 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                         ),
                       SahSectionHeading(
                         title: context.tr('Review your answers'),
-                        description: context.tr(
-                          '{reviewed} of {total} checked · blank stays unknown',
-                          {
-                            'reviewed': _activeKeys
-                                .where(
-                                  (key) =>
-                                      _fields[key]!.text.trim().isNotEmpty &&
-                                      _reviewed[key] == true,
-                                )
-                                .length,
-                            'total': _activeKeys
-                                .where(
-                                  (key) => _fields[key]!.text.trim().isNotEmpty,
-                                )
-                                .length,
-                          },
-                        ),
+                        description: context
+                            .tr('{reviewed} of {total} checked', {
+                              'reviewed': _activeKeys
+                                  .where(
+                                    (key) =>
+                                        _fields[key]!.text.trim().isNotEmpty &&
+                                        _reviewed[key] == true,
+                                  )
+                                  .length,
+                              'total': _activeKeys
+                                  .where(
+                                    (key) =>
+                                        _fields[key]!.text.trim().isNotEmpty,
+                                  )
+                                  .length,
+                            }),
                       ),
                       for (final key in _activeKeys)
                         Padding(

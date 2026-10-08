@@ -348,25 +348,14 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SahPageHeader(
-                        title: widget.program.programName,
-                        description: context.tr(
-                          'Answer what you know. Unknown is different from No or 0.',
-                        ),
-                      ),
+                      SahPageHeader(title: widget.program.programName),
                       if (Localizations.localeOf(context).languageCode != 'en')
                         SahNotice(
                           message: context.tr(
                             'Program information and official forms may remain in English. Your saved answers are not translated.',
                           ),
                         ),
-                      SahMoreInfo(
-                        details: [
-                          context.tr(
-                            'These are reported facts, not a diagnosis, professional determination or funding decision.',
-                          ),
-                        ],
-                      ),
+
                       if (_busy)
                         Padding(
                           padding: EdgeInsets.symmetric(vertical: 12),
@@ -437,19 +426,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                                   ).textTheme.titleMedium,
                                 ),
                               ),
-                              if (q.description.isNotEmpty)
-                                SahMoreInfo(
-                                  label: context.tr('About this question'),
-                                  details: [
-                                    programQuestionDescription(
-                                      context,
-                                      _response!.definition,
-                                      q,
-                                    ),
-                                  ],
-                                )
-                              else
-                                const SizedBox(height: 12),
+                              const SizedBox(height: 12),
                               if (q.kind == 'boolean')
                                 DropdownButtonFormField<String>(
                                   key: ValueKey('${q.key}-$_restoring'),
@@ -508,9 +485,6 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                                       context,
                                       _response!.definition,
                                       q,
-                                    ),
-                                    helperText: context.tr(
-                                      'Blank means unknown',
                                     ),
                                   ),
                                   keyboardType: q.kind == 'money'

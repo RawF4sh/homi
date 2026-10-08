@@ -84,8 +84,7 @@ class AssessmentFlowScreen extends StatelessWidget {
                   )
                 : onContinue != null &&
                       (step == AssessmentStep.review ||
-                          (step == AssessmentStep.chooseArea &&
-                              flow.controller.findings.isNotEmpty))
+                          step == AssessmentStep.chooseArea)
                 ? _primaryAction(
                     context,
                     editable
@@ -105,9 +104,13 @@ class AssessmentFlowScreen extends StatelessWidget {
                             onContinue!();
                           }
                         : null,
-                    step == AssessmentStep.review &&
-                            flow.controller.reviewOf(flow.findingId!)?.state ==
-                                FindingReviewState.needsReview
+                    step == AssessmentStep.chooseArea
+                        ? 'Done'
+                        : step == AssessmentStep.review &&
+                              flow.controller
+                                      .reviewOf(flow.findingId!)
+                                      ?.state ==
+                                  FindingReviewState.needsReview
                         ? 'Confirm and continue'
                         : 'Continue',
                     'assessment-continue',
@@ -136,8 +139,11 @@ class AssessmentFlowScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     ?status,
-                    _Progress(step: step),
-                    const SizedBox(height: 16),
+                    if (step != AssessmentStep.chooseArea &&
+                        step != AssessmentStep.review) ...[
+                      _Progress(step: step),
+                      const SizedBox(height: 16),
+                    ],
                     ExcludeFocus(
                       excluding: !editable,
                       child: AbsorbPointer(
@@ -195,12 +201,6 @@ class AssessmentFlowScreen extends StatelessWidget {
   List<Widget> _chooseArea(BuildContext context) {
     final List<FindingDraft> drafts = flow.controller.drafts;
     return [
-      Text(
-        context.tr(
-          'Start where you would like help. You do not need to check every room or measure everything.',
-        ),
-      ),
-      const SizedBox(height: 16),
       if (drafts.isNotEmpty) ...[
         SahSectionHeading(title: context.tr('Added to your assessment')),
         for (final FindingDraft d in drafts)
@@ -222,21 +222,14 @@ class AssessmentFlowScreen extends StatelessWidget {
           drafts.isEmpty ? 'Choose a place' : 'Add another concern',
         ),
       ),
-      Text(
-        context.tr(
-          'Add a note, a photo, or both. 3D scanning is currently for bathrooms on supported phones.',
-        ),
-      ),
-      const SizedBox(height: 12),
+
       for (final AssessmentLocation location in AssessmentLocation.values)
         SahActionTile(
           key: ValueKey('area-${location.name}'),
           title: context.tr(location.title),
           subtitle: locationStatus[location] == null
-              ? context.tr('{description}\nNotes & photos', {
-                  'description': context.tr(location.description),
-                })
-              : '${context.tr(location.description)}\n${context.tr(locationStatus[location]!)}',
+              ? null
+              : context.tr(locationStatus[location]!),
           icon: location.icon,
           onTap: () => onChooseLocation != null
               ? onChooseLocation!(location)
@@ -730,14 +723,8 @@ class _Progress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int number = switch (step) {
-      AssessmentStep.chooseArea => 1,
-      AssessmentStep.viewPrompt ||
-      AssessmentStep.preview ||
-      AssessmentStep.details => 2,
-      AssessmentStep.review => 3,
-    };
-    const int total = 3;
+    final int number = step == AssessmentStep.details ? 2 : 1;
+    const int total = 2;
     return Semantics(
       container: true,
       label: context.tr('Step {number} of {total}', {

@@ -347,12 +347,7 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              SahPageHeader(
-                title: context.tr('Possible assistance'),
-                description: context.tr(
-                  'Checks, not decisions. Each program still reviews the case.',
-                ),
-              ),
+              SahPageHeader(title: context.tr('Possible assistance')),
               if (widget.services.config.trackingEnabled)
                 Align(
                   alignment: AlignmentDirectional.centerStart,

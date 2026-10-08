@@ -77,23 +77,7 @@ void main() {
               (w) => w is InputDecorator && w.decoration.labelText == label,
             );
             expect(input, findsOneWidget);
-            final section = find
-                .ancestor(of: full, matching: find.byType(Column))
-                .first;
-            final info = find.descendant(
-              of: section,
-              matching: find.text(tr('About this question')),
-            );
-            await revealProgramControl(tester, info);
-            await tester.tap(info);
-            await tester.pumpAndSettle();
-            final description = find.text(
-              tr(question['description'] as String),
-            );
-            expect(description, findsWidgets);
-            await revealProgramControl(tester, info);
-            await tester.tap(info);
-            await tester.pumpAndSettle();
+            expect(find.text(tr('About this question')), findsNothing);
             expect(tester.takeException(), isNull);
           }
           final save = find.byKey(const ValueKey('intake-save'));
