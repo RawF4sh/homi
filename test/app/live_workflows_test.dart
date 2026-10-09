@@ -274,8 +274,8 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       await tester.enterText(input('Reported cost'), '0');
-      await tester.ensureVisible(find.text('Save these reported answers'));
-      await tester.tap(find.text('Save these reported answers'));
+      await tester.ensureVisible(find.text('Save'));
+      await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(writes, 1);
       await tester.scrollUntilVisible(
@@ -288,15 +288,13 @@ void main() {
         findsOneWidget,
       );
       await tester.scrollUntilVisible(
-        find.text('Save these reported answers'),
+        find.text('Save'),
         250,
         scrollable: find.byType(Scrollable).first,
       );
       expect(
         tester
-            .widget<FilledButton>(
-              find.widgetWithText(FilledButton, 'Save these reported answers'),
-            )
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
             .onPressed,
         isNull,
       );

@@ -318,12 +318,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SahPageHeader(
-                  title: widget.program.programName,
-                  description: context.tr(
-                    'Your own notes on calls, documents and next steps.',
-                  ),
-                ),
+                SahPageHeader(title: widget.program.programName),
                 SahStatusBadge(
                   label: context.tr('Reported by you · not agency status'),
                   icon: Icons.edit_note_rounded,
@@ -505,12 +500,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
                       labelText: context.tr('Optional note'),
                     ),
                   ),
-                  SahSectionHeading(
-                    title: context.tr('Next action'),
-                    description: context.tr(
-                      'Optional · record who will follow up and when.',
-                    ),
-                  ),
+                  SahSectionHeading(title: context.tr('Next action')),
                   TextField(
                     controller: _action,
                     onChanged: (_) => _stash(),

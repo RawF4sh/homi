@@ -200,12 +200,7 @@ class _PlanNameDialogState extends State<_PlanNameDialog> {
                 'name': widget.defaultName,
               }),
             ),
-            const SizedBox(height: 12),
-            Text(
-              context.tr(
-                'Names sync with your account and stay available after sign-out. Offline changes are kept securely on this device until they sync.',
-              ),
-            ),
+
             if (widget.caseId != null &&
                 widget.coordinator?.planNameStatus(widget.caseId!) != null)
               Padding(

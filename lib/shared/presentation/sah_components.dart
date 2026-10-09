@@ -768,11 +768,12 @@ class SahEmptyState extends StatelessWidget {
   const SahEmptyState({
     super.key,
     required this.title,
-    required this.message,
+    this.message,
     required this.icon,
     this.action,
   });
-  final String title, message;
+  final String title;
+  final String? message;
   final IconData icon;
   final Widget? action;
   @override
@@ -793,8 +794,10 @@ class SahEmptyState extends StatelessWidget {
           header: true,
           child: Text(title, style: Theme.of(context).textTheme.titleLarge),
         ),
-        const SizedBox(height: 8),
-        Text(message, style: Theme.of(context).textTheme.bodyLarge),
+        if (message != null) ...[
+          const SizedBox(height: 8),
+          Text(message!, style: Theme.of(context).textTheme.bodyLarge),
+        ],
         if (action != null) ...[const SizedBox(height: 16), action!],
       ],
     ),

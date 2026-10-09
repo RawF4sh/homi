@@ -118,7 +118,6 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
   ).pushReplacement(MaterialPageRoute<void>(builder: (_) => screen));
 
   void _start(ProgramMatch match) {
-    final c = widget.services.coordinator;
     void export() => _replace(
       PrivateExportScreen(services: widget.services, program: match),
     );
@@ -129,21 +128,11 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
         onNext: export,
       ),
     );
-    void checklist() => _replace(
-      DraftPacketScreen(
-        snapshot: c.currentCase(),
-        program: match,
-        service: ApiPacketPreparationService(widget.services.packets),
-        currentCase: c.currentCase,
-        caseChanges: c,
-        onNext: answers,
-      ),
-    );
     _open(
       ProgramIntakeScreen(
         services: widget.services,
         program: match,
-        onNext: checklist,
+        onNext: answers,
       ),
     );
   }

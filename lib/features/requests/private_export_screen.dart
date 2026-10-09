@@ -550,9 +550,6 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
             SahPageHeader(
               title: context.tr('Review your draft'),
               eyebrow: widget.program.programName,
-              description: context.tr(
-                'Pick photos, prepare the draft, then check it.',
-              ),
             ),
             if (Localizations.localeOf(context).languageCode != 'en')
               SahNotice(
@@ -575,10 +572,7 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
                 tone: SahNoticeTone.error,
               ),
             if (_notice != null) SahNotice(message: context.tr(_notice!)),
-            SahSectionHeading(
-              title: context.tr('Photo attachments'),
-              description: context.tr('Only photos you select are included.'),
-            ),
+            SahSectionHeading(title: context.tr('Photo attachments')),
             if (_catalog != null && _catalog!.evidence.isEmpty)
               SahNotice(
                 message: context.tr(
@@ -593,37 +587,26 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
                     'number': _catalog!.evidence.indexOf(evidence) + 1,
                   }),
                   subtitle: _selected.containsKey(evidence.evidenceId)
-                      ? context.tr(
-                          'Reviewed · Attachment {number}. Tap to leave it out.',
-                          {
-                            'number':
-                                _selected.keys.toList().indexOf(
-                                  evidence.evidenceId,
-                                ) +
-                                1,
-                          },
-                        )
-                      : context.tr(
-                          'View the saved photo and review its notes.',
-                        ),
+                      ? context.tr('Included · {number}', {
+                          'number':
+                              _selected.keys.toList().indexOf(
+                                evidence.evidenceId,
+                              ) +
+                              1,
+                        })
+                      : null,
                   icon: _selected.containsKey(evidence.evidenceId)
                       ? Icons.check_circle_outline_rounded
                       : Icons.photo_outlined,
                   enabled: !_busy && !_sharing && _current,
                   onTap: () => _review(evidence),
                 ),
-            if (_selected.length > 1)
-              Padding(
-                padding: EdgeInsets.only(bottom: 12),
-                child: Text(
-                  context.tr('Photos appear in the order you select them.'),
-                ),
+            if (_error != null)
+              TextButton.icon(
+                onPressed: _busy || _sharing ? null : _load,
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text(context.tr('Reload current evidence and answers')),
               ),
-            OutlinedButton.icon(
-              onPressed: _busy || _sharing ? null : _load,
-              icon: const Icon(Icons.refresh_rounded),
-              label: Text(context.tr('Reload current evidence and answers')),
-            ),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: _busy || _sharing || !_current || _answers == null
@@ -640,44 +623,34 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
                 child: Text(context.tr('Start a newly reviewed draft attempt')),
               ),
             if (_artifact != null) ...[
-              SahSectionHeading(title: context.tr('Draft checklist')),
+              const SizedBox(height: 12),
+              SahNotice(
+                title: context.tr('Not ready to submit'),
+                message: context.tr(
+                  '{count} items still needed. Nothing has been submitted.',
+                  {'count': _artifact!.base.missingItems.length},
+                ),
+                tone: SahNoticeTone.warning,
+              ),
+              if (_artifact!.base.warnings.any(
+                (w) => w != 'INCOMPLETE_DRAFT' && w != 'NOT_SUBMITTED',
+              ))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    context.tr(
+                      'Program availability or requirements still need confirmation.',
+                    ),
+                  ),
+                ),
               Text(
                 context.tr('Download expires {expiry}.', {
                   'expiry': _expiryLabel(context),
                 }),
               ),
-              const SizedBox(height: 12),
-              SahNotice(
-                title: context.tr('Not ready to submit'),
-                message: context.tr(
-                  '{count} unresolved items are listed below. Review the complete checklist before sharing. Nothing has been submitted.',
-                  {'count': _artifact!.base.missingItems.length},
-                ),
-                tone: SahNoticeTone.warning,
-              ),
-              for (final warning in _artifact!.base.warnings)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(switch (warning) {
-                    'INCOMPLETE_DRAFT' => context.tr(
-                      'This draft is incomplete.',
-                    ),
-                    'NOT_SUBMITTED' => context.tr(
-                      'No application has been submitted.',
-                    ),
-                    _ => context.tr(
-                      'Program availability or requirements still need confirmation.',
-                    ),
-                  }),
-                ),
             ],
             if (_pdf != null) ...[
-              SahSectionHeading(
-                title: context.tr('Your PDF'),
-                description: context.tr(
-                  'Review every page before sharing. Use the page buttons, pinch to zoom, or open the page text.',
-                ),
-              ),
+              SahSectionHeading(title: context.tr('Your PDF')),
               Builder(
                 builder: (ctx) => FilledButton.icon(
                   onPressed: _busy || _sharing ? null : () => _share(ctx),

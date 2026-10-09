@@ -125,13 +125,7 @@ class _PhotoPrivacyScreenState extends State<PhotoPrivacyScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SahPageHeader(
-                    eyebrow: context.tr('PHOTO PRIVACY'),
-                    title: context.tr('Keep only what helps'),
-                    description: context.tr(
-                      'Cover faces, mail, medicine labels and other private details. Drag the outlined area or use the buttons below, then add a solid cover. Check the edited photo afterward.',
-                    ),
-                  ),
+                  SahPageHeader(title: context.tr('Cover private details')),
                   if (failed)
                     SahNotice(
                       message: context.tr(

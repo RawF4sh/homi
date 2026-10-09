@@ -162,9 +162,7 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      final selection = find.text(
-        'Reviewed · Attachment 1. Tap to leave it out.',
-      );
+      final selection = find.text('Included · 1');
       final prepare = find.text('Prepare or recover this draft');
       for (var attempt = 1; attempt <= 2; attempt++) {
         await tester.pumpWidget(screen());

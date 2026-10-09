@@ -555,36 +555,26 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                           key: const ValueKey('intake-save-feedback'),
                           message: context.tr(_notice!),
                         ),
-                      if (_justSaved)
-                        FilledButton(
-                          key: const ValueKey('intake-done'),
-                          onPressed: exiting
-                              ? null
-                              : widget.onNext ?? requestExit,
-                          child: Text(
-                            context.tr(
-                              widget.onNext == null
-                                  ? 'Back to possible assistance'
-                                  : 'Continue',
-                            ),
-                            textAlign: TextAlign.center,
+                      FilledButton(
+                        key: const ValueKey('intake-save'),
+                        onPressed:
+                            _busy || _uncertain || _response == null || exiting
+                            ? null
+                            : () async {
+                                await _save();
+                                if (mounted && _justSaved) {
+                                  (widget.onNext ?? requestExit)();
+                                }
+                              },
+                        child: Text(
+                          context.tr(
+                            widget.onNext == null
+                                ? 'Save'
+                                : 'Save and continue',
                           ),
-                        )
-                      else
-                        FilledButton(
-                          key: const ValueKey('intake-save'),
-                          onPressed:
-                              _busy ||
-                                  _uncertain ||
-                                  _response == null ||
-                                  exiting
-                              ? null
-                              : _save,
-                          child: Text(
-                            context.tr('Save these reported answers'),
-                            textAlign: TextAlign.center,
-                          ),
+                          textAlign: TextAlign.center,
                         ),
+                      ),
                       const SizedBox(height: 16),
                     ],
                   ),

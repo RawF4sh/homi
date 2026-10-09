@@ -314,11 +314,8 @@ void main() {
       );
       await tap('Details', direction: -250);
       await tap('Prepare a draft', direction: -250);
-      await tap('Save these reported answers');
+      await tap('Save and continue');
       expect(revision(), 3);
-      await tap('Continue');
-      expect(find.text('Draft checklist'), findsWidgets);
-      await tap('Continue');
       await tester.scrollUntilVisible(
         input('Given name'),
         250,
@@ -328,26 +325,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byType(CheckboxListTile).first);
       await tester.pumpAndSettle();
-      await tap('Save reviewed administrative answers');
+      await tap('Save and continue');
       expect(revision(), 4);
       final supplied = (savedAnswers!['answers'] as List).first;
       expect(supplied['value'], 'Fictional Resident');
       expect(supplied['reviewState'], 'reviewed');
-      await tester.scrollUntilVisible(
-        find.textContaining(
-          'Clinical review, consent and signatures remain separate.',
-        ),
-        -300,
-        scrollable: find.byType(Scrollable).first,
-        maxScrolls: 60,
-      );
-      expect(
-        find.textContaining(
-          'Clinical review, consent and signatures remain separate.',
-        ),
-        findsOneWidget,
-      );
-      await tap('Continue');
       await tap('Prepare or recover this draft');
       expect(exportRequest!['schemaVersion'], '2');
       expect(exportRequest!['expectedCaseRevision'], 4);

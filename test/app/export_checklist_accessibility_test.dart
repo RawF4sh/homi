@@ -194,16 +194,13 @@ void main() {
         );
         expect(
           find.text(
-            tr(
-              '{count} unresolved items are listed below. Review the complete checklist before sharing. Nothing has been submitted.',
-              {'count': 20},
-            ),
+            tr('{count} items still needed. Nothing has been submitted.', {
+              'count': 20,
+            }),
           ),
           findsOneWidget,
         );
         for (final warning in [
-          'This draft is incomplete.',
-          'No application has been submitted.',
           'Program availability or requirements still need confirmation.',
         ]) {
           await reveal(find.text(tr(warning)));

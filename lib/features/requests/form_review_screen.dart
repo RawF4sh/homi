@@ -235,8 +235,7 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
         await _persist();
       });
       if (mounted) {
-        _error =
-            'Administrative answers saved. Clinical review, consent and signatures remain separate.';
+        _error = 'Answers saved.';
         _justSaved = true;
       }
     } catch (error) {
@@ -449,23 +448,25 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                           key: const ValueKey('form-save-feedback'),
                           message: context.tr(_error!),
                         ),
-                      if (_justSaved && widget.onNext != null)
-                        FilledButton(
-                          key: const ValueKey('form-next'),
-                          onPressed: exiting ? null : widget.onNext,
-                          child: Text(context.tr('Continue')),
-                        )
-                      else
-                        FilledButton(
-                          key: const ValueKey('form-save'),
-                          onPressed: _busy || _uncertain || exiting
-                              ? null
-                              : _save,
-                          child: Text(
-                            context.tr('Save reviewed administrative answers'),
-                            textAlign: TextAlign.center,
+                      FilledButton(
+                        key: const ValueKey('form-save'),
+                        onPressed: _busy || _uncertain || exiting
+                            ? null
+                            : () async {
+                                await _save();
+                                if (mounted && _justSaved) {
+                                  (widget.onNext ?? requestExit)();
+                                }
+                              },
+                        child: Text(
+                          context.tr(
+                            widget.onNext == null
+                                ? 'Save'
+                                : 'Save and continue',
                           ),
+                          textAlign: TextAlign.center,
                         ),
+                      ),
                     ],
                   ],
                 ),

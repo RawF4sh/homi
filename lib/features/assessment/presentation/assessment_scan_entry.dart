@@ -54,10 +54,7 @@ class AssessmentScanEntry extends StatelessWidget {
               capability?.source == 'roomplan'
                   ? 'Allow camera access for Safe at Home in Settings, then return to scan.'
                   : 'Allow camera access when prompted, or in Settings if permission was previously blocked.',
-            'available' when primary =>
-              capability?.source == 'arcore'
-                  ? 'Scan with ARCore, label the surfaces, then confirm what to add.'
-                  : 'Scan with LiDAR, then confirm what to add.',
+            'available' when primary => null,
             'checking' =>
               'Device support is not confirmed yet. Check again, or use photos and measurements.',
             'unsupported_os' =>
@@ -83,8 +80,10 @@ class AssessmentScanEntry extends StatelessWidget {
             header: true,
             child: Text(context.tr(title), style: theme.textTheme.titleLarge),
           ),
-          const SizedBox(height: 8),
-          Text(context.tr(description)),
+          if (description != null) ...[
+            const SizedBox(height: 8),
+            Text(context.tr(description)),
+          ],
           const SizedBox(height: 16),
           if (primary)
             FilledButton.icon(

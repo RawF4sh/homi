@@ -261,14 +261,7 @@ void main() {
         final answer = (saved!['answers'] as List).single;
         expect(answer['value'], _original);
         expect(answer['reviewState'], 'reviewed');
-        expect(
-          find.text(
-            tr(
-              'Administrative answers saved. Clinical review, consent and signatures remain separate.',
-            ),
-          ),
-          findsOneWidget,
-        );
+        expect(find.text(tr('Answers saved.')), findsOneWidget);
         await revealProgramControl(tester, field);
         await tester.enterText(field, '$_original 2');
         await tester.pumpAndSettle();

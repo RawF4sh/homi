@@ -253,18 +253,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-                if (!widget.emailDeliveryEnabled)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      context.tr(
-                        'Use your team account. Sign-up and password reset are off in this beta.',
-                      ),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
+
                 if (widget.deletionStatusScreen != null) ...[
                   const SizedBox(height: 12),
                   TextButton(

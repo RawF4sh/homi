@@ -91,12 +91,7 @@ class _ReviewedPhotoScreenState extends State<ReviewedPhotoScreen> {
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              SahPageHeader(
-                title: context.tr('Check this attachment'),
-                description: context.tr(
-                  'Review the saved photo and its notes. Pinch to zoom in on details.',
-                ),
-              ),
+              SahPageHeader(title: context.tr('Check this attachment')),
               SizedBox(
                 height: (constraints.maxHeight * .55).clamp(240, 480),
                 child: ClipRRect(
@@ -143,11 +138,6 @@ class _ReviewedPhotoScreenState extends State<ReviewedPhotoScreen> {
                       child: Text(mark['label'] as String),
                     ),
               ],
-              SahNotice(
-                message: context.tr(
-                  'Include only information you want in this draft. Marks are observations, not a professional assessment.',
-                ),
-              ),
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _decoded && !_failed

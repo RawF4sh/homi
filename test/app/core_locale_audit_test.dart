@@ -233,7 +233,6 @@ void main() {
           localized(locale, AccountSettingsScreen(services: app)),
         );
         await tester.pumpAndSettle();
-        _translatedText(tester, l10n, 'Your data, your choices');
         _translatedText(tester, l10n, 'Match phone setting');
         await reveal(
           tester,

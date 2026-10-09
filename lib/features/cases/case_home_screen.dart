@@ -499,13 +499,6 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
             style: theme.textTheme.headlineSmall,
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          context.tr(
-            'A plan keeps the resident’s details, the places you check at home, and possible help in one place.',
-          ),
-          style: theme.textTheme.bodyLarge,
-        ),
         const SizedBox(height: 20),
         _newPlanButton(),
       ] else ...[
@@ -702,7 +695,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
               ? context.tr('No home plans yet')
               : context.tr('No loaded plans match'),
           message: _query.trim().isEmpty
-              ? context.tr('Start a home plan to record what matters to you.')
+              ? null
               : context.tr(
                   'Try another city or reference. More saved plans may be available below.',
                 ),

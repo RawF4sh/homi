@@ -352,24 +352,11 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SahPageHeader(
-                title: context.tr('Your data, your choices'),
-                description: context.tr(
-                  'Review what stays on this device and manage your saved work.',
-                ),
-              ),
-              SahNotice(
-                title: context.tr('Private team beta'),
-                message: context.tr('Use fictional resident records.'),
-                icon: Icons.lock_outline,
-              ),
               const AppearanceSection(),
               const LanguageSection(),
               SahSectionHeading(title: context.tr('On this device')),
               Text(
-                context.tr(
-                  'Drafts on this device are encrypted. Signing out removes local work. A shared PDF is controlled by the recipient.',
-                ),
+                context.tr('Signing out removes work saved on this device.'),
               ),
               const SizedBox(height: 20),
               if (_busy)
@@ -388,12 +375,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   textAlign: TextAlign.center,
                 ),
               ),
-              SahSectionHeading(
-                title: context.tr('Selected case'),
-                description: context.tr(
-                  'Deleting a case removes its saved photos, answers and generated drafts. Copies already shared outside the app remain with their recipients.',
-                ),
-              ),
+              SahSectionHeading(title: context.tr('Selected case')),
               if (widget.services.coordinator.draft == null)
                 Padding(
                   padding: EdgeInsets.only(bottom: 16),
@@ -434,12 +416,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                   ),
                 ),
               _feedback(_SettingsAction.selectedCase),
-              SahSectionHeading(
-                title: context.tr('Account deletion'),
-                description: context.tr(
-                  'You will confirm your password and review what will be removed before deleting your account.',
-                ),
-              ),
+              SahSectionHeading(title: context.tr('Account deletion')),
               TextButton(
                 key: const ValueKey('settings-delete-account'),
                 onPressed: _busy ? null : _deleteAccount,

@@ -225,7 +225,6 @@ void main() {
               await tap(tester, find.text(tr('I changed the setting')));
             }
             await tap(tester, find.text(tr('Continue without a photo')));
-            untruncated(tester, tr(location.observationExample));
             await tap(tester, find.text(tr('Review')));
             untruncated(tester, tr(AssessmentCopy.observationRequired));
             final resident =

@@ -273,12 +273,6 @@ class AssessmentFlowScreen extends StatelessWidget {
     final AssessmentArea area = flow.area!;
     final location = flow.location;
     return [
-      Text(
-        context.tr(
-          'Photos are optional. You can describe the concern without one.',
-        ),
-      ),
-      const SizedBox(height: 12),
       SahSectionHeading(
         title: context.tr(location?.title ?? AssessmentCopy.areaTitle(area)),
       ),
@@ -597,12 +591,6 @@ class AssessmentFlowScreen extends StatelessWidget {
           history: flow.controller.measurementHistoryOf(id, type),
         ),
       const SizedBox(height: 16),
-      Text(
-        context.tr(AssessmentCopy.confirmMeaning),
-        style: text.bodyMedium?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
       if (!keptOnDevice)
         SahNotice(
           message: context.tr(AssessmentCopy.notSavedYet),
@@ -998,12 +986,7 @@ class _DetailsStepState extends State<_DetailsStep> {
           },
           decoration: InputDecoration(
             labelText: context.tr(AssessmentCopy.observationLabel),
-            helper: Text(
-              context.tr(
-                flow.location?.observationExample ??
-                    AssessmentCopy.observationHintFor(flow.area!),
-              ),
-            ),
+
             error: errors.observationMissing
                 ? Text(context.tr(AssessmentCopy.observationRequired))
                 : null,
@@ -1022,15 +1005,12 @@ class _DetailsStepState extends State<_DetailsStep> {
           ExpansionTile(
             key: ValueKey('optional-measurements-${flow.findingId}'),
             title: Text(context.tr('Add measurements (optional)')),
-            subtitle: Text(
-              context.tr('Only if a size helps explain the concern'),
-            ),
+
             tilePadding: EdgeInsets.zero,
             initiallyExpanded: flow.measurementTypes.any(
               (type) => flow.entryFor(type).text.isNotEmpty,
             ),
             children: [
-              Text(context.tr(AssessmentCopy.measurementsIntro)),
               for (final String type in flow.measurementTypes)
                 _measurementField(context, type),
             ],
