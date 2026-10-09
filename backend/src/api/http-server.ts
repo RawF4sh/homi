@@ -12,6 +12,7 @@ import { handleUploadEvidence, handleDeleteEvidence, type WriteEvidenceDependenc
 import { evidenceIdentifier } from '../evidence/validation.ts';
 import type { AuthenticatedUser } from './match-case.ts';
 import { createHostedAdmission } from './request-admission.ts';
+import { createAccountAdmission, type AccountAdmissionResult } from './account-admission.ts';
 import { handleDeleteCase, handlePrepareAccountDeletion, handleConfirmAccountDeletion, handleAccountDeletionStatus,
   type LifecycleDependencies, type LifecycleRoute } from './lifecycle.ts';
 
@@ -28,6 +29,11 @@ export interface HttpServerOptions {
   caseListDependencies?: ListCasesDependencies;
   requestTrackingDependencies?: RequestTrackingDependencies;
 }
+
+const ACCOUNT_HEAVY_ROUTES = new Set(['/v1/upload-evidence', '/v1/download-evidence',
+  '/v1/create-draft-export', '/v1/download-draft-export']);
+
+interface RequestAccountGate { acquire(userId: string): boolean; receipt(): boolean }
 
 const HEAVY_ROUTES = new Set(['/v1/upload-evidence', '/v1/download-evidence',
   '/v1/create-draft-export', '/v1/download-draft-export', '/v1/delete-case', '/v1/confirm-account-deletion']);
@@ -67,8 +73,27 @@ function sendJson(response: ServerResponse, status: number, body: unknown, heade
   response.end(JSON.stringify(body));
 }
 
-function fail(response: ServerResponse, status: number, code: ApiErrorCode | 'NOT_FOUND' | 'METHOD_NOT_ALLOWED' | 'PAYLOAD_TOO_LARGE' | 'UNSUPPORTED_MEDIA_TYPE' | 'UPLOAD_BUSY', message: string, headers: Record<string, string> = {}) {
+function fail(response: ServerResponse, status: number, code: ApiErrorCode | 'NOT_FOUND' | 'METHOD_NOT_ALLOWED' | 'PAYLOAD_TOO_LARGE' | 'UNSUPPORTED_MEDIA_TYPE' | 'UPLOAD_BUSY' | 'RATE_LIMITED', message: string, headers: Record<string, string> = {}) {
   sendJson(response, status, { schemaVersion: '1', error: { code, message } }, headers);
+}
+
+async function captureAuthentication(authenticate: (token: string) => Promise<AuthenticatedUser | null>, token: string) {
+  let outcome: { user: AuthenticatedUser | null } | { error: unknown };
+  let userId: string | null = null;
+  let malformed = false;
+  try {
+    const user = await authenticate(token);
+    if (user !== null && typeof user === 'object' && !Array.isArray(user)
+      && Object.keys(user).length === 1 && Object.hasOwn(user, 'userId') && evidenceIdentifier(user.userId)) {
+      userId = user.userId;
+      outcome = { user: Object.freeze({ userId }) };
+    } else { malformed = user !== null; outcome = { user }; }
+  } catch (error) { outcome = { error }; }
+  return { userId, malformed, authenticate: async (requestedToken: string) => {
+    if (requestedToken !== token) throw new Error('Authentication context changed.');
+    if ('error' in outcome) throw outcome.error;
+    return outcome.user;
+  } };
 }
 
 class BodyTooLarge extends Error {}
@@ -93,6 +118,7 @@ export function createMatchingServer(
 ) {
   const uploadAdmission: UploadAdmission = { active: false };
   const admission = options.hosted === true ? createHostedAdmission(options.admissionNow) : null;
+  const accounts = options.hosted === true ? createAccountAdmission(options.admissionNow) : null;
   const server = createServer({ maxHeaderSize: 8192 }, (request, response) => {
     if (admission && request.url === '/healthz') {
       if (request.method === 'GET' || request.method === 'HEAD') {
@@ -110,11 +136,27 @@ export function createMatchingServer(
       request.resume();
       return;
     }
+    let accountPermit: AccountAdmissionResult | undefined;
+    const rejectAccount = (result: Extract<AccountAdmissionResult, { accepted: false }>) => {
+      fail(response, result.status, result.code, result.status === 429
+        ? 'Too many requests. Wait before trying again.' : 'The server is busy. Try again shortly.',
+        { 'Retry-After': String(result.retryAfter), Connection: 'close' });
+      request.resume();
+      return false;
+    };
+    const accountGate: RequestAccountGate | undefined = accounts ? {
+      acquire(userId) {
+        accountPermit = accounts.acquire(userId, ACCOUNT_HEAVY_ROUTES.has(request.url ?? ''));
+        return accountPermit.accepted || rejectAccount(accountPermit);
+      },
+      receipt() { const result = accounts.acquireReceipt(); return result.accepted || rejectAccount(result); },
+    } : undefined;
     let settled = false;
     let responseComplete = response.writableFinished || response.destroyed;
     const release = () => {
       if (!settled || !responseComplete) return;
       if (permit?.accepted) permit.release();
+      if (accountPermit?.accepted) accountPermit.release();
       response.off('finish', complete);
       response.off('close', complete);
     };
@@ -131,7 +173,7 @@ export function createMatchingServer(
       },
     } : evidenceWriteDependencies;
     void route(request, response, dependencies, uploadAdmission, packetDependencies, formAnswerDependencies,
-      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies, options.lifecycleDependencies, options.caseListDependencies, options.requestTrackingDependencies).catch(() => {
+      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies, options.lifecycleDependencies, options.caseListDependencies, options.requestTrackingDependencies, accountGate).catch(() => {
       if (response.headersSent) response.destroy();
       else fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
     }).finally(async () => {
@@ -161,6 +203,7 @@ async function route(
   lifecycleDependencies?: LifecycleDependencies,
   caseListDependencies?: ListCasesDependencies,
   requestTrackingDependencies?: RequestTrackingDependencies,
+  accountGate?: RequestAccountGate,
 ) {
   const exportRoutes: ExportRoute[] = ['list-evidence', 'download-evidence', 'create-draft-export', 'download-draft-export'];
   const exportRoute = exportDependencies === undefined ? undefined : exportRoutes.find(route => request.url === `/v1/${route}`);
@@ -229,16 +272,30 @@ async function route(
         request.resume();
         return;
       }
-      if (!user || !evidenceIdentifier(user.userId)) {
+      if (!user || typeof user !== 'object' || Array.isArray(user)
+        || Object.keys(user).length !== 1 || !Object.hasOwn(user, 'userId') || !evidenceIdentifier(user.userId)) {
         fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.', { Connection: 'close' });
         request.resume();
         return;
       }
       if (request.destroyed || response.destroyed) return;
+      if (accountGate && !accountGate.acquire(user.userId)) return;
+      if (accountGate) {
+        const admittedOwner = user.userId;
+        const original = evidenceWriteDependencies!;
+        evidenceWriteDependencies = { ...original, authenticate: async token => {
+          const current = await original.authenticate(token);
+          if (current !== null && (typeof current !== 'object' || Array.isArray(current)
+            || Object.keys(current).length !== 1 || !Object.hasOwn(current, 'userId') || !evidenceIdentifier(current?.userId) || current.userId !== admittedOwner)) {
+            throw new Error('Upload authentication changed.');
+          }
+          return current;
+        } };
+      }
     }
     await readAndDispatch(request, response, bearer[1], dependencies, {
       isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, lifecycleRoute, requestTrackingRoute,
-    }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies, lifecycleDependencies, caseListDependencies, requestTrackingDependencies);
+    }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies, lifecycleDependencies, caseListDependencies, requestTrackingDependencies, accountGate);
   } finally {
     if (isUpload) uploadAdmission.active = false;
   }
@@ -255,6 +312,7 @@ async function readAndDispatch(
   lifecycleDependencies?: LifecycleDependencies,
   caseListDependencies?: ListCasesDependencies,
   requestTrackingDependencies?: RequestTrackingDependencies,
+  accountGate?: RequestAccountGate,
 ) {
   const { isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, lifecycleRoute } = routes;
   const limit = isUpload ? MAX_UPLOAD_REQUEST_BYTES : MAX_REQUEST_BYTES;
@@ -276,6 +334,35 @@ async function readAndDispatch(
     return;
   }
   if (response.destroyed || response.writableEnded) return;
+  if (accountGate && !isUpload) {
+    if (lifecycleRoute === 'account-deletion-status') {
+      if (!accountGate.receipt()) return;
+    } else {
+      const selected = routes.requestTrackingRoute ? requestTrackingDependencies!
+        : isCaseList ? caseListDependencies! : lifecycleRoute ? lifecycleDependencies!
+          : isCaseCreate || isCaseSave ? caseWriteDependencies! : isDelete ? evidenceWriteDependencies!
+            : exportRoute ? exportDependencies! : isFormRead || isFormSave ? formAnswerDependencies!
+              : isPacketRequest ? packetDependencies! : dependencies;
+      const recent = lifecycleRoute === 'prepare-account-deletion' || lifecycleRoute === 'confirm-account-deletion';
+      const authenticate = recent ? lifecycleDependencies!.authenticateForDeletion.bind(lifecycleDependencies)
+        : selected.authenticate.bind(selected);
+      const outcome = await captureAuthentication(authenticate, token);
+      if (response.destroyed || response.writableEnded) return;
+      if (outcome.malformed) { fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.'); return; }
+      if (outcome.userId !== null && !accountGate.acquire(outcome.userId)) return;
+      if (routes.requestTrackingRoute) requestTrackingDependencies = { ...requestTrackingDependencies!, authenticate: outcome.authenticate };
+      else if (isCaseList) caseListDependencies = { ...caseListDependencies!, authenticate: outcome.authenticate };
+      else if (lifecycleRoute) lifecycleDependencies = recent
+        ? { ...lifecycleDependencies!, authenticateForDeletion: outcome.authenticate }
+        : { ...lifecycleDependencies!, authenticate: outcome.authenticate };
+      else if (isCaseCreate || isCaseSave) caseWriteDependencies = { ...caseWriteDependencies!, authenticate: outcome.authenticate };
+      else if (isDelete) evidenceWriteDependencies = { ...evidenceWriteDependencies!, authenticate: outcome.authenticate };
+      else if (exportRoute) exportDependencies = { ...exportDependencies!, authenticate: outcome.authenticate };
+      else if (isFormRead || isFormSave) formAnswerDependencies = { ...formAnswerDependencies!, authenticate: outcome.authenticate };
+      else if (isPacketRequest) packetDependencies = { ...packetDependencies!, authenticate: outcome.authenticate };
+      else dependencies = { ...dependencies, authenticate: outcome.authenticate };
+    }
+  }
   const input = { body, bearerToken: token };
   if (routes.requestTrackingRoute) {
     const result = routes.requestTrackingRoute === 'read-request-history'

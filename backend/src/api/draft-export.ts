@@ -10,6 +10,7 @@ import type { ExportArtifactMetadata } from '../exports/types.ts';
 import { EXPORT_LIFETIME_MS, MAX_EXPORT_BYTES, parseExportArtifactMetadata } from '../exports/validation.ts';
 import type { EvidenceRepository, EvidenceRepositoryFailure, ExportSnapshot } from '../evidence/repository.ts';
 import type { EvidenceCatalog, EvidenceSelection } from '../evidence/types.ts';
+import { exportEvidenceFitsBudget } from '../evidence/export-budget.ts';
 import { canonicalJson, evidenceIdentifier as id, evidenceRevision as revision, parseEvidenceAsset,
   parseEvidenceDescriptor, parseEvidenceSelections, formAnswersFingerprint } from '../evidence/validation.ts';
 import type { Match, ProgramDefinition } from '../types.ts';
@@ -45,7 +46,7 @@ const errors = {
   FORM_ANSWERS_STALE: [409, 'Review and save the form answers for the current case and form.'],
   EXPORT_GENERATION_CONFLICT: [409, 'This export request is no longer current. Review the latest inputs and use a new generation key.'],
   EXPORT_EXPIRED: [410, 'This private draft expired. Review the latest inputs and generate a new draft.'],
-  EXPORT_REVIEW_REQUIRED: [422, 'Some form text or evidence could not be rendered completely. Review its text, measurements, and images before exporting.'],
+  EXPORT_REVIEW_REQUIRED: [422, 'Review the form text, measurements, and images before exporting. Select fewer or smaller images if the evidence is too large.'],
   EXPORT_BUSY: [429, 'Another draft is being prepared. Try again shortly.'],
   STORAGE_LIMIT_REACHED: [507, 'Private storage has reached its limit. Contact the app operator before retrying.'],
   SERVICE_UNAVAILABLE: [503, 'Private draft preparation is temporarily unavailable. Try again later.'],
@@ -99,7 +100,8 @@ async function storage<T>(operation: () => Promise<T>): Promise<T> {
 function repositoryFailure(result: EvidenceRepositoryFailure, artifact = false): never {
   const codes = { not_found: artifact ? 'ARTIFACT_NOT_FOUND' : 'CASE_NOT_FOUND', conflict: 'CASE_REVISION_MISMATCH',
     evidence_conflict: 'EVIDENCE_CONFLICT', answers_conflict: 'FORM_ANSWER_REVISION_MISMATCH',
-    generation_conflict: 'EXPORT_GENERATION_CONFLICT', expired: 'EXPORT_EXPIRED', quota_exceeded: 'STORAGE_LIMIT_REACHED' } as const;
+    generation_conflict: 'EXPORT_GENERATION_CONFLICT', expired: 'EXPORT_EXPIRED', quota_exceeded: 'STORAGE_LIMIT_REACHED',
+    selection_too_large: 'EXPORT_REVIEW_REQUIRED' } as const;
   return fail(codes[result.status] ?? 'INTERNAL_ERROR');
 }
 function json(body: EvidenceCatalog | ExportArtifactMetadata): DraftExportResult {
@@ -121,6 +123,13 @@ async function loadContext(userId: string, request: CreateRequest, deps: DraftEx
     revision: request.expectedCaseRevision, expectedCatalogRevision: request.expectedEvidenceCatalogRevision,
     programId: request.programId, selections: structuredClone(request.selectedEvidence) }));
   if (loaded.status !== 'found') return repositoryFailure(loaded);
+  if (!Array.isArray(loaded.snapshot.assets) || loaded.snapshot.assets.length !== request.selectedEvidence.length) fail('INTERNAL_ERROR');
+  const descriptors = loaded.snapshot.assets.map(asset => {
+    const descriptor = parseEvidenceDescriptor(asset.descriptor);
+    if (!(asset.bytes instanceof Uint8Array) || asset.bytes.byteLength !== descriptor.byteLength) fail('INTERNAL_ERROR');
+    return descriptor;
+  });
+  if (!exportEvidenceFitsBudget(descriptors)) fail('EXPORT_REVIEW_REQUIRED');
   const source = structuredClone(loaded.snapshot), { snapshot } = source;
   const validatedAt = clock(deps);
   matchPrograms(snapshot, [], { evaluatedAt: validatedAt, evaluationDate: validatedAt.slice(0, 10) });

@@ -8,6 +8,7 @@ import type {
 } from './form-answers.ts';
 import { createHash } from 'node:crypto';
 import type { EvidenceAsset, EvidenceDescriptor, EvidenceSelection } from '../evidence/types.ts';
+import { exportEvidenceFitsBudget } from '../evidence/export-budget.ts';
 import type {
   EvidenceCaseBinding, EvidenceReadInput, EvidenceRepository, EvidenceRepositoryFailure, EvidenceSaveInput,
   ExportCurrentReadInput, ExportPublishInput, ExportReadInput, ExportSnapshotInput, PrivateExportArtifact,
@@ -16,6 +17,7 @@ import { canonicalJson, caseFingerprint, evidenceIdentifier, evidenceInstant, ev
   formAnswersFingerprint, parseEvidenceDescriptor, parseEvidenceSelections, parseSanitizedEvidenceImage } from '../evidence/validation.ts';
 import { parseExportArtifactMetadata } from '../exports/validation.ts';
 import { MAX_MEMORY_CASES, type CaseDraft } from '../cases/types.ts';
+import { CAPACITY_LIMITS } from '../storage/capacity-limits.ts';
 import { parseCaseDraft } from '../cases/validation.ts';
 import type { CaseWriteRepository, CaseWriteResult } from '../cases/repository.ts';
 import { compareCaseIds, parseCaseListPage, parseCaseListQuery,
@@ -25,7 +27,8 @@ import { MAX_REQUEST_PROGRAMS, appendRequestHistory, emptyRequestHistory, parseR
   type RequestHistoryReadInput, type RequestHistoryAppendInput, type RequestHistoryResult } from '../requests/tracking.ts';
 
 export interface MemoryEvidenceLimits { maxBytes: number; maxAssets: number; maxArtifacts: number }
-const DEFAULT_EVIDENCE_LIMITS: MemoryEvidenceLimits = { maxBytes: 64 * 1024 * 1024, maxAssets: 64, maxArtifacts: 16 };
+const DEFAULT_EVIDENCE_LIMITS: MemoryEvidenceLimits = { maxBytes: CAPACITY_LIMITS.binaryBytes,
+  maxAssets: CAPACITY_LIMITS.evidence, maxArtifacts: CAPACITY_LIMITS.activeExports };
 
 interface StoredEvidence { revision: number; findingId: string; preparedAt: string; asset: EvidenceAsset | null }
 interface StoredExport {
@@ -126,7 +129,10 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     let parsed: CaseDraft;
     try { parsed = parseCaseDraft(draft, true); } catch { return { status: 'invalid_input' }; }
     if (this.cases.has(parsed.caseId)) return { status: 'id_unavailable' };
-    if (this.cases.size >= MAX_MEMORY_CASES) return { status: 'quota_exceeded' };
+    if (this.cases.size >= MAX_MEMORY_CASES
+      || [...this.cases.values()].filter(entry => entry.userId === userId).length >= CAPACITY_LIMITS.casesPerOwner) {
+      return { status: 'quota_exceeded' };
+    }
     const snapshot: CaseSnapshot = { ...parsed, revision: 1 };
     this.cases.set(parsed.caseId, { userId, snapshot });
     return { status: 'saved', snapshot: structuredClone(snapshot) };
@@ -260,7 +266,8 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     }
     const catalogRevision = this.nextCatalogRevision(input.caseId);
     const replacedBytes = existing?.asset?.bytes.byteLength ?? 0;
-    if ((!existing && this.assetCount() >= this.evidenceLimits.maxAssets)
+    if ((!existing && (this.assetCount() >= this.evidenceLimits.maxAssets
+      || this.assetCount(input.userId) >= CAPACITY_LIMITS.evidencePerOwner))
       || this.byteCount() - this.exportBytesForCase(input.caseId) - replacedBytes + image.byteLength > this.evidenceLimits.maxBytes) return { status: 'quota_exceeded' as const };
     const asset = { descriptor, bytes: image.bytes };
     rows.set(input.evidenceId, { revision: descriptor.evidenceRevision, findingId: descriptor.findingId, preparedAt: descriptor.preparedAt, asset });
@@ -342,7 +349,9 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
       return { status: 'reused' as const, artifact: structuredClone(existing.artifact.metadata) };
     }
     if (this.exports.has(metadata.artifactId)) throw new Error('Export artifact IDs must be unique.');
-    if (this.exports.size >= this.evidenceLimits.maxArtifacts || this.byteCount() + bytes.byteLength > this.evidenceLimits.maxBytes) {
+    if ([...this.exports.values()].filter(row => row.caseId === input.caseId).length >= CAPACITY_LIMITS.exportsPerCase
+      || [...this.exports.values()].filter(row => row.artifact.bytes.byteLength > 0).length >= this.evidenceLimits.maxArtifacts
+      || this.byteCount() + bytes.byteLength > this.evidenceLimits.maxBytes) {
       return { status: 'quota_exceeded' as const };
     }
     const artifact = { metadata, bytes: Uint8Array.from(bytes) };
@@ -437,6 +446,7 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
         || stored.revision !== selection.expectedEvidenceRevision) return { status: 'evidence_conflict' };
       assets.push(stored.asset);
     }
+    if (!exportEvidenceFitsBudget(assets.map(asset => asset.descriptor))) return { status: 'selection_too_large' };
     return { assets };
   }
 
@@ -450,9 +460,11 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     return revision;
   }
 
-  private assetCount(): number {
+  private assetCount(userId?: string): number {
     let total = 0;
-    for (const rows of this.evidence.values()) total += rows.size;
+    for (const [caseId, rows] of this.evidence) {
+      if (userId === undefined || this.cases.get(caseId)?.userId === userId) total += rows.size;
+    }
     return total;
   }
 
@@ -502,6 +514,9 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
       return { status: 'generation_conflict' };
     }
     if (this.packetIds.has(input.packet.packetId)) throw new Error('Packet IDs must be unique.');
+    if ([...this.packets.values()].filter(row => row.caseId === input.caseId).length >= CAPACITY_LIMITS.packetsPerCase) {
+      return { status: 'quota_exceeded' };
+    }
     this.packets.set(key, { caseId: input.caseId, contextFingerprint: input.contextFingerprint, packet: structuredClone(input.packet) });
     this.packetIds.add(input.packet.packetId);
     return { status: 'saved', packet: structuredClone(input.packet) };

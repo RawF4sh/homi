@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
+import { CAPACITY_LIMITS } from './capacity-limits.ts';
 import type { CaseSnapshot, DraftPacket, MatchResponse } from '../types.ts';
 import type { MatchCaseRepository } from '../api/match-case.ts';
 import type { CreatePacketInput, CreatePacketResult, PacketCaseRepository } from '../api/prepare-packet.ts';
@@ -13,6 +14,7 @@ import { parseCaseDraft } from '../cases/validation.ts';
 import { parseSavedFormAnswers, type SavedFormAnswerSet } from '../forms/form-answers.ts';
 import { instantMicros, isPacketCurrent } from '../packets.ts';
 import type { EvidenceAsset, EvidenceDescriptor, EvidenceSelection } from '../evidence/types.ts';
+import { exportEvidenceFitsBudget } from '../evidence/export-budget.ts';
 import type { EvidenceCaseBinding, EvidenceReadInput, EvidenceRepository, EvidenceRepositoryFailure,
   EvidenceSaveInput, ExportCurrentReadInput, ExportPublishInput, ExportReadInput,
   ExportSnapshotInput } from '../evidence/repository.ts';
@@ -28,7 +30,8 @@ import { appendRequestHistory, emptyRequestHistory, MAX_REQUEST_PROGRAMS, parseR
   type RequestHistoryReadInput, type RequestHistoryRepository, type RequestHistoryResult } from '../requests/tracking.ts';
 
 const S = 'safeathome_private';
-const LIMITS = { cases: 64, assets: 64, artifacts: 16, bytes: 64 * 1024 * 1024 };
+const LIMITS = { cases: CAPACITY_LIMITS.cases, assets: CAPACITY_LIMITS.evidence,
+  artifacts: CAPACITY_LIMITS.activeExports, bytes: CAPACITY_LIMITS.binaryBytes };
 type Row = QueryResultRow;
 interface CaseRow { snapshot: CaseSnapshot; catalogRevision: number }
 interface Quota { cases: number; assets: number; artifacts: number; bytes: number }
@@ -380,7 +383,8 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
         VALUES($1,$2,1,$3::jsonb) ON CONFLICT(case_id) DO NOTHING RETURNING case_id`,
       [snapshot.caseId, userId, JSON.stringify(snapshot)]);
       if (result.rowCount === 0) return { status: 'id_unavailable' };
-      if (tx.quota!.cases >= LIMITS.cases) {
+      const owned = (await tx.client.query(`SELECT count(*) AS count FROM ${S}.cases WHERE owner_id=$1`, [userId])).rows[0];
+      if (tx.quota!.cases >= LIMITS.cases || integer(owned.count, true) > CAPACITY_LIMITS.casesPerOwner) {
         await tx.client.query('ROLLBACK TO SAVEPOINT create_case'); return { status: 'quota_exceeded' };
       }
       await this.quotaDelta(tx, 1);
@@ -482,6 +486,8 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       }
       check(instantMicros(request.packet.generatedAt) <= instantMicros(at));
       if (request.packet.recheckAfter !== null && !isPacketCurrent(request.packet, at)) return { status: 'generation_conflict' };
+      const count = (await tx.client.query(`SELECT count(*) AS count FROM ${S}.packets WHERE case_id=$1`, [request.caseId])).rows[0];
+      if (integer(count.count, true) >= CAPACITY_LIMITS.packetsPerCase) return { status: 'quota_exceeded' };
       await tx.client.query(`INSERT INTO ${S}.packets(case_id,generation_key,packet_id,context_fingerprint,packet)
         VALUES($1,$2,$3,$4,$5::jsonb)`, [request.caseId, request.generationKey, request.packet.packetId,
         request.contextFingerprint, JSON.stringify(request.packet)]);
@@ -500,13 +506,19 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     { descriptors: EvidenceDescriptor[]; assets: EvidenceAsset[] } | EvidenceRepositoryFailure> {
     const descriptors: EvidenceDescriptor[] = [], assets: EvidenceAsset[] = [];
     for (const selection of selections) {
-      const row = (await tx.client.query(`SELECT evidence_id,finding_id,revision,prepared_at,descriptor${bytes ? ',bytes' : ''}
+      const row = (await tx.client.query(`SELECT evidence_id,finding_id,revision,prepared_at,descriptor
         FROM ${S}.evidence WHERE case_id=$1 AND evidence_id=$2`, [snapshot.caseId, selection.evidenceId])).rows[0];
       if (!row || row.descriptor === null) return { status: 'evidence_conflict' };
       const descriptor = this.descriptor(row, snapshot.caseId);
       if (!linked(snapshot, descriptor, true) || descriptor.evidenceRevision !== selection.expectedEvidenceRevision) return { status: 'evidence_conflict' };
       descriptors.push(descriptor);
-      if (bytes) assets.push(parseEvidenceAsset({ descriptor, bytes: row.bytes }));
+    }
+    if (!exportEvidenceFitsBudget(descriptors)) return { status: 'selection_too_large' };
+    if (bytes) for (const descriptor of descriptors) {
+      const row = (await tx.client.query(`SELECT bytes FROM ${S}.evidence WHERE case_id=$1 AND evidence_id=$2`,
+        [snapshot.caseId, descriptor.evidenceId])).rows[0];
+      check(row);
+      assets.push(parseEvidenceAsset({ descriptor, bytes: row.bytes }));
     }
     return { descriptors, assets };
   }
@@ -554,7 +566,9 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       check(!existing || instantMicros(descriptor.preparedAt) >= instantMicros(existing.prepared_at));
       const catalogRevision = next(bound.catalogRevision), replaced = existing ? integer(existing.size, true) : 0;
       const freed = await this.exportBytes(tx, request.caseId);
-      if ((!existing && tx.quota!.assets >= LIMITS.assets)
+      const owned = existing ? 0 : integer((await tx.client.query(`SELECT count(*) AS count FROM ${S}.evidence e
+        JOIN ${S}.cases c ON c.case_id=e.case_id WHERE c.owner_id=$1`, [request.userId])).rows[0].count, true);
+      if ((!existing && (tx.quota!.assets >= LIMITS.assets || owned >= CAPACITY_LIMITS.evidencePerOwner))
         || tx.quota!.bytes - freed - replaced + image.byteLength > LIMITS.bytes) return { status: 'quota_exceeded' };
       await tx.client.query(`INSERT INTO ${S}.evidence(case_id,evidence_id,finding_id,revision,prepared_at,descriptor,bytes)
         VALUES($1,$2,$3,$4,$5,$6::jsonb,$7) ON CONFLICT(case_id,evidence_id) DO UPDATE SET
@@ -685,7 +699,9 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
           || !await this.checkExportClock(tx, existing, at)) return { status: 'generation_conflict' };
         return { status: 'reused', artifact: existing.metadata };
       }
-      if (tx.quota!.artifacts >= LIMITS.artifacts || tx.quota!.bytes + bytes.byteLength > LIMITS.bytes) return { status: 'quota_exceeded' };
+      const count = (await tx.client.query(`SELECT count(*) AS count FROM ${S}.exports WHERE case_id=$1`, [request.caseId])).rows[0];
+      if (integer(count.count, true) >= CAPACITY_LIMITS.exportsPerCase
+        || tx.quota!.artifacts >= LIMITS.artifacts || tx.quota!.bytes + bytes.byteLength > LIMITS.bytes) return { status: 'quota_exceeded' };
       const bindings: ExportBindings = { userId: request.userId, revision: request.revision, caseFingerprint: request.expectedCaseFingerprint,
         programId: request.programId, catalogRevision: request.expectedCatalogRevision, answersFingerprint: request.expectedAnswersFingerprint,
         contextFingerprint: request.contextFingerprint, selections };

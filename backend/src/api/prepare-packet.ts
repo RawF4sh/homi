@@ -28,7 +28,7 @@ export interface CreatePacketInput {
 
 export type CreatePacketResult =
   | { status: 'saved' | 'reused'; packet: DraftPacket }
-  | { status: 'not_found' | 'conflict' | 'generation_conflict' };
+  | { status: 'not_found' | 'conflict' | 'generation_conflict' | 'quota_exceeded' };
 
 export interface PacketCaseRepository {
   loadForUser(userId: string, caseId: string): Promise<CaseSnapshot | null>;
@@ -46,7 +46,7 @@ export interface PreparePacketDependencies {
   newPacketId?(): string;
 }
 
-export type PacketErrorCode = ApiErrorCode | 'PROGRAM_NOT_FOUND' | 'PACKET_GENERATION_CONFLICT' | 'FORM_ANSWERS_STALE';
+export type PacketErrorCode = ApiErrorCode | 'PROGRAM_NOT_FOUND' | 'PACKET_GENERATION_CONFLICT' | 'FORM_ANSWERS_STALE' | 'STORAGE_LIMIT_REACHED';
 export interface PreparePacketResult {
   status: number;
   body: DraftPacket | { schemaVersion: '1'; error: { code: PacketErrorCode; message: string } };
@@ -61,6 +61,7 @@ const errors: Record<PacketErrorCode, { status: number; message: string }> = {
   CASE_REVISION_MISMATCH: { status: 409, message: 'The case changed. Reload it before preparing a draft.' },
   PACKET_GENERATION_CONFLICT: { status: 409, message: 'This draft request is no longer current. Review the latest case and program, then use a new generation key.' },
   FORM_ANSWERS_STALE: { status: 409, message: 'Review and save the form answers for the current case and form before preparing a draft.' },
+  STORAGE_LIMIT_REACHED: { status: 507, message: 'This case has reached its draft storage limit. Contact the project operator for help.' },
   SERVICE_UNAVAILABLE: { status: 503, message: 'Draft preparation is temporarily unavailable. Try again later.' },
   INTERNAL_ERROR: { status: 500, message: 'The draft packet could not be prepared.' },
 };
@@ -187,6 +188,7 @@ async function processPreparePacket(
   if (saved.status === 'not_found') return failure('CASE_NOT_FOUND');
   if (saved.status === 'conflict') return failure('CASE_REVISION_MISMATCH');
   if (saved.status === 'generation_conflict') return failure('PACKET_GENERATION_CONFLICT');
+  if (saved.status === 'quota_exceeded') return failure('STORAGE_LIMIT_REACHED');
   if (saved.status !== 'saved' && saved.status !== 'reused') return failure('INTERNAL_ERROR');
   const result = saved.packet;
   const expected = planPacketWithForm(snapshot, match, { packetId: result.packetId, generatedAt: result.generatedAt }, artifact, formAnswers);
