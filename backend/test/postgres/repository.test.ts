@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { before, after, test } from 'node:test';
+import { before, beforeEach, after, test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Pool, PoolClient } from 'pg';
 import { applyMigrations, assertMigrationsCurrent } from '../../src/storage/migrate.ts';
@@ -30,6 +30,13 @@ before(async () => {
   openPools();
 });
 after(async () => { await cluster?.close(); });
+beforeEach(async () => {
+  await admin.query(`TRUNCATE safeathome_private.cases, safeathome_private.matches, safeathome_private.packets,
+    safeathome_private.form_answers, safeathome_private.evidence, safeathome_private.exports, safeathome_private.request_history,
+    safeathome_private.deleted_cases, safeathome_private.closed_accounts,
+    safeathome_private.account_deletion_previews, safeathome_private.auth_deletion_jobs;
+    UPDATE safeathome_private.repository_quota SET case_count=0,asset_count=0,artifact_count=0,stored_bytes=0`);
+});
 
 async function context(client: PoolClient, userId: string) {
   await client.query('BEGIN');
@@ -321,12 +328,15 @@ test('case saves invalidate stored export bytes and retain generation-key confli
 });
 
 test('quota counters match durable rows and concurrent create respects final slot', async () => {
+  const populated = await create(repo);
+  assert.equal((await repo.saveEvidenceIfCurrent(await imageInput(populated))).status, 'saved');
+  assert.equal((await repo.publishExportIfCurrent(await publication(repo, populated))).status, 'saved');
   const before = await quota();
   const bytes = (await admin.query(`SELECT
     (SELECT coalesce(sum(octet_length(bytes)),0) FROM safeathome_private.evidence) +
     (SELECT coalesce(sum(octet_length(bytes)),0) FROM safeathome_private.exports) AS count`)).rows[0].count;
   assert.equal(String(before.stored_bytes), String(bytes));
-  for (let count = Number(before.case_count); count < 63; count++) await create(repo);
+  for (let count = Number(before.case_count); count < 63; count++) await create(repo, `quota-owner-${count}`);
   const results = await Promise.all([repo.createForUser(OWNER, draft()), otherRepo.createForUser(OTHER, draft())]);
   assert.deepEqual(results.map(result => result.status).sort(), ['quota_exceeded', 'saved']);
   assert.equal(Number((await quota()).case_count), 64);

@@ -127,6 +127,35 @@ test('unsupported reviewed form text fails without publishing a partial draft', 
   assert.equal((await state.repository.readExportForUser({ userId: 'alice', caseId: state.snapshot.caseId, artifactId: 'artifact-1' })).status, 'not_found');
 });
 
+test('oversized selection uses review-required and never loads forms or publishes a partial draft', async () => {
+  const state = await setup();
+  state.repository.loadExportSnapshotForUser = async () => ({ status: 'selection_too_large' });
+  let loadedRegistry = false, published = false;
+  state.deps.loadRegistry = async () => { loadedRegistry = true; return [state.program]; };
+  state.repository.publishExportIfCurrent = async () => { published = true; return { status: 'quota_exceeded' }; };
+  const result = await state.send('create-draft-export');
+  error(result, 422, 'EXPORT_REVIEW_REQUIRED');
+  assert.ok('error' in result.body && result.body.error.message.includes('fewer or smaller images'));
+  assert.equal(loadedRegistry, false); assert.equal(published, false);
+});
+
+test('handler independently rejects excessive decoded pixels before cloning adapter image buffers', async () => {
+  const state = await setup();
+  const loaded = await state.repository.loadExportSnapshotForUser({ userId: 'alice', caseId: state.snapshot.caseId,
+    revision: 1, expectedCatalogRevision: 1, programId: state.program.programId,
+    selections: [{ evidenceId: 'photo-a', expectedEvidenceRevision: 1, reviewedForExport: true }] });
+  assert.equal(loaded.status, 'found');
+  if (loaded.status !== 'found') throw new Error('Missing export fixture.');
+  loaded.snapshot.assets = ['photo-a', 'photo-b'].map(evidenceId => ({ bytes: state.image.bytes,
+    descriptor: { ...loaded.snapshot.assets[0].descriptor, evidenceId, width: 4000, height: 3000 } }));
+  Object.defineProperty(loaded.snapshot.snapshot.profile, 'city', { enumerable: true,
+    get() { throw new Error('Clone was attempted before the selection budget check.'); } });
+  state.repository.loadExportSnapshotForUser = async () => loaded;
+  error(await state.send('create-draft-export', { ...state.request,
+    selectedEvidence: ['photo-a', 'photo-b'].map(evidenceId => ({ evidenceId, expectedEvidenceRevision: 1, reviewedForExport: true })) }),
+  422, 'EXPORT_REVIEW_REQUIRED');
+});
+
 test('case answer saves, evidence deletion and changed registry invalidate previously exported bytes', async () => {
   for (const change of ['answers', 'delete', 'registry'] as const) {
     const state = await setup(), artifact = metadata(await state.send('create-draft-export'));

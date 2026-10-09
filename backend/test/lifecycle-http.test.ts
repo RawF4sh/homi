@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createMatchingServer, MAX_REQUEST_BYTES, type HttpServerOptions } from '../src/api/http-server.ts';
 import type { LifecycleDependencies } from '../src/api/lifecycle.ts';
 import { RecentAuthenticationRequiredError, type AccountDeletionState, type LifecycleRepository } from '../src/lifecycle/types.ts';
+import { RECEIPT_REQUEST_BURST } from '../src/api/account-admission.ts';
 import { HOSTED_REQUESTS_PER_MINUTE } from '../src/api/request-admission.ts';
 
 const pending: AccountDeletionState = { status: 'auth_pending', applicationDataDeleted: true, providerIdentityDeleted: false };
@@ -169,12 +170,14 @@ test('receipt capability checks remain inside the hosted request budget', async 
   const fake = fakeLifecycle();
   const { post, base } = await start(t, { hosted: true, admissionNow: () => 0, lifecycleDependencies: fake.dependencies });
   for (let index = 0; index < HOSTED_REQUESTS_PER_MINUTE; index++) {
-    assert.equal((await post('account-deletion-status', { schemaVersion: '1' }, 'a'.repeat(64))).status, 404);
+    const response = await post('account-deletion-status', { schemaVersion: '1' }, 'a'.repeat(64));
+    assert.equal(response.status, index < RECEIPT_REQUEST_BURST ? 404 : 503);
+    if (index >= RECEIPT_REQUEST_BURST) assert.equal(response.headers.get('retry-after'), '3');
   }
   const blocked = await post('account-deletion-status', { schemaVersion: '1' }, 'a'.repeat(64));
   assert.equal(blocked.status, 503);
   assert.equal(blocked.headers.get('retry-after'), '60');
-  assert.equal(fake.receiptReadCount(), HOSTED_REQUESTS_PER_MINUTE);
+  assert.equal(fake.receiptReadCount(), RECEIPT_REQUEST_BURST);
   assert.equal(fake.authenticationCount(), 0);
   assert.equal((await fetch(`${base}/healthz`)).status, 200);
 });

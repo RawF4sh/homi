@@ -248,6 +248,12 @@ test('atomic revision changes, deletion and access loss during evaluation cannot
   }
 });
 
+test('draft capacity exhaustion returns the existing safe storage-limit contract', async () => {
+  const state = setup();
+  state.deps.cases.createPacketIfCurrent = async () => ({ status: 'quota_exceeded' });
+  error(await state.send(), 507, 'STORAGE_LIMIT_REACHED');
+});
+
 test('unknown selected programs return 404 without saving', async () => {
   const state = setup();
   error(await state.send({ ...request, programId: 'missing-program' }), 404, 'PROGRAM_NOT_FOUND');

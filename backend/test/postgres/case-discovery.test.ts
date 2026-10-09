@@ -53,8 +53,15 @@ test('lists only owned minimal summaries and treats an empty owner as an empty p
   assert.equal((await runtime.query('SELECT case_id FROM safeathome_private.cases')).rowCount, 0);
 });
 
-test('bounded keyset pages include every owned case once and use no foreign boundary lookup', async () => {
-  for (let number = 1; number <= 22; number++) await create(number);
+test('bounded keyset pages retain every legacy over-cap case and use no foreign boundary lookup', async () => {
+  const legacy = async (number: number) => {
+    const snapshot = { ...draft(id(number)), revision: 1 };
+    await admin.query(`INSERT INTO safeathome_private.cases(case_id,owner_id,revision,snapshot)
+      VALUES($1,$2,1,$3::jsonb)`, [snapshot.caseId, OWNER, JSON.stringify(snapshot)]);
+    await admin.query('UPDATE safeathome_private.repository_quota SET case_count=case_count+1');
+  };
+  for (let number = 1; number <= 22; number++) await legacy(number);
+  assert.equal((await repo.createForUser(OWNER, draft(id(26)))).status, 'quota_exceeded');
   const first = await repo.listForUser(OWNER, firstPage);
   assert.equal(first.cases.length, 20); assert.equal(first.nextAfterCaseId, id(20));
   const second = await repo.listForUser(OWNER, { limit: 20, afterCaseId: first.nextAfterCaseId });
@@ -62,7 +69,7 @@ test('bounded keyset pages include every owned case once and use no foreign boun
   assert.deepEqual(await repo.listForUser(OWNER, { limit: 1, afterCaseId: id(22) }), { cases: [], nextAfterCaseId: null });
   assert.deepEqual([...first.cases, ...second.cases].map(item => item.caseId),
     Array.from({ length: 22 }, (_, index) => id(index + 1)));
-  await create(23, OTHER); await create(25);
+  await create(23, OTHER); await legacy(25);
   const expected = { cases: [{ caseId: id(25), caseRevision: 1 }], nextAfterCaseId: null };
   assert.deepEqual(await repo.listForUser(OWNER, { limit: 1, afterCaseId: id(23) }), expected);
   assert.deepEqual(await repo.listForUser(OWNER, { limit: 1, afterCaseId: id(24) }), expected);

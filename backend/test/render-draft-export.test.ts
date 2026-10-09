@@ -140,8 +140,9 @@ test('untrusted asset data cannot substitute pixels, dimensions, hashes, formats
 test('selection count, aggregate bytes and overflowing captions fail without silently dropping content', async () => {
   const f = await fixture();
   await assert.rejects(render(f, Array(7).fill(f.assets[0])), errorCode('EVIDENCE_INVALID'));
-  const big = Buffer.alloc(17 * 1024 * 1024);
-  await assert.rejects(render(f, [{ ...f.assets[0], bytes: big }, { ...f.assets[1], bytes: big }]), errorCode('CONTENT_TOO_LARGE'));
+  const big = Buffer.alloc(13 * 1024 * 1024);
+  await assert.rejects(render(f, f.assets.map(asset => ({ bytes: big,
+    descriptor: { ...asset.descriptor, byteLength: big.byteLength } }))), errorCode('CONTENT_TOO_LARGE'));
   for (const mutate of [
     (f: Fixture) => { f.snapshot.findings[0].observation = 'PRIVATE'.repeat(200); },
     (f: Fixture) => { f.snapshot.findings[0].observation = Array(40).fill('PRIVATE').join('\n'); },
@@ -150,6 +151,15 @@ test('selection count, aggregate bytes and overflowing captions fail without sil
   ]) {
     const f = await fixture(); mutate(f); await assert.rejects(render(f), errorCode('CONTENT_TOO_LARGE'));
   }
+});
+
+test('renderer refuses aggregate decoded pixels before validating or embedding PNG bytes', async () => {
+  const f = await fixture();
+  for (const asset of f.assets) {
+    Object.assign(asset.descriptor, { width: 4000, height: 3000 });
+    asset.bytes.fill(0);
+  }
+  await assert.rejects(render(f), errorCode('CONTENT_TOO_LARGE'));
 });
 
 test('unsupported evidence text fails accurately instead of being transliterated or silently truncated', async () => {
