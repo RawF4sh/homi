@@ -72,7 +72,7 @@ class ProgressService extends ChangeNotifier with WidgetsBindingObserver {
     try {
       await reminders.initialize();
     } catch (_) {
-      reminders.feedback =
+      reminders.feedback ??=
           'A reminder could not be scheduled. Your task is still saved.';
     }
     _guard();
@@ -195,6 +195,7 @@ class ProgressService extends ChangeNotifier with WidgetsBindingObserver {
     }
     final request = <String, Object?>{
       'schemaVersion': '3',
+      if (api.includeReferrals) 'includeReferrals': true,
       'caseId': caseId,
       'expectedCaseRevision': caseRevision,
       'expectedProgressRevision': state.revision,

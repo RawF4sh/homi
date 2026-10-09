@@ -14,11 +14,17 @@ import 'device_reminders_test.dart' show FakeNotificationDevice, task;
 
 const _caseId = '11111111-0000-4000-8000-000000000001';
 
-Future<AppServices> app() async {
+Future<AppServices> app({
+  List<Map<String, Object?>> programs = const [],
+}) async {
   final store = MemoryPrivateStore(),
       tasks = [task('one').data, task('two').data]
           .map(
-            (t) => <String, Object?>{...t, 'title': '${t['title']} ${t['id']}'},
+            (t) => <String, Object?>{
+              ...t,
+              'title': '${t['title']} ${t['id']}',
+              if (programs.isNotEmpty) 'programId': programs.first['programId'],
+            },
           )
           .toList();
   var revision = 0;
@@ -44,7 +50,7 @@ Future<AppServices> app() async {
       'caseId': _caseId,
       'caseRevision': 1,
       'revision': revision,
-      'programs': <Object>[],
+      'programs': programs,
       'tasks': tasks,
       'nextOffset': null,
       'acknowledgedMutationId': ack,
@@ -92,6 +98,88 @@ Future<AppServices> app() async {
 }
 
 void main() {
+  testWidgets(
+    'program dashboard separates unresolved requirements from tasks and retains retired reports',
+    (tester) async {
+      Map<String, Object?> program(String id, {bool retired = false}) => {
+        'programId': id,
+        'name': 'Fictional $id',
+        'trackedAt': '2026-10-24T12:00:00.000Z',
+        'trackedBy': 'fictional-owner',
+        'latest': !retired
+            ? null
+            : {
+                'updateId': '11111111-0000-4000-8000-000000000099',
+                'status': 'withdrawn',
+                'occurredOn': '2026-10-23',
+                'source': 'self_report',
+                'note': null,
+                'nextAction': null,
+                'responsibleParty': null,
+                'followUpOn': null,
+                'revision': 1,
+                'caseRevision': 1,
+                'recordedAt': '2026-10-24T12:00:00.000Z',
+                'recordedBy': 'fictional-reporter',
+              },
+        'proposal': null,
+        'retired': retired,
+        'ruleVersion': retired ? null : 'fictional-r1',
+        'unresolvedRequirements': retired ? 0 : 1,
+        'requirements': retired
+            ? null
+            : [
+                {
+                  'id': 'fictional-check',
+                  'status': 'unknown',
+                  'explanation': 'Fictional income check needs confirmation',
+                },
+              ],
+      };
+      final services = await app(
+        programs: [program('active'), program('retired', retired: true)],
+      );
+      addTearDown(() {
+        services.dispose();
+        services.session.dispose();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: SafeAtHomeTheme.light(),
+          home: ProgramProgressScreen(services: services),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Fictional active'), findsOneWidget);
+      expect(find.text('Not started / no update recorded'), findsOneWidget);
+      expect(find.text('Unresolved program requirements: 1'), findsOneWidget);
+      expect(find.text('Open tasks: 2'), findsOneWidget);
+      expect(
+        find.text(
+          'Needs confirmation: Fictional income check needs confirmation',
+        ),
+        findsOneWidget,
+      );
+      await tester.scrollUntilVisible(
+        find.text('Fictional retired'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Withdrawn'), findsOneWidget);
+      expect(
+        find.text(
+          'No longer in the current program registry. History is retained.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Reported 2026-10-24T12:00:00.000Z by fictional-reporter'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'dashboard completes one task, creates another with a journal, and retains the others',
     (tester) async {

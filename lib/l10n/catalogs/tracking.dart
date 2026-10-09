@@ -613,4 +613,62 @@ const trackingTranslations = <String, Map<String, String>>{
     "fil":
         "Suriin muna ang naka-save. Hindi mababawi ng pagtatapon ang pagbabagong naka-save na online.",
   },
+  "Device reminder settings could not be read. Reset them to choose new reminders. Your tasks are still saved.": {
+    "es":
+        "No se pudieron leer los ajustes de recordatorios del dispositivo. Restablézcalos para elegir nuevos recordatorios. Sus tareas siguen guardadas.",
+    "zh-Hans": "无法读取设备提醒设置。请重置后选择新提醒。任务仍已保存。",
+    "zh-Hant": "無法讀取裝置提醒設定。請重設後選擇新提醒。任務仍已儲存。",
+    "vi":
+        "Không thể đọc cài đặt nhắc trên thiết bị. Đặt lại để chọn lời nhắc mới. Công việc vẫn được lưu.",
+    "fil":
+        "Hindi mabasa ang mga setting ng paalala sa device. I-reset para pumili ng mga bagong paalala. Naka-save pa rin ang mga gawain.",
+  },
+  "This device has 128 active reminders. Disable one before adding another.": {
+    "es":
+        "Este dispositivo tiene 128 recordatorios activos. Desactive uno antes de añadir otro.",
+    "zh-Hans": "此设备有128条有效提醒。请先关闭一条再添加新提醒。",
+    "zh-Hant": "此裝置有128則有效提醒。請先關閉一則再新增提醒。",
+    "vi":
+        "Thiết bị có 128 lời nhắc đang bật. Tắt một lời nhắc trước khi thêm lời nhắc khác.",
+    "fil":
+        "May 128 aktibong paalala ang device na ito. I-off muna ang isa bago magdagdag.",
+  },
+  "Reset device reminders?": {
+    "es": "¿Restablecer los recordatorios del dispositivo?",
+    "zh-Hans": "重置设备提醒？",
+    "zh-Hant": "重設裝置提醒？",
+    "vi": "Đặt lại lời nhắc trên thiết bị?",
+    "fil": "I-reset ang mga paalala sa device?",
+  },
+  "Reset device reminders": {
+    "es": "Restablecer recordatorios del dispositivo",
+    "zh-Hans": "重置设备提醒",
+    "zh-Hant": "重設裝置提醒",
+    "vi": "Đặt lại lời nhắc trên thiết bị",
+    "fil": "I-reset ang mga paalala sa device",
+  },
+  "This removes reminder times on this device. Your tasks and target dates stay saved. Enable each reminder again when ready.": {
+    "es":
+        "Esto elimina las horas de recordatorio de este dispositivo. Sus tareas y fechas objetivo siguen guardadas. Active cada recordatorio de nuevo cuando lo desee.",
+    "zh-Hans": "这会删除此设备上的提醒时间。任务和目标日期仍已保存。准备好后请逐个重新启用提醒。",
+    "zh-Hant": "這會刪除此裝置上的提醒時間。任務和目標日期仍已儲存。準備好後請逐個重新啟用提醒。",
+    "vi":
+        "Thao tác này xóa giờ nhắc trên thiết bị này. Công việc và ngày mục tiêu vẫn được lưu. Bật lại từng lời nhắc khi sẵn sàng.",
+    "fil":
+        "Aalisin nito ang mga oras ng paalala sa device na ito. Mananatiling naka-save ang mga gawain at target na petsa. I-on muli ang bawat paalala kapag handa na.",
+  },
+  "Unresolved program requirements: {count}": {
+    "es": "Requisitos del programa sin resolver: {count}",
+    "zh-Hans": "待解决的项目要求：{count}",
+    "zh-Hant": "待解決的計畫要求：{count}",
+    "vi": "Yêu cầu chương trình chưa giải quyết: {count}",
+    "fil": "Hindi pa nalulutas na kinakailangan ng programa: {count}",
+  },
+  "Open tasks: {count}": {
+    "es": "Tareas abiertas: {count}",
+    "zh-Hans": "未完成任务：{count}",
+    "zh-Hant": "未完成任務：{count}",
+    "vi": "Công việc chưa hoàn tất: {count}",
+    "fil": "Mga hindi pa tapos na gawain: {count}",
+  },
 };

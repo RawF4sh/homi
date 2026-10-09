@@ -6,17 +6,23 @@ import '../../shared/models/case_draft.dart';
 import '../../shared/models/request_tracking.dart';
 import '../../shared/presentation/sah_components.dart';
 import 'progress_models.dart';
+import 'device_reminders.dart';
+import 'reminder_recovery_notice.dart';
 import 'progress_service.dart';
 import 'task_editor_screen.dart';
+import '../local_help/referral_directory.dart';
 
 class ProgramProgressScreen extends StatefulWidget {
   const ProgramProgressScreen({
     super.key,
     required this.services,
     this.tasksFirst = false,
+    this.findingId,
+    this.referralId,
   });
   final AppServices services;
   final bool tasksFirst;
+  final String? findingId, referralId;
   @override
   State<ProgramProgressScreen> createState() => _ProgramProgressScreenState();
 }
@@ -24,7 +30,10 @@ class ProgramProgressScreen extends StatefulWidget {
 class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
   late final String _caseId = widget.services.coordinator.currentCase().caseId;
   late final int _generation = widget.services.coordinator.generation;
-  late bool _tasks = widget.tasksFirst;
+  late bool _tasks =
+      widget.tasksFirst ||
+      widget.findingId != null ||
+      widget.referralId != null;
   bool _busy = true, _fresh = false;
   String? _error;
   ProgressService get service => widget.services.progress!;
@@ -39,6 +48,10 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
       _fresh &&
       !_busy &&
       !widget.services.coordinator.hasUnsavedChanges &&
+      (widget.findingId == null ||
+          widget.services.coordinator.currentCase().findings.any(
+            (f) => f.id == widget.findingId,
+          )) &&
       saved?.caseRevision == widget.services.coordinator.snapshot?.revision &&
       !service.pending.containsKey(_caseId);
   @override
@@ -58,7 +71,11 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
       await service.refresh(_caseId);
       if (current) _fresh = true;
     } catch (e) {
-      if (current) _error = safeOperationMessage(e);
+      if (current) {
+        _error = e is ReminderSettingsException
+            ? e.message
+            : safeOperationMessage(e);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -73,7 +90,11 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
     try {
       await work();
     } catch (e) {
-      if (current) _error = safeOperationMessage(e);
+      if (current) {
+        _error = e is ReminderSettingsException
+            ? e.message
+            : safeOperationMessage(e);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -102,6 +123,8 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
           task: task,
           program: program,
           proposal: proposal,
+          initialFindingId: widget.findingId,
+          referralId: widget.referralId,
         ),
       ),
     );
@@ -121,70 +144,26 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
       DateTime.now().add(Duration(hours: snooze ? 24 : 1)),
       tz.getLocation(zone),
     );
-    final dateController = TextEditingController(
-      text: initial.toIso8601String().substring(0, 10),
-    );
-    final timeController = TextEditingController(
-      text: snooze
-          ? '${initial.hour.toString().padLeft(2, '0')}:${initial.minute.toString().padLeft(2, '0')}'
-          : old?.data['time'] as String? ?? '09:00',
-    );
-    final zoneController = TextEditingController(text: zone);
     try {
-      final confirmed = await showDialog<bool>(
+      final values = await showDialog<Map<String, String>>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          scrollable: true,
-          title: Text(ctx.tr(snooze ? 'Snooze reminder' : 'Device reminder')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                ctx.tr(
-                  'Reminders stay in the chosen time zone when you travel. A repeated daylight-saving time uses the earlier occurrence; choose another time if the clock skips it.',
-                ),
-              ),
-              TextField(
-                controller: dateController,
-                decoration: InputDecoration(
-                  labelText: ctx.tr('Reminder date (YYYY-MM-DD)'),
-                ),
-                keyboardType: TextInputType.datetime,
-              ),
-              TextField(
-                controller: timeController,
-                decoration: InputDecoration(
-                  labelText: ctx.tr('Reminder time (HH:MM)'),
-                ),
-                keyboardType: TextInputType.datetime,
-              ),
-              TextField(
-                controller: zoneController,
-                decoration: InputDecoration(
-                  labelText: ctx.tr('Time zone (IANA)'),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(ctx.tr('Cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(ctx.tr('Enable reminder')),
-            ),
-          ],
+        builder: (_) => _ReminderDialog(
+          snooze: snooze,
+          date: initial.toIso8601String().substring(0, 10),
+          zone: zone,
+          time: snooze
+              ? '${initial.hour.toString().padLeft(2, '0')}:${initial.minute.toString().padLeft(2, '0')}'
+              : old?.data['time'] as String? ??
+                    '${initial.hour.toString().padLeft(2, '0')}:${initial.minute.toString().padLeft(2, '0')}',
         ),
       );
-      if (!current || confirmed != true) return;
+      if (!current || values == null) return;
       await reminders.configure(
         _caseId,
         task.id,
-        dateController.text.trim(),
-        timeController.text.trim(),
-        zoneController.text.trim(),
+        values['date']!,
+        values['time']!,
+        values['zone']!,
       );
       if (!current) return;
       await service.reconcileReminders();
@@ -195,10 +174,6 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
               _error = 'Choose a valid future date, time, and IANA time zone.',
         );
       }
-    } finally {
-      dateController.dispose();
-      timeController.dispose();
-      zoneController.dispose();
     }
   }
 
@@ -376,7 +351,17 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
   @override
   Widget build(BuildContext context) {
     final state = saved;
-    final tasks = state?.tasks.toList() ?? <NextStepTask>[];
+    final tasks =
+        state?.tasks
+            .where(
+              (t) =>
+                  (widget.findingId == null ||
+                      t.data['findingId'] == widget.findingId) &&
+                  (widget.referralId == null ||
+                      t.referralId == widget.referralId),
+            )
+            .toList() ??
+        <NextStepTask>[];
     tasks.sort((a, b) {
       final open = (a.open ? 0 : 1).compareTo(b.open ? 0 : 1);
       return open != 0
@@ -406,17 +391,43 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              SegmentedButton<bool>(
-                segments: [
-                  ButtonSegment(
-                    value: false,
-                    label: Text(context.tr('Programs')),
-                  ),
-                  ButtonSegment(value: true, label: Text(context.tr('Tasks'))),
-                ],
-                selected: {_tasks},
-                onSelectionChanged: (s) => setState(() => _tasks = s.first),
-              ),
+              if (widget.findingId != null) ...[
+                Text(context.tr('Next steps for this concern')),
+                Text(
+                  widget.services.coordinator
+                          .currentCase()
+                          .findings
+                          .where((f) => f.id == widget.findingId)
+                          .firstOrNull
+                          ?.observation ??
+                      context.tr('Concern not present'),
+                ),
+              ],
+              if (widget.referralId != null)
+                Text(
+                  context.tr('Next steps for {organization}', {
+                    'organization':
+                        const OfficialReferralDirectory()
+                            .provider(widget.referralId!)
+                            ?.name ??
+                        widget.referralId!,
+                  }),
+                ),
+              if (widget.findingId == null && widget.referralId == null)
+                SegmentedButton<bool>(
+                  segments: [
+                    ButtonSegment(
+                      value: false,
+                      label: Text(context.tr('Programs')),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      label: Text(context.tr('Tasks')),
+                    ),
+                  ],
+                  selected: {_tasks},
+                  onSelectionChanged: (s) => setState(() => _tasks = s.first),
+                ),
               if (_busy) const LinearProgressIndicator(),
               if (_error != null) SahNotice(message: context.tr(_error!)),
               if (!_fresh && state != null)
@@ -437,6 +448,14 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
                 SahNotice(message: context.tr(service.feedback!)),
               if (service.reminders.feedback != null)
                 SahNotice(message: context.tr(service.reminders.feedback!)),
+              if (service.reminders.requiresReset)
+                ReminderRecoveryNotice(
+                  enabled: current && !_busy,
+                  onReset: () => _run(() async {
+                    await service.reminders.reset();
+                    if (current) await service.reconcileReminders();
+                  }),
+                ),
               if (service.pending.containsKey(_caseId))
                 _ProgressCard(
                   child: Column(
@@ -529,6 +548,49 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           Text(context.tr(taskStateLabel(task.state))),
+                          if (task.referralId != null)
+                            Text(
+                              context.tr('Referral: {organization}', {
+                                'organization':
+                                    const OfficialReferralDirectory()
+                                        .provider(task.referralId!)
+                                        ?.name ??
+                                    task.referralId!,
+                              }),
+                            ),
+                          if (task.referral?['imported']
+                              case final Map imported)
+                            ExpansionTile(
+                              title: Text(
+                                context.tr('Original local follow-up'),
+                              ),
+                              children: [
+                                Text(
+                                  (imported['original'] as Map)['title']
+                                      as String,
+                                ),
+                                Text(imported['contactNote'] as String),
+                                if ((imported['original'] as Map)['dueDate'] !=
+                                    null)
+                                  Text(
+                                    context.tr('Original target: {date}', {
+                                      'date':
+                                          (imported['original']
+                                              as Map)['dueDate'],
+                                    }),
+                                  ),
+                                if ((imported['original']
+                                        as Map)['completedAt'] !=
+                                    null)
+                                  Text(
+                                    context.tr('Originally completed: {date}', {
+                                      'date':
+                                          (imported['original']
+                                              as Map)['completedAt'],
+                                    }),
+                                  ),
+                              ],
+                            ),
                           if (task.programId != null)
                             Text(
                               state!.programs
@@ -688,8 +750,16 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
                               }),
                             ),
                           Text(
-                            context.tr('Open next steps: {count}', {
-                              'count': p.unresolved,
+                            context.tr(
+                              'Unresolved program requirements: {count}',
+                              {'count': p.unresolved},
+                            ),
+                          ),
+                          Text(
+                            context.tr('Open tasks: {count}', {
+                              'count': tasks
+                                  .where((t) => t.programId == p.id && t.open)
+                                  .length,
                             }),
                           ),
                           if (tasks
@@ -818,5 +888,86 @@ class _ProgressCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(padding: const EdgeInsets.all(16), child: child),
+  );
+}
+
+class _ReminderDialog extends StatefulWidget {
+  const _ReminderDialog({
+    required this.snooze,
+    required this.date,
+    required this.time,
+    required this.zone,
+  });
+  final bool snooze;
+  final String date, time, zone;
+  @override
+  State<_ReminderDialog> createState() => _ReminderDialogState();
+}
+
+class _ReminderDialogState extends State<_ReminderDialog> {
+  late final _date = TextEditingController(text: widget.date),
+      _time = TextEditingController(text: widget.time),
+      _zone = TextEditingController(text: widget.zone);
+  @override
+  void dispose() {
+    _date.dispose();
+    _time.dispose();
+    _zone.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
+    title: Text(
+      context.tr(widget.snooze ? 'Snooze reminder' : 'Device reminder'),
+    ),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          context.tr(
+            'Reminders stay in the chosen time zone when you travel. A repeated daylight-saving time uses the earlier occurrence; choose another time if the clock skips it.',
+          ),
+        ),
+        TextField(
+          controller: _date,
+          decoration: InputDecoration(
+            labelText: context.tr('Reminder date (YYYY-MM-DD)'),
+          ),
+          keyboardType: TextInputType.datetime,
+        ),
+        TextField(
+          controller: _time,
+          decoration: InputDecoration(
+            labelText: context.tr('Reminder time (HH:MM)'),
+          ),
+          keyboardType: TextInputType.datetime,
+        ),
+        TextField(
+          controller: _zone,
+          decoration: InputDecoration(
+            labelText: context.tr('Time zone (IANA)'),
+          ),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: Text(context.tr('Cancel')),
+      ),
+      FilledButton(
+        onPressed: () {
+          FocusScope.of(context).unfocus();
+          Navigator.pop(context, {
+            'date': _date.text.trim(),
+            'time': _time.text.trim(),
+            'zone': _zone.text.trim(),
+          });
+        },
+        child: Text(context.tr('Enable reminder')),
+      ),
+    ],
   );
 }

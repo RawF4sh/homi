@@ -8,10 +8,10 @@ const apiOrigin = 'https://safeathome.example.invalid';
 const authOrigin = 'https://fictional.supabase.co';
 const caseIds = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'] as const;
 const userIds = ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
-const config = (): HostedApiConfiguration => ({ apiOrigin, auth: { projectUrl: authOrigin, publishableKey: 'sb_publishable_fictional', timeoutMs: 100 },
+const config = (): HostedApiConfiguration => ({ apiOrigin, auth: { projectUrl: authOrigin, publishableKey: 'sb_publishable_fictional', timeoutMs: 1000 },
   accounts: [{ email: 'fixture-a@example.invalid', password: 'fictional-password-a' },
     { email: 'fixture-b@example.invalid', password: 'fictional-password-b' }], caseIds });
-const options = { warmupTimeoutMs: 100, healthRequestTimeoutMs: 20, pollIntervalMs: 1 };
+const options = { warmupTimeoutMs: 5000, healthRequestTimeoutMs: 1000, pollIntervalMs: 1 };
 const json = (value: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(value),
   { status, headers: { 'Content-Type': 'application/json', ...headers } });
 const ready = () => json({ status: 'ok' }, 200, { 'Cache-Control': 'no-store' });

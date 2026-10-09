@@ -126,7 +126,7 @@ test('account plan names survive quarantine restore with independent revision an
   await sourceAdmin.query('UPDATE safeathome_private.cases SET plan_name=$2 WHERE case_id=$1', [cleared.caseId, clearedState]);
   const archive = await captureDatabaseBackup(sourceAdmin, ORIGIN);
   const encoded = JSON.parse(archive.toString('utf8'));
-  assert.deepEqual(encoded.migrations.map((entry: { version: string }) => entry.version), ['001', '002', '003', '004', '005', '006', '007', '008', '009']);
+  assert.deepEqual(encoded.migrations.map((entry: { version: string }) => entry.version), ['001', '002', '003', '004', '005', '006', '007', '008', '009', '010']);
   assert.deepEqual(encoded.tables.cases.find((row: { case_id: string }) => row.case_id === named.caseId).plan_name, state);
   await restoreDatabaseBackup(targetAdmin, archive, ORIGIN);
   const restored = new PostgresCaseRepository(targetRuntime);
@@ -146,7 +146,7 @@ test('verified five-migration legacy backup restores into current quarantine wit
   const legacy = change(await captureDatabaseBackup(sourceAdmin, ORIGIN), archive => {
     archive.migrations = archive.migrations.slice(0, 5);
     delete archive.tables.case_shares;
-    for (const row of archive.tables.cases) { delete row.plan_name; delete row.home_safety; delete row.progress; }
+    for (const row of archive.tables.cases) { delete row.plan_name; delete row.home_safety; delete row.progress; delete row.collaboration; }
   });
   const before = Buffer.from(legacy);
   assert.equal((await validateDatabaseBackup(legacy, ORIGIN)).sourceRows.cases, 1);

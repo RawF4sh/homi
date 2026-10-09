@@ -157,8 +157,17 @@ void main() {
         expect(restarted.cached[caseId]!.tasks.length, 2);
         expect(
           restarted.reminders.feedback,
-          contains('could not be scheduled'),
+          contains('settings could not be read'),
         );
+        expect(restarted.reminders.requiresReset, true);
+        expect((store.records['reminders.v3']!['preferences'] as List).single, {
+          'invalid': true,
+        });
+        await restarted.reminders.reset();
+        await restarted.reconcileReminders();
+        expect(restarted.cached[caseId]!.tasks.length, 2);
+        expect(restarted.reminders.requiresReset, false);
+        expect(device.scheduled, isEmpty);
       } finally {
         service?.dispose();
         restarted?.dispose();

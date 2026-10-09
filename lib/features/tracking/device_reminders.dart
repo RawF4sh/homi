@@ -203,6 +203,11 @@ class ReminderPreference {
   int get notificationId => data['notificationId'] as int;
 }
 
+class ReminderSettingsException implements Exception {
+  const ReminderSettingsException(this.message);
+  final String message;
+}
+
 class DeviceReminders {
   DeviceReminders({
     required this.store,
@@ -219,6 +224,10 @@ class DeviceReminders {
   final Map<String, ReminderPreference> preferences = {};
   Future<void> _tail = Future.value();
   bool _active = true;
+  bool _loaded = false;
+  bool get requiresReset => !_loaded;
+  static const _recoveryMessage =
+      'Device reminder settings could not be read. Reset them to choose new reminders. Your tasks are still saved.';
   String? deviceId;
   String? feedback;
   int scheduledCount = 0;
@@ -239,27 +248,78 @@ class DeviceReminders {
       feedback = 'A reminder could not be scheduled. Your task is still saved.';
     }
     if (!current) return;
-    final saved = await store.readJson('reminders.v3');
-    if (!current) return;
-    if ((saved?['preferences'] as List? ?? []).length > 128) {
-      throw const FormatException();
+    try {
+      final saved = await store.readJson('reminders.v3');
+      if (!current) return;
+      final restored = <String, ReminderPreference>{};
+      String restoredId = newUuidV4();
+      if (saved != null) {
+        ExportContractValues.object(saved, {
+          'schemaVersion',
+          'deviceId',
+          'preferences',
+        });
+        if (saved['schemaVersion'] != '3' ||
+            saved['preferences'] is! List ||
+            (saved['preferences'] as List).length > 128) {
+          throw const FormatException();
+        }
+        ExportContractValues.id(saved['deviceId']);
+        restoredId = saved['deviceId'] as String;
+        final notificationIds = <int>{};
+        for (final raw in saved['preferences'] as List) {
+          final p = ReminderPreference(Map<String, Object?>.from(raw as Map));
+          final key = _key(p.caseId, p.taskId);
+          if (restored.containsKey(key) ||
+              !notificationIds.add(p.notificationId)) {
+            throw const FormatException();
+          }
+          restored[key] = p;
+        }
+      }
+      if (saved == null) await _persist(restored, restoredId);
+      if (!current) return;
+      deviceId = restoredId;
+      preferences
+        ..clear()
+        ..addAll(restored);
+      _loaded = true;
+    } catch (_) {
+      feedback = _recoveryMessage;
+      rethrow;
     }
-    deviceId = saved?['deviceId'] as String? ?? newUuidV4();
-    for (final raw in saved?['preferences'] as List? ?? []) {
-      final p = ReminderPreference(Map<String, Object?>.from(raw as Map));
-      reminderInstant(
-        p.data['date'] as String,
-        p.data['time'] as String,
-        p.zone,
-      );
-      preferences[_key(p.caseId, p.taskId)] = p;
-    }
-    await _persist();
   });
-  Future<void> _persist() => store.writeJson('reminders.v3', {
-    'schemaVersion': '3',
-    'deviceId': deviceId,
-    'preferences': preferences.values.map((p) => p.data).toList(),
+  Future<void> _persist(Map<String, ReminderPreference> next, String id) =>
+      store.writeJson('reminders.v3', {
+        'schemaVersion': '3',
+        'deviceId': id,
+        'preferences': next.values.map((p) => p.data).toList(),
+      });
+  void _requireLoaded() {
+    if (!_loaded) throw const ReminderSettingsException(_recoveryMessage);
+  }
+
+  Future<void> _save(Map<String, ReminderPreference> next) async {
+    _requireLoaded();
+    await _persist(next, deviceId!);
+    if (!current) return;
+    preferences
+      ..clear()
+      ..addAll(next);
+  }
+
+  Future<void> reset() => _serial(() async {
+    if (!current) return;
+    await device.cancelAll();
+    scheduledCount = 0;
+    if (!current) return;
+    final id = deviceId ?? newUuidV4();
+    await _persist({}, id);
+    if (!current) return;
+    preferences.clear();
+    deviceId = id;
+    _loaded = true;
+    feedback = null;
   });
   ReminderPreference? forTask(String caseId, String taskId) =>
       preferences[_key(caseId, taskId)];
@@ -272,19 +332,29 @@ class DeviceReminders {
     DateTime? now,
   }) => _serial(() async {
     if (!current) return;
+    _requireLoaded();
     final instant = reminderInstant(date, time, zone);
-    if (!instant.isAfter(now ?? DateTime.now()) ||
-        preferences.length >= 128 && forTask(caseId, taskId) == null) {
-      throw const FormatException();
-    }
+    final clock = now ?? DateTime.now();
+    if (!instant.isAfter(clock)) throw const FormatException();
     final old = forTask(caseId, taskId);
-    final nextId =
-        preferences.values.fold<int>(
-          0,
-          (n, p) => p.notificationId > n ? p.notificationId : n,
-        ) +
-        1;
-    preferences[_key(caseId, taskId)] = ReminderPreference({
+    final next = Map<String, ReminderPreference>.of(preferences);
+    if (old == null && next.length >= 128) {
+      final reusable = next.entries.where(
+        (e) => !e.value.enabled || !e.value.instant.isAfter(clock),
+      );
+      if (reusable.isEmpty) {
+        throw const ReminderSettingsException(
+          'This device has 128 active reminders. Disable one before adding another.',
+        );
+      }
+      next.remove(reusable.first.key);
+    }
+    var nextId = 1;
+    final used = next.values.map((p) => p.notificationId).toSet();
+    while (used.contains(nextId)) {
+      nextId++;
+    }
+    next[_key(caseId, taskId)] = ReminderPreference({
       'caseId': caseId,
       'taskId': taskId,
       'date': date,
@@ -294,7 +364,7 @@ class DeviceReminders {
       'notificationId': old?.notificationId ?? nextId,
       'enabled': true,
     });
-    await _persist();
+    await _save(next);
     if (!current) return;
     bool granted = false;
     try {
@@ -309,19 +379,24 @@ class DeviceReminders {
   });
   Future<void> disable(String caseId, String taskId) => _serial(() async {
     if (!current) return;
+    _requireLoaded();
+    final next = Map<String, ReminderPreference>.of(preferences);
     final p = forTask(caseId, taskId);
     if (p != null) {
-      preferences[_key(caseId, taskId)] = ReminderPreference({
+      next[_key(caseId, taskId)] = ReminderPreference({
         ...p.data,
         'enabled': false,
       });
     }
-    await _persist();
+    await _save(next);
   });
   Future<void> forgetCase(String caseId) => _serial(() async {
-    preferences.removeWhere((_, p) => p.caseId == caseId);
-    if (current) await _persist();
     await device.cancelAll();
+    scheduledCount = 0;
+    if (!current || !_loaded) return;
+    final next = Map<String, ReminderPreference>.of(preferences)
+      ..removeWhere((_, p) => p.caseId == caseId);
+    await _save(next);
   });
   Future<void> reconcile(
     Map<String, List<NextStepTask>> cases,
@@ -335,17 +410,22 @@ class DeviceReminders {
     }
     scheduledCount = 0;
     if (!current) return;
-    for (final entry in preferences.entries.toList()) {
+    if (!_loaded) {
+      feedback = _recoveryMessage;
+      return;
+    }
+    final next = Map<String, ReminderPreference>.of(preferences);
+    for (final entry in next.entries.toList()) {
       final tasks = cases[entry.value.caseId];
       if (tasks != null &&
           !tasks.any((t) => t.id == entry.value.taskId && t.open)) {
-        preferences[entry.key] = ReminderPreference({
+        next[entry.key] = ReminderPreference({
           ...entry.value.data,
           'enabled': false,
         });
       }
     }
-    await _persist();
+    await _save(next);
     final wanted =
         preferences.values
             .where(
