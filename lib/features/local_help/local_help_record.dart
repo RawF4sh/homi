@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import '../../shared/models/export_contract_values.dart';
 
 String helpText(Object? value, {int max = 500, bool empty = false}) {
@@ -10,6 +12,16 @@ String helpText(Object? value, {int max = 500, bool empty = false}) {
   }
   return value;
 }
+
+String hashReferralOriginal(Map<String, Object?> original) => sha256
+    .convert(
+      utf8.encode(
+        jsonEncode({
+          for (final key in original.keys.toList()..sort()) key: original[key],
+        }),
+      ),
+    )
+    .toString();
 
 String helpDate(Object? value) {
   if (value is! String ||

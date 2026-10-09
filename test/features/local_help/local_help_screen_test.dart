@@ -165,43 +165,23 @@ void main() {
   });
 
   testWidgets(
-    'follow-up editor validates dates and saves action, owner and concern',
+    'disabled tracking retains local work and offers a recovery message',
     (tester) async {
       final app = await make();
       await tester.pumpWidget(
-        localized(
-          const Locale('en'),
-          LocalHelpScreen(services: app, findingId: 'fictional-concern'),
-        ),
+        localized(const Locale('en'), LocalHelpScreen(services: app)),
       );
       await tester.pumpAndSettle();
       await tap(tester, firstProviderAction('Add follow-up'));
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'Next action'),
-        'Call to confirm intake',
+      await reveal(
+        tester,
+        find.textContaining('Save this plan online and enable My next steps'),
       );
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'Responsible person (optional)'),
-        'Fictional helper',
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(
+        (await LocalHelpRepository(app.coordinator).load()).tasks,
+        isEmpty,
       );
-      final date = find.widgetWithText(
-        TextFormField,
-        'Due date (YYYY-MM-DD, optional)',
-      );
-      await tester.enterText(date, '2026-02-30');
-      await tester.tap(find.text('Save on this device'));
-      await tester.pumpAndSettle();
-      expect(find.text('Enter a valid date as YYYY-MM-DD.'), findsOneWidget);
-      await tester.enterText(date, '2026-11-02');
-      await tester.tap(find.text('Save on this device'));
-      await tester.pumpAndSettle();
-      final t = (await LocalHelpRepository(
-        app.coordinator,
-      ).load()).tasks.single;
-      expect(t.title, 'Call to confirm intake');
-      expect(t.responsible, 'Fictional helper');
-      expect(t.findingId, 'fictional-concern');
-      expect(t.dueDate, '2026-11-02');
     },
   );
 
@@ -274,8 +254,8 @@ void main() {
       final tr = AppLocalizations(locale);
       await reveal(tester, find.text(tr.text('Saved contacts')));
       await reveal(tester, find.text('Fictional resident {count}'));
-      await tap(tester, find.text(tr.text('Mark complete')));
-      expect((await repository.load()).tasks.single.completedAt, isNotNull);
+      await reveal(tester, find.text(tr.text('Import local follow-up')));
+      expect((await repository.load()).tasks.single.completedAt, isNull);
       expect(tester.takeException(), isNull);
     });
   }

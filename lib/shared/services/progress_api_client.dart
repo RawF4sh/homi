@@ -13,6 +13,7 @@ class ProgressApiClient {
     required MatchingTokenProvider tokenProvider,
     required MatchingTransport transport,
     this.timeout = const Duration(seconds: 15),
+    this.includeReferrals = false,
     bool allowInsecureLoopback = false,
     bool allowAndroidEmulatorLoopback = false,
   }) : _base = _validateBase(
@@ -30,6 +31,7 @@ class ProgressApiClient {
   final MatchingTokenProvider _tokens;
   final MatchingTransport _transport;
   final Duration timeout;
+  final bool includeReferrals;
   Future<ProgressPage> read(
     String caseId, {
     required bool Function() isCurrent,
@@ -41,6 +43,7 @@ class ProgressApiClient {
     ExportContractValues.id(caseId);
     final json = await _post('read-progress', {
       'schemaVersion': '3',
+      if (includeReferrals) 'includeReferrals': true,
       'caseId': caseId,
       'offset': offset,
       'limit': 20,

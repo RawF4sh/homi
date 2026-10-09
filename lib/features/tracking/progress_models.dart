@@ -1,3 +1,4 @@
+import '../local_help/local_help_record.dart';
 import '../../shared/models/export_contract_values.dart';
 import '../../shared/models/request_tracking.dart';
 
@@ -34,6 +35,7 @@ String progressDate(Object? value) {
 class NextStepTask {
   NextStepTask.fromJson(Object? raw) {
     final v = ExportContractValues.object(raw, {
+      if (raw is Map && raw.containsKey('referral')) 'referral',
       'id',
       'programId',
       'findingId',
@@ -74,9 +76,43 @@ class NextStepTask {
         (v['responsiblePerson'] as String? ?? '').runes.length > 100) {
       ExportContractValues.invalid();
     }
+    if (v.containsKey('referral')) {
+      final ref = ExportContractValues.object(v['referral'], {
+        'providerId',
+        if (v['referral'] is Map &&
+            (v['referral'] as Map).containsKey('imported'))
+          'imported',
+      });
+      ExportContractValues.id(ref['providerId']);
+      if (ref.containsKey('imported')) {
+        final imported = ExportContractValues.object(ref['imported'], {
+          'sourceTaskId',
+          'sourceHash',
+          'contactNote',
+          'original',
+        });
+        ExportContractValues.id(imported['sourceTaskId']);
+        ExportContractValues.digest(imported['sourceHash']);
+        helpText(imported['contactNote'], empty: true);
+        final original = HelpFollowUp.fromJson(imported['original']);
+        if (original.id != imported['sourceTaskId'] ||
+            original.providerId != ref['providerId'] ||
+            hashReferralOriginal(original.toJson()) != imported['sourceHash']) {
+          ExportContractValues.invalid();
+        }
+        ref['imported'] = Map<String, Object?>.unmodifiable({
+          ...imported,
+          'original': Map<String, Object?>.unmodifiable(original.toJson()),
+        });
+      }
+      v['referral'] = Map<String, Object?>.unmodifiable(ref);
+    }
     data = Map.unmodifiable(v);
   }
   late final Map<String, Object?> data;
+  Map<String, Object?>? get referral =>
+      data['referral'] as Map<String, Object?>?;
+  String? get referralId => referral?['providerId'] as String?;
   String get id => data['id'] as String;
   String get title => data['title'] as String;
   String get state => data['state'] as String;

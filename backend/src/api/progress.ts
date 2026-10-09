@@ -29,7 +29,7 @@ export async function handleProgress(input: { body: unknown; bearerToken: string
         task_conflict: [409, 'TASK_CONFLICT'], mutation_conflict: [409, 'PROGRESS_MUTATION_CONFLICT'], limit: [507, 'PROGRESS_LIMIT'], invalid_operation: [400, 'INVALID_REQUEST'] } as const;
       const [status, code] = codes[result.status]; return fail(status, code);
     }
-    const query: ProgressRead = route !== 'save-progress' ? request as ProgressRead : { schemaVersion: '3', caseId: request.caseId, offset: 0, limit: 20, expectedProgressRevision: null, expectedCaseRevision: null, expectedHistoryVersion: null };
+    const query: ProgressRead = route !== 'save-progress' ? request as ProgressRead : { schemaVersion: '3', caseId: request.caseId, offset: 0, limit: 20, expectedProgressRevision: null, expectedCaseRevision: null, expectedHistoryVersion: null, ...((request as ProgressSave).includeReferrals === true ? { includeReferrals: true as const } : {}) };
     if (query.expectedProgressRevision !== null && query.expectedProgressRevision !== result.context.record.revision) return fail(409, 'PROGRESS_CONFLICT');
     if (query.expectedHistoryVersion !== null && query.expectedHistoryVersion !== progressHistoryVersion(result.context)) return fail(409, 'PROGRESS_CONFLICT');
     if (query.expectedCaseRevision !== null && query.expectedCaseRevision !== result.context.snapshot.revision) return fail(409, 'CASE_REVISION_MISMATCH');

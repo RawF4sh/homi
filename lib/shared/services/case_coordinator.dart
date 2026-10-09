@@ -803,6 +803,7 @@ class CaseCoordinator extends ChangeNotifier {
       'progress-pending',
       'progress-edit',
       'local-help',
+      'referral-import',
     ].any((prefix) => key == '$prefix.$id')) {
       return true;
     }

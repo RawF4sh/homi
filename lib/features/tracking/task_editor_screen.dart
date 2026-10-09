@@ -17,12 +17,15 @@ class TaskEditorScreen extends StatefulWidget {
     this.task,
     this.program,
     this.proposal,
+    this.initialFindingId,
+    this.referralId,
   });
   final AppServices services;
   final ProgressSnapshot snapshot;
   final NextStepTask? task;
   final TrackedProgram? program;
   final Map<String, Object?>? proposal;
+  final String? initialFindingId, referralId;
   @override
   State<TaskEditorScreen> createState() => _TaskEditorScreenState();
 }
@@ -61,9 +64,15 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
         widget.proposal?['responsiblePerson'] as String? ??
         '';
     _due.text = task?.dueOn ?? '';
-    _kind = task?.kind ?? 'other';
+    _kind =
+        task?.kind ??
+        (widget.referralId != null
+            ? 'follow_up'
+            : widget.initialFindingId == null
+            ? 'other'
+            : 'room_review');
     _state = task?.state ?? 'pending';
-    _findingId = task?.data['findingId'] as String?;
+    _findingId = task?.data['findingId'] as String? ?? widget.initialFindingId;
     if (!widget.services.coordinator.currentCase().findings.any(
       (f) => f.id == _findingId,
     )) {
@@ -80,6 +89,8 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
           old['editingRevision'] == widget.task?.revision &&
           old['caseRevision'] == widget.snapshot.caseRevision &&
           old['programId'] == _programId &&
+          old['initialFindingId'] == widget.initialFindingId &&
+          old['referralId'] == widget.referralId &&
           old['sourceEventId'] == _sourceEventId) {
         _taskId = old['id'] as String;
         _title.text = old['title'] as String;
@@ -112,6 +123,8 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
       'programId': _programId,
       'findingId': _findingId,
       'sourceEventId': _sourceEventId,
+      'initialFindingId': widget.initialFindingId,
+      'referralId': widget.referralId,
     };
     unawaited(
       _saves
@@ -144,6 +157,9 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
         'expectedTaskRevision': widget.task?.revision ?? 0,
         'task': {
           'id': _taskId,
+          if (widget.task?.referral != null || widget.referralId != null)
+            'referral':
+                widget.task?.referral ?? {'providerId': widget.referralId!},
           'programId': _programId,
           'findingId': _findingId,
           'formId': widget.task?.data['formId'],

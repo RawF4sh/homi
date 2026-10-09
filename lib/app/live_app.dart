@@ -47,6 +47,7 @@ class LiveAppConfig {
     this.emailDeliveryEnabled = false,
     this.permissionSharingEnabled = false,
     this.trackingEnabled = false,
+    this.homeSafetyEnabled = false,
     this.localHelpEnabled = const bool.fromEnvironment(
       'SAH_LOCAL_HELP_ENABLED',
     ),
@@ -72,6 +73,7 @@ class LiveAppConfig {
   final bool emailDeliveryEnabled;
   final bool permissionSharingEnabled;
   final bool trackingEnabled;
+  final bool homeSafetyEnabled;
   final bool localHelpEnabled;
   Uri get callback => Uri.parse('safeathome://auth/callback');
   bool acceptsCallback(Uri uri) => acceptsAuthCallback(uri, callback);
@@ -80,6 +82,9 @@ class LiveAppConfig {
     supabaseUrl: Uri.parse(const String.fromEnvironment('SUPABASE_URL')),
     publishableKey: const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY'),
     trackingEnabled: const bool.fromEnvironment('SAH_TRACKING_ENABLED'),
+    homeSafetyEnabled: const bool.fromEnvironment(
+      'SAFEATHOME_HOME_SAFETY_ENABLED',
+    ),
     permissionSharingEnabled: const bool.fromEnvironment(
       'SAH_PERMISSION_SHARING_ENABLED',
     ),
@@ -202,6 +207,7 @@ class AppServices {
           coordinator.isCurrent;
       progress = ProgressService(
         api: ProgressApiClient(
+          includeReferrals: config.localHelpEnabled,
           baseUri: config.apiOrigin,
           tokenProvider: token,
           transport: this.transport,

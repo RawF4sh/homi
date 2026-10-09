@@ -438,4 +438,155 @@ const localHelpTranslations = <String, Map<String, String>>{
     "vi": "Thử lại",
     "fil": "Subukang muli",
   },
+
+  "Contacts and original local follow-ups stay on this device and are removed on sign-out. New referral tasks use My next steps. Reminders require a separate choice.": {
+    "es":
+        "Los contactos y seguimientos locales originales permanecen en este dispositivo y se eliminan al cerrar sesión. Las nuevas tareas de referencia usan Mis próximos pasos. Los recordatorios requieren una elección aparte.",
+    "zh-Hans": "联系人和原始本地跟进事项保存在此设备上，退出登录时会删除。新的转介任务使用“我的下一步”。提醒需要单独选择。",
+    "zh-Hant": "聯絡人和原始本地追蹤事項儲存在此裝置上，登出時會刪除。新的轉介任務使用「我的下一步」。提醒需要另外選擇。",
+    "vi":
+        "Liên hệ và việc theo dõi gốc lưu trên thiết bị này và bị xóa khi đăng xuất. Công việc giới thiệu mới dùng Các bước tiếp theo. Cần chọn riêng lời nhắc.",
+    "fil":
+        "Sa device na ito ang mga contact at orihinal na lokal na follow-up at mabubura sa pag-sign out. Ang bagong referral task ay nasa Mga susunod kong hakbang. Hiwalay na pinipili ang mga paalala.",
+  },
+  "Save this plan online and enable My next steps to manage referral tasks. Saved local follow-ups are kept.": {
+    "es":
+        "Guarde este plan en línea y habilite Mis próximos pasos para gestionar las tareas de referencia. Se conservan los seguimientos locales guardados.",
+    "zh-Hans": "请在线保存此计划并启用“我的下一步”以管理转介任务。已保存的本地跟进事项会保留。",
+    "zh-Hant": "請線上儲存此計畫並啟用「我的下一步」以管理轉介任務。已儲存的本地追蹤事項會保留。",
+    "vi":
+        "Lưu kế hoạch trực tuyến và bật Các bước tiếp theo để quản lý công việc giới thiệu. Việc theo dõi đã lưu vẫn được giữ.",
+    "fil":
+        "I-save ang plano online at paganahin ang Mga susunod kong hakbang para pamahalaan ang referral task. Nananatili ang lokal na follow-up.",
+  },
+  "Import local follow-up": {
+    "es": "Importar seguimiento local",
+    "zh-Hans": "导入本地跟进事项",
+    "zh-Hant": "匯入本地追蹤事項",
+    "vi": "Nhập việc theo dõi cục bộ",
+    "fil": "I-import ang lokal na follow-up",
+  },
+  "The original stays on this device. Completion is your report, not proof of repairs or an agency decision. No reminder is enabled by importing.": {
+    "es":
+        "El original permanece en este dispositivo. La finalización es su reporte, no prueba de reparaciones ni de una decisión de la agencia. Importar no activa recordatorios.",
+    "zh-Hans": "原始记录保留在此设备上。完成状态是您的报告，并非维修证明或机构决定。导入不会启用提醒。",
+    "zh-Hant": "原始紀錄保留在此裝置上。完成狀態是您的回報，並非維修證明或機構決定。匯入不會啟用提醒。",
+    "vi":
+        "Bản gốc vẫn trên thiết bị này. Hoàn thành là báo cáo của bạn, không phải bằng chứng sửa chữa hay quyết định của cơ quan. Nhập không bật lời nhắc.",
+    "fil":
+        "Mananatili ang orihinal sa device. Ang pagkumpleto ay ulat mo, hindi patunay ng pagkukumpuni o desisyon ng ahensya. Walang paalalang awtomatikong pinapagana sa pag-import.",
+  },
+  "The original concern is no longer present. Its reference is retained in the import history.": {
+    "es":
+        "La preocupación original ya no está presente. Su referencia se conserva en el historial de importación.",
+    "zh-Hans": "原始问题已不存在。其引用会保留在导入历史中。",
+    "zh-Hant": "原始問題已不存在。其參照會保留在匯入歷史中。",
+    "vi":
+        "Mối lo ngại gốc không còn. Tham chiếu vẫn được giữ trong lịch sử nhập.",
+    "fil":
+        "Wala na ang orihinal na alalahanin. Nananatili ang sanggunian nito sa kasaysayan ng pag-import.",
+  },
+  "Keep original target date: {date}": {
+    "es": "Conservar fecha objetivo original: {date}",
+    "zh-Hans": "保留原始目标日期：{date}",
+    "zh-Hant": "保留原始目標日期：{date}",
+    "vi": "Giữ ngày mục tiêu gốc: {date}",
+    "fil": "Panatilihin ang orihinal na takdang petsa: {date}",
+  },
+  "To request a reminder, open the saved task in My next steps and choose Device reminder.": {
+    "es":
+        "Para solicitar un recordatorio, abra la tarea guardada en Mis próximos pasos y elija Recordatorio del dispositivo.",
+    "zh-Hans": "如需提醒，请在“我的下一步”中打开已保存任务并选择“设备提醒”。",
+    "zh-Hant": "如需提醒，請在「我的下一步」中開啟已儲存任務並選擇「裝置提醒」。",
+    "vi":
+        "Để yêu cầu lời nhắc, mở công việc đã lưu trong Các bước tiếp theo và chọn Lời nhắc trên thiết bị.",
+    "fil":
+        "Para humiling ng paalala, buksan ang naka-save na gawain sa Mga susunod kong hakbang at piliin ang Paalala sa device.",
+  },
+  "Import follow-up": {
+    "es": "Importar seguimiento",
+    "zh-Hans": "导入跟进事项",
+    "zh-Hant": "匯入追蹤事項",
+    "vi": "Nhập việc theo dõi",
+    "fil": "I-import ang follow-up",
+  },
+  "Imported earlier. Open My next steps to check current saved state.": {
+    "es":
+        "Importado anteriormente. Abra Mis próximos pasos para comprobar el estado guardado actual.",
+    "zh-Hans": "此前已导入。请打开“我的下一步”查看当前保存状态。",
+    "zh-Hant": "先前已匯入。請開啟「我的下一步」查看目前儲存狀態。",
+    "vi":
+        "Đã nhập trước đó. Mở Các bước tiếp theo để kiểm tra trạng thái đã lưu hiện tại.",
+    "fil":
+        "Na-import na dati. Buksan ang Mga susunod kong hakbang para suriin ang kasalukuyang naka-save na estado.",
+  },
+  "Open My next steps": {
+    "es": "Abrir Mis próximos pasos",
+    "zh-Hans": "打开我的下一步",
+    "zh-Hant": "開啟我的下一步",
+    "vi": "Mở Các bước tiếp theo",
+    "fil": "Buksan ang Mga susunod kong hakbang",
+  },
+  "Next steps for {organization}": {
+    "es": "Próximos pasos para {organization}",
+    "zh-Hans": "与{organization}有关的下一步",
+    "zh-Hant": "與{organization}有關的下一步",
+    "vi": "Các bước tiếp theo cho {organization}",
+    "fil": "Mga susunod na hakbang para sa {organization}",
+  },
+  "Referral: {organization}": {
+    "es": "Referencia: {organization}",
+    "zh-Hans": "转介：{organization}",
+    "zh-Hant": "轉介：{organization}",
+    "vi": "Giới thiệu: {organization}",
+    "fil": "Referral: {organization}",
+  },
+  "Original local follow-up": {
+    "es": "Seguimiento local original",
+    "zh-Hans": "原始本地跟进事项",
+    "zh-Hant": "原始本地追蹤事項",
+    "vi": "Việc theo dõi cục bộ gốc",
+    "fil": "Orihinal na lokal na follow-up",
+  },
+  "Original target: {date}": {
+    "es": "Fecha objetivo original: {date}",
+    "zh-Hans": "原始目标日期：{date}",
+    "zh-Hant": "原始目標日期：{date}",
+    "vi": "Mục tiêu gốc: {date}",
+    "fil": "Orihinal na takdang petsa: {date}",
+  },
+  "Originally completed: {date}": {
+    "es": "Completado originalmente: {date}",
+    "zh-Hans": "原始完成日期：{date}",
+    "zh-Hant": "原始完成日期：{date}",
+    "vi": "Hoàn thành ban đầu: {date}",
+    "fil": "Orihinal na nakumpleto: {date}",
+  },
+  "Could not save. Keep this editor open and retry.": {
+    "es":
+        "No se pudo guardar. Mantenga abierto este editor e inténtelo de nuevo.",
+    "zh-Hans": "无法保存。请保持编辑器打开并重试。",
+    "zh-Hant": "無法儲存。請保持編輯器開啟並重試。",
+    "vi": "Không thể lưu. Giữ trình sửa mở và thử lại.",
+    "fil": "Hindi ma-save. Panatilihing bukas ang editor at subukang muli.",
+  },
+
+  "A copy of this follow-up and the contact note below will be saved online with the task. Review them before importing.": {
+    "es":
+        "Se guardará en línea una copia de este seguimiento y de la nota del contacto que aparece abajo junto con la tarea. Revísela antes de importar.",
+    "zh-Hans": "此跟进事项和下方联系人备注的副本将随任务在线保存。请在导入前查看。",
+    "zh-Hant": "此追蹤事項和下方聯絡人備註的副本將隨任務線上儲存。請在匯入前查看。",
+    "vi":
+        "Bản sao việc theo dõi và ghi chú liên hệ bên dưới sẽ được lưu trực tuyến cùng công việc. Hãy xem lại trước khi nhập.",
+    "fil":
+        "Mase-save online kasama ng gawain ang kopya ng follow-up at tala ng contact sa ibaba. Suriin ang mga ito bago mag-import.",
+  },
+
+  "Original local follow-ups": {
+    "es": "Seguimientos locales originales",
+    "zh-Hans": "原始本地跟进事项",
+    "zh-Hant": "原始本地追蹤事項",
+    "vi": "Việc theo dõi cục bộ gốc",
+    "fil": "Mga orihinal na lokal na follow-up",
+  },
 };

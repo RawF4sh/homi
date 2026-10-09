@@ -3,7 +3,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/live_app.dart';
 import '../../l10n/app_localizations.dart';
-import '../../shared/models/case_draft.dart';
+import '../tracking/program_progress_screen.dart';
+import 'referral_task_import.dart';
 import '../../shared/presentation/sah_components.dart';
 import 'local_help_record.dart';
 import 'local_help_repository.dart';
@@ -42,11 +43,15 @@ class LocalHelpScreen extends StatefulWidget {
     required this.services,
     this.findingId,
     this.openExternal,
+    this.directory = const OfficialReferralDirectory(),
+    this.now,
   });
   final AppServices services;
   final String? findingId;
 
   final Future<bool> Function(Uri)? openExternal;
+  final ReferralDirectory directory;
+  final DateTime Function()? now;
   @override
   State<LocalHelpScreen> createState() => _LocalHelpScreenState();
 }
@@ -54,6 +59,7 @@ class LocalHelpScreen extends StatefulWidget {
 class _LocalHelpScreenState extends State<LocalHelpScreen> {
   LocalHelpRepository? _repository;
   LocalHelpRecord? _record;
+  Map<String, Object?> _receipts = {};
   final _locationForm = GlobalKey<FormState>();
   final _city = TextEditingController(),
       _county = TextEditingController(),
@@ -67,7 +73,10 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
     if (widget.services.config.localHelpEnabled &&
         widget.services.coordinator.isCurrent &&
         widget.services.coordinator.draft != null) {
-      _repository = LocalHelpRepository(widget.services.coordinator);
+      _repository = LocalHelpRepository(
+        widget.services.coordinator,
+        directory: widget.directory,
+      );
       widget.services.coordinator.addListener(_changed);
       _load();
     }
@@ -89,12 +98,19 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
   Future<void> _load() async {
     await _run(() async {
       final r = await _repository!.load();
+      final receipts = await ReferralTaskImport(
+        widget.services,
+        _repository!,
+      ).receipts();
       if (!mounted || !_current) return;
       final profile = widget.services.coordinator.draft!.profile;
       _city.text = r.location?.city ?? profile.city ?? '';
       _county.text = r.location?.county ?? profile.county ?? '';
       _zip.text = r.location?.zip ?? '';
-      setState(() => _record = r);
+      setState(() {
+        _record = r;
+        _receipts = receipts;
+      });
     });
   }
 
@@ -150,43 +166,126 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
       builder: (_) => _HelpEditor(
         title: p.name,
         note: saved?.note ?? '',
-        onSave: (title, person, date) =>
-            _save(() => _repository!.saveContact(p.id, title)),
+        onSave: (note) => _save(() => _repository!.saveContact(p.id, note)),
       ),
     );
   }
 
   Future<void> _task(String providerId, [HelpFollowUp? previous]) async {
-    final id = previous?.id ?? newUuidV4();
-    final created =
-        previous?.createdAt ?? DateTime.now().toUtc().toIso8601String();
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _HelpEditor(
-        title: previous == null ? 'Add follow-up' : 'Edit follow-up',
-        task: true,
-        note: previous?.title ?? '',
-        person: previous?.responsible ?? '',
-        date: previous?.dueDate,
-        onSave: (title, person, date) => _save(
-          () => _repository!.saveTask(
-            HelpFollowUp(
-              id: id,
-              providerId: providerId,
-              title: title,
-              responsible: person,
-              dueDate: date,
-              createdAt: created,
-              findingId: previous == null
-                  ? widget.findingId
-                  : previous.findingId,
-              completedAt: previous?.completedAt,
-            ),
-          ),
+    if (widget.services.progress == null ||
+        widget.services.coordinator.snapshot == null ||
+        widget.services.coordinator.hasUnsavedChanges ||
+        widget.services.coordinator.uncertain ||
+        widget.services.coordinator.conflict) {
+      setState(
+        () => _error =
+            'Save this plan online and enable My next steps to manage referral tasks. Saved local follow-ups are kept.',
+      );
+      return;
+    }
+    if (!_current || _working) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProgramProgressScreen(
+          services: widget.services,
+          tasksFirst: true,
+          referralId: providerId,
+          findingId: previous == null ? widget.findingId : null,
         ),
       ),
     );
+    if (mounted && _current) await _load();
+  }
+
+  Future<void> _import(HelpFollowUp source) async {
+    if (widget.services.progress == null ||
+        widget.services.coordinator.snapshot == null) {
+      await _task(source.providerId, source);
+      return;
+    }
+    bool keepDueDate = false;
+    final contactNote =
+        _record!.contacts
+            .where((c) => c.providerId == source.providerId)
+            .firstOrNull
+            ?.note ??
+        '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, change) => AlertDialog(
+          scrollable: true,
+          title: Text(ctx.tr('Import local follow-up')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(source.title),
+              Text(
+                ctx.tr(
+                  'A copy of this follow-up and the contact note below will be saved online with the task. Review them before importing.',
+                ),
+              ),
+              if (contactNote.isNotEmpty) Text(contactNote),
+              Text(
+                ctx.tr(
+                  'The original stays on this device. Completion is your report, not proof of repairs or an agency decision. No reminder is enabled by importing.',
+                ),
+              ),
+              if (source.findingId != null &&
+                  !widget.services.coordinator.currentCase().findings.any(
+                    (f) => f.id == source.findingId,
+                  ))
+                Text(
+                  ctx.tr(
+                    'The original concern is no longer present. Its reference is retained in the import history.',
+                  ),
+                ),
+              if (source.dueDate != null)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: keepDueDate,
+                  onChanged: (value) =>
+                      change(() => keepDueDate = value == true),
+                  title: Text(
+                    ctx.tr('Keep original target date: {date}', {
+                      'date': _date(source.dueDate!),
+                    }),
+                  ),
+                ),
+              Text(
+                ctx.tr(
+                  'To request a reminder, open the saved task in My next steps and choose Device reminder.',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(ctx.tr('Cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(ctx.tr('Import follow-up')),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted || !_current) return;
+    await _run(() async {
+      await ReferralTaskImport(widget.services, _repository!).import(
+        source,
+        keepDueDate: keepDueDate,
+        confirmedContactNote: contactNote,
+      );
+      final receipts = await ReferralTaskImport(
+        widget.services,
+        _repository!,
+      ).receipts();
+      if (mounted && _current) setState(() => _receipts = receipts);
+    });
   }
 
   String _date(String date) =>
@@ -433,7 +532,7 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
                               ),
                             ),
                           ),
-                        _heading('Follow-up tasks'),
+                        _heading('Original local follow-ups'),
                         if (r.tasks.isEmpty)
                           Text(context.tr('No follow-ups yet.')),
                         for (final t in r.tasks) _taskCard(t, repository),
@@ -447,7 +546,7 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
   }
 
   Widget _providerCard(ReferralProvider p, LocalHelpRecord r) {
-    final now = DateTime.now();
+    final now = widget.now?.call() ?? DateTime.now();
     final saved = r.contacts.where((c) => c.providerId == p.id).firstOrNull;
     final county = p.counties
         .where(
@@ -563,36 +662,23 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
                 : context.tr('Due {date}', {'date': _date(t.dueDate!)}),
           ),
           if (t.findingId != null) Text(context.tr('Linked to a concern')),
+          if (_receipts.containsKey(t.id))
+            Text(
+              context.tr(
+                'Imported earlier. Open My next steps to check current saved state.',
+              ),
+            ),
           Wrap(
             spacing: 8,
             children: [
-              TextButton(
-                onPressed: _working
-                    ? null
-                    : () => _run(
-                        () => _save(
-                          () => repository.completeTask(
-                            t.id,
-                            t.completedAt == null,
-                          ),
-                        ),
-                      ),
-                child: Text(
-                  context.tr(
-                    t.completedAt == null ? 'Mark complete' : 'Reopen task',
-                  ),
+              if (!_receipts.containsKey(t.id))
+                TextButton(
+                  onPressed: _working ? null : () => _import(t),
+                  child: Text(context.tr('Import local follow-up')),
                 ),
-              ),
               TextButton(
                 onPressed: _working ? null : () => _task(t.providerId, t),
-                child: Text(context.tr('Edit follow-up')),
-              ),
-              TextButton(
-                onPressed: _working
-                    ? null
-                    : () =>
-                          _run(() => _save(() => repository.removeTask(t.id))),
-                child: Text(context.tr('Delete follow-up')),
+                child: Text(context.tr('Open My next steps')),
               ),
               if (repository.directory.provider(t.providerId) case final p?)
                 TextButton(
@@ -612,44 +698,29 @@ class _HelpEditor extends StatefulWidget {
     required this.title,
     required this.note,
     required this.onSave,
-    this.task = false,
-    this.person = '',
-    this.date,
   });
-  final String title, note, person;
-  final String? date;
-  final bool task;
-  final Future<void> Function(String, String, String?) onSave;
+  final String title, note;
+  final Future<void> Function(String) onSave;
   @override
   State<_HelpEditor> createState() => _HelpEditorState();
 }
 
 class _HelpEditorState extends State<_HelpEditor> {
-  final _form = GlobalKey<FormState>();
   late final _note = TextEditingController(text: widget.note);
-  late final _person = TextEditingController(text: widget.person);
-  late final _date = TextEditingController(text: widget.date);
   bool _saving = false, _failed = false;
   @override
   void dispose() {
     _note.dispose();
-    _person.dispose();
-    _date.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
     setState(() {
       _saving = true;
       _failed = false;
     });
     try {
-      await widget.onSave(
-        _note.text.trim(),
-        _person.text.trim(),
-        _date.text.trim().isEmpty ? null : _date.text.trim(),
-      );
+      await widget.onSave(_note.text.trim());
       if (mounted) Navigator.pop(context);
     } catch (_) {
       if (mounted) setState(() => _failed = true);
@@ -662,66 +733,25 @@ class _HelpEditorState extends State<_HelpEditor> {
   Widget build(BuildContext context) => PopScope(
     canPop: !_saving,
     child: AlertDialog(
+      scrollable: true,
       title: Text(context.tr(widget.title)),
-      content: SizedBox(
-        width: 480,
-        child: SingleChildScrollView(
-          child: Form(
-            key: _form,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: _note,
-                  enabled: !_saving,
-                  maxLength: widget.task ? 160 : 500,
-                  decoration: InputDecoration(
-                    labelText: context.tr(
-                      widget.task ? 'Next action' : 'Contact note (optional)',
-                    ),
-                  ),
-                  validator: (v) => widget.task && v!.trim().isEmpty
-                      ? context.tr('Enter a next action.')
-                      : null,
-                ),
-                if (widget.task) ...[
-                  TextFormField(
-                    controller: _person,
-                    enabled: !_saving,
-                    maxLength: 100,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Responsible person (optional)'),
-                    ),
-                  ),
-                  TextFormField(
-                    controller: _date,
-                    enabled: !_saving,
-                    maxLength: 10,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Due date (YYYY-MM-DD, optional)'),
-                    ),
-                    validator: (v) {
-                      if (v!.trim().isEmpty) return null;
-                      try {
-                        helpDate(v.trim());
-                        return null;
-                      } catch (_) {
-                        return context.tr('Enter a valid date as YYYY-MM-DD.');
-                      }
-                    },
-                  ),
-                ],
-                if (_failed)
-                  Text(
-                    context.tr(
-                      'Could not save. Keep this editor open and retry. Remove old follow-ups if the limit of 100 has been reached.',
-                    ),
-                  ),
-                if (_saving) const LinearProgressIndicator(),
-              ],
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextFormField(
+            controller: _note,
+            enabled: !_saving,
+            maxLength: 500,
+            decoration: InputDecoration(
+              labelText: context.tr('Contact note (optional)'),
             ),
           ),
-        ),
+          if (_failed)
+            Text(
+              context.tr('Could not save. Keep this editor open and retry.'),
+            ),
+          if (_saving) const LinearProgressIndicator(),
+        ],
       ),
       actions: [
         TextButton(

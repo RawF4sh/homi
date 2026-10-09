@@ -55,3 +55,27 @@ Hosted routes are default-off unless `homeSafetyEnabled` is passed to the
 durable server; the executable uses `SAFEATHOME_HOME_SAFETY_ENABLED=true`.
 The explicitly fictional local server enables them for development tests.
 No migration runs automatically on startup.
+
+## Additive referral tasks
+
+Progress requests may opt into `includeReferrals: true`. Without that capability,
+progress task responses retain the exact earlier v3 shape. Opted-in clients can
+read/write the optional task `referral` object (`providerId`, optional immutable
+import provenance). Legacy writes omit it without erasing an existing referral.
+The import's canonical original-task digest and unique source ID are validated at
+runtime, including during backup restore. No benefit-program or status report is
+created by a referral. See `fixtures/referral-progress.json` and
+`docs/local-help-implementation.md` for source retention/retry and rollout rules.
+
+## Phase 1 completion
+
+History adds `annotate_answer` (question note and up to six owned revision-bound
+photo references) and `set_addressed` (explicit reversible resident report, not
+verified repair). `evidenceCatalogRevision` is an additive optional state binding
+and photo-bound addressed-report field. Existing fixtures without it remain
+readable. New operations require upgraded readers; never silently drop history.
+
+`home-safety-report-request.schema.json` and `home-safety-report.schema.json`
+define owner-only `POST /v3/export-home-safety`. Optional notes/reference inclusion
+is explicit. No image bytes, public URL or application submission is created.
+See `docs/phase1-completion.md` for local validation and separate release gates.
