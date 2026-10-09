@@ -413,4 +413,220 @@ const sharingTranslations = <String, Map<String, String>>{
     "vi": "Đã thêm ghi chú",
     "fil": "Nagdagdag ng tala",
   },
+  "Shared tasks and proposals": {
+    "es": "Tareas y propuestas compartidas",
+    "zh-Hans": "共享任务与提议",
+    "zh-Hant": "共用任務與提議",
+    "vi": "Nhiệm vụ và đề xuất chia sẻ",
+    "fil": "Mga ibinahaging gawain at mungkahi",
+  },
+  "A helper can update only selected tasks assigned to their signed-in account. Status proposals need owner review.": {
+    "es":
+        "El ayudante solo puede actualizar tareas seleccionadas y asignadas a su cuenta. Las propuestas de estado requieren revisión del propietario.",
+    "zh-Hans": "协助者只能更新分配给其登录账户的所选任务。状态提议需要所有者审核。",
+    "zh-Hant": "協助者只能更新分配給其登入帳戶的所選任務。狀態提議需要擁有者審核。",
+    "vi":
+        "Người hỗ trợ chỉ cập nhật nhiệm vụ được chọn và giao cho tài khoản đăng nhập của họ. Đề xuất trạng thái cần chủ sở hữu xét duyệt.",
+    "fil":
+        "Maa-update lang ng katulong ang napiling gawaing nakatalaga sa kanyang naka-sign in na account. Kailangang suriin ng may-ari ang mga mungkahi sa katayuan.",
+  },
+  "This save could not be confirmed. Retry the same change to avoid duplicates.": {
+    "es":
+        "No se pudo confirmar el guardado. Reintente el mismo cambio para evitar duplicados.",
+    "zh-Hans": "无法确认保存。请重试同一更改，避免重复。",
+    "zh-Hant": "無法確認儲存。請重試同一變更，避免重複。",
+    "vi": "Không thể xác nhận lưu. Thử lại đúng thay đổi để tránh trùng lặp.",
+    "fil":
+        "Hindi makumpirma ang pag-save. Subukang muli ang parehong pagbabago upang maiwasan ang duplicate.",
+  },
+  "Retry same change": {
+    "es": "Reintentar el mismo cambio",
+    "zh-Hans": "重试同一更改",
+    "zh-Hant": "重試同一變更",
+    "vi": "Thử lại cùng thay đổi",
+    "fil": "Subukang muli ang parehong pagbabago",
+  },
+  "Reload saved sharing": {
+    "es": "Recargar uso compartido guardado",
+    "zh-Hans": "重新加载已保存的共享",
+    "zh-Hant": "重新載入已儲存的共用",
+    "vi": "Tải lại chia sẻ đã lưu",
+    "fil": "I-load muli ang naka-save na pagbabahagi",
+  },
+  "Select tasks for this person": {
+    "es": "Seleccionar tareas para esta persona",
+    "zh-Hans": "选择此人可查看的任务",
+    "zh-Hant": "選擇此人可查看的任務",
+    "vi": "Chọn nhiệm vụ cho người này",
+    "fil": "Pumili ng mga gawain para sa taong ito",
+  },
+  "Assign to this signed-in helper": {
+    "es": "Asignar a la cuenta de este ayudante",
+    "zh-Hans": "分配给此协助者的登录账户",
+    "zh-Hant": "分配給此協助者的登入帳戶",
+    "vi": "Giao cho tài khoản người hỗ trợ này",
+    "fil": "Italaga sa naka-sign in na katulong na ito",
+  },
+  "Allow assigned task progress": {
+    "es": "Permitir actualizar tareas asignadas",
+    "zh-Hans": "允许更新分配的任务进度",
+    "zh-Hant": "允許更新分配的任務進度",
+    "vi": "Cho phép cập nhật nhiệm vụ được giao",
+    "fil": "Payagan ang pag-update ng nakatalagang gawain",
+  },
+  "Allow status proposals for selected programs": {
+    "es": "Permitir propuestas de estado para los programas seleccionados",
+    "zh-Hans": "允许为所选项目提出状态提议",
+    "zh-Hant": "允許為所選方案提出狀態提議",
+    "vi": "Cho phép đề xuất trạng thái cho chương trình đã chọn",
+    "fil": "Payagan ang mga mungkahi sa katayuan para sa napiling programa",
+  },
+  "Preview task access": {
+    "es": "Vista previa del acceso a tareas",
+    "zh-Hans": "预览任务访问权限",
+    "zh-Hant": "預覽任務存取權限",
+    "vi": "Xem trước quyền truy cập nhiệm vụ",
+    "fil": "I-preview ang access sa gawain",
+  },
+  "This person will see only the selected task details below.": {
+    "es":
+        "Esta persona solo verá los detalles de las tareas seleccionadas a continuación.",
+    "zh-Hans": "此人仅可查看下方所选任务的详细信息。",
+    "zh-Hant": "此人僅可查看下方所選任務的詳細資訊。",
+    "vi": "Người này chỉ thấy chi tiết các nhiệm vụ được chọn bên dưới.",
+    "fil":
+        "Makikita lang ng taong ito ang mga detalye ng napiling gawain sa ibaba.",
+  },
+  "Save task access": {
+    "es": "Guardar acceso a tareas",
+    "zh-Hans": "保存任务访问权限",
+    "zh-Hant": "儲存任務存取權限",
+    "vi": "Lưu quyền truy cập nhiệm vụ",
+    "fil": "I-save ang access sa gawain",
+  },
+  "Task progress": {
+    "es": "Progreso de la tarea",
+    "zh-Hans": "任务进度",
+    "zh-Hant": "任務進度",
+    "vi": "Tiến độ nhiệm vụ",
+    "fil": "Progreso ng gawain",
+  },
+  "Propose a reported program status": {
+    "es": "Proponer un estado declarado del programa",
+    "zh-Hans": "提议报告的项目状态",
+    "zh-Hant": "提議回報的方案狀態",
+    "vi": "Đề xuất trạng thái chương trình được báo cáo",
+    "fil": "Magmungkahi ng iniulat na katayuan ng programa",
+  },
+  "Program": {
+    "es": "Programa",
+    "zh-Hans": "项目",
+    "zh-Hant": "方案",
+    "vi": "Chương trình",
+    "fil": "Programa",
+  },
+  "Proposed status": {
+    "es": "Estado propuesto",
+    "zh-Hans": "提议状态",
+    "zh-Hant": "提議狀態",
+    "vi": "Trạng thái đề xuất",
+    "fil": "Iminungkahing katayuan",
+  },
+  "Reported date (YYYY-MM-DD)": {
+    "es": "Fecha declarada (AAAA-MM-DD)",
+    "zh-Hans": "报告日期（YYYY-MM-DD）",
+    "zh-Hant": "回報日期（YYYY-MM-DD）",
+    "vi": "Ngày báo cáo (YYYY-MM-DD)",
+    "fil": "Petsa ng ulat (YYYY-MM-DD)",
+  },
+  "Optional proposal note": {
+    "es": "Nota opcional de la propuesta",
+    "zh-Hans": "提议备注（选填）",
+    "zh-Hant": "提議備註（選填）",
+    "vi": "Ghi chú đề xuất (tùy chọn)",
+    "fil": "Opsyonal na tala sa mungkahi",
+  },
+  "Send for owner review": {
+    "es": "Enviar para revisión del propietario",
+    "zh-Hans": "发送给所有者审核",
+    "zh-Hant": "傳送給擁有者審核",
+    "vi": "Gửi chủ sở hữu xét duyệt",
+    "fil": "Ipadala para sa pagsusuri ng may-ari",
+  },
+  "Status proposal history": {
+    "es": "Historial de propuestas de estado",
+    "zh-Hans": "状态提议历史",
+    "zh-Hant": "狀態提議歷史",
+    "vi": "Lịch sử đề xuất trạng thái",
+    "fil": "Kasaysayan ng mga mungkahi sa katayuan",
+  },
+  "Proposed by {id} on {date}": {
+    "es": "Propuesto por {id} el {date}",
+    "zh-Hans": "提议者：{id}，日期：{date}",
+    "zh-Hant": "提議者：{id}，日期：{date}",
+    "vi": "Đề xuất bởi {id} vào {date}",
+    "fil": "Iminungkahi ni {id} noong {date}",
+  },
+  "Reviewed by {id} on {date}": {
+    "es": "Revisado por {id} el {date}",
+    "zh-Hans": "审核者：{id}，日期：{date}",
+    "zh-Hant": "審核者：{id}，日期：{date}",
+    "vi": "Xét duyệt bởi {id} vào {date}",
+    "fil": "Sinuri ni {id} noong {date}",
+  },
+  "Accept reported status": {
+    "es": "Aceptar el estado declarado",
+    "zh-Hans": "接受报告状态",
+    "zh-Hant": "接受回報狀態",
+    "vi": "Chấp nhận trạng thái báo cáo",
+    "fil": "Tanggapin ang iniulat na katayuan",
+  },
+  "Reject proposal": {
+    "es": "Rechazar propuesta",
+    "zh-Hans": "拒绝提议",
+    "zh-Hant": "拒絕提議",
+    "vi": "Từ chối đề xuất",
+    "fil": "Tanggihan ang mungkahi",
+  },
+  "Completing a task does not report a repair, a safe home, agency receipt, or approval.": {
+    "es":
+        "Completar una tarea no declara una reparación, un hogar seguro, recepción por una agencia ni aprobación.",
+    "zh-Hans": "完成任务不代表已修复、居家安全、机构已收件或已批准。",
+    "zh-Hant": "完成任務不代表已修復、居家安全、機構已收件或已核准。",
+    "vi":
+        "Hoàn thành nhiệm vụ không có nghĩa đã sửa chữa, nhà an toàn, cơ quan đã nhận hay chấp thuận.",
+    "fil":
+        "Ang pagkumpleto ng gawain ay hindi ulat ng pagkukumpuni, ligtas na tahanan, pagtanggap ng ahensya, o pag-apruba.",
+  },
+  "Signed-in assignee: {id}": {
+    "es": "Cuenta asignada: {id}",
+    "zh-Hans": "受分配的登录账户：{id}",
+    "zh-Hant": "受分配的登入帳戶：{id}",
+    "vi": "Tài khoản được giao: {id}",
+    "fil": "Naka-sign in na nakatalaga: {id}",
+  },
+  "The owner must review this task before helper progress can change.": {
+    "es":
+        "El propietario debe revisar esta tarea antes de que el ayudante cambie el progreso.",
+    "zh-Hans": "所有者须先审核此任务，协助者才能更改进度。",
+    "zh-Hant": "擁有者須先審核此任務，協助者才能變更進度。",
+    "vi":
+        "Chủ sở hữu phải xem lại nhiệm vụ trước khi người hỗ trợ cập nhật tiến độ.",
+    "fil":
+        "Dapat suriin muna ng may-ari ang gawain bago baguhin ng katulong ang progreso.",
+  },
+  "Review the date and note before proposing a status.": {
+    "es": "Revise la fecha y la nota antes de proponer un estado.",
+    "zh-Hans": "请检查日期和备注后再提议状态。",
+    "zh-Hant": "請檢查日期和備註後再提議狀態。",
+    "vi": "Kiểm tra ngày và ghi chú trước khi đề xuất trạng thái.",
+    "fil": "Suriin ang petsa at tala bago magmungkahi ng katayuan.",
+  },
+  "rejected": {
+    "es": "Rechazado",
+    "zh-Hans": "已拒绝",
+    "zh-Hant": "已拒絕",
+    "vi": "Đã từ chối",
+    "fil": "Tinanggihan",
+  },
 };

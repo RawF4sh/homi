@@ -40,7 +40,7 @@ void main() {
         final caseId = ready['caseId'] as String;
         Map<String, Object?> scope(bool notes) => {
           'findingIds': ['fictional-finding'],
-          'programIds': [],
+          'programIds': [ready['programId']],
           'allowHelperNotes': notes,
         };
         Future<dynamic> invite(String role, String recipient, bool notes) =>
@@ -83,7 +83,7 @@ void main() {
           isCurrent: () => true,
         );
         expect(view.projection!.findings.single.id, 'fictional-finding');
-        expect(view.projection!.programs, isEmpty);
+        expect(view.projection!.programs.single.id, ready['programId']);
         final note = {
           'membershipId': helperGrant.membership!.id,
           'expectedPermissionRevision': 2,
@@ -104,10 +104,112 @@ void main() {
           }, isCurrent: () => true),
           throwsA(failure('SHARING_NOT_FOUND')),
         );
+
+        final helperId = helperGrant.membership!.id,
+            viewerId = accepted.membership!.id;
+        final configured = await owner.request('configure-collaboration', {
+          'membershipId': helperId,
+          'expectedPermissionRevision': 2,
+          'expectedCaseRevision': 1,
+          'expectedProgressRevision': 2,
+          'expectedCollaborationRevision': 0,
+          'mutationId': newUuidV4(),
+          'collaborationScope': {
+            'taskIds': ['fictional-http-task'],
+            'allowTaskProgress': true,
+            'allowStatusProposals': true,
+          },
+          'assignedTaskIds': ['fictional-http-task'],
+        }, isCurrent: () => true);
+        expect(
+          configured.collaboration!.tasks.single.assigneeUserId,
+          ready['helper'],
+        );
+        await owner.request('configure-collaboration', {
+          'membershipId': viewerId,
+          'expectedPermissionRevision': 2,
+          'expectedCaseRevision': 1,
+          'expectedProgressRevision': 2,
+          'expectedCollaborationRevision': 1,
+          'mutationId': newUuidV4(),
+          'collaborationScope': {
+            'taskIds': ['fictional-http-task'],
+            'allowTaskProgress': false,
+            'allowStatusProposals': false,
+          },
+          'assignedTaskIds': [],
+        }, isCurrent: () => true);
+        binding['expectedPermissionRevision'] = 3;
+        final taskRequest = {
+          'membershipId': helperId,
+          'expectedPermissionRevision': 3,
+          'expectedCaseRevision': 1,
+          'expectedCollaborationRevision': 2,
+          'mutationId': newUuidV4(),
+          'taskId': 'fictional-http-task',
+          'expectedTaskRevision': 1,
+          'state': 'completed',
+        };
+        await expectLater(
+          viewer.request('update-shared-task', {
+            ...taskRequest,
+            'membershipId': viewerId,
+          }, isCurrent: () => true),
+          throwsA(failure('SHARING_NOT_FOUND')),
+        );
+        final completed = await helper.request(
+          'update-shared-task',
+          taskRequest,
+          isCurrent: () => true,
+        );
+        expect(completed.collaboration!.tasks.single.state, 'completed');
+        final proposalId = newUuidV4();
+        final proposed = await helper.request('propose-shared-status', {
+          'membershipId': helperId,
+          'expectedPermissionRevision': 3,
+          'expectedCaseRevision': 1,
+          'expectedCollaborationRevision': 3,
+          'mutationId': proposalId,
+          'programId': ready['programId'],
+          'update': {
+            'updateId': newUuidV4(),
+            'status': 'submitted',
+            'occurredOn': DateTime.now().toUtc().toIso8601String().substring(
+              0,
+              10,
+            ),
+            'source': 'self_report',
+            'note': 'Fictional proposal only',
+            'nextAction': null,
+            'responsibleParty': null,
+            'followUpOn': null,
+          },
+        }, isCurrent: () => true);
+        expect(proposed.collaboration!.progressRevision, 3);
+        expect(proposed.collaboration!.proposals.single.state, 'pending');
+        final reviewedStatus = await owner.request('review-shared-status', {
+          'membershipId': helperId,
+          'expectedPermissionRevision': 3,
+          'expectedCaseRevision': 1,
+          'expectedCollaborationRevision': 4,
+          'expectedProgressRevision': 3,
+          'mutationId': newUuidV4(),
+          'proposalId': proposalId,
+          'decision': 'accepted',
+        }, isCurrent: () => true);
+        expect(reviewedStatus.collaboration!.progressRevision, 4);
+        expect(
+          reviewedStatus.collaboration!.proposals.single.reviewedBy,
+          'fictional-alice',
+        );
+        expect(
+          reviewedStatus.collaboration!.proposals.single.proposedBy,
+          ready['helper'],
+        );
         await owner.request('revoke-sharing', {
           'caseId': caseId,
           'invitationId': accepted.membership!.id,
-          'expectedPermissionRevision': 2,
+          'expectedPermissionRevision': 3,
         }, isCurrent: () => true);
         await expectLater(
           viewer.request('read-shared-case', binding, isCurrent: () => true),

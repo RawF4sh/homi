@@ -31,6 +31,7 @@ class SharingApiClient {
     required bool Function() isCurrent,
   }) async {
     const reads = {
+      'read-collaboration',
       'preview-sharing',
       'list-sharing',
       'review-invitation',
@@ -38,6 +39,10 @@ class SharingApiClient {
       'read-shared-case',
     };
     const writes = {
+      'configure-collaboration',
+      'update-shared-task',
+      'propose-shared-status',
+      'review-shared-status',
       'create-invitation',
       'change-sharing',
       'revoke-sharing',
@@ -55,6 +60,17 @@ class SharingApiClient {
     );
     try {
       final response = SharingResponse.fromJson(json, route);
+      final work = response.collaboration;
+      if (work != null) {
+        if (work.membershipId != fields['membershipId'] ||
+            work.permissionRevision !=
+                (fields['expectedPermissionRevision'] as int) +
+                    (route == 'configure-collaboration' ? 1 : 0) ||
+            (writes.contains(route) &&
+                work.acknowledgement != fields['mutationId'])) {
+          throw const FormatException();
+        }
+      }
       final grant = response.membership;
       if (grant != null &&
           ((fields['membershipId'] != null &&

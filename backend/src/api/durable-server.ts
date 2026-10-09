@@ -38,10 +38,10 @@ export async function createDurableServer(options: DurableServerOptions) {
     loadFormTemplate: options.loadFormTemplate ?? (async () => null),
   };
   const verifiedAuthenticate = createSupabaseAuthenticator(options.auth, options.fetchImpl, true);
-  const sharingDependencies = { authenticate: async (token: string) => {
+  const sharingDependencies = { collaborationEnabled: options.trackingEnabled === true && options.sharingEnabled === true, authenticate: async (token: string) => {
     const user = await verifiedAuthenticate(token);
     return user && !await cases.isAccountClosed(user.userId) ? user : null;
-  }, sharing: new PostgresSharingRepository(options.pool) };
+  }, sharing: new PostgresSharingRepository(options.pool,dependencies.loadRegistry) };
   const server = createMatchingServer(dependencies, dependencies, dependencies,
     dependencies, dependencies, dependencies, { hosted: true, sharingDependencies: options.sharingEnabled === true ? sharingDependencies : undefined, lifecycleDependencies, caseListDependencies: dependencies, requestTrackingDependencies: dependencies, assessmentDependencies: dependencies, programIntakeDependencies: dependencies, planNameDependencies: dependencies, homeSafetyDependencies: options.homeSafetyEnabled ? dependencies : undefined, progressDependencies: options.trackingEnabled === true ? dependencies : undefined });
   return { server, cases };

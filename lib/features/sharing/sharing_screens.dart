@@ -1,10 +1,15 @@
 import 'dart:async';
+import '../../shared/models/collaboration.dart';
+import '../../shared/models/request_tracking.dart';
+import '../../shared/services/matching_api_client.dart';
 import 'package:flutter/material.dart';
 import '../../app/live_app.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/models/sharing.dart';
 import '../../shared/models/case_draft.dart';
 import '../../shared/models/contracts.dart' show Finding;
+
+part 'collaboration_screen.dart';
 
 abstract class _OnlineState<T extends StatefulWidget> extends State<T>
     with WidgetsBindingObserver {
@@ -327,6 +332,26 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
                           ),
                         ),
                       for (final note in share.notes) Text(note.text),
+                      if (services.config.trackingEnabled &&
+                          share.membership.state == 'active')
+                        TextButton(
+                          onPressed: busy
+                              ? null
+                              : () async {
+                                  await Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => CollaborationScreen(
+                                        services: services,
+                                        membership: share.membership,
+                                        ownerView: true,
+                                      ),
+                                    ),
+                                  );
+                                  if (current) await reload();
+                                },
+                          child: Text(context.tr('Shared tasks and proposals')),
+                        ),
+
                       ExpansionTile(
                         title: Text(
                           context.tr('Recent access events: {count}', {
@@ -762,6 +787,27 @@ class _SharedCaseState extends _OnlineState<SharedCaseScreen> {
           if (view != null) ...[
             AccessDetails(membership: view!.membership!),
             ProjectionContent(projection: view!.projection!),
+            if (services.config.trackingEnabled)
+              OutlinedButton(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final grant = _grant;
+                        setState(clearContent);
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => CollaborationScreen(
+                              services: services,
+                              membership: grant,
+                              ownerView: false,
+                            ),
+                          ),
+                        );
+                        if (current) await reload();
+                      },
+                child: Text(context.tr('Shared tasks and proposals')),
+              ),
+
             for (final item in view!.notes)
               ListTile(title: Text(item.text), subtitle: Text(item.recordedAt)),
             if (view!.membership!.role == 'helper' &&

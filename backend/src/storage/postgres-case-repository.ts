@@ -221,10 +221,11 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     });
   }
   async readHomeSafetyForUser(userId: string, caseId: string): Promise<HomeSafetyResult> {
+    check(evidenceIdentifier(caseId));
     return this.transaction(userId, false, async tx => {
-      const entry = await this.caseRow(tx, userId, caseId); if (!entry) return { status: 'not_found' };
-      const row = (await tx.client.query(`SELECT home_safety FROM ${S}.cases WHERE case_id=$1 AND owner_id=$2`, [caseId, userId])).rows[0];
-      return { status: 'found', state: homeSafetyState(entry.snapshot, row.home_safety === null ? null : parseHomeSafetyRecord(row.home_safety)) };
+      const row = (await tx.client.query(`SELECT snapshot,revision,catalog_revision,home_safety FROM ${S}.cases WHERE case_id=$1 AND owner_id=$2`, [caseId,userId])).rows[0];
+      if (!row) return {status:'not_found'};
+      return {status:'found',state:homeSafetyState(savedCase(row.snapshot,caseId,row.revision),row.home_safety===null?null:parseHomeSafetyRecord(row.home_safety),null,integer(row.catalog_revision,true))};
     });
   }
   async saveHomeSafetyForUser(userId: string, raw: HomeSafetySave, at: string): Promise<HomeSafetyResult> {
@@ -233,8 +234,10 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       const entry = await this.caseRow(tx, userId, input.caseId, true); if (!entry) return { status: 'not_found' };
       const row = (await tx.client.query(`SELECT home_safety FROM ${S}.cases WHERE case_id=$1 AND owner_id=$2`, [input.caseId, userId])).rows[0];
       const prior = row.home_safety === null ? emptyHomeSafety(input.caseId) : parseHomeSafetyRecord(row.home_safety);
-      const result = changeHomeSafety(entry.snapshot, prior, input, userId, await this.clock(tx, at));
-      if (result.status === 'retry') return { status: 'found', state: homeSafetyState(entry.snapshot, prior, input.mutationId) };
+      const rows = input.operation.type === 'annotate_answer' ? (await tx.client.query(`SELECT evidence_id,finding_id,revision,prepared_at,descriptor FROM ${S}.evidence WHERE case_id=$1 AND descriptor IS NOT NULL ORDER BY evidence_id`, [input.caseId])).rows : [];
+      const catalog = { schemaVersion: '1' as const, caseId: input.caseId, caseRevision: entry.snapshot.revision, catalogRevision: entry.catalogRevision, evidence: rows.map(r => this.descriptor(r, input.caseId)).filter(d => linked(entry.snapshot, d)) };
+      const result = changeHomeSafety(entry.snapshot, prior, input, userId, await this.clock(tx, at), catalog);
+      if (result.status === 'retry') return { status: 'found', state: homeSafetyState(entry.snapshot, prior, input.mutationId, entry.catalogRevision) };
       if (result.status !== 'changed') return result;
       let preserved: AssessmentRecord | null = null;
       if (result.changesCase) {
@@ -248,7 +251,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       await tx.client.query(`UPDATE ${S}.cases SET home_safety=$3::jsonb, revision=$4, snapshot=$5::jsonb
         WHERE case_id=$1 AND owner_id=$2`, [input.caseId, userId, JSON.stringify(result.record), result.snapshot.revision, JSON.stringify(result.snapshot)]);
       if (result.changesCase) await this.invalidateCase(tx, input.caseId);
-      return { status: 'found', state: homeSafetyState(result.snapshot, result.record, input.mutationId) };
+      return { status: 'found', state: homeSafetyState(result.snapshot, result.record, input.mutationId, entry.catalogRevision) };
     });
   }
   async readAssessmentForUser(userId:string,caseId:string):Promise<AssessmentResult> {
@@ -321,7 +324,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     ids: string[]; counts: DeletionCounts; fingerprint: string;
   }> {
     const rows = (await tx.client.query(`SELECT case_id,revision,catalog_revision,
-      encode(sha256(convert_to(jsonb_build_array(plan_name,home_safety,progress)::text,'UTF8')),'hex') AS name_fingerprint FROM ${S}.cases
+      encode(sha256(convert_to(jsonb_build_array(plan_name,home_safety,progress,collaboration)::text,'UTF8')),'hex') AS name_fingerprint FROM ${S}.cases
       WHERE owner_id=$1 ORDER BY case_id FOR UPDATE`, [userId])).rows;
     const ids = rows.map(row => String(row.case_id));
     const cases = rows.map(row => ({ id: row.case_id, revision: integer(row.revision), catalog: integer(row.catalog_revision, true),

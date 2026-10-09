@@ -1,3 +1,4 @@
+import 'collaboration.dart';
 import 'export_contract_values.dart';
 
 typedef Json = Map<String, Object?>;
@@ -275,6 +276,7 @@ class SharingResponse {
     this.shares = const [],
     this.notes = const [],
     this.invitationCode,
+    this.collaboration,
   });
   final List<String> availableProgramIds;
   final CaseMembership? membership;
@@ -283,7 +285,13 @@ class SharingResponse {
   final List<OwnerShare> shares;
   final List<SharedNote> notes;
   final String? invitationCode;
+  final CollaborationState? collaboration;
   factory SharingResponse.fromJson(Object? value, String route) {
+    if (collaborationRoutes.contains(route)) {
+      return SharingResponse._(
+        collaboration: CollaborationState.fromJson(value),
+      );
+    }
     final keys = <String>{
       'schemaVersion',
       ...switch (route) {

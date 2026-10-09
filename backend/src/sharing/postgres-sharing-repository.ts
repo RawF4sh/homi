@@ -1,3 +1,5 @@
+import { COLLABORATION_ROUTES, executeCollaboration, type CollaborationRoute } from './collaboration.ts';
+import type { ProgramDefinition } from '../types.ts';
 import { parseProgressRecord, emptyProgress, programReports } from '../tracking/progress.ts';
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import { createHash } from 'node:crypto';
@@ -18,7 +20,8 @@ function membership(row: QueryResultRow, now: number): CaseMembership {
 }
 export class PostgresSharingRepository implements SharingRepository {
   private readonly pool: Pool;
-  constructor(pool: Pool) { this.pool = pool; }
+  private readonly registry: () => Promise<ProgramDefinition[]>;
+  constructor(pool: Pool, registry: () => Promise<ProgramDefinition[]> = async()=>[]) { this.pool = pool; this.registry=registry; }
   private async transaction<T>(userId: string, action: (client: PoolClient, now: string) => Promise<T>): Promise<T> {
     check(evidenceIdentifier(userId)); const client = await this.pool.connect(); let broken = false;
     try {
@@ -35,7 +38,9 @@ export class PostgresSharingRepository implements SharingRepository {
   async execute(userId: string, route: SharingRoute, raw: SharingRequest, tokenHash?: string): Promise<SharingResult> {
     const input = parseSharingRequest(route, raw);
     if (['create-invitation','review-invitation','accept-invitation'].includes(route)) check(typeof tokenHash === 'string' && /^[0-9a-f]{64}$/.test(tokenHash));
+    const ruleVersions = Object.fromEntries((await this.registry()).map(p=>[p.programId,p.ruleVersion]));
     return this.transaction(userId, async (client, now) => {
+      if((COLLABORATION_ROUTES as readonly string[]).includes(route)) return executeCollaboration(client,route as CollaborationRoute,input,ruleVersions);
       if (['review-invitation','accept-invitation','list-shared-cases','read-shared-case','add-shared-note'].includes(route)) {
         const result = (await client.query(`SELECT ${S}.shared_operation($1,$2::jsonb) AS result`, [route, JSON.stringify({ ...input, code: undefined, tokenHash })])).rows[0].result;
         if (result.status !== 'ok') return { status: result.status };

@@ -1,3 +1,4 @@
+import { parseCollaborationRecord, validateCollaborationScopeRecord } from '../sharing/collaboration.ts';
 import { parseScope, parseSharedProjection, uuid, instant as sharingInstant } from '../sharing/contracts.ts';
 import { parseSavedProgramIntake } from '../programs/intake.ts';
 import { parseAssessmentMetadata, parseAssessmentRecord } from '../assessment/metadata.ts';
@@ -29,7 +30,7 @@ type ColumnType = 'text' | 'integer' | 'boolean' | 'json' | 'bytes' | 'time';
 interface Table { columns: Record<string, ColumnType>; key: string[] }
 const TABLES = {
   repository_quota: { columns: { singleton: 'boolean', case_count: 'integer', asset_count: 'integer', artifact_count: 'integer', stored_bytes: 'integer' }, key: ['singleton'] },
-  cases: { columns: { case_id: 'text', owner_id: 'text', revision: 'integer', catalog_revision: 'integer', snapshot: 'json', plan_name: 'json', home_safety: 'json', progress: 'json' }, key: ['case_id'] },
+  cases: { columns: { case_id: 'text', owner_id: 'text', revision: 'integer', catalog_revision: 'integer', snapshot: 'json', plan_name: 'json', home_safety: 'json', progress: 'json', collaboration:'json' }, key: ['case_id'] },
   matches: { columns: { case_id: 'text', response: 'json' }, key: ['case_id'] },
   packets: { columns: { case_id: 'text', generation_key: 'text', packet_id: 'text', context_fingerprint: 'text', packet: 'json' }, key: ['case_id', 'generation_key'] },
   form_answers: { columns: { case_id: 'text', program_id: 'text', answer_revision: 'integer', record: 'json' }, key: ['case_id', 'program_id'] },
@@ -42,7 +43,7 @@ const TABLES = {
   closed_accounts: { columns: { owner_hash: 'text', closed_at: 'time', receipt_hash: 'text', receipt_expires_at: 'time', auth_deleted_at: 'time' }, key: ['owner_hash'] },
   account_deletion_previews: { columns: { owner_hash: 'text', token_hash: 'text', fingerprint: 'text', expires_at: 'time' }, key: ['owner_hash'] },
   auth_deletion_jobs: { columns: { job_id: 'text', owner_hash: 'text', raw_user_id: 'text', completed_at: 'time', next_attempt_at: 'time', lease_token: 'text', lease_until: 'time' }, key: ['job_id'] },
-  case_shares: { columns: { membership_id:'text', case_id:'text', owner_id:'text', recipient_id:'text', creation_key:'text', invitation_hash:'text', invitation_expires_at:'time', expires_at:'time', accepted:'boolean', revoked:'boolean', permission_revision:'integer', definition:'json', projection:'json', notes:'json', audit:'json' }, key:['membership_id'] },
+  case_shares: { columns: { membership_id:'text', case_id:'text', owner_id:'text', recipient_id:'text', creation_key:'text', invitation_hash:'text', invitation_expires_at:'time', expires_at:'time', accepted:'boolean', revoked:'boolean', permission_revision:'integer', definition:'json', projection:'json', notes:'json', audit:'json', collaboration_scope:'json' }, key:['membership_id'] },
   request_history: { columns: { case_id: 'text', program_id: 'text', request_revision: 'integer', record: 'json' }, key: ['case_id', 'program_id'] },
 } as const satisfies Record<string, Table>;
 type TableName = keyof typeof TABLES;
@@ -94,7 +95,7 @@ function bytes(value: unknown, maximum: number): Buffer {
 }
 async function manifest(): Promise<ManifestEntry[]> {
   return Promise.all([
-    ['001', '001_private_repository.sql'], ['002', '002_retention_deletion.sql'], ['003', '003_request_tracking.sql'], ['004','004_assessment_annotations.sql'], ['005','005_program_intake.sql'], ['006', '006_plan_names.sql'], ['007', '007_home_safety.sql'],  ['008', '008_program_progress.sql'], ['009', '009_permission_sharing.sql'],
+    ['001', '001_private_repository.sql'], ['002', '002_retention_deletion.sql'], ['003', '003_request_tracking.sql'], ['004','004_assessment_annotations.sql'], ['005','005_program_intake.sql'], ['006', '006_plan_names.sql'], ['007', '007_home_safety.sql'],  ['008', '008_program_progress.sql'], ['009', '009_permission_sharing.sql'], ['010', '010_shared_collaboration.sql'],
   ].map(async ([version, filename]) => ({ version,
     checksum: createHash('sha256').update(await readFile(new URL(`../../migrations/${filename}`, import.meta.url))).digest('hex') })));
 }
@@ -118,7 +119,8 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
   const legacyHomeSafety = legacyPlanNames || matchesManifest(raw.migrations, expected.slice(0, 6));
   const legacyProgress = legacyHomeSafety || matchesManifest(raw.migrations, expected.slice(0, 7));
   const legacySharing = legacyProgress || matchesManifest(raw.migrations, expected.slice(0, 8));
-  check(legacySharing || matchesManifest(raw.migrations, expected));
+  const legacyCollaboration = legacySharing || matchesManifest(raw.migrations, expected.slice(0,9));
+  check(legacyCollaboration || matchesManifest(raw.migrations, expected));
   check(exact(raw.tables, legacySharing ? NAMES.filter(name => name !== 'case_shares') : NAMES));
   if (legacySharing) (raw.tables as Record<string, unknown>).case_shares = [];
   const tables = raw.tables as Archive['tables'];
@@ -127,9 +129,11 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
     check(Array.isArray(rows) && rows.length <= MAX_DATABASE_BACKUP_ROWS_PER_TABLE);
     for (const row of rows) {
       const keys = Object.keys(table.columns);
-      check(exact(row, name === 'cases' ? keys.filter(key => !(legacyPlanNames && key === 'plan_name') && !(legacyHomeSafety && key === 'home_safety') && !(legacyProgress && key === 'progress')) : keys));
+      check(exact(row, name === 'cases' ? keys.filter(key => !(legacyPlanNames && key === 'plan_name') && !(legacyHomeSafety && key === 'home_safety') && !(legacyProgress && key === 'progress') && !(legacyCollaboration && key === 'collaboration')) : name === 'case_shares' && legacyCollaboration ? keys.filter(key=>key!=='collaboration_scope') : keys));
       if (legacyHomeSafety && name === 'cases') row.home_safety = null;
       if (legacyProgress && name === 'cases') row.progress = null;
+      if (legacyCollaboration && name === 'cases') row.collaboration = null;
+      if (legacyCollaboration && name === 'case_shares') row.collaboration_scope={taskIds:[],allowTaskProgress:false,allowStatusProposals:false,taskSnapshots:[]};
       if (legacyPlanNames && name === 'cases') row.plan_name = null;
       for (const [column, kind] of Object.entries(table.columns)) {
         const value = row[column];
@@ -152,6 +156,7 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
     const parsed = parseCaseDraft(draft, false, 1);
     check(revision === rev && parsed.caseId === row.case_id);
     if (row.progress !== null) check(parseProgressRecord(row.progress).caseId === row.case_id);
+    if (row.collaboration !== null) check(parseCollaborationRecord(row.collaboration).caseId === row.case_id);
     if (row.home_safety !== null) {
       const safety = parseHomeSafetyRecord(row.home_safety);
       check(safety.caseId === row.case_id && safety.history.every(event => event.caseRevision <= rev));
@@ -174,6 +179,7 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
     check(!row.accepted || row.invitation_hash === null);
     check(object(row.definition) && ['viewer','helper'].includes(String(row.definition.role)));
     const scope = parseScope(row.definition.scope);
+    validateCollaborationScopeRecord(row.collaboration_scope);
     check(row.definition.role !== 'viewer' || !scope.allowHelperNotes);
     check(uuid(row.membership_id) && uuid(row.recipient_id));
     check(object(row.notes) && Array.isArray(row.notes.events) && row.notes.events.length <= 50);
@@ -412,6 +418,7 @@ export async function restoreDatabaseBackup(pool: Pool, plaintext: Buffer, expec
         UPDATE ${S}.packets SET packet=NULL;
         UPDATE ${S}.exports SET metadata=NULL,bindings=NULL,bytes=NULL,invalidated=true;
         UPDATE ${S}.evidence_annotations SET record=jsonb_set(jsonb_set(jsonb_set(jsonb_set(record,'{reviewState}','"needs_review"'::jsonb),'{reviewedCaseRevision}','null'::jsonb),'{reviewedAt}','null'::jsonb),'{reviewedBy}','null'::jsonb);
+        UPDATE ${S}.cases SET collaboration=jsonb_set(collaboration,'{assignments}','[]') WHERE collaboration IS NOT NULL;
         UPDATE ${S}.case_shares SET revoked=true,invitation_hash=NULL,projection=NULL,notes='{"events":[]}';
         DELETE FROM ${S}.account_deletion_previews;
         UPDATE ${S}.closed_accounts SET receipt_hash=NULL,receipt_expires_at=LEAST(receipt_expires_at,clock_timestamp());
