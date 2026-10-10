@@ -19,6 +19,12 @@ and controlled-provider evidence from physical-camera and live-account checks.
 Development and testing have a **$0 out-of-pocket budget**; cloud jobs and paid
 device services are not required for these local checks.
 
+The four-feature expansion has a [Phase 5 acceptance record](docs/phase5-acceptance.md)
+and a [physical iPhone/Android checklist](docs/phase5-device-checklist.md).
+Local automated results, device observations, qualified content review and hosted
+verification are separate gates; the checklist includes the required test build
+configuration and a results matrix for each platform.
+
 The optional [bathroom scanning workflow](docs/bathroom-scanning.md) adds iPhone
 LiDAR/RoomPlan and Android ARCore capture, a private 3D model review, and
 resident-confirmed improvement observations. The model stays encrypted on the
