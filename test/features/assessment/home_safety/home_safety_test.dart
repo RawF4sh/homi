@@ -10,6 +10,91 @@ import 'home_safety_support.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
+    'addressed progress is explicit, restart-safe and invalidated by changed answers or findings',
+    () async {
+      final h = await safetyHarness();
+      var s = HomeSafetySession(
+        services: h.services,
+        catalog: h.server.catalog,
+      );
+      await s.initialize();
+      await s.edit(addRoom('first'));
+      await s.edit(addRoom('second'));
+      await s.edit(answer('first', 'yes'));
+      SafetyConcernProgress progress() => roomConcernProgress(
+        s.document,
+        s.snapshot,
+        s.catalog,
+        s.document.rooms.first,
+        s.operations,
+      );
+      expect(progress().concerns, 1);
+      expect(progress().addressed, 0);
+      final review = <String, Object?>{
+        'type': 'review_concern',
+        'roomId': 'first',
+        'questionId': 'bedroom.path',
+        'findingId': 'new-concern',
+        'observation': 'Fictional dark route',
+        'state': 'needs_review',
+      };
+      await s.edit(review);
+      var link = s.document.link('first', 'bedroom.path')!;
+      await expectLater(s.setAddressed(link, true), throwsFormatException);
+      await s.edit({...review, 'state': 'confirmed'});
+      final caseRevision = s.snapshot.revision;
+      link = s.document.link('first', 'bedroom.path')!;
+      await s.setAddressed(link, true);
+      expect(s.snapshot.revision, caseRevision);
+      expect(progress().addressed, 1);
+      s.dispose();
+      h.server.offline = true;
+      s = HomeSafetySession(services: h.services, catalog: h.server.catalog);
+      await s.initialize();
+      expect(progress().addressed, 1);
+      await s.setAddressed(link, false);
+      expect(progress().addressed, 0);
+      await s.setAddressed(link, true);
+      await s.edit(answer('first', 'no'));
+      expect(progress().addressed, 0);
+      await expectLater(s.setAddressed(link, true), throwsFormatException);
+      await s.edit({...review, 'state': 'dismissed'});
+      expect(progress().concerns, 0);
+      await s.edit(answer('first', 'yes'));
+      expect(progress().concerns, 1);
+      await s.edit({...review, 'state': 'confirmed'});
+      expect(progress().addressed, 0);
+      link = s.document.link('first', 'bedroom.path')!;
+      await s.setAddressed(link, true);
+      await s.edit({
+        ...review,
+        'state': 'confirmed',
+        'observation': 'Fictional corrected observation',
+      });
+      expect(progress().addressed, 0);
+      expect(
+        roomConcernProgress(
+          s.document,
+          s.snapshot,
+          s.catalog,
+          s.document.rooms.last,
+          s.operations,
+        ).concerns,
+        0,
+      );
+      h.server.offline = false;
+      await s.save();
+      expect(s.hasPending, false);
+      expect(
+        s.baseline.history
+            .where((e) => (e['operation'] as Map)['type'] == 'set_addressed')
+            .length,
+        4,
+      );
+      s.dispose();
+    },
+  );
+  test(
     'Node-produced shared fixture preserves separate rooms, source links, unknown answers and exact receipts',
     () async {
       final catalog = await HomeSafetyCatalog.load();

@@ -129,14 +129,15 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
   private readonly homeSafety = new Map<string, ReturnType<typeof emptyHomeSafety>>();
   async readHomeSafetyForUser(userId: string, caseId: string): Promise<HomeSafetyResult> {
     const entry = this.cases.get(caseId); if (!entry || entry.userId !== userId) return { status: 'not_found' };
-    return { status: 'found', state: homeSafetyState(entry.snapshot, this.homeSafety.get(caseId) ?? null) };
+    return { status: 'found', state: homeSafetyState(entry.snapshot, this.homeSafety.get(caseId) ?? null, null, this.catalogRevisions.get(caseId) ?? 0) };
   }
   async saveHomeSafetyForUser(userId: string, raw: HomeSafetySave, at: string): Promise<HomeSafetyResult> {
     const input = parseHomeSafetyRequest(raw, true) as HomeSafetySave, entry = this.cases.get(input.caseId);
     if (!entry || entry.userId !== userId) return { status: 'not_found' };
     const prior = this.homeSafety.get(input.caseId) ?? emptyHomeSafety(input.caseId);
-    const result = changeHomeSafety(entry.snapshot, prior, input, userId, at);
-    if (result.status === 'retry') return { status: 'found', state: homeSafetyState(entry.snapshot, prior, input.mutationId) };
+    const catalog = { schemaVersion: '1' as const, caseId: input.caseId, caseRevision: entry.snapshot.revision, catalogRevision: this.catalogRevisions.get(input.caseId) ?? 0, evidence: [...(this.evidence.get(input.caseId)?.values() ?? [])].flatMap(s => s.asset && this.linked(entry.snapshot, s.asset.descriptor) ? [s.asset.descriptor] : []) };
+    const result = changeHomeSafety(entry.snapshot, prior, input, userId, at, catalog);
+    if (result.status === 'retry') return { status: 'found', state: homeSafetyState(entry.snapshot, prior, input.mutationId, this.catalogRevisions.get(input.caseId) ?? 0) };
     if (result.status !== 'changed') return result;
     const preserved = result.changesCase ? assessmentForSafetyReview({ before: entry.snapshot, next: result.snapshot,
       prior: this.assessments.get(input.caseId) ?? null, request: input, userId, at, catalogRevision: this.catalogRevisions.get(input.caseId) ?? 0 }) : { record: null, limit: false };
@@ -145,7 +146,7 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     if (preserved.record) this.assessments.set(input.caseId, preserved.record);
     this.homeSafety.set(input.caseId, result.record);
     if (result.changesCase) this.invalidateCaseOutputs(input.caseId);
-    return { status: 'found', state: homeSafetyState(result.snapshot, result.record, input.mutationId) };
+    return { status: 'found', state: homeSafetyState(result.snapshot, result.record, input.mutationId, this.catalogRevisions.get(input.caseId) ?? 0) };
   }
   async readAssessmentForUser(userId:string,caseId:string):Promise<AssessmentResult> {
     const entry=this.cases.get(caseId);if(!entry||entry.userId!==userId)return {status:'not_found'};

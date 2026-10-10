@@ -227,7 +227,7 @@ async function route(
 ) {
   const progressRoute = progressDependencies ? (['read-progress', 'save-progress', 'read-progress-history'] as ProgressRoute[]).find(r => request.url === `/v3/${r}`) : undefined;
   const sharingRoute = sharingDependencies ? SHARING_ROUTES.find(r => request.url === `/v3/${r}`) : undefined;
-  const homeSafetyRoute = homeSafetyDependencies ? (['read-home-safety', 'save-home-safety'] as HomeSafetyRoute[]).find(r => request.url === `/v3/${r}`) : undefined;
+  const homeSafetyRoute = homeSafetyDependencies ? (['read-home-safety', 'save-home-safety', 'export-home-safety'] as HomeSafetyRoute[]).find(r => request.url === `/v3/${r}`) : undefined;
   const planNameRoute = planNameDependencies ? (['read-plan-name', 'save-plan-name', 'list-cases'] as PlanNameRoute[]).find(r => request.url === `/v2/${r}`) : undefined;
   const programIntakeRoute=programIntakeDependencies ? (['read-program-intake','save-program-intake'] as const).find(r=>request.url===`/v2/${r}`):undefined;
   const assessmentRoute=assessmentDependencies ? (['read-assessment','save-assessment','read-evidence-annotations','save-evidence-annotations'] as AssessmentRoute[]).find(r=>request.url===`/v2/${r}`):undefined;

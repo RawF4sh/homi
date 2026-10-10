@@ -5,6 +5,7 @@ import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.
 import 'package:safe_at_home/shared/services/home_safety_api_client.dart';
 import 'package:safe_at_home/shared/services/io_matching_transport.dart';
 import 'package:safe_at_home/shared/services/matching_api_client.dart';
+import 'package:safe_at_home/shared/services/progress_api_client.dart';
 
 class _LoopbackHttp extends HttpOverrides {}
 
@@ -93,12 +94,138 @@ void main() {
         final retry = await api.save(add, isCurrent: () => true);
         expect(retry.revision, 3);
         expect(retry.acknowledges(add), true);
+        final progress = ProgressApiClient(
+          baseUri: origin,
+          tokenProvider: () async => ready['alice'] as String,
+          transport: IoMatchingTransport(),
+          allowInsecureLoopback: true,
+        );
+        var tasks = await progress.read(caseId, isCurrent: () => true);
+        final taskRequest = <String, Object?>{
+          'schemaVersion': '3',
+          'caseId': caseId,
+          'expectedCaseRevision': state.snapshot.revision,
+          'expectedProgressRevision': tasks.revision,
+          'mutationId': 'fictional-checklist-task',
+          'operation': {
+            'type': 'put_task',
+            'expectedTaskRevision': 0,
+            'task': {
+              'id': 'fictional-checklist-task',
+              'programId': null,
+              'findingId': 'fictional-http-finding',
+              'formId': null,
+              'title': 'Fictional review of stair lighting',
+              'kind': 'room_review',
+              'state': 'completed',
+              'responsiblePerson': null,
+              'dueOn': null,
+              'basedOnCaseRevision': state.snapshot.revision,
+              'basedOnRuleVersion': null,
+              'revision': 1,
+              'sourceEventId': null,
+            },
+          },
+        };
+        tasks = await progress.save(taskRequest, isCurrent: () => true);
+        await progress.save(taskRequest, isCurrent: () => true);
+        expect(
+          tasks.tasks
+              .where((t) => t.data['findingId'] == 'fictional-http-finding')
+              .length,
+          1,
+        );
+        state = await api.read(caseId, isCurrent: () => true);
+        final link = state.document.findingRooms.single;
+        Iterable<Map<String, Object?>> operations() => state.history.map(
+          (e) => Map<String, Object?>.from(e['operation'] as Map),
+        );
+        expect(
+          concernIsAddressed(
+            state.document,
+            state.snapshot,
+            link,
+            operations(),
+          ),
+          false,
+        );
+        final addressed = request({
+          'type': 'set_addressed',
+          'roomId': link.roomId,
+          'findingId': link.findingId,
+          'findingFingerprint': safetyHash(
+            state.snapshot.findings
+                .firstWhere((f) => f.id == link.findingId)
+                .toJson(),
+          ),
+          'answerRevision': 1,
+          'addressed': true,
+        });
+        state = await api.save(addressed, isCurrent: () => true);
+        state = await api.save(addressed, isCurrent: () => true);
+        expect(state.snapshot.revision, initialCaseRevision + 1);
+        expect(
+          concernIsAddressed(
+            state.document,
+            state.snapshot,
+            link,
+            operations(),
+          ),
+          true,
+        );
+        state = await api.read(caseId, isCurrent: () => true);
+        expect(
+          concernIsAddressed(
+            state.document,
+            state.snapshot,
+            link,
+            operations(),
+          ),
+          true,
+        );
+        state = await api.save(
+          request({
+            'type': 'annotate_answer',
+            'roomId': 'fictional-http-room',
+            'questionId': 'stairs.lighting',
+            'answerRevision': 1,
+            'note': 'Fictional report note',
+            'evidence': <Object>[],
+            'expectedCatalogRevision': 0,
+          }),
+          isCurrent: () => true,
+        );
+        final exported = await api.exportReport(
+          state,
+          state.evidenceCatalogRevision ?? 0,
+          includeNotes: true,
+          includeEvidenceReferences: false,
+          isCurrent: () => true,
+        );
+        expect(ascii.decode(exported.bytes.take(5).toList()), '%PDF-');
+        expect(exported.safetyRevision, state.revision);
         final other = HomeSafetyApiClient(
           baseUri: origin,
           tokenProvider: () async => ready['bob'] as String,
           transport: IoMatchingTransport(),
           catalog: catalog,
           allowInsecureLoopback: true,
+        );
+        await expectLater(
+          other.exportReport(
+            state,
+            state.evidenceCatalogRevision ?? 0,
+            includeNotes: false,
+            includeEvidenceReferences: false,
+            isCurrent: () => true,
+          ),
+          throwsA(
+            isA<MatchingApiException>().having(
+              (e) => e.code,
+              'code',
+              'CASE_NOT_FOUND',
+            ),
+          ),
         );
         await expectLater(
           other.read(caseId, isCurrent: () => true),

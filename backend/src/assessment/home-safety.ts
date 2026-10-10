@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import type { EvidenceCatalog } from '../evidence/types.ts';
 import type { CaseSnapshot, Finding } from '../types.ts';
 import { parseCaseDraft } from '../cases/validation.ts';
 import { canonicalJson, evidenceIdentifier as id, evidenceRevision as revision, evidenceInstant as instant } from '../evidence/validation.ts';
@@ -19,16 +20,18 @@ export interface FindingRoom { findingId: string; roomId: string; questionId: st
 export interface SafetyDocument { catalogVersion: string; rooms: RoomInstance[]; answers: SafetyAnswer[]; findingRooms: FindingRoom[] }
 export interface SafetyEvent { mutationId: string; requestHash: string; revision: number; caseRevision: number; recordedAt: string; recordedBy: string; operation: SafetyOperation }
 export interface HomeSafetyRecord { schemaVersion: '3'; caseId: string; revision: number; document: SafetyDocument; history: SafetyEvent[] }
-export interface HomeSafetyState { schemaVersion: '3'; case: CaseSnapshot; safety: HomeSafetyRecord; acknowledgedMutationId: string | null }
+export interface HomeSafetyState { schemaVersion: '3'; case: CaseSnapshot; safety: HomeSafetyRecord; acknowledgedMutationId: string | null; evidenceCatalogRevision?: number }
 export type SafetyOperation = { type: 'add_room'; room: RoomInstance }
   | { type: 'rename_room'; roomId: string; name: string | null }
   | { type: 'answer'; roomId: string; questionId: string; value: SafetyAnswer['value'] }
   | { type: 'assign_finding'; roomId: string; findingId: string }
+  | { type: 'annotate_answer'; roomId: string; questionId: string; answerRevision: number; note: string | null; expectedCatalogRevision: number; evidence: { evidenceId: string; expectedEvidenceRevision: number }[] }
+  | { type: 'set_addressed'; roomId: string; findingId: string; findingFingerprint: string; answerRevision: number | null; addressed: boolean; evidenceCatalogRevision?: number }
   | { type: 'review_concern'; roomId: string; questionId: string; findingId: string; observation: string; state: Finding['reviewState'] };
 export interface HomeSafetyRead { schemaVersion: '3'; caseId: string }
 export interface HomeSafetySave extends HomeSafetyRead { expectedCaseRevision: number; expectedSafetyRevision: number; mutationId: string; operation: SafetyOperation }
 export type HomeSafetyResult = { status: 'found'; state: HomeSafetyState }
-  | { status: 'not_found' | 'conflict' | 'safety_conflict' | 'mutation_conflict' | 'history_limit' | 'invalid_operation' };
+  | { status: 'not_found' | 'conflict' | 'safety_conflict' | 'mutation_conflict' | 'history_limit' | 'evidence_conflict' | 'invalid_operation' };
 export interface HomeSafetyRepository {
   readHomeSafetyForUser(userId: string, caseId: string): Promise<HomeSafetyResult>;
   saveHomeSafetyForUser(userId: string, request: HomeSafetySave, at: string): Promise<HomeSafetyResult>;
@@ -50,6 +53,17 @@ export function parseSafetyOperation(value: unknown): SafetyOperation {
   check(id(op.roomId));
   if (op.type === 'rename_room') check(exact(op, ['type', 'roomId', 'name']) && validRoomName(op.name));
   else if (op.type === 'assign_finding') check(exact(op, ['type', 'roomId', 'findingId']) && id(op.findingId));
+  else if (op.type === 'annotate_answer') {
+    check(exact(op, ['type','roomId','questionId','answerRevision','note','expectedCatalogRevision','evidence'])
+      && STEADI_CATALOG.questions.some(q => q.id === op.questionId) && revision(op.answerRevision, true) && revision(op.expectedCatalogRevision, true)
+      && (op.note === null || typeof op.note === 'string' && op.note.trim() === op.note && op.note.length > 0 && op.note.length <= 500 && !/[\u0000-\u001f]/.test(op.note))
+      && Array.isArray(op.evidence) && op.evidence.length <= 6);
+    const seen = new Set<string>();
+    for (const ref of op.evidence) { check(exact(ref, ['evidenceId','expectedEvidenceRevision']) && id(ref.evidenceId) && revision(ref.expectedEvidenceRevision) && !seen.has(ref.evidenceId)); seen.add(ref.evidenceId); }
+  }
+  else if (op.type === 'set_addressed') check(exact(op, ['type', 'roomId', 'findingId', 'findingFingerprint', 'answerRevision', 'addressed', ...(Object.hasOwn(op,'evidenceCatalogRevision') ? ['evidenceCatalogRevision'] : [])])
+    && id(op.findingId) && /^[a-f0-9]{64}$/.test(op.findingFingerprint) && typeof op.addressed === 'boolean'
+    && (op.answerRevision === null || revision(op.answerRevision)) && (op.evidenceCatalogRevision === undefined || revision(op.evidenceCatalogRevision,true)));
   else if (op.type === 'answer') check(exact(op, ['type', 'roomId', 'questionId', 'value']) && ANSWERS.includes(op.value)
     && STEADI_CATALOG.questions.some(q => q.id === op.questionId));
   else {
@@ -106,18 +120,19 @@ export function parseHomeSafetyRecord(value: unknown): HomeSafetyRecord {
   if (value.revision === 0) check(canonicalJson(value.document) === canonicalJson(emptyHomeSafety(value.caseId).document));
   return structuredClone(value) as HomeSafetyRecord;
 }
-export function homeSafetyState(snapshot: CaseSnapshot, record: HomeSafetyRecord | null, ack: string | null = null): HomeSafetyState {
-  return structuredClone({ schemaVersion: '3', case: snapshot, safety: record ?? emptyHomeSafety(snapshot.caseId), acknowledgedMutationId: ack });
+export function homeSafetyState(snapshot: CaseSnapshot, record: HomeSafetyRecord | null, ack: string | null = null, evidenceCatalogRevision?: number): HomeSafetyState {
+  return structuredClone({ schemaVersion: '3', case: snapshot, safety: record ?? emptyHomeSafety(snapshot.caseId), acknowledgedMutationId: ack, ...(evidenceCatalogRevision === undefined ? {} : {evidenceCatalogRevision}) });
 }
 export function parseHomeSafetyState(value: unknown): HomeSafetyState {
-  check(exact(value, ['schemaVersion', 'case', 'safety', 'acknowledgedMutationId']) && value.schemaVersion === '3'
+  check(exact(value, ['schemaVersion', 'case', 'safety', 'acknowledgedMutationId', ...(Object.hasOwn(value ?? {},'evidenceCatalogRevision') ? ['evidenceCatalogRevision'] : [])]) && value.schemaVersion === '3'
     && exact(value.case, ['schemaVersion', 'caseId', 'revision', 'profile', 'unresolvedFields', 'findings']) && revision(value.case.revision));
   const { revision: caseRevision, ...draft } = value.case;
   const snapshot = { ...parseCaseDraft(draft, false, 1), revision: caseRevision };
   const record = parseHomeSafetyRecord(value.safety);
   check(record.caseId === snapshot.caseId && record.history.every(e => e.caseRevision <= snapshot.revision)
     && (value.acknowledgedMutationId === null || record.history.some(e => e.mutationId === value.acknowledgedMutationId)));
-  return homeSafetyState(snapshot, record, value.acknowledgedMutationId);
+  check(value.evidenceCatalogRevision === undefined || revision(value.evidenceCatalogRevision,true));
+  return homeSafetyState(snapshot, record, value.acknowledgedMutationId, value.evidenceCatalogRevision);
 }
 export function parseHomeSafetyRequest(value: unknown, save: boolean): HomeSafetyRead | HomeSafetySave {
   check(exact(value, ['schemaVersion', 'caseId', ...(save ? ['expectedCaseRevision', 'expectedSafetyRevision', 'mutationId', 'operation'] : [])])
@@ -142,7 +157,7 @@ export function assessmentForSafetyReview(input: { before: CaseSnapshot; next: C
   return { record, limit: record === null };
 }
 
-export function changeHomeSafety(snapshot: CaseSnapshot, prior: HomeSafetyRecord, input: HomeSafetySave, userId: string, at: string):
+export function changeHomeSafety(snapshot: CaseSnapshot, prior: HomeSafetyRecord, input: HomeSafetySave, userId: string, at: string, evidence?: EvidenceCatalog):
   { status: 'changed'; record: HomeSafetyRecord; snapshot: CaseSnapshot; changesCase: boolean } | Exclude<HomeSafetyResult, { status: 'found' }> | { status: 'retry' } {
   check(snapshot.caseId === prior.caseId && input.caseId === prior.caseId && id(userId) && instant(at));
   const retry = prior.history.find(e => e.mutationId === input.mutationId);
@@ -158,6 +173,13 @@ export function changeHomeSafety(snapshot: CaseSnapshot, prior: HomeSafetyRecord
   } else {
     const room = doc.rooms.find(r => r.id === op.roomId); if (!room) return { status: 'invalid_operation' };
     if (op.type === 'rename_room') room.name = op.name;
+    else if (op.type === 'set_addressed') {
+      const link = doc.findingRooms.find(l => l.roomId === room.id && l.findingId === op.findingId);
+      const finding = snapshot.findings.find(f => f.id === op.findingId);
+      const answerRevision = link?.questionId ? doc.answers.find(a => a.roomId === room.id && a.questionId === link.questionId)?.revision : null;
+      if (!link || !finding || digest(finding) !== op.findingFingerprint || answerRevision !== op.answerRevision
+        || op.addressed && (finding.reviewState !== 'confirmed' || link.answerRevision !== answerRevision || finding.evidenceIds.length > 0 && op.evidenceCatalogRevision !== evidence?.catalogRevision)) return { status: 'invalid_operation' };
+    }
     else if (op.type === 'assign_finding') {
       if (!snapshot.findings.some(f => f.id === op.findingId)) return { status: 'invalid_operation' };
       const old = doc.findingRooms.find(l => l.findingId === op.findingId);
@@ -168,7 +190,11 @@ export function changeHomeSafety(snapshot: CaseSnapshot, prior: HomeSafetyRecord
       const q = STEADI_CATALOG.questions.find(q => q.id === op.questionId && q.rooms.includes(room.type));
       if (!q) return { status: 'invalid_operation' };
       const answer = doc.answers.find(a => a.roomId === room.id && a.questionId === q.id);
-      if (op.type === 'answer') {
+      if (op.type === 'annotate_answer') {
+        if (op.answerRevision !== (answer?.revision ?? 0)) return { status: 'invalid_operation' };
+        if (op.evidence.length > 0 && (!evidence || evidence.caseId !== snapshot.caseId || evidence.caseRevision !== snapshot.revision || evidence.catalogRevision !== op.expectedCatalogRevision
+          || op.evidence.some(ref => !evidence.evidence.some(e => e.evidenceId === ref.evidenceId && e.evidenceRevision === ref.expectedEvidenceRevision)))) return { status: 'evidence_conflict' };
+      } else if (op.type === 'answer') {
         if (answer) { answer.value = op.value; answer.revision++; }
         else doc.answers.push({ roomId: room.id, questionId: q.id, value: op.value, revision: 1 });
       } else {

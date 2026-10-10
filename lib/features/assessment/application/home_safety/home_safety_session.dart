@@ -51,6 +51,24 @@ class HomeSafetySession extends ChangeNotifier {
       services.coordinator.uncertain ||
       services.coordinator.conflict;
   bool get hasPending => _pending.isNotEmpty;
+  Iterable<Map<String, Object?>> get operations => [
+    ...baseline.history.map(
+      (e) => Map<String, Object?>.from(e['operation'] as Map),
+    ),
+    ..._pending.map((r) => r.operation),
+  ];
+  Future<void> setAddressed(FindingRoom link, bool addressed) => edit({
+    'type': 'set_addressed',
+    'roomId': link.roomId,
+    'findingId': link.findingId,
+    'findingFingerprint': safetyHash(
+      snapshot.findings.firstWhere((f) => f.id == link.findingId).toJson(),
+    ),
+    'answerRevision': concernAnswerRevision(document, link),
+    'addressed': addressed,
+    if (baseline.evidenceCatalogRevision != null)
+      'evidenceCatalogRevision': baseline.evidenceCatalogRevision,
+  });
   void guard() {
     if (!isCurrent) throw MatchingApiException.forCode('STALE_RESPONSE');
   }
@@ -277,8 +295,13 @@ class HomeSafetySession extends ChangeNotifier {
           guard();
           await _acceptFresh(saved, hasLocal: true);
           if (conflict != null) return;
-        } catch (_) {
+        } catch (error) {
           needsReconcile = true;
+          if (error is MatchingApiException &&
+              {400, 409, 507}.contains(error.statusCode)) {
+            conflict = await api.read(caseId, isCurrent: () => isCurrent);
+            guard();
+          }
           rethrow;
         }
       }

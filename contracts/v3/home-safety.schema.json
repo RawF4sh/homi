@@ -30,6 +30,10 @@
           "type": "null"
         }
       ]
+    },
+    "evidenceCatalogRevision": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "$defs": {
@@ -472,6 +476,119 @@
                 "needs_review",
                 "dismissed"
               ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "roomId",
+            "findingId",
+            "findingFingerprint",
+            "answerRevision",
+            "addressed"
+          ],
+          "properties": {
+            "type": {
+              "const": "set_addressed"
+            },
+            "roomId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "findingId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "findingFingerprint": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "answerRevision": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "addressed": {
+              "type": "boolean"
+            },
+            "evidenceCatalogRevision": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "roomId",
+            "questionId",
+            "answerRevision",
+            "note",
+            "expectedCatalogRevision",
+            "evidence"
+          ],
+          "properties": {
+            "type": {
+              "const": "annotate_answer"
+            },
+            "roomId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "questionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "answerRevision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "expectedCatalogRevision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "evidence": {
+              "type": "array",
+              "maxItems": 6,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "evidenceId",
+                  "expectedEvidenceRevision"
+                ],
+                "properties": {
+                  "evidenceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "expectedEvidenceRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
             }
           }
         }

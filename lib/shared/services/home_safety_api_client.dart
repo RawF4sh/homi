@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import '../../features/assessment/domain/home_safety/home_safety.dart';
 import '../models/export_contract_values.dart';
 import 'matching_api_client.dart';
@@ -53,6 +55,74 @@ class HomeSafetyApiClient {
     }
   }
 
+  Future<HomeSafetyReport> exportReport(
+    HomeSafetyState state,
+    int catalogRevision, {
+    required bool includeNotes,
+    required bool includeEvidenceReferences,
+    required bool Function() isCurrent,
+  }) async {
+    final raw = await _post(
+      'export-home-safety',
+      {
+        'schemaVersion': '3',
+        'caseId': state.snapshot.caseId,
+        'expectedCaseRevision': state.snapshot.revision,
+        'expectedSafetyRevision': state.revision,
+        'expectedCatalogRevision': catalogRevision,
+        'includeNotes': includeNotes,
+        'includeEvidenceReferences': includeEvidenceReferences,
+      },
+      guard: () => _current(isCurrent),
+      maxResponseBytes: 3 * 1024 * 1024,
+    );
+    _current(isCurrent);
+    try {
+      final v = ExportContractValues.object(raw, {
+        'schemaVersion',
+        'caseId',
+        'caseRevision',
+        'safetyRevision',
+        'catalogRevision',
+        'includeNotes',
+        'includeEvidenceReferences',
+        'generatedAt',
+        'pageCount',
+        'sha256',
+        'pdfBase64',
+      });
+      if (v['schemaVersion'] != '3' ||
+          v['caseId'] != state.snapshot.caseId ||
+          v['caseRevision'] != state.snapshot.revision ||
+          v['safetyRevision'] != state.revision ||
+          v['catalogRevision'] != catalogRevision ||
+          v['includeNotes'] != includeNotes ||
+          v['includeEvidenceReferences'] != includeEvidenceReferences) {
+        throw const FormatException();
+      }
+      ExportContractValues.instant(v['generatedAt']);
+      ExportContractValues.integer(v['pageCount'], max: 128);
+      ExportContractValues.digest(v['sha256']);
+      final bytes = base64Decode(v['pdfBase64'] as String);
+      if (bytes.length < 8 ||
+          bytes.length > 2 * 1024 * 1024 ||
+          ascii.decode(bytes.take(5).toList()) != '%PDF-' ||
+          sha256.convert(bytes).toString() != v['sha256']) {
+        throw const FormatException();
+      }
+      _current(isCurrent);
+      return HomeSafetyReport(
+        bytes,
+        state.snapshot.revision,
+        state.revision,
+        catalogRevision,
+      );
+    } catch (_) {
+      _current(isCurrent);
+      throw _error('UNEXPECTED_RESPONSE');
+    }
+  }
+
   Future<HomeSafetyState> save(
     SafetyMutation request, {
     required bool Function() isCurrent,
@@ -80,6 +150,7 @@ class HomeSafetyApiClient {
     Map<String, Object?> body, {
     required void Function() guard,
     bool saving = false,
+    int maxResponseBytes = homeSafetyMaxResponseBytes,
   }) async {
     guard();
     final clock = Stopwatch()..start();
@@ -112,13 +183,13 @@ class HomeSafetyApiClient {
           endpoint: _base.resolve('/v3/$route'),
           bearerToken: token,
           body: utf8.encode(jsonEncode(body)),
-          maxResponseBytes: homeSafetyMaxResponseBytes,
+          maxResponseBytes: maxResponseBytes,
         ),
       );
       guard();
       final response = await exchange.response.timeout(remaining);
       guard();
-      if (response.body.length > homeSafetyMaxResponseBytes) {
+      if (response.body.length > maxResponseBytes) {
         throw _error('RESPONSE_TOO_LARGE');
       }
       if (response.statusCode >= 300 && response.statusCode < 400) {
@@ -175,6 +246,7 @@ const _definiteFailureCodes = {
   'UNAUTHENTICATED',
   'CASE_NOT_FOUND',
   'HOME_SAFETY_CONFLICT',
+  'EVIDENCE_REVISION_MISMATCH',
   'CASE_REVISION_MISMATCH',
   'HOME_SAFETY_MUTATION_CONFLICT',
   'HOME_SAFETY_HISTORY_LIMIT',
@@ -208,14 +280,16 @@ MatchingApiException _apiError(int status, Object? json) {
       'HOME_SAFETY_CONFLICT',
       'HOME_SAFETY_MUTATION_CONFLICT',
       'CASE_REVISION_MISMATCH',
+      'EVIDENCE_REVISION_MISMATCH',
       'ACCOUNT_CLOSED',
     },
+    422: {'REPORT_UNSUPPORTED_TEXT', 'REPORT_LIMIT', 'REPORT_FAILED'},
     507: {'HOME_SAFETY_HISTORY_LIMIT'},
     413: {'PAYLOAD_TOO_LARGE'},
     415: {'UNSUPPORTED_MEDIA_TYPE'},
     429: {'RATE_LIMITED'},
     500: {'INTERNAL_ERROR'},
-    503: {'SERVICE_UNAVAILABLE'},
+    503: {'SERVICE_UNAVAILABLE', 'REPORT_BUSY'},
   };
   try {
     final value = ExportContractValues.object(json, {'schemaVersion', 'error'});
@@ -254,4 +328,15 @@ Uri _validateBase(Uri base, bool allowLoopback, bool allowEmulator) {
     );
   }
   return base;
+}
+
+class HomeSafetyReport {
+  HomeSafetyReport(
+    this.bytes,
+    this.caseRevision,
+    this.safetyRevision,
+    this.catalogRevision,
+  );
+  final Uint8List bytes;
+  final int caseRevision, safetyRevision, catalogRevision;
 }

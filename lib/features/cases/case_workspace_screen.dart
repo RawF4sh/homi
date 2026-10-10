@@ -370,17 +370,18 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                       ? null
                       : () => open(ProfileEditorScreen(services: services)),
                 ),
-                SahActionTile(
-                  key: const ValueKey('case-rooms-checklist'),
-                  title: context.tr('Rooms and checklist'),
-                  subtitle: context.tr(
-                    'Name each room and review home safety questions. Photos are optional.',
+                if (services.config.homeSafetyEnabled)
+                  SahActionTile(
+                    key: const ValueKey('case-rooms-checklist'),
+                    title: context.tr('Rooms and checklist'),
+                    subtitle: context.tr(
+                      'Name each room and review home safety questions. Photos are optional.',
+                    ),
+                    icon: Icons.checklist_rounded,
+                    onTap: c.busy || c.snapshot == null
+                        ? null
+                        : () => open(HomeSafetyScreen(services: services)),
                   ),
-                  icon: Icons.checklist_rounded,
-                  onTap: c.busy || c.snapshot == null
-                      ? null
-                      : () => open(HomeSafetyScreen(services: services)),
-                ),
                 SahActionTile(
                   key: const ValueKey('case-assessment'),
                   overline: context.tr('Step 2 · Rooms and concerns'),

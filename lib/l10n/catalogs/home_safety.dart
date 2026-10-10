@@ -651,4 +651,266 @@ const homeSafetyTranslations = <String, Map<String, String>>{
     "vi": "Đã xác nhận",
     "fil": "Nakumpirma",
   },
+  "{count} of {total} concerns addressed": {
+    "es": "{count} de {total} problemas atendidos",
+    "zh-Hans": "已处理 {count}/{total} 个隐患",
+    "zh-Hant": "已處理 {count}/{total} 個隱患",
+    "vi": "Đã xử lý {count}/{total} mối lo",
+    "fil": "{count} sa {total} alalahanin ang natugunan",
+  },
+  "View or add next steps": {
+    "es": "Ver o añadir próximos pasos",
+    "zh-Hans": "查看或添加后续步骤",
+    "zh-Hant": "查看或新增後續步驟",
+    "vi": "Xem hoặc thêm bước tiếp theo",
+    "fil": "Tingnan o magdagdag ng susunod na hakbang",
+  },
+  "Next steps for this concern": {
+    "es": "Próximos pasos para este problema",
+    "zh-Hans": "此隐患的后续步骤",
+    "zh-Hant": "此隱患的後續步驟",
+    "vi": "Các bước tiếp theo cho mối lo này",
+    "fil": "Mga susunod na hakbang para sa alalahaning ito",
+  },
+  "Mark concern addressed?": {
+    "es": "¿Marcar el problema como atendido?",
+    "zh-Hans": "将隐患标记为已处理？",
+    "zh-Hant": "將隱患標記為已處理？",
+    "vi": "Đánh dấu mối lo đã được xử lý?",
+    "fil": "Markahan na natugunan ang alalahanin?",
+  },
+  "Reopen concern?": {
+    "es": "¿Reabrir el problema?",
+    "zh-Hans": "重新打开隐患？",
+    "zh-Hant": "重新開啟隱患？",
+    "vi": "Mở lại mối lo?",
+    "fil": "Buksan muli ang alalahanin?",
+  },
+  "Mark addressed": {
+    "es": "Marcar como atendido",
+    "zh-Hans": "标记为已处理",
+    "zh-Hant": "標記為已處理",
+    "vi": "Đánh dấu đã xử lý",
+    "fil": "Markahan bilang natugunan",
+  },
+  "Reopen concern": {
+    "es": "Reabrir problema",
+    "zh-Hans": "重新打开隐患",
+    "zh-Hant": "重新開啟隱患",
+    "vi": "Mở lại mối lo",
+    "fil": "Buksan muli ang alalahanin",
+  },
+  "Addressed - reported by you": {
+    "es": "Atendido - según su informe",
+    "zh-Hans": "已处理 - 由您报告",
+    "zh-Hant": "已處理 - 由您回報",
+    "vi": "Đã xử lý - theo báo cáo của bạn",
+    "fil": "Natugunan - ayon sa iyong ulat",
+  },
+  "This records your report only. It does not verify a repair or certify home safety. Completing a next step does not automatically address a concern.": {
+    "es":
+        "Esto solo registra su informe. No verifica una reparación ni certifica la seguridad del hogar. Completar un paso no atiende automáticamente un problema.",
+    "zh-Hans": "这仅记录您的报告，不验证维修或认证居家安全。完成后续步骤不会自动将隐患标记为已处理。",
+    "zh-Hant": "這僅記錄您的回報，不驗證維修或認證居家安全。完成後續步驟不會自動將隱患標記為已處理。",
+    "vi":
+        "Điều này chỉ ghi lại báo cáo của bạn, không xác minh sửa chữa hay chứng nhận an toàn nhà ở. Hoàn thành một bước không tự động xử lý mối lo.",
+    "fil":
+        "Itinatala lamang nito ang iyong ulat. Hindi nito bineberipika ang pagkukumpuni o pinatutunayan ang kaligtasan ng tahanan. Ang pagkumpleto ng hakbang ay hindi awtomatikong tumutugon sa alalahanin.",
+  },
+  "Addressed counts are your reports, not verified repairs. Currently dismissed concerns are excluded. Changed answers or findings need review. Unknown answers are not a safety result.": {
+    "es":
+        "Los recuentos de problemas atendidos son sus informes, no reparaciones verificadas. Los problemas descartados se excluyen. Los cambios en respuestas u observaciones requieren revisión. Las respuestas desconocidas no indican seguridad.",
+    "zh-Hans": "已处理数量来自您的报告，并非经验证的维修。当前已排除的隐患不计入。答案或观察变化需要复查。未知答案不代表安全结果。",
+    "zh-Hant": "已處理數量來自您的回報，並非經驗證的維修。目前已排除的隱患不計入。答案或觀察變化需要複查。未知答案不代表安全結果。",
+    "vi":
+        "Số đã xử lý dựa trên báo cáo của bạn, không phải sửa chữa đã xác minh. Không tính các mối lo đã bác bỏ. Câu trả lời hoặc quan sát thay đổi cần xem lại. Câu trả lời chưa rõ không phải kết luận an toàn.",
+    "fil":
+        "Ang bilang ng natugunan ay batay sa iyong ulat, hindi sa beripikadong pagkukumpuni. Hindi kasama ang mga na-dismiss na alalahanin. Kailangang suriin ang binagong sagot o obserbasyon. Ang hindi tiyak na sagot ay hindi resulta ng kaligtasan.",
+  },
+  "Room and checklist report": {
+    "es": "Informe de habitaciones y lista",
+    "zh-Hans": "房间与清单报告",
+    "zh-Hant": "房間與清單報告",
+    "vi": "Báo cáo phòng và danh sách",
+    "fil": "Ulat ng silid at checklist",
+  },
+  "Question notes and photo references": {
+    "es": "Notas y referencias de fotos de la pregunta",
+    "zh-Hans": "问题备注和照片引用",
+    "zh-Hant": "問題備註和照片引用",
+    "vi": "Ghi chú câu hỏi và tham chiếu ảnh",
+    "fil": "Mga tala at sanggunian ng larawan sa tanong",
+  },
+  "Notes and photo references": {
+    "es": "Notas y referencias de fotos",
+    "zh-Hans": "备注和照片引用",
+    "zh-Hant": "備註和照片引用",
+    "vi": "Ghi chú và tham chiếu ảnh",
+    "fil": "Mga tala at sanggunian ng larawan",
+  },
+  "Photos are optional. Select up to six existing photos. This saves references, not copies or proof of a repair.": {
+    "es":
+        "Las fotos son opcionales. Seleccione hasta seis fotos existentes. Se guardan referencias, no copias ni prueba de reparación.",
+    "zh-Hans": "照片可选。最多选择六张现有照片。仅保存引用，不保存副本或维修证明。",
+    "zh-Hant": "照片可選。最多選擇六張現有照片。僅儲存引用，不儲存副本或維修證明。",
+    "vi":
+        "Ảnh không bắt buộc. Chọn tối đa sáu ảnh hiện có. Chỉ lưu tham chiếu, không phải bản sao hay bằng chứng sửa chữa.",
+    "fil":
+        "Opsyonal ang mga larawan. Pumili ng hanggang anim na kasalukuyang larawan. Mga sanggunian lamang ang sine-save, hindi mga kopya o patunay ng pagkukumpuni.",
+  },
+  "Photos could not be refreshed. Notes still work; saved photo references are retained for review.": {
+    "es":
+        "No se pudieron actualizar las fotos. Puede guardar notas; las referencias guardadas se conservan para revisión.",
+    "zh-Hans": "无法刷新照片。仍可使用备注；已保存的照片引用会保留供复查。",
+    "zh-Hant": "無法重新整理照片。仍可使用備註；已儲存的照片引用會保留供複查。",
+    "vi":
+        "Không thể làm mới ảnh. Vẫn dùng được ghi chú; tham chiếu đã lưu được giữ lại để xem xét.",
+    "fil":
+        "Hindi ma-refresh ang mga larawan. Magagamit pa rin ang mga tala; mananatili ang mga sanggunian para suriin.",
+  },
+  "This photo was replaced or removed. Clear it or select the current version.": {
+    "es":
+        "Esta foto se reemplazó o eliminó. Quite la referencia o seleccione la versión actual.",
+    "zh-Hans": "此照片已被替换或删除。清除引用或选择当前版本。",
+    "zh-Hant": "此照片已被替換或刪除。清除引用或選擇目前版本。",
+    "vi":
+        "Ảnh này đã bị thay hoặc xóa. Bỏ tham chiếu hoặc chọn phiên bản hiện tại.",
+    "fil":
+        "Napalitan o inalis ang larawang ito. Alisin ito o piliin ang kasalukuyang bersyon.",
+  },
+  "The note or photo references could not be saved. Your input is retained; try again.": {
+    "es":
+        "No se pudieron guardar la nota o las referencias. Su texto se conserva; vuelva a intentarlo.",
+    "zh-Hans": "无法保存备注或照片引用。您的输入已保留；请重试。",
+    "zh-Hant": "無法儲存備註或照片引用。您的輸入已保留；請重試。",
+    "vi":
+        "Không thể lưu ghi chú hoặc tham chiếu ảnh. Nội dung vẫn được giữ; hãy thử lại.",
+    "fil":
+        "Hindi ma-save ang tala o mga sanggunian. Nananatili ang iyong inilagay; subukan muli.",
+  },
+  "The answer changed. Review the saved note and photo references.": {
+    "es":
+        "La respuesta cambió. Revise la nota y las referencias de fotos guardadas.",
+    "zh-Hans": "答案已更改。请复查已保存的备注和照片引用。",
+    "zh-Hant": "答案已變更。請複查已儲存的備註和照片引用。",
+    "vi": "Câu trả lời đã đổi. Xem lại ghi chú và tham chiếu ảnh đã lưu.",
+    "fil": "Nagbago ang sagot. Suriin ang naka-save na tala at mga sanggunian.",
+  },
+  "{count} saved photo references; refresh to check their current versions.": {
+    "es":
+        "{count} referencias de fotos guardadas; actualice para comprobar sus versiones.",
+    "zh-Hans": "已保存 {count} 个照片引用；请刷新以检查当前版本。",
+    "zh-Hant": "已儲存 {count} 個照片引用；請重新整理以檢查目前版本。",
+    "vi": "Đã lưu {count} tham chiếu ảnh; làm mới để kiểm tra phiên bản.",
+    "fil":
+        "{count} sanggunian ng larawan ang naka-save; i-refresh upang suriin ang mga bersyon.",
+  },
+  "Confirm the room for this concern": {
+    "es": "Confirme la habitación de este problema",
+    "zh-Hans": "确认此隐患所在房间",
+    "zh-Hant": "確認此隱患所在房間",
+    "vi": "Xác nhận phòng cho mối lo này",
+    "fil": "Kumpirmahin ang silid para sa alalahaning ito",
+  },
+  "The room is unknown. Choose a room; no assignment is made automatically.": {
+    "es":
+        "La habitación es desconocida. Elija una; no se asigna automáticamente.",
+    "zh-Hans": "房间未知。请选择房间；不会自动分配。",
+    "zh-Hant": "房間未知。請選擇房間；不會自動指定。",
+    "vi": "Chưa biết phòng. Hãy chọn; không tự động gán phòng.",
+    "fil": "Hindi alam ang silid. Pumili; walang awtomatikong pagtatalaga.",
+  },
+  "Suggested rooms use the original area only. Confirm the correct room.": {
+    "es":
+        "Las sugerencias usan solo el área original. Confirme la habitación correcta.",
+    "zh-Hans": "建议仅依据原始区域。请确认正确的房间。",
+    "zh-Hant": "建議僅依據原始區域。請確認正確的房間。",
+    "vi": "Phòng gợi ý chỉ dựa trên khu vực gốc. Xác nhận phòng đúng.",
+    "fil":
+        "Batay lamang sa orihinal na lugar ang mga mungkahi. Kumpirmahin ang tamang silid.",
+  },
+  "Room assignment needs confirmation": {
+    "es": "La asignación de habitación requiere confirmación",
+    "zh-Hans": "需要确认房间分配",
+    "zh-Hant": "需要確認房間指定",
+    "vi": "Cần xác nhận phòng",
+    "fil": "Kailangang kumpirmahin ang silid",
+  },
+  "Report labels are in English. Your room names and notes are preserved. This educational report is not a safety certification or application.": {
+    "es":
+        "Las etiquetas del informe están en inglés. Se conservan sus nombres y notas. Este informe educativo no es una certificación de seguridad ni una solicitud.",
+    "zh-Hans": "报告标签为英文。您的房间名称和备注会保留。此教育报告不是安全认证或申请。",
+    "zh-Hant": "報告標籤為英文。您的房間名稱和備註會保留。此教育報告不是安全認證或申請。",
+    "vi":
+        "Nhãn báo cáo bằng tiếng Anh. Giữ nguyên tên phòng và ghi chú của bạn. Báo cáo hướng dẫn này không phải chứng nhận an toàn hay đơn đăng ký.",
+    "fil":
+        "Nasa Ingles ang mga label ng ulat. Nananatili ang pangalan ng silid at mga tala mo. Gabay lamang ito, hindi sertipikasyon ng kaligtasan o aplikasyon.",
+  },
+  "Include question notes": {
+    "es": "Incluir notas de las preguntas",
+    "zh-Hans": "包含问题备注",
+    "zh-Hant": "包含問題備註",
+    "vi": "Bao gồm ghi chú câu hỏi",
+    "fil": "Isama ang mga tala sa tanong",
+  },
+  "Include photo references (no images)": {
+    "es": "Incluir referencias de fotos (sin imágenes)",
+    "zh-Hans": "包含照片引用（无图像）",
+    "zh-Hant": "包含照片引用（無影像）",
+    "vi": "Bao gồm tham chiếu ảnh (không có hình)",
+    "fil": "Isama ang sanggunian ng larawan (walang mga larawan)",
+  },
+  "Prepare checklist report": {
+    "es": "Preparar informe de la lista",
+    "zh-Hans": "生成清单报告",
+    "zh-Hant": "產生清單報告",
+    "vi": "Tạo báo cáo danh sách",
+    "fil": "Ihanda ang ulat ng checklist",
+  },
+  "Share the checklist report?": {
+    "es": "¿Compartir el informe de la lista?",
+    "zh-Hans": "分享清单报告？",
+    "zh-Hant": "分享清單報告？",
+    "vi": "Chia sẻ báo cáo danh sách?",
+    "fil": "Ibahagi ang ulat ng checklist?",
+  },
+  "The selected app or person can keep this copy. Sharing does not verify repairs, submit an application, or grant access to your plan.": {
+    "es":
+        "La aplicación o persona elegida puede conservar esta copia. Compartir no verifica reparaciones, envía una solicitud ni da acceso a su plan.",
+    "zh-Hans": "所选应用或个人可以保留此副本。分享不会验证维修、提交申请或授予计划访问权。",
+    "zh-Hant": "所選應用程式或個人可以保留此副本。分享不會驗證維修、提交申請或授予計畫存取權。",
+    "vi":
+        "Ứng dụng hoặc người nhận có thể giữ bản sao. Chia sẻ không xác minh sửa chữa, nộp đơn hay cấp quyền truy cập kế hoạch.",
+    "fil":
+        "Maaaring panatilihin ng napiling app o tao ang kopya. Ang pagbabahagi ay hindi nagbeberipika ng pagkukumpuni, nagsusumite ng aplikasyon o nagbibigay ng access sa plano.",
+  },
+  "The checklist report could not be prepared. Refresh and try again. Some text or report sizes may not be supported.": {
+    "es":
+        "No se pudo preparar el informe. Actualice e inténtelo de nuevo. Algunos textos o tamaños pueden no ser compatibles.",
+    "zh-Hans": "无法生成清单报告。请刷新后重试。部分文字或报告大小可能不受支持。",
+    "zh-Hant": "無法產生清單報告。請重新整理後重試。部分文字或報告大小可能不受支援。",
+    "vi":
+        "Không thể tạo báo cáo. Làm mới rồi thử lại. Một số văn bản hoặc kích thước có thể chưa được hỗ trợ.",
+    "fil":
+        "Hindi maihanda ang ulat. I-refresh at subukan muli. Maaaring hindi suportado ang ilang teksto o laki ng ulat.",
+  },
+  "The report changed or could not be shared. Prepare a fresh report and try again.": {
+    "es":
+        "El informe cambió o no se pudo compartir. Prepare uno nuevo y vuelva a intentarlo.",
+    "zh-Hans": "报告已更改或无法分享。请生成新报告后重试。",
+    "zh-Hant": "報告已變更或無法分享。請產生新報告後重試。",
+    "vi": "Báo cáo đã đổi hoặc không thể chia sẻ. Tạo báo cáo mới rồi thử lại.",
+    "fil":
+        "Nagbago ang ulat o hindi ito maibahagi. Maghanda ng bagong ulat at subukan muli.",
+  },
+  "This concern or its photos changed. Review it before reporting it addressed again.": {
+    "es":
+        "Este problema o sus fotos cambiaron. Revíselo antes de volver a informar que está atendido.",
+    "zh-Hans": "此隐患或其照片已更改。再次报告已处理之前，请先复查。",
+    "zh-Hant": "此隱患或其照片已變更。再次回報已處理之前，請先複查。",
+    "vi":
+        "Mối lo hoặc ảnh đã thay đổi. Xem lại trước khi báo đã xử lý lần nữa.",
+    "fil":
+        "Nagbago ang alalahanin o mga larawan nito. Suriin bago muling iulat na natugunan.",
+  },
 };

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { MemoryCaseRepository } from '../src/api/memory-case-repository.ts';
-import { STEADI_CATALOG, parseHomeSafetyRecord, parseHomeSafetyRequest, type HomeSafetySave, type SafetyOperation } from '../src/assessment/home-safety.ts';
+import { STEADI_CATALOG, safetyRequestHash, parseHomeSafetyRecord, parseHomeSafetyRequest, type HomeSafetySave, type SafetyOperation } from '../src/assessment/home-safety.ts';
 import { draft } from './postgres/fixtures.ts';
 
 const owner = 'fictional-owner', caseId = randomUUID(), at = '2026-10-24T18:00:00.000Z';
@@ -11,6 +11,34 @@ const request = (operation: SafetyOperation, expectedSafetyRevision = 0, expecte
   caseId, expectedSafetyRevision, expectedCaseRevision, mutationId: randomUUID(), operation });
 const add = (id = 'bedroom-one') => request({ type: 'add_room', room: { id, type: 'bedroom', name: 'Fictional upstairs room' } });
 async function state(r: MemoryCaseRepository) { const result = await r.readHomeSafetyForUser(owner, caseId); assert.equal(result.status, 'found'); if (result.status !== 'found') throw Error(); return result.state; }
+
+test('addressed reports require current confirmed concerns, retain actor/history, retry exactly and never change the canonical case', async () => {
+  const r = repo();
+  await r.saveHomeSafetyForUser(owner, add(), at);
+  await r.saveHomeSafetyForUser(owner, request({ type: 'answer', roomId: 'bedroom-one', questionId: 'bedroom.path', value: 'yes' }, 1), at);
+  const review: SafetyOperation = { type: 'review_concern', roomId: 'bedroom-one', questionId: 'bedroom.path', findingId: 'new-concern', observation: 'Fictional dark route', state: 'needs_review' };
+  await r.saveHomeSafetyForUser(owner, request(review, 2), at);
+  let saved = await state(r);
+  const report = (): Extract<SafetyOperation, { type: 'set_addressed' }> => ({ type: 'set_addressed', roomId: 'bedroom-one', findingId: 'new-concern', findingFingerprint: safetyRequestHash(saved.case.findings.at(-1)), answerRevision: saved.safety.document.answers[0].revision, addressed: true });
+  assert.equal((await r.saveHomeSafetyForUser(owner, request(report(), 3, 2), at)).status, 'invalid_operation');
+  await r.saveHomeSafetyForUser(owner, request({ ...review, state: 'confirmed' }, 3, 2), at);
+  saved = await state(r); const before = saved.case;
+  const addressed = request(report(), 4, 3);
+  assert.equal((await r.saveHomeSafetyForUser(owner, addressed, at)).status, 'found');
+  saved = await state(r); assert.deepEqual(saved.case, before);
+  assert.equal(saved.safety.history.at(-1)!.recordedBy, owner);
+  assert.equal((await r.saveHomeSafetyForUser(owner, addressed, at)).status, 'found');
+  assert.equal((await state(r)).safety.revision, 5);
+  assert.equal((await r.saveHomeSafetyForUser('another-owner', addressed, at)).status, 'not_found');
+  await r.saveHomeSafetyForUser(owner, request({ type: 'answer', roomId: 'bedroom-one', questionId: 'bedroom.path', value: 'no' }, 5, 3), at);
+  saved = await state(r);
+  assert.equal((await r.saveHomeSafetyForUser(owner, request(report(), 6, 3), at)).status, 'invalid_operation');
+  await r.saveHomeSafetyForUser(owner, request({ ...review, state: 'confirmed', observation: 'Fictional corrected route' }, 6, 3), at);
+  assert.equal((await r.saveHomeSafetyForUser(owner, { ...addressed, mutationId: randomUUID(), expectedSafetyRevision: 7, expectedCaseRevision: 4 }, at)).status, 'invalid_operation');
+  saved = await state(r);
+  assert.equal((await r.saveHomeSafetyForUser(owner, request({ ...report(), addressed: false }, 7, 4), at)).status, 'found');
+  assert.equal((await state(r)).safety.history.length, 8);
+});
 
 test('two rooms of the same type have stable independent answers and names without changing the case', async () => {
   const r = repo(); await r.saveHomeSafetyForUser(owner, add(), at);

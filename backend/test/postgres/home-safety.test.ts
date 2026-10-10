@@ -3,13 +3,14 @@ import { randomUUID, createHash } from 'node:crypto';
 import { before, beforeEach, after, test } from 'node:test';
 import type { Pool } from 'pg';
 import { TestPostgres } from './harness.ts';
-import { OWNER, OTHER, create } from './fixtures.ts';
+import { OWNER, OTHER, create, imageInput } from './fixtures.ts';
 import { applyMigrations } from '../../src/storage/migrate.ts';
 import { PostgresCaseRepository } from '../../src/storage/postgres-case-repository.ts';
-import { type HomeSafetySave, type SafetyOperation } from '../../src/assessment/home-safety.ts';
+import { safetyRequestHash, type HomeSafetySave, type SafetyOperation } from '../../src/assessment/home-safety.ts';
 import { captureDatabaseBackup, restoreDatabaseBackup } from '../../src/storage/database-backup.ts';
 import { readCapacityReport } from '../../src/storage/capacity-report.ts';
 import { AccountClosedError } from '../../src/lifecycle/types.ts';
+import { safetyConcernAddressed } from '../../src/assessment/home-safety-report.ts';
 import { caseFingerprint } from '../../src/evidence/validation.ts';
 
 let cluster: TestPostgres, target: TestPostgres, admin: Pool, runtime: Pool, repo: PostgresCaseRepository;
@@ -74,6 +75,15 @@ test('checklist edits invalidate deletion previews; case and account deletion pu
 });
 test('backup and isolated restore retain structured rooms, source versions and audit history', async () => {
   const { caseId } = await create(repo); await repo.saveHomeSafetyForUser(OWNER, save(caseId, add), at);
+  await repo.saveHomeSafetyForUser(OWNER, save(caseId, { type: 'assign_finding', roomId: add.room.id, findingId: 'fictional-finding' }, 1), at);
+  const before = await state(caseId);
+  const report = save(caseId, { type: 'set_addressed', roomId: add.room.id, findingId: 'fictional-finding', findingFingerprint: safetyRequestHash(before.case.findings[0]), answerRevision: null, addressed: true, evidenceCatalogRevision: 0 }, 2);
+  assert.equal((await repo.saveHomeSafetyForUser(OTHER, report, at)).status, 'not_found');
+  assert.equal((await repo.saveHomeSafetyForUser(OWNER, report, at)).status, 'found');
+  assert.equal((await repo.saveHomeSafetyForUser(OWNER, report, at)).status, 'found');
+  assert.equal((await state(caseId)).safety.history.length, 3);
+  assert.deepEqual((await state(caseId)).case, before.case);
+  await repo.saveHomeSafetyForUser(OWNER,save(caseId,{type:'annotate_answer',roomId:add.room.id,questionId:'bedroom.path',answerRevision:0,note:'Fictional restored note',expectedCatalogRevision:0,evidence:[]},3),at);
   const expected = await state(caseId), origin = 'https://fictional-safety.supabase.co';
   const archive = await captureDatabaseBackup(admin, origin);
   target = await TestPostgres.start(); const targetAdmin = target.pool(); await applyMigrations(targetAdmin);
@@ -107,4 +117,21 @@ test('review retains exactly bound original measurement units but never rebinds 
   if (stale.status !== 'found') throw Error();
   assert.equal(stale.state.case.revision, 5); assert.equal(stale.state.assessment.caseRevision, 3);
   assert.equal(stale.state.assessment.history.length, 2);
+});
+
+test('question evidence references and addressed reports bind active photo revisions under the owned case lock', async () => {
+  const before = await create(repo), {caseId}=before;
+  const photo=await repo.saveEvidenceIfCurrent(await imageInput(before));assert.equal(photo.status,'saved');
+  await repo.saveHomeSafetyForUser(OWNER, save(caseId,add),at);
+  await repo.saveHomeSafetyForUser(OWNER, save(caseId,{type:'assign_finding',roomId:add.room.id,findingId:'fictional-finding'},1),at);
+  const note: SafetyOperation={type:'annotate_answer',roomId:add.room.id,questionId:'bedroom.path',answerRevision:0,note:'Fictional note with photo',expectedCatalogRevision:1,evidence:[{evidenceId:'fictional-photo-a',expectedEvidenceRevision:1}]};
+  assert.equal((await repo.saveHomeSafetyForUser(OWNER,save(caseId,note,2),at)).status,'found');
+  const report:SafetyOperation={type:'set_addressed',roomId:add.room.id,findingId:'fictional-finding',findingFingerprint:safetyRequestHash(before.findings[0]),answerRevision:null,addressed:true,evidenceCatalogRevision:1};
+  assert.equal((await repo.saveHomeSafetyForUser(OWNER,save(caseId,report,3),at)).status,'found');
+  let current=await state(caseId);assert.equal(safetyConcernAddressed(current,current.safety.document.findingRooms[0]),true);
+  assert.equal((await repo.saveEvidenceIfCurrent(await imageInput(before,1,'fictional-photo-a',1))).status,'saved');
+  current=await state(caseId);assert.equal(current.evidenceCatalogRevision,2);assert.equal(safetyConcernAddressed(current,current.safety.document.findingRooms[0]),false);
+  assert.equal((await repo.saveHomeSafetyForUser(OWNER,save(caseId,note,4),at)).status,'evidence_conflict');
+  assert.equal((await repo.saveHomeSafetyForUser(OWNER,save(caseId,report,4),at)).status,'invalid_operation');
+  assert.equal((await state(caseId)).safety.history.length,4);
 });

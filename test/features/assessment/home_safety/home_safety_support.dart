@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:crypto/crypto.dart';
 import 'package:safe_at_home/app/live_app.dart';
 import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.dart';
 import 'package:safe_at_home/shared/models/case_draft.dart';
@@ -8,6 +10,7 @@ import '../../../app/case_coordinator_test.dart'
     show FakeSession, FakeTransport;
 import '../../../app/live_workflows_test.dart' show MemoryPrivateStore;
 import '../../../services/case_evidence_api_client_test.dart' as http;
+import '../../tracking/device_reminders_test.dart' show FakeNotificationDevice;
 
 class SafetyStore extends MemoryPrivateStore {
   bool fail = false;
@@ -28,6 +31,8 @@ class SafetyServer {
   final history = <Map<String, Object?>>[];
   bool offline = false, loseNextSave = false;
   int saves = 0;
+  int progressRevision = 0;
+  final tasks = <Map<String, Object?>>[];
   Future<void> Function()? beforeRead;
   Map<String, Object?> state([String? ack]) => {
     'schemaVersion': '3',
@@ -64,6 +69,52 @@ class SafetyServer {
   Future<MatchingHttpResponse> handle(MatchingHttpRequest request) async {
     final body = http.requestJson(request);
     switch (request.endpoint.path) {
+      case '/v1/list-evidence':
+        return http.jsonResponse({
+          'schemaVersion': '1',
+          'caseId': snapshot.caseId,
+          'caseRevision': snapshot.revision,
+          'catalogRevision': 0,
+          'evidence': <Object>[],
+        });
+      case '/v3/export-home-safety':
+        final bytes = utf8.encode('%PDF-1.7\nFictional report test bytes');
+        return http.jsonResponse({
+          'schemaVersion': '3',
+          'caseId': snapshot.caseId,
+          'caseRevision': snapshot.revision,
+          'safetyRevision': history.length,
+          'catalogRevision': 0,
+          'includeNotes': body['includeNotes'],
+          'includeEvidenceReferences': body['includeEvidenceReferences'],
+          'generatedAt': '2026-10-25T12:00:00.000Z',
+          'pageCount': 1,
+          'sha256': sha256.convert(bytes).toString(),
+          'pdfBase64': base64Encode(bytes),
+        });
+      case '/v3/read-progress':
+      case '/v3/save-progress':
+        String? ack;
+        if (request.endpoint.path == '/v3/save-progress') {
+          final task = Map<String, Object?>.from(
+            (body['operation'] as Map)['task'] as Map,
+          );
+          tasks.removeWhere((t) => t['id'] == task['id']);
+          tasks.add({...task, 'needsReview': false});
+          progressRevision++;
+          ack = body['mutationId'] as String;
+        }
+        return http.jsonResponse({
+          'schemaVersion': '3',
+          'caseId': snapshot.caseId,
+          'caseRevision': snapshot.revision,
+          'revision': progressRevision,
+          'programs': <Object>[],
+          'tasks': tasks,
+          'nextOffset': null,
+          'acknowledgedMutationId': ack,
+          'historyVersion': 'f' * 64,
+        });
       case '/v1/create-case':
         snapshot = parseCurrentCase({...body, 'revision': 1});
         return http.jsonResponse(snapshot.toJson());
@@ -117,8 +168,12 @@ Future<
     FakeSession auth,
   })
 >
-safetyHarness() async {
-  final catalog = await HomeSafetyCatalog.load(),
+safetyHarness({
+  bool tracking = false,
+  bool homeSafety = false,
+  HomeSafetyCatalog? loadedCatalog,
+}) async {
+  final catalog = loadedCatalog ?? await HomeSafetyCatalog.load(),
       store = SafetyStore(),
       server = SafetyServer(catalog),
       auth = FakeSession();
@@ -127,13 +182,18 @@ safetyHarness() async {
       apiOrigin: Uri.parse('https://example.org'),
       supabaseUrl: Uri.parse('https://example.supabase.co'),
       publishableKey: 'fictional',
+      trackingEnabled: tracking,
+      homeSafetyEnabled: homeSafety,
     ),
     session: auth,
     store: store,
     transport: FakeTransport(server.handle),
+    pdfPreviewBuilder: (_) => const Text('Fictional report preview'),
+    notificationDevice: tracking ? FakeNotificationDevice() : null,
   );
   await services.coordinator.createDraft();
   await services.coordinator.save();
+  await services.progressReady;
   return (services: services, store: store, server: server, auth: auth);
 }
 

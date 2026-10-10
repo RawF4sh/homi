@@ -263,6 +263,105 @@ class SafetyDocument {
   };
 }
 
+class SafetyConcernProgress {
+  const SafetyConcernProgress(this.concerns, this.addressed);
+  final int concerns, addressed;
+}
+
+int? concernAnswerRevision(SafetyDocument document, FindingRoom link) =>
+    link.questionId == null
+    ? null
+    : document.answer(link.roomId, link.questionId!)?.revision;
+
+bool canReportAddressed(
+  SafetyDocument document,
+  CaseSnapshot snapshot,
+  FindingRoom link,
+) {
+  final finding = snapshot.findings
+      .where((f) => f.id == link.findingId)
+      .firstOrNull;
+  return finding?.reviewState == 'confirmed' &&
+      link.answerRevision == concernAnswerRevision(document, link);
+}
+
+bool concernIsAddressed(
+  SafetyDocument document,
+  CaseSnapshot snapshot,
+  FindingRoom link,
+  Iterable<Map<String, Object?>> operations, {
+  int? evidenceCatalogRevision,
+}) {
+  if (!canReportAddressed(document, snapshot, link)) return false;
+  final report = operations
+      .where(
+        (o) => o['type'] == 'set_addressed' && o['findingId'] == link.findingId,
+      )
+      .lastOrNull;
+  final finding = snapshot.findings.firstWhere((f) => f.id == link.findingId);
+  return (finding.evidenceIds.isEmpty ||
+          evidenceCatalogRevision != null &&
+              report?['evidenceCatalogRevision'] == evidenceCatalogRevision) &&
+      report?['addressed'] == true &&
+      report?['roomId'] == link.roomId &&
+      report?['findingFingerprint'] == safetyHash(finding.toJson()) &&
+      report?['answerRevision'] == concernAnswerRevision(document, link);
+}
+
+SafetyConcernProgress roomConcernProgress(
+  SafetyDocument document,
+  CaseSnapshot snapshot,
+  HomeSafetyCatalog catalog,
+  RoomInstance room,
+  Iterable<Map<String, Object?>> operations, {
+  int? evidenceCatalogRevision,
+}) {
+  var concerns = 0, addressed = 0;
+  for (final question in catalog.forRoom(room)) {
+    final answer = document.answer(room.id, question.id),
+        link = document.link(room.id, question.id);
+    final finding = snapshot.findings
+        .where((f) => f.id == link?.findingId)
+        .firstOrNull;
+    if (finding?.reviewState == 'dismissed' &&
+        link?.answerRevision == answer?.revision) {
+      continue;
+    }
+    if (answer?.value == question.concernWhen || finding != null) {
+      concerns++;
+      if (link != null &&
+          concernIsAddressed(
+            document,
+            snapshot,
+            link,
+            operations,
+            evidenceCatalogRevision: evidenceCatalogRevision,
+          )) {
+        addressed++;
+      }
+    }
+  }
+  for (final link in document.findingRooms.where(
+    (l) => l.roomId == room.id && l.questionId == null,
+  )) {
+    final finding = snapshot.findings
+        .where((f) => f.id == link.findingId)
+        .firstOrNull;
+    if (finding == null || finding.reviewState == 'dismissed') continue;
+    concerns++;
+    if (concernIsAddressed(
+      document,
+      snapshot,
+      link,
+      operations,
+      evidenceCatalogRevision: evidenceCatalogRevision,
+    )) {
+      addressed++;
+    }
+  }
+  return SafetyConcernProgress(concerns, addressed);
+}
+
 Map<String, Object?> safetyOperation(Object? json, HomeSafetyCatalog catalog) {
   if (json is! Map) V.invalid();
   final type = json['type'];
@@ -270,7 +369,26 @@ Map<String, Object?> safetyOperation(Object? json, HomeSafetyCatalog catalog) {
     'add_room' => {'type', 'room'},
     'rename_room' => {'type', 'roomId', 'name'},
     'answer' => {'type', 'roomId', 'questionId', 'value'},
+    'annotate_answer' => {
+      'type',
+      'roomId',
+      'questionId',
+      'answerRevision',
+      'note',
+      'expectedCatalogRevision',
+      'evidence',
+    },
     'assign_finding' => {'type', 'roomId', 'findingId'},
+    'set_addressed' => {
+      'type',
+      'roomId',
+      'findingId',
+      'findingFingerprint',
+      'answerRevision',
+      'addressed',
+      if (json.containsKey('evidenceCatalogRevision'))
+        'evidenceCatalogRevision',
+    },
     'review_concern' => {
       'type',
       'roomId',
@@ -289,14 +407,45 @@ Map<String, Object?> safetyOperation(Object? json, HomeSafetyCatalog catalog) {
     if (type == 'rename_room') {
       roomName(v['name']);
     }
+    if (type == 'annotate_answer') {
+      catalog.question(V.id(v['questionId']));
+      V.integer(v['answerRevision'], min: 0);
+      V.integer(v['expectedCatalogRevision'], min: 0);
+      final note = v['note'];
+      if (note != null &&
+          (note is! String ||
+              note.isEmpty ||
+              note.trim() != note ||
+              note.length > 500 ||
+              RegExp(r'[\x00-\x1f]').hasMatch(note))) {
+        V.invalid();
+      }
+      final refs = V.list(v['evidence'], (r) {
+        final ref = V.object(r, {'evidenceId', 'expectedEvidenceRevision'});
+        V.id(ref['evidenceId']);
+        V.integer(ref['expectedEvidenceRevision']);
+        return ref;
+      }, 6);
+      V.unique(refs.map((r) => r['evidenceId'] as String));
+    }
     if (type == 'answer' || type == 'review_concern') {
       catalog.question(V.id(v['questionId']));
     }
     if (type == 'answer' && !safetyAnswerValues.contains(v['value'])) {
       V.invalid();
     }
-    if (type == 'assign_finding' || type == 'review_concern') {
+    if (type == 'assign_finding' ||
+        type == 'review_concern' ||
+        type == 'set_addressed') {
       V.id(v['findingId']);
+    }
+    if (type == 'set_addressed') {
+      if (v.containsKey('evidenceCatalogRevision')) {
+        V.integer(v['evidenceCatalogRevision'], min: 0);
+      }
+      V.digest(v['findingFingerprint']);
+      if (v['answerRevision'] != null) V.integer(v['answerRevision']);
+      if (v['addressed'] is! bool) V.invalid();
     }
     if (type == 'review_concern') {
       final observation = v['observation'];
@@ -354,6 +503,7 @@ class HomeSafetyState {
     this.history,
     this.acknowledgedMutationId,
     this._record,
+    this.evidenceCatalogRevision,
   );
   factory HomeSafetyState.fromJson(Object? json, HomeSafetyCatalog catalog) {
     final v = V.object(json, {
@@ -361,6 +511,8 @@ class HomeSafetyState {
       'case',
       'safety',
       'acknowledgedMutationId',
+      if (json is Map && json.containsKey('evidenceCatalogRevision'))
+        'evidenceCatalogRevision',
     });
     final record = V.object(v['safety'], {
       'schemaVersion',
@@ -416,8 +568,12 @@ class HomeSafetyState {
       history,
       ack,
       Map<String, Object?>.from(jsonDecode(jsonEncode(record)) as Map),
+      v.containsKey('evidenceCatalogRevision')
+          ? V.integer(v['evidenceCatalogRevision'], min: 0)
+          : null,
     );
   }
+  final int? evidenceCatalogRevision;
   final CaseSnapshot snapshot;
   final int revision;
   final SafetyDocument document;
@@ -436,6 +592,8 @@ class HomeSafetyState {
     'case': snapshot.toJson(),
     'safety': jsonDecode(jsonEncode(_record)),
     'acknowledgedMutationId': acknowledgedMutationId,
+    if (evidenceCatalogRevision != null)
+      'evidenceCatalogRevision': evidenceCatalogRevision,
   };
 }
 
@@ -457,6 +615,27 @@ class HomeSafetyState {
     final room = rooms.firstWhere((r) => r['id'] == op['roomId']);
     if (op['type'] == 'rename_room') {
       room['name'] = op['name'];
+    } else if (op['type'] == 'set_addressed') {
+      final link = document.findingRooms
+          .where(
+            (l) => l.roomId == op['roomId'] && l.findingId == op['findingId'],
+          )
+          .firstOrNull;
+      final finding = snapshot.findings
+          .where((f) => f.id == op['findingId'])
+          .firstOrNull;
+      final revision = link?.questionId == null
+          ? null
+          : document.answer(link!.roomId, link.questionId!)?.revision;
+      if (link == null ||
+          finding == null ||
+          safetyHash(finding.toJson()) != op['findingFingerprint'] ||
+          revision != op['answerRevision'] ||
+          op['addressed'] == true &&
+              (finding.reviewState != 'confirmed' ||
+                  link.answerRevision != revision)) {
+        V.invalid();
+      }
     } else if (op['type'] == 'assign_finding') {
       if (!snapshot.findings.any((f) => f.id == op['findingId']) ||
           links.any(
@@ -477,7 +656,9 @@ class HomeSafetyState {
       final answer = answers
           .where((a) => a['roomId'] == op['roomId'] && a['questionId'] == q.id)
           .firstOrNull;
-      if (op['type'] == 'answer') {
+      if (op['type'] == 'annotate_answer') {
+        if (op['answerRevision'] != (answer?['revision'] ?? 0)) V.invalid();
+      } else if (op['type'] == 'answer') {
         if (answer == null) {
           answers.add({
             'roomId': op['roomId'],
@@ -542,3 +723,21 @@ class HomeSafetyState {
   }
   return (document: SafetyDocument.fromJson(data, catalog), snapshot: next);
 }
+
+Map<String, Object?>? answerAnnotation(
+  Iterable<Map<String, Object?>> operations,
+  String roomId,
+  String questionId,
+) => operations
+    .where(
+      (o) =>
+          o['type'] == 'annotate_answer' &&
+          o['roomId'] == roomId &&
+          o['questionId'] == questionId,
+    )
+    .lastOrNull;
+
+List<RoomInstance> suggestedRooms(SafetyDocument document, String legacyArea) =>
+    {'bathroom', 'entrance'}.contains(legacyArea)
+    ? document.rooms.where((r) => r.type.name == legacyArea).toList()
+    : const [];

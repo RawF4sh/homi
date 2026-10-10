@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../../../shared/models/evidence.dart';
+import 'home_safety_notes_dialog.dart';
+import 'home_safety_report_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/live_app.dart';
 import '../../../../l10n/app_localizations.dart';
@@ -9,6 +12,7 @@ import '../../application/home_safety/home_safety_session.dart';
 import '../../domain/assessment_location.dart';
 import '../../domain/home_safety/home_safety.dart';
 import '../live_assessment_screen.dart';
+import '../../../tracking/program_progress_screen.dart';
 
 class HomeSafetyScreen extends StatefulWidget {
   const HomeSafetyScreen({super.key, required this.services, this.catalog});
@@ -70,6 +74,149 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => _RoomDialog(room: room, onSave: s.edit),
+    );
+  }
+
+  Future<void> editNotes(RoomInstance room, SafetyQuestion question) async {
+    final s = session!;
+    EvidenceCatalog? evidence;
+    try {
+      evidence = await widget.services.exports.listEvidence(
+        s.snapshot,
+        currentCase: () {
+          s.guard();
+          return s.snapshot;
+        },
+        currentCatalog: () => null,
+      );
+    } on MatchingApiException catch (e) {
+      if (!{
+        'NETWORK_ERROR',
+        'TIMEOUT',
+        'SERVICE_UNAVAILABLE',
+        'CASE_REVISION_MISMATCH',
+      }.contains(e.code)) {
+        rethrow;
+      }
+    }
+    s.guard();
+    if (!mounted) return;
+    final prior = answerAnnotation(s.operations, room.id, question.id);
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => HomeSafetyNotesDialog(
+        initial: prior,
+        catalog: evidence,
+        onSave: (note, refs) => s.edit({
+          'type': 'annotate_answer',
+          'roomId': room.id,
+          'questionId': question.id,
+          'answerRevision':
+              s.document.answer(room.id, question.id)?.revision ?? 0,
+          'note': note,
+          'evidence': refs,
+          'expectedCatalogRevision':
+              evidence?.catalogRevision ??
+              prior?['expectedCatalogRevision'] ??
+              0,
+        }),
+      ),
+    );
+  }
+
+  Future<void> legacyAssignment(String findingId) async {
+    final s = session!,
+        finding = session!.snapshot.findings.firstWhere(
+          (f) => f.id == findingId,
+        );
+    final suggested = suggestedRooms(s.document, finding.room);
+    final rooms = [
+      ...suggested,
+      ...s.document.rooms.where(
+        (r) => !suggested.any((candidate) => candidate.id == r.id),
+      ),
+    ];
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(ctx.tr('Confirm the room for this concern')),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(finding.observation),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              ctx.tr(
+                suggested.isEmpty
+                    ? 'The room is unknown. Choose a room; no assignment is made automatically.'
+                    : 'Suggested rooms use the original area only. Confirm the correct room.',
+              ),
+            ),
+          ),
+          for (final room in rooms)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, room.id),
+              child: Text(roomTitle(room)),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, '__add_room__'),
+            child: Text(ctx.tr('Add a room')),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || !s.isCurrent || selected == null) return;
+    if (selected == '__add_room__') {
+      await roomDialog();
+      if (mounted && s.isCurrent) await legacyAssignment(findingId);
+    } else {
+      await run(
+        () => s.edit({
+          'type': 'assign_finding',
+          'roomId': selected,
+          'findingId': findingId,
+        }),
+      );
+    }
+  }
+
+  Widget questionNotes(
+    HomeSafetySession s,
+    RoomInstance room,
+    SafetyQuestion question,
+  ) {
+    final note = answerAnnotation(s.operations, room.id, question.id);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (note?['note'] != null) Text(note!['note'] as String),
+        if (note != null &&
+            note['answerRevision'] !=
+                (s.document.answer(room.id, question.id)?.revision ?? 0))
+          Text(
+            context.tr(
+              'The answer changed. Review the saved note and photo references.',
+            ),
+          ),
+        if ((note?['evidence'] as List? ?? []).isNotEmpty)
+          Text(
+            context.tr(
+              '{count} saved photo references; refresh to check their current versions.',
+              {'count': (note!['evidence'] as List).length},
+            ),
+          ),
+        TextButton(
+          key: ValueKey('question-notes-${question.id}'),
+          onPressed: editable
+              ? () => run(() => editNotes(room, question))
+              : null,
+          child: Text(context.tr('Notes and photo references')),
+        ),
+        ?questionActions(s, room, question),
+      ],
     );
   }
 
@@ -153,6 +300,148 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
     s.guard();
     await s.refresh();
   });
+
+  Future<void> openReport() => run(() async {
+    final s = session!;
+    await s.save();
+    s.guard();
+    if (!mounted || s.hasPending || s.conflict != null || s.caseWriteBlocked) {
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            HomeSafetyReportScreen(services: widget.services, session: s),
+      ),
+    );
+    if (mounted && s.isCurrent) await s.refresh();
+  });
+  Future<void> openTasks(String id) => run(() async {
+    final s = session!;
+    await s.save();
+    s.guard();
+    if (s.hasPending || s.conflict != null || s.caseWriteBlocked || !mounted) {
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProgramProgressScreen(
+          services: widget.services,
+          tasksFirst: true,
+          findingId: id,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    s.guard();
+    await s.refresh();
+  });
+
+  Future<void> reportAddressed(FindingRoom link, bool addressed) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: Text(
+          context.tr(addressed ? 'Mark concern addressed?' : 'Reopen concern?'),
+        ),
+        content: Text(
+          context.tr(
+            'This records your report only. It does not verify a repair or certify home safety. Completing a next step does not automatically address a concern.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.tr('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              context.tr(addressed ? 'Mark addressed' : 'Reopen concern'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (accepted == true && mounted) {
+      await run(() => session!.setAddressed(link, addressed));
+    }
+  }
+
+  String progressText(HomeSafetySession s, RoomInstance room) {
+    final progress = roomConcernProgress(
+      s.document,
+      s.snapshot,
+      s.catalog,
+      room,
+      s.operations,
+      evidenceCatalogRevision: s.baseline.evidenceCatalogRevision,
+    );
+    return context.tr('{count} of {total} concerns addressed', {
+      'count': progress.addressed,
+      'total': progress.concerns,
+    });
+  }
+
+  Widget concernActions(HomeSafetySession s, FindingRoom link) {
+    final addressed = concernIsAddressed(
+      s.document,
+      s.snapshot,
+      link,
+      s.operations,
+      evidenceCatalogRevision: s.baseline.evidenceCatalogRevision,
+    );
+    final priorReport = s.operations
+        .where(
+          (o) =>
+              o['type'] == 'set_addressed' && o['findingId'] == link.findingId,
+        )
+        .lastOrNull;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (priorReport?['addressed'] == true && !addressed)
+          Text(
+            context.tr(
+              'This concern or its photos changed. Review it before reporting it addressed again.',
+            ),
+          ),
+        if (widget.services.config.trackingEnabled)
+          TextButton(
+            key: ValueKey('concern-tasks-${link.findingId}'),
+            onPressed: editable && !s.caseWriteBlocked
+                ? () => openTasks(link.findingId)
+                : null,
+            child: Text(context.tr('View or add next steps')),
+          ),
+        if (addressed) Text(context.tr('Addressed - reported by you')),
+        if (addressed || canReportAddressed(s.document, s.snapshot, link))
+          TextButton(
+            key: ValueKey('concern-addressed-${link.findingId}'),
+            onPressed: editable
+                ? () => reportAddressed(link, !addressed)
+                : null,
+            child: Text(
+              context.tr(addressed ? 'Reopen concern' : 'Mark addressed'),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget? questionActions(
+    HomeSafetySession s,
+    RoomInstance room,
+    SafetyQuestion question,
+  ) {
+    final link = s.document.link(room.id, question.id);
+    return link != null &&
+            s.snapshot.findings.any((f) => f.id == link.findingId)
+        ? concernActions(s, link)
+        : null;
+  }
+
   Future<void> resolve(bool keepDevice) async {
     final s = session!, fresh = s.conflict!;
     final accepted = await showDialog<bool>(
@@ -182,6 +471,13 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
                       deviceSnapshot: s.snapshot.toJson(),
                       savedSnapshot: fresh.snapshot.toJson(),
                       catalog: s.catalog,
+                      savedOperations: fresh.history
+                          .map(
+                            (e) => Map<String, Object?>.from(
+                              e['operation'] as Map,
+                            ),
+                          )
+                          .toList(),
                     ),
                   ),
               ],
@@ -275,6 +571,13 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
                       : null,
                 ),
                 actions: [
+                  IconButton(
+                    tooltip: context.tr('Room and checklist report'),
+                    onPressed: editable && !s.caseWriteBlocked
+                        ? openReport
+                        : null,
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                  ),
                   IconButton(
                     tooltip: context.tr('Check saved state'),
                     onPressed: enabled ? () => run(s.refresh) : null,
@@ -399,6 +702,17 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
   );
 
   List<Widget> roomList(HomeSafetySession s) => [
+    for (final finding in s.snapshot.findings.where(
+      (f) => !s.document.findingRooms.any((l) => l.findingId == f.id),
+    ))
+      Card(
+        child: ListTile(
+          title: Text(finding.observation),
+          subtitle: Text(context.tr('Room assignment needs confirmation')),
+          trailing: const Icon(Icons.room_outlined),
+          onTap: editable ? () => legacyAssignment(finding.id) : null,
+        ),
+      ),
     FilledButton.icon(
       key: const ValueKey('rooms-add'),
       onPressed: editable && s.document.rooms.length < 32 ? roomDialog : null,
@@ -420,18 +734,7 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
           key: ValueKey('room-${room.id}'),
           title: Text(roomTitle(room)),
           subtitle: Text(
-            context.tr('{count} of {total} questions answered', {
-              'count': s.catalog
-                  .forRoom(room)
-                  .where(
-                    (q) =>
-                        s.document.answer(room.id, q.id)?.value !=
-                            'unanswered' &&
-                        s.document.answer(room.id, q.id) != null,
-                  )
-                  .length,
-              'total': s.catalog.forRoom(room).length,
-            }),
+            '${context.tr('{count} of {total} questions answered', {'count': s.catalog.forRoom(room).where((q) => s.document.answer(room.id, q.id)?.value != 'unanswered' && s.document.answer(room.id, q.id) != null).length, 'total': s.catalog.forRoom(room).length})}\n${progressText(s, room)}',
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: enabled ? () => setState(() => selectedRoom = room.id) : null,
@@ -439,6 +742,12 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
       ),
   ];
   List<Widget> roomChecklist(HomeSafetySession s, RoomInstance room) => [
+    Text(progressText(s, room)),
+    Text(
+      context.tr(
+        'Addressed counts are your reports, not verified repairs. Currently dismissed concerns are excluded. Changed answers or findings need review. Unknown answers are not a safety result.',
+      ),
+    ),
     Wrap(
       spacing: 8,
       children: [
@@ -478,6 +787,7 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
         onReview: () => review(room, q),
         onPhoto: () => openFinding(s.document.link(room.id, q.id)!.findingId),
         onlineReady: editable && !s.caseWriteBlocked,
+        followUp: questionNotes(s, room, q),
       ),
     for (final link in s.document.findingRooms.where(
       (l) => l.roomId == room.id && l.questionId == null,
@@ -492,6 +802,7 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(finding.observation),
+                concernActions(s, link),
                 TextButton(
                   onPressed: editable && !s.caseWriteBlocked
                       ? () => openFinding(finding.id)
@@ -524,6 +835,7 @@ class _QuestionCard extends StatelessWidget {
     required this.onReview,
     required this.onPhoto,
     required this.onlineReady,
+    this.followUp,
   });
   final SafetyQuestion question;
   final SafetyAnswer? answer;
@@ -531,6 +843,7 @@ class _QuestionCard extends StatelessWidget {
   final bool findingPresent, editable, onlineReady;
   final ValueChanged<String> onAnswer;
   final VoidCallback onReview, onPhoto;
+  final Widget? followUp;
   @override
   Widget build(BuildContext context) {
     final concern = answer?.value == question.concernWhen;
@@ -608,6 +921,7 @@ class _QuestionCard extends StatelessWidget {
                 onPressed: onlineReady ? onPhoto : null,
                 child: Text(context.tr('Photos and measurements')),
               ),
+            ?followUp,
           ],
         ),
       ),
@@ -859,20 +1173,48 @@ class _ConflictChange extends StatelessWidget {
     required this.deviceSnapshot,
     required this.savedSnapshot,
     required this.catalog,
+    required this.savedOperations,
   });
+  final List<Map<String, Object?>> savedOperations;
   final Map<String, Object?> operation, deviceSnapshot, savedSnapshot;
   final SafetyDocument device, saved;
   final HomeSafetyCatalog catalog;
   @override
   Widget build(BuildContext context) {
     final roomId = operation['roomId'] ?? (operation['room'] as Map?)?['id'];
-    String describe(SafetyDocument doc, Map<String, Object?> snapshot) {
+    String describe(
+      SafetyDocument doc,
+      Map<String, Object?> snapshot,
+      bool isDevice,
+    ) {
       final room = doc.rooms.where((r) => r.id == roomId).firstOrNull;
       final title =
           room?.name ??
           (room == null
               ? context.tr('Room not present')
               : context.tr(room.type.title));
+      if (operation['type'] == 'annotate_answer') {
+        final value = isDevice
+            ? operation
+            : answerAnnotation(
+                savedOperations,
+                roomId as String,
+                operation['questionId'] as String,
+              );
+        return '$title · ${value?['note'] ?? ''} · ${(value?['evidence'] as List? ?? []).map((r) => r['evidenceId']).join(', ')}';
+      }
+      if (operation['type'] == 'set_addressed') {
+        final value = isDevice
+            ? operation
+            : savedOperations
+                  .where(
+                    (o) =>
+                        o['type'] == 'set_addressed' &&
+                        o['findingId'] == operation['findingId'],
+                  )
+                  .lastOrNull;
+        return '$title · ${context.tr(value?['addressed'] == true ? 'Addressed - reported by you' : 'Reopen concern')}';
+      }
       if (operation['type'] == 'answer') {
         return '$title · ${context.tr(answerLabel(doc.answer(roomId as String, operation['questionId'] as String)?.value ?? 'unanswered'))}';
       }
@@ -898,12 +1240,12 @@ class _ConflictChange extends StatelessWidget {
           ),
         Text(
           context.tr('Device: {value}', {
-            'value': describe(device, deviceSnapshot),
+            'value': describe(device, deviceSnapshot, true),
           }),
         ),
         Text(
           context.tr('Saved: {value}', {
-            'value': describe(saved, savedSnapshot),
+            'value': describe(saved, savedSnapshot, false),
           }),
         ),
       ],
