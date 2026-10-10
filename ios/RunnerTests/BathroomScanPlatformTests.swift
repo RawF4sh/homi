@@ -1,4 +1,6 @@
 import AVFoundation
+import ARKit
+import simd
 import Flutter
 import UIKit
 import XCTest
@@ -35,6 +37,87 @@ final class BathroomScanPlatformTests: XCTestCase {
       if #available(iOS 16.0, *) { XCTAssertEqual(value["reason"] as? String, "simulator") }
       else { XCTAssertEqual(value["reason"] as? String, "unsupported_os") }
     #endif
+  }
+
+  func testModeSelectionPrefersLiDARThenCameraThenManualWithoutAcquiringPermission() {
+    for authorization in [AVAuthorizationStatus.authorized, .notDetermined] {
+      let lidar = BathroomScanMode.capabilities(roomPlan: true, worldTracking: true, authorization: authorization)
+      XCTAssertEqual(lidar["source"] as? String, "roomplan")
+      XCTAssertEqual(lidar["supported"] as? Bool, true)
+      XCTAssertEqual(lidar["depthSupported"] as? Bool, true)
+      let camera = BathroomScanMode.capabilities(roomPlan: false, worldTracking: true, authorization: authorization)
+      XCTAssertEqual(camera["source"] as? String, "arkit")
+      XCTAssertEqual(camera["supported"] as? Bool, true)
+      XCTAssertEqual(camera["depthSupported"] as? Bool, false)
+    }
+    for authorization in [AVAuthorizationStatus.denied, .restricted] {
+      let denied = BathroomScanMode.capabilities(roomPlan: false, worldTracking: true, authorization: authorization)
+      XCTAssertEqual(denied["supported"] as? Bool, false)
+      XCTAssertEqual(denied["reason"] as? String, "permission_denied")
+    }
+    let manual = BathroomScanMode.capabilities(roomPlan: false, worldTracking: false, authorization: .authorized)
+    XCTAssertEqual(manual["supported"] as? Bool, false)
+    XCTAssertEqual(manual["reason"] as? String, "unsupported_device")
+    let simulator = BathroomScanMode.capabilities(roomPlan: true, worldTracking: true, authorization: .authorized, simulator: true)
+    XCTAssertEqual(simulator["supported"] as? Bool, false)
+    XCTAssertEqual(simulator["depthSupported"] as? Bool, false)
+  }
+
+  func testCameraPlaneOffsetsStayInWorldCoordinatesWithoutSemanticClaims() throws {
+    var transform = matrix_identity_float4x4
+    transform.columns.3 = SIMD4<Float>(4, 1, -2, 1)
+    let plane = try BathroomARKitGeometry.plane(id: "surface", center: SIMD3<Float>(1, 0, 2),
+      extent: SIMD3<Float>(2, 0, 3), transform: transform, horizontal: true)
+    XCTAssertEqual(plane["dimensions"] as? [Double], [2, 0, 3])
+    XCTAssertEqual(plane["kind"] as? String, "unknown")
+    XCTAssertEqual(plane["classificationConfidence"] as? String, "unknown")
+    let pose = try XCTUnwrap(plane["transform"] as? [Double])
+    XCTAssertEqual(Array(pose[12...14]), [5, 1, 0])
+    XCTAssertThrowsError(try BathroomARKitGeometry.plane(id: "bad", center: .zero,
+      extent: SIMD3<Float>(0, 0, 2), transform: transform, horizontal: false))
+  }
+
+  func testCameraEstimatesRequireSameSurfaceAndFollowPlaneRefinementBetweenTaps() throws {
+    var values = BathroomARKitMeasurements()
+    let anchor = UUID()
+    try values.add(world: .zero, anchorID: anchor, transform: matrix_identity_float4x4)
+    XCTAssertThrowsError(try values.add(world: SIMD3<Float>(1, 0, 0), anchorID: UUID(), transform: matrix_identity_float4x4))
+    XCTAssertNotNil(values.pending)
+    var refined = matrix_identity_float4x4
+    refined.columns.3.x = 1
+    try values.add(world: SIMD3<Float>(2.25, 0, 0), anchorID: anchor, transform: refined)
+    XCTAssertNil(values.pending)
+    XCTAssertEqual(values.values.first?["start"] as? [Double], [1, 0, 0])
+    XCTAssertEqual(values.values.first?["end"] as? [Double], [2.25, 0, 0])
+    try values.add(world: .zero, anchorID: anchor, transform: refined)
+    values.resetPending()
+    XCTAssertEqual(values.values.count, 1, "Lost tracking must retain completed estimates")
+    values.undo()
+    XCTAssertTrue(values.values.isEmpty)
+  }
+
+  func testCameraMeasurementLimitsAndPayloadRemainBoundedAndPrivate() throws {
+    for point in [SIMD3<Float>(Float.nan, 0, 0), SIMD3<Float>(0.001, 0, 0), SIMD3<Float>(11, 0, 0)] {
+      XCTAssertThrowsError(try BathroomARKitGeometry.measurement(id: scanID, start: .zero, end: point))
+    }
+    var values = BathroomARKitMeasurements()
+    let anchor = UUID()
+    for _ in 0..<20 {
+      try values.add(world: .zero, anchorID: anchor, transform: matrix_identity_float4x4)
+      try values.add(world: SIMD3<Float>(1, 0, 0), anchorID: anchor, transform: matrix_identity_float4x4)
+    }
+    XCTAssertThrowsError(try values.add(world: .zero, anchorID: anchor, transform: matrix_identity_float4x4))
+    let plane = try BathroomARKitGeometry.plane(id: "surface", center: .zero, extent: SIMD3<Float>(2, 0, 3),
+      transform: matrix_identity_float4x4, horizontal: true)
+    let scene = try BathroomScanGeometry.scene(scanID: scanID, capturedAt: Date(), elements: [plane],
+      warnings: ["depth_unavailable"], truncated: false, sourceVersion: "ARKit camera test",
+      source: "arkit", measurements: values.values)
+    XCTAssertEqual(scene["schemaVersion"] as? Int, 2)
+    XCTAssertEqual(scene["source"] as? String, "arkit")
+    XCTAssertEqual(scene["points"] as? [[Double]], [])
+    XCTAssertEqual((scene["measurements"] as? [[String: Any]])?.count, 20)
+    XCTAssertLessThan(try JSONSerialization.data(withJSONObject: scene).count, 16 * 1024)
+    XCTAssertNil(scene["cameraFrames"])
   }
 
   func testOnlyBoundedUUIDv4RequestIDsAreAccepted() {
