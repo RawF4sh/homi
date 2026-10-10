@@ -12,7 +12,7 @@
     "test:contracts": "node test/contracts.ts",
     "demo": "node src/demo.ts",
     "serve:demo": "node src/api/demo-server.ts",
-    "serve:durable": "node src/api/durable-server.ts",
+    "serve:durable": "node --max-old-space-size=64 --max-semi-space-size=1 src/api/durable-server.ts",
     "migrate": "node src/storage/migrate.ts",
     "retention": "node tool/retention.ts",
     "complete:account-deletions": "node tool/complete-account-deletions.ts",
@@ -24,7 +24,8 @@
     "test:postgres": "node --test test/postgres/*.test.ts",
     "research:scfhp": "node src/research-scfhp.ts",
     "backup": "node tool/backup.ts",
-    "capacity": "node tool/capacity.ts"
+    "capacity": "node tool/capacity.ts",
+    "profile:memory": "node tool/profile-memory.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

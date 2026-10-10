@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { inflateSync } from 'node:zlib';
+import { createInflate, inflateSync } from 'node:zlib';
+import { Readable } from 'node:stream';
 import sharp from 'sharp';
-import type { SanitizedEvidenceImage } from './types.ts';
+import { MAX_SELECTED_EVIDENCE, type SanitizedEvidenceImage } from './types.ts';
 
 export const MAX_IMAGE_INPUT_BYTES = 8 * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 16_000_000;
@@ -132,6 +133,90 @@ export function validateSanitizedEvidenceImage(input: Uint8Array): {
   }
 }
 
+export interface ValidatedSanitizedEvidenceImage {
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+  sha256: string;
+  byteLength: number;
+}
+
+interface PreparedCanonicalImage {
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+  compressed: Buffer[];
+  compressedBytes: number;
+}
+
+export function inspectCanonicalEvidencePng(input: Uint8Array): Omit<PreparedCanonicalImage, 'bytes'> {
+  check(input instanceof Uint8Array && input.byteLength > 0);
+  check(input.byteLength <= MAX_SANITIZED_IMAGE_BYTES, 'IMAGE_TOO_LARGE');
+  const view = Buffer.from(input.buffer, input.byteOffset, input.byteLength);
+  const parsed = chunks(view);
+  check(parsed.every(chunk => ['IHDR', 'IDAT', 'IEND'].includes(chunk.type)));
+  check(parsed.slice(1, -1).every(chunk => chunk.type === 'IDAT'));
+  const header = parsed[0].data;
+  check(header[8] === 8 && header[9] === 6 && header[10] === 0 && header[11] === 0 && header[12] === 0);
+  const compressed = parsed.slice(1, -1).map(chunk => chunk.data);
+  return { width: header.readUInt32BE(0), height: header.readUInt32BE(4), compressed,
+    compressedBytes: compressed.reduce((total, chunk) => total + chunk.length, 0) };
+}
+
+function prepareCanonicalImage(input: Uint8Array): PreparedCanonicalImage {
+  check(input instanceof Uint8Array && input.byteLength > 0);
+  check(input.byteLength <= MAX_SANITIZED_IMAGE_BYTES, 'IMAGE_TOO_LARGE');
+  const bytes = Uint8Array.from(input);
+  return { bytes, ...inspectCanonicalEvidencePng(bytes) };
+}
+
+async function validatePreparedCanonicalImage(prepared: PreparedCanonicalImage): Promise<ValidatedSanitizedEvidenceImage> {
+  const rowBytes = prepared.width * 4 + 1, expectedBytes = rowBytes * prepared.height;
+  const inflater = createInflate({ chunkSize: 64 * 1024 });
+  const closed = new Promise<void>(resolve => inflater.once('close', resolve));
+  const source = Readable.from(prepared.compressed, { objectMode: false });
+  let total = 0;
+  try {
+    source.pipe(inflater);
+    for await (const output of inflater) {
+      check(Buffer.isBuffer(output));
+      check(total + output.length <= expectedBytes);
+      const firstFilter = (rowBytes - total % rowBytes) % rowBytes;
+      for (let offset = firstFilter; offset < output.length; offset += rowBytes) check(output[offset] <= 4);
+      total += output.length;
+    }
+    check(total === expectedBytes && inflater.bytesWritten === prepared.compressedBytes);
+    return { bytes: prepared.bytes, width: prepared.width, height: prepared.height,
+      byteLength: prepared.bytes.length, sha256: createHash('sha256').update(prepared.bytes).digest('hex') };
+  } finally {
+    source.destroy(); inflater.destroy();
+    await closed;
+  }
+}
+
+export async function validateSanitizedEvidenceImageAsync(input: Uint8Array): Promise<ValidatedSanitizedEvidenceImage> {
+  try { return await validatePreparedCanonicalImage(prepareCanonicalImage(input)); }
+  catch (error) {
+    if (error instanceof ImageSanitizationError) throw error;
+    throw new ImageSanitizationError();
+  }
+}
+
+export async function validateSanitizedEvidenceImagesAsync(
+  inputs: ReadonlyArray<Uint8Array>,
+): Promise<ValidatedSanitizedEvidenceImage[]> {
+  try {
+    check(Array.isArray(inputs) && inputs.length <= MAX_SELECTED_EVIDENCE);
+    const prepared = inputs.map(prepareCanonicalImage);
+    const results: ValidatedSanitizedEvidenceImage[] = [];
+    for (const image of prepared) results.push(await validatePreparedCanonicalImage(image));
+    return results;
+  } catch (error) {
+    if (error instanceof ImageSanitizationError) throw error;
+    throw new ImageSanitizationError();
+  }
+}
+
 export async function sanitizeEvidenceImage(input: Uint8Array): Promise<SanitizedEvidenceImage> {
   try {
     check(input instanceof Uint8Array && input.byteLength > 0);
@@ -152,9 +237,9 @@ export async function sanitizeEvidenceImage(input: Uint8Array): Promise<Sanitize
     check(data.byteLength <= MAX_SANITIZED_IMAGE_BYTES, 'IMAGE_TOO_LARGE');
     const canonical = Buffer.concat([PNG_SIGNATURE, ...chunks(data)
       .filter(chunk => ['IHDR', 'IDAT', 'IEND'].includes(chunk.type)).map(chunk => chunk.bytes)]);
-    const verified = validateSanitizedEvidenceImage(canonical);
+    const verified = await validateSanitizedEvidenceImageAsync(canonical);
     check(verified.width === info.width && verified.height === info.height);
-    return { bytes: Uint8Array.from(canonical), mediaType: 'image/png', ...verified, processingVersion: IMAGE_PROCESSING_VERSION };
+    return { mediaType: 'image/png', ...verified, processingVersion: IMAGE_PROCESSING_VERSION };
   } catch (error) {
     if (error instanceof ImageSanitizationError) throw error;
     throw new ImageSanitizationError();

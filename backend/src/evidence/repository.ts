@@ -1,7 +1,7 @@
 import type { CaseSnapshot } from '../types.ts';
 import type { SavedFormAnswerSet } from '../forms/form-answers.ts';
 import type { ExportArtifactMetadata } from '../exports/types.ts';
-import type { EvidenceAsset, EvidenceCatalog, EvidenceSelection, SanitizedEvidenceImage } from './types.ts';
+import type { EvidenceAsset, EvidenceCatalog, EvidenceDescriptor, EvidenceSelection, SanitizedEvidenceImage } from './types.ts';
 
 export type EvidenceRepositoryFailure = { status: 'not_found' | 'conflict' | 'evidence_conflict'
   | 'answers_conflict' | 'generation_conflict' | 'expired' | 'quota_exceeded' | 'selection_too_large' };
@@ -37,6 +37,10 @@ export interface ExportSnapshot {
   answersFingerprint: string | null;
   catalogRevision: number;
   assets: EvidenceAsset[];
+}
+
+export interface ExportReviewSnapshot extends Omit<ExportSnapshot, 'assets'> {
+  evidence: EvidenceDescriptor[];
 }
 
 export interface PrivateExportArtifact {
@@ -77,9 +81,13 @@ export interface EvidenceRepository {
     { status: 'deleted'; evidenceRevision: number; catalogRevision: number } | EvidenceRepositoryFailure>;
   loadExportSnapshotForUser(input: ExportSnapshotInput): Promise<
     { status: 'found'; snapshot: ExportSnapshot } | EvidenceRepositoryFailure>;
+  loadExportReviewForUser(input: ExportSnapshotInput): Promise<
+    { status: 'found'; snapshot: ExportReviewSnapshot } | EvidenceRepositoryFailure>;
   publishExportIfCurrent(input: ExportPublishInput): Promise<
     { status: 'saved' | 'reused'; artifact: ExportArtifactMetadata } | EvidenceRepositoryFailure>;
   readExportForUser(input: ExportReadInput): Promise<
+    { status: 'found'; artifact: ExportArtifactMetadata } | EvidenceRepositoryFailure>;
+  reviewExportForUserIfCurrent(input: ExportCurrentReadInput): Promise<
     { status: 'found'; artifact: ExportArtifactMetadata } | EvidenceRepositoryFailure>;
   readExportForUserIfCurrent(input: ExportCurrentReadInput): Promise<
     { status: 'found'; artifact: PrivateExportArtifact } | EvidenceRepositoryFailure>;

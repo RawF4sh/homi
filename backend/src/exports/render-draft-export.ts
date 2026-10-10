@@ -1,14 +1,16 @@
 import { createHash } from 'node:crypto';
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, pushGraphicsState, popGraphicsState, translate, scale as imageScale,
+  drawObject, type PDFFont, type PDFPage } from 'pdf-lib';
 import type { CaseSnapshot, Finding } from '../types.ts';
 import { renderDraftPreview } from '../forms/render-draft-preview.ts';
 import type { FormPlanningContext, FormPreparationPlan } from '../forms/field-mapping.ts';
 import { MAX_TEMPLATE_BYTES } from '../forms/template-artifact.ts';
 import { MAX_SELECTED_EVIDENCE, type EvidenceAsset, type EvidenceDescriptor } from '../evidence/types.ts';
-import { parseEvidenceAsset, parseEvidenceDescriptor } from '../evidence/validation.ts';
+import { parseEvidenceDescriptor } from '../evidence/validation.ts';
 import { exportEvidenceFitsBudget } from '../evidence/export-budget.ts';
 import { MAX_SANITIZED_IMAGE_BYTES } from '../evidence/image-sanitizer.ts';
 import { instantMicros } from '../packets.ts';
+import { prepareEvidenceImageEmbeddings, EvidenceEmbeddingError } from './embed-evidence-image.ts';
 
 export const MAX_DRAFT_EXPORT_BYTES = 32 * 1024 * 1024;
 export const DRAFT_EXPORT_RENDERING_VERSION = 'draft-export-v1' as const;
@@ -72,7 +74,9 @@ export async function renderDraftExport(
     const templateBytes = Uint8Array.from(templateBytesInput);
     const context = structuredClone(planningContextInput);
     const answers = structuredClone(answersInput);
-    const evidence = evidenceAssetsInput.map(asset => parseEvidenceAsset(asset));
+    const preparingEvidence = prepareEvidenceImageEmbeddings(evidenceAssetsInput);
+    evidenceAssetsInput = [];
+    const evidence = await preparingEvidence;
     const selected = new Set<string>();
     for (const asset of evidence) {
       const descriptor = asset.descriptor;
@@ -88,6 +92,7 @@ export async function renderDraftExport(
     const document = await PDFDocument.load(preview.bytes, { updateMetadata: false });
     const font = await document.embedFont(StandardFonts.Helvetica);
     const bold = await document.embedFont(StandardFonts.HelveticaBold);
+    let compressedImageBytes = 0;
     for (let index = 0; index < evidence.length; index++) {
       const asset = evidence[index];
       const finding = snapshot.findings.find(finding => finding.id === asset.descriptor.findingId)!;
@@ -99,11 +104,14 @@ export async function renderDraftExport(
       draftBanner(page, bold);
       page.drawText(`Reviewed evidence ${index + 1} of ${evidence.length}`, { x: MARGIN, y: 762, size: 14, font: bold });
       lines.forEach((line, lineIndex) => page.drawText(line, { x: MARGIN, y: 735 - lineIndex * LINE_HEIGHT, size: FONT_SIZE, font }));
-      const image = await document.embedPng(asset.bytes);
+      const image = await asset.embed(document, MAX_DRAFT_EXPORT_BYTES - compressedImageBytes);
+      compressedImageBytes += image.compressedBytes;
       check(image.width === asset.descriptor.width && image.height === asset.descriptor.height);
       const scale = Math.min((PAGE_WIDTH - MARGIN * 2) / image.width, (imageTop - imageBottom) / image.height);
       const width = image.width * scale; const height = image.height * scale;
-      page.drawImage(image, { x: (PAGE_WIDTH - width) / 2, y: imageBottom + (imageTop - imageBottom - height) / 2, width, height });
+      const imageName = page.node.newXObject('Evidence', image.ref);
+      page.pushOperators(pushGraphicsState(), translate((PAGE_WIDTH - width) / 2,
+        imageBottom + (imageTop - imageBottom - height) / 2), imageScale(width, height), drawObject(imageName), popGraphicsState());
       page.drawText('Image shown to fit this page; do not measure physical dimensions from this print.',
         { x: MARGIN, y: 48, size: 8, font });
       page.drawText('Reviewed observation only; not a clinical determination or program approval.',
@@ -116,6 +124,8 @@ export async function renderDraftExport(
       sha256: createHash('sha256').update(bytes).digest('hex'), renderingVersion: DRAFT_EXPORT_RENDERING_VERSION };
   } catch (error) {
     if (error instanceof DraftExportRenderError) throw error;
+    if (error instanceof EvidenceEmbeddingError) throw new DraftExportRenderError(
+      error.code === 'EMBED_FAILED' ? 'RENDER_FAILED' : error.code);
     throw new DraftExportRenderError();
   }
 }

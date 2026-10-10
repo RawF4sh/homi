@@ -15,4 +15,4 @@ COPY --chown=node:node assets/forms/scfhp-41567.pdf ./assets/forms/scfhp-41567.p
 USER node
 
 EXPOSE 8788
-CMD ["node", "src/api/durable-server.ts"]
+CMD ["node", "--max-old-space-size=64", "--max-semi-space-size=1", "src/api/durable-server.ts"]

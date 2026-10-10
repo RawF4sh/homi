@@ -17,10 +17,10 @@ import type { EvidenceAsset, EvidenceDescriptor, EvidenceSelection } from '../ev
 import { exportEvidenceFitsBudget } from '../evidence/export-budget.ts';
 import type { EvidenceCaseBinding, EvidenceReadInput, EvidenceRepository, EvidenceRepositoryFailure,
   EvidenceSaveInput, ExportCurrentReadInput, ExportPublishInput, ExportReadInput,
-  ExportSnapshotInput } from '../evidence/repository.ts';
+  ExportSnapshotInput, PrivateExportArtifact } from '../evidence/repository.ts';
 import { canonicalJson, caseFingerprint, evidenceIdentifier, evidenceInstant, evidenceRevision,
-  formAnswersFingerprint, parseEvidenceAsset, parseEvidenceDescriptor, parseEvidenceSelections,
-  parseSanitizedEvidenceImage } from '../evidence/validation.ts';
+  formAnswersFingerprint, parseEvidenceAssetAsync, parseEvidenceDescriptor, parseEvidenceSelections,
+  parseSanitizedEvidenceImageAsync } from '../evidence/validation.ts';
 import { parseExportArtifactMetadata } from '../exports/validation.ts';
 import type { ExportArtifactMetadata } from '../exports/types.ts';
 import { AccountClosedError, type LifecycleRepository, type DeletionCounts,
@@ -518,7 +518,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       const row = (await tx.client.query(`SELECT bytes FROM ${S}.evidence WHERE case_id=$1 AND evidence_id=$2`,
         [snapshot.caseId, descriptor.evidenceId])).rows[0];
       check(row);
-      assets.push(parseEvidenceAsset({ descriptor, bytes: row.bytes }));
+      assets.push(await parseEvidenceAssetAsync({ descriptor, bytes: row.bytes }));
     }
     return { descriptors, assets };
   }
@@ -544,11 +544,12 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       const descriptor = this.descriptor(row, request.caseId);
       if (!linked(bound.snapshot, descriptor)) return { status: 'not_found' };
       if (descriptor.evidenceRevision !== request.expectedEvidenceRevision) return { status: 'evidence_conflict' };
-      return { status: 'found', asset: parseEvidenceAsset({ descriptor, bytes: row.bytes }) };
+      return { status: 'found', asset: await parseEvidenceAssetAsync({ descriptor, bytes: row.bytes }) };
     });
   }
   async saveEvidenceIfCurrent(input: EvidenceSaveInput): ReturnType<EvidenceRepository['saveEvidenceIfCurrent']> {
-    const request = structuredClone(input), image = parseSanitizedEvidenceImage(request.image);
+    const { image: suppliedImage, ...binding } = input;
+    const request = structuredClone(binding), image = await parseSanitizedEvidenceImageAsync(suppliedImage);
     check(evidenceIdentifier(request.evidenceId) && evidenceIdentifier(request.findingId)
       && evidenceRevision(request.expectedEvidenceRevision, true));
     return this.transaction(request.userId, true, async tx => {
@@ -574,7 +575,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
         VALUES($1,$2,$3,$4,$5,$6::jsonb,$7) ON CONFLICT(case_id,evidence_id) DO UPDATE SET
         revision=EXCLUDED.revision,prepared_at=EXCLUDED.prepared_at,descriptor=EXCLUDED.descriptor,bytes=EXCLUDED.bytes`,
       [request.caseId, request.evidenceId, request.findingId, descriptor.evidenceRevision, descriptor.preparedAt,
-        JSON.stringify(descriptor), Buffer.from(image.bytes)]);
+        JSON.stringify(descriptor), Buffer.from(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength)]);
       await tx.client.query(`UPDATE ${S}.cases SET catalog_revision=$2 WHERE case_id=$1`, [request.caseId, catalogRevision]);
       await this.invalidateExports(tx, request.caseId);
       await this.quotaDelta(tx, 0, existing ? 0 : 1, 0, image.byteLength - replaced);
@@ -611,6 +612,20 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       const answers = await this.answers(tx, request.caseId, request.programId);
       return { status: 'found', snapshot: { snapshot: bound.snapshot, caseFingerprint: caseFingerprint(bound.snapshot),
         answers, answersFingerprint: formAnswersFingerprint(answers), catalogRevision: bound.catalogRevision, assets: selected.assets } };
+    });
+  }
+
+  async loadExportReviewForUser(input: ExportSnapshotInput): ReturnType<EvidenceRepository['loadExportReviewForUser']> {
+    const request = structuredClone(input), selections = parseEvidenceSelections(request.selections);
+    return this.transaction(request.userId, false, async tx => {
+      const bound = await this.bound(tx, request);
+      if ('status' in bound) return bound;
+      const selected = await this.selected(tx, bound.snapshot, selections, false);
+      if ('status' in selected) return selected;
+      const answers = await this.answers(tx, request.caseId, request.programId);
+      return { status: 'found', snapshot: { snapshot: bound.snapshot, caseFingerprint: caseFingerprint(bound.snapshot),
+        answers, answersFingerprint: formAnswersFingerprint(answers), catalogRevision: bound.catalogRevision,
+        evidence: selected.descriptors } };
     });
   }
 
@@ -707,7 +722,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
         contextFingerprint: request.contextFingerprint, selections };
       await tx.client.query(`INSERT INTO ${S}.exports(artifact_id,case_id,generation_key,bindings,metadata,bytes,last_checked_at,expires_at)
         VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8::timestamptz)`, [metadata.artifactId, request.caseId, request.generationKey,
-        JSON.stringify(bindings), JSON.stringify(metadata), Buffer.from(bytes), at, metadata.expiresAt]);
+        JSON.stringify(bindings), JSON.stringify(metadata), Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), at, metadata.expiresAt]);
       await this.quotaDelta(tx, 0, 0, 1, bytes.byteLength);
       return { status: 'saved', artifact: metadata };
     });
@@ -725,6 +740,15 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     });
   }
   async readExportForUserIfCurrent(input: ExportCurrentReadInput): ReturnType<EvidenceRepository['readExportForUserIfCurrent']> {
+    return this.currentExport(input, true);
+  }
+  async reviewExportForUserIfCurrent(input: ExportCurrentReadInput): ReturnType<EvidenceRepository['reviewExportForUserIfCurrent']> {
+    return this.currentExport(input, false);
+  }
+  private currentExport(input: ExportCurrentReadInput, includeBytes: true): ReturnType<EvidenceRepository['readExportForUserIfCurrent']>;
+  private currentExport(input: ExportCurrentReadInput, includeBytes: false): ReturnType<EvidenceRepository['reviewExportForUserIfCurrent']>;
+  private async currentExport(input: ExportCurrentReadInput, includeBytes: boolean): Promise<
+    { status: 'found'; artifact: PrivateExportArtifact | ExportArtifactMetadata } | EvidenceRepositoryFailure> {
     const request = structuredClone(input);
     return this.transaction(request.userId, true, async tx => {
       const entry = await this.caseRow(tx, request.userId, request.caseId, true);
@@ -737,12 +761,17 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       if (saved.bindings.contextFingerprint !== request.contextFingerprint) return { status: 'generation_conflict' };
       const at = await this.clock(tx, request.checkedAt);
       if (!await this.checkExportClock(tx, saved, at)) return { status: 'expired' };
-      const row = (await tx.client.query(`SELECT bytes FROM ${S}.exports WHERE artifact_id=$1 AND case_id=$2`,
-        [request.artifactId, request.caseId])).rows[0];
-      check(row && row.bytes instanceof Uint8Array); validatePdf(row.bytes, saved.metadata);
+      check(saved.byteLength === saved.metadata.byteLength);
+      let bytes: Uint8Array | undefined;
+      if (includeBytes) {
+        const row = (await tx.client.query(`SELECT bytes FROM ${S}.exports WHERE artifact_id=$1 AND case_id=$2`,
+          [request.artifactId, request.caseId])).rows[0];
+        check(row && row.bytes instanceof Uint8Array); validatePdf(row.bytes, saved.metadata);
+        bytes = Uint8Array.from(row.bytes);
+      }
       const after = await this.clock(tx, at);
       if (!await this.checkExportClock(tx, saved, after)) return { status: 'expired' };
-      return { status: 'found', artifact: { metadata: saved.metadata, bytes: Uint8Array.from(row.bytes) } };
+      return { status: 'found', artifact: bytes === undefined ? saved.metadata : { metadata: saved.metadata, bytes } };
     });
   }
 }

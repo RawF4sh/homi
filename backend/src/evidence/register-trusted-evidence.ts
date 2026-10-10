@@ -4,7 +4,7 @@ import type { CaseSnapshot } from '../types.ts';
 import { MAX_IMAGE_INPUT_BYTES, sanitizeEvidenceImage } from './image-sanitizer.ts';
 import type { EvidenceRepository, EvidenceRepositoryFailure } from './repository.ts';
 import type { EvidenceAsset, SanitizedEvidenceImage } from './types.ts';
-import { evidenceIdentifier, evidenceInstant, evidenceRevision, parseSanitizedEvidenceImage } from './validation.ts';
+import { evidenceIdentifier, evidenceInstant, evidenceRevision, parseSanitizedEvidenceImageAsync } from './validation.ts';
 
 export interface TrustedEvidenceRegistration {
   userId: string;
@@ -59,7 +59,7 @@ export async function registerTrustedEvidence(
     }
   } catch { return { status: 'service_unavailable' }; }
   let image: SanitizedEvidenceImage;
-  try { image = parseSanitizedEvidenceImage(await (deps.sanitize ?? sanitizeEvidenceImage)(request.bytes)); }
+  try { image = await parseSanitizedEvidenceImageAsync(await (deps.sanitize ?? sanitizeEvidenceImage)(request.bytes)); }
   catch { return { status: 'invalid_image' }; }
   try {
     const preparedAt = serverTime(deps.now());

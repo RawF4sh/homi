@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { instantMicros } from '../packets.ts';
 import { parseSavedFormAnswers, type SavedFormAnswerSet } from '../forms/form-answers.ts';
-import { validateSanitizedEvidenceImage } from './image-sanitizer.ts';
+import { validateSanitizedEvidenceImage, validateSanitizedEvidenceImageAsync,
+  validateSanitizedEvidenceImagesAsync } from './image-sanitizer.ts';
+import { exportEvidenceFitsBudget } from './export-budget.ts';
 import type { CaseSnapshot } from '../types.ts';
 import { MAX_SELECTED_EVIDENCE, type EvidenceAsset, type EvidenceDescriptor,
   type EvidenceSelection, type SanitizedEvidenceImage } from './types.ts';
@@ -43,6 +45,16 @@ export function parseSanitizedEvidenceImage(value: unknown): SanitizedEvidenceIm
   return { bytes: Uint8Array.from(value.bytes), mediaType: 'image/png', processingVersion: 'evidence-png-v1', ...actual };
 }
 
+export async function parseSanitizedEvidenceImageAsync(value: unknown): Promise<SanitizedEvidenceImage> {
+  check(object(value, ['bytes', 'mediaType', 'byteLength', 'sha256', 'width', 'height', 'processingVersion']));
+  check(value.mediaType === 'image/png' && value.processingVersion === 'evidence-png-v1' && value.bytes instanceof Uint8Array);
+  const expected = { byteLength: value.byteLength, sha256: value.sha256, width: value.width, height: value.height };
+  const actual = await validateSanitizedEvidenceImageAsync(value.bytes);
+  check(expected.byteLength === actual.byteLength && expected.sha256 === actual.sha256
+    && expected.width === actual.width && expected.height === actual.height);
+  return { mediaType: 'image/png', processingVersion: 'evidence-png-v1', ...actual };
+}
+
 export function parseEvidenceDescriptor(value: unknown): EvidenceDescriptor {
   check(object(value, ['evidenceId', 'evidenceRevision', 'caseId', 'findingId', 'mediaType', 'byteLength',
     'sha256', 'width', 'height', 'capturedAt', 'preparedAt', 'processingVersion']));
@@ -64,6 +76,33 @@ export function parseEvidenceAsset(value: unknown): EvidenceAsset {
     byteLength: descriptor.byteLength, sha256: descriptor.sha256, width: descriptor.width, height: descriptor.height,
     processingVersion: descriptor.processingVersion });
   return { descriptor, bytes: image.bytes };
+}
+
+export async function parseEvidenceAssetAsync(value: unknown): Promise<EvidenceAsset> {
+  check(object(value, ['descriptor', 'bytes']));
+  const descriptor = parseEvidenceDescriptor(value.descriptor);
+  const image = await parseSanitizedEvidenceImageAsync({ bytes: value.bytes, mediaType: descriptor.mediaType,
+    byteLength: descriptor.byteLength, sha256: descriptor.sha256, width: descriptor.width, height: descriptor.height,
+    processingVersion: descriptor.processingVersion });
+  return { descriptor, bytes: image.bytes };
+}
+
+export async function parseEvidenceAssetsAsync(values: ReadonlyArray<unknown>): Promise<EvidenceAsset[]> {
+  check(Array.isArray(values) && values.length <= MAX_SELECTED_EVIDENCE);
+  const captured = values.map(value => {
+    check(object(value, ['descriptor', 'bytes']));
+    const descriptor = parseEvidenceDescriptor(value.descriptor);
+    check(value.bytes instanceof Uint8Array && value.bytes.byteLength === descriptor.byteLength);
+    return { descriptor, bytes: value.bytes };
+  });
+  check(exportEvidenceFitsBudget(captured.map(asset => asset.descriptor)));
+  const images = await validateSanitizedEvidenceImagesAsync(captured.map(asset => asset.bytes));
+  return captured.map(({ descriptor }, index) => {
+    const image = images[index];
+    check(descriptor.byteLength === image.byteLength && descriptor.sha256 === image.sha256
+      && descriptor.width === image.width && descriptor.height === image.height);
+    return { descriptor, bytes: image.bytes };
+  });
 }
 
 export function formAnswersFingerprint(value: SavedFormAnswerSet | null): string | null {
