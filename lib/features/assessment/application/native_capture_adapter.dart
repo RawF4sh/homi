@@ -140,12 +140,33 @@ class _CameraScreenState extends State<_CameraScreen>
   bool _taking = false;
   bool _foreground = true;
   int _generation = 0;
+  Future<void>? _opening;
+  bool _reopen = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _open();
+    _requestOpen();
+  }
+
+  void _requestOpen() {
+    if (_opening != null) {
+      _reopen = true;
+      return;
+    }
+    _opening = _open().whenComplete(() {
+      _opening = null;
+      if (!_reopen) return;
+      _reopen = false;
+      if (mounted && _foreground && widget.isCurrent()) _requestOpen();
+    });
+  }
+
+  static Future<void> _release(CameraController? controller) async {
+    try {
+      await controller?.dispose();
+    } catch (_) {}
   }
 
   Future<void> _open() async {
@@ -182,17 +203,17 @@ class _CameraScreenState extends State<_CameraScreen>
           generation != _generation ||
           !_foreground ||
           !widget.isCurrent()) {
-        await controller.dispose();
+        await _release(controller);
         return;
       }
       setState(() => _controller = controller);
     } on CameraException catch (error) {
-      await controller?.dispose();
+      await _release(controller);
       if (mounted && generation == _generation) {
         Navigator.of(context).pop(_CameraOutcome(error: error.code));
       }
     } catch (_) {
-      await controller?.dispose();
+      await _release(controller);
       if (mounted && generation == _generation) {
         Navigator.of(context).pop(const _CameraOutcome(error: 'unavailable'));
       }
@@ -208,11 +229,11 @@ class _CameraScreenState extends State<_CameraScreen>
       _taking = false;
       final previous = _controller;
       _controller = null;
-      previous?.dispose();
+      _release(previous);
       if (mounted) setState(() {});
     } else if (state == AppLifecycleState.resumed && !_foreground) {
       _foreground = true;
-      _open();
+      _requestOpen();
     }
   }
 
@@ -264,7 +285,7 @@ class _CameraScreenState extends State<_CameraScreen>
   void dispose() {
     _generation++;
     WidgetsBinding.instance.removeObserver(this);
-    _controller?.dispose();
+    _release(_controller);
     super.dispose();
   }
 

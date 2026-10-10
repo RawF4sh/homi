@@ -651,6 +651,7 @@ void main() {
       await current.flush();
       current.flow.continueWithoutPhoto();
       expect(current.flow.step, AssessmentStep.details);
+      await current.flush();
     },
   );
 

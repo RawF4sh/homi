@@ -17,7 +17,7 @@ void main() {
           if (!file.path.endsWith('.schema.json')) continue;
           final value =
               jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
-          final name = file.path.split('/').last;
+          final name = file.uri.pathSegments.last;
           schemas['../$version/$name'] = value;
           if (version == 'v1') schemas[name] = value;
         }

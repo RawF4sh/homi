@@ -49,6 +49,25 @@ class _Camera extends CameraController {
   }
 }
 
+class _PromptingCamera extends _Camera {
+  _PromptingCamera(this.gate, this.live);
+  final Future<void>? gate;
+  final List<_PromptingCamera> live;
+  @override
+  Future<void> initialize() async {
+    live.add(this);
+    if (gate != null) await gate;
+    await super.initialize();
+  }
+
+  @override
+  Future<void> dispose() async {
+    live.remove(this);
+    await super.dispose();
+    throw StateError('preview surface was not initialized');
+  }
+}
+
 class _Media extends PrivateMediaPlatform {
   _Media({this.prepared, this.decoded});
   final Future<void>? prepared;
@@ -249,6 +268,68 @@ void main() {
       await tester.tap(find.byTooltip('Back'));
       await tester.pumpAndSettle();
       expect(await pending, isA<CaptureCancelled>());
+    },
+  );
+  testWidgets(
+    'permission prompt during camera start opens one controller at a time',
+    (tester) async {
+      final permission = Completer<void>();
+      final controllers = <_PromptingCamera>[];
+      final live = <_PromptingCamera>[];
+      var maxLive = 0;
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (value) {
+              context = value;
+              return const Scaffold(body: Text('Home'));
+            },
+          ),
+        ),
+      );
+      final adapter = NativeCaptureAdapter(
+        context: () => context,
+        media: _Media(),
+        loadCameras: () async => [_camera],
+        cameraControllerFactory: (_) {
+          final value = _PromptingCamera(
+            controllers.isEmpty ? permission.future : null,
+            live,
+          );
+          controllers.add(value);
+          return value;
+        },
+      );
+      Future<void> settle() async {
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+          if (live.length > maxLive) maxLive = live.length;
+        }
+      }
+
+      final pending = adapter.capture(_request);
+      await settle();
+      expect(controllers, hasLength(1));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await settle();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await settle();
+      permission.complete();
+      await settle();
+
+      expect(maxLive, 1);
+      expect(controllers, hasLength(2));
+      expect(controllers.first.closed, isTrue);
+      expect(live, [controllers.last]);
+      final take = find.widgetWithText(FilledButton, 'Take photo');
+      expect(tester.widget<FilledButton>(take).onPressed, isNotNull);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(await pending, isA<CaptureCancelled>());
+      expect(tester.takeException(), isNull);
     },
   );
   testWidgets(
