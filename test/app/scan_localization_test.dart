@@ -52,6 +52,67 @@ void main() {
   ]) {
     final words = AppLocalizations(locale);
     testWidgets(
+      '$locale camera estimates are readable at large text and remain device-only',
+      (tester) async {
+        narrowLargeText(tester, scale: 3.2);
+        final scene = BathroomScanScene.fromJson(
+          scanSceneJson(source: 'arkit')
+            ..['measurements'] = [
+              {
+                'id': '2f3c7e0b-4f39-4a21-8ee1-5a8ca45fc861',
+                'start': [0, 0, 0],
+                'end': [1.25, 0, 0],
+              },
+            ],
+        );
+        final store = _ScanStore();
+        const caseId = 'f4b1b823-f3e5-4a77-825c-9b1696f21fe6';
+        final session = BathroomScanSession(
+          store: store,
+          caseId: caseId,
+          isCurrent: () => true,
+          adapter: _Scanner(),
+        );
+        await store.writeBytes(
+          session.key,
+          Uint8List.fromList(
+            utf8.encode(
+              jsonEncode(BathroomScanReview(scene: scene).toJson(caseId)),
+            ),
+          ),
+        );
+        await tester.pumpWidget(
+          localized(
+            locale,
+            BathroomScanScreen(
+              session: session,
+              onImport: (_) async => throw StateError(
+                'Viewing an estimate cannot import a finding',
+              ),
+              importedFinding: (_) => null,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final heading = find.text(words.text('Estimated distances'));
+        await revealPastModel(tester, heading);
+        await tester.tap(heading);
+        await tester.pumpAndSettle();
+        final distance = find.text(
+          words.text('Distance {number}: about {metres} m', {
+            'number': 1,
+            'metres': '1.25',
+          }),
+        );
+        await revealPastModel(tester, distance);
+        expect(distance, findsOneWidget);
+        expect(find.text('Estimated distances'), findsNothing);
+        expect(tester.takeException(), isNull);
+        expect(session.review.scene!.fingerprint, scene.fingerprint);
+      },
+    );
+
+    testWidgets(
       '$locale suggestion display preserves canonical imported observation and scene identity',
       (tester) async {
         final scene = fictionalScanScene(

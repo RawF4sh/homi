@@ -18,15 +18,16 @@ class BathroomScanCapabilities {
   bool get canRequestCapture =>
       supported ||
       {
-        'services_missing',
-        'services_update_required',
-        'permission_denied',
-      }.contains(reason);
+            'services_missing',
+            'services_update_required',
+            'permission_denied',
+          }.contains(reason) &&
+          source == 'arcore';
 
   factory BathroomScanCapabilities.fromJson(Object? raw) {
     if (raw is! Map ||
         raw['supported'] is! bool ||
-        !{'roomplan', 'arcore'}.contains(raw['source']) ||
+        !{'roomplan', 'arcore', 'arkit'}.contains(raw['source']) ||
         !{
           'available',
           'unsupported_device',

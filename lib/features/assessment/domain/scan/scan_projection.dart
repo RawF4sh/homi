@@ -29,7 +29,12 @@ final class ProjectedScanFace {
 }
 
 final class ScanProjection {
-  const ScanProjection._({required this.faces, required this.points});
+  const ScanProjection._({
+    required this.faces,
+    required this.points,
+    required this.distances,
+  });
+  final List<(ProjectedScanPoint, ProjectedScanPoint)> distances;
   final List<ProjectedScanFace> faces;
   final List<ProjectedScanPoint> points;
 
@@ -68,6 +73,7 @@ final class ScanProjection {
     final all = <ScanVector3>[
       for (final values in corners.values) ...values,
       ...rawPoints,
+      for (final m in scene.measurements) ...[rotate(m.start), rotate(m.end)],
     ];
     var minX = all.first.x, maxX = all.first.x;
     var minY = all.first.y, maxY = all.first.y;
@@ -131,6 +137,10 @@ final class ScanProjection {
     faces.sort((a, b) => a.depth.compareTo(b.depth));
     return ScanProjection._(
       faces: List.unmodifiable(faces),
+      distances: List.unmodifiable([
+        for (final m in scene.measurements)
+          (toScreen(rotate(m.start)), toScreen(rotate(m.end))),
+      ]),
       points: List.unmodifiable([
         for (var i = 0; i < rawPoints.length; i++)
           toScreen(rawPoints[i], scene.points[i].confidence),

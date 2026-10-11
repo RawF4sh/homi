@@ -94,7 +94,7 @@ class _Harness {
   final current = ValueNotifier(true);
   final scanner = _WidgetScanner();
   final imports = <ScanSuggestion>[];
-  bool continued = false, otherConcern = false;
+  bool continued = false, otherConcern = false, usedPhotos = false;
   String? continuedFindingId;
 
   final removed = <String>{};
@@ -123,6 +123,7 @@ class _Harness {
                 builder: (_) => BathroomScanScreen(
                   session: session,
                   scope: current,
+                  onUsePhotos: () => usedPhotos = true,
                   onContinue: (id) {
                     continued = true;
                     continuedFindingId = id;
@@ -292,6 +293,56 @@ void main() {
       await Directory.systemTemp.createTemp('sah-scan-widget-'),
     ),
   );
+  testWidgets(
+    'camera-only capture saves estimates and manual fallback keeps the model',
+    (tester) async {
+      harness.scanner.capability = const BathroomScanCapabilities(
+        supported: true,
+        source: 'arkit',
+        reason: 'available',
+        depthSupported: false,
+      );
+      harness.scanner.capture = (id) async => BathroomScanScene.fromJson(
+        scanSceneJson(source: 'arkit')
+          ..['scanId'] = id
+          ..['measurements'] = [
+            {
+              'id': '2f3c7e0b-4f39-4a21-8ee1-5a8ca45fc861',
+              'start': [0, 0, 0],
+              'end': [1.25, 0, 0],
+            },
+          ],
+      );
+      await _open(tester, harness);
+      expect(find.text('Camera-only scan'), findsOneWidget);
+      final start = find.byKey(const ValueKey('bathroom-start-scan'));
+      await _reveal(tester, start);
+      expect(find.text('Start camera scan'), findsOneWidget);
+      await tester.tap(start);
+      await _idle(tester, harness);
+      final fingerprint = harness.session.review.scene!.fingerprint;
+      expect(harness.session.review.scene!.source, ScanSource.arkit);
+      expect(harness.imports, isEmpty);
+      await _reveal(tester, find.text('Estimated distances'));
+      await tester.tap(find.text('Estimated distances'));
+      await tester.pumpAndSettle();
+      await _reveal(tester, find.text('Distance 1: about 1.25 m'));
+      expect(find.text('Distance 1: about 1.25 m'), findsOneWidget);
+      await _reveal(tester, find.text('Scan options'));
+      await tester.tap(find.text('Scan options'));
+      await tester.pumpAndSettle();
+      final manual = find.byKey(const ValueKey('bathroom-use-manual'));
+      await _reveal(tester, manual);
+      await tester.tap(manual);
+      await tester.pumpAndSettle();
+      expect(harness.usedPhotos, true);
+      final saved = await tester.runAsync(
+        () => BathroomScanSession.readSaved(harness.store, _Harness.caseId),
+      );
+      expect(saved!.scene!.fingerprint, fingerprint);
+    },
+  );
+
   for (final readiness in {
     'permission_denied': 'Camera access is needed for 3D scanning.',
     'services_missing': 'This phone supports ARCore.',

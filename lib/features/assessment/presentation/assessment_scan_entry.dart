@@ -51,7 +51,7 @@ class AssessmentScanEntry extends StatelessWidget {
             'services_update_required' =>
               'Update Google Play Services for AR when you start scanning.',
             'permission_denied' =>
-              capability?.source == 'roomplan'
+              capability?.source != 'arcore'
                   ? 'Allow camera access for Safe at Home in Settings, then return to scan.'
                   : 'Allow camera access when prompted, or in Settings if permission was previously blocked.',
             'available' when primary => null,
@@ -92,7 +92,11 @@ class AssessmentScanEntry extends StatelessWidget {
               icon: const Icon(Icons.view_in_ar),
               label: Text(
                 context.tr(
-                  hasModel ? 'Review bathroom scan' : 'Open 3D bathroom',
+                  hasModel
+                      ? 'Review bathroom scan'
+                      : capability?.source == 'arkit'
+                      ? 'Start camera scan'
+                      : 'Open 3D bathroom',
                 ),
                 textAlign: TextAlign.center,
               ),

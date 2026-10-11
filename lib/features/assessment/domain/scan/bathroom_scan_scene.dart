@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 
-enum ScanSource { roomplan, arcore }
+enum ScanSource { roomplan, arcore, arkit }
 
 enum ScanElementKind {
   wall,
@@ -104,8 +104,26 @@ final class ScanElement {
   };
 }
 
+final class ScanDistanceEstimate {
+  const ScanDistanceEstimate._(this.id, this.start, this.end);
+  final String id;
+  final ScanVector3 start, end;
+  double get metres => math.sqrt(
+    math.pow(end.x - start.x, 2) +
+        math.pow(end.y - start.y, 2) +
+        math.pow(end.z - start.z, 2),
+  );
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'start': start.toJson(),
+    'end': end.toJson(),
+  };
+}
+
 final class BathroomScanScene {
   const BathroomScanScene._({
+    required this.schemaVersion,
+    required this.measurements,
     required this.scanId,
     required this.source,
     required this.sourceVersion,
@@ -133,6 +151,10 @@ final class BathroomScanScene {
   );
 
   factory BathroomScanScene.fromJson(Object? value) {
+    final schemaVersion = value is Map ? value['schemaVersion'] : null;
+    if (schemaVersion is! int || (schemaVersion != 1 && schemaVersion != 2)) {
+      _invalid();
+    }
     final json = _object(value, {
       'schemaVersion',
       'scanId',
@@ -146,9 +168,9 @@ final class BathroomScanScene {
       'warnings',
       'elements',
       'points',
+      if (schemaVersion == 2) 'measurements',
     });
-    if (json['schemaVersion'] != 1 ||
-        json['units'] != 'm' ||
+    if (json['units'] != 'm' ||
         json['coordinateSystem'] != 'right_handed_y_up' ||
         json['coverage'] != 'partial' ||
         json['truncated'] is! bool) {
@@ -157,6 +179,7 @@ final class BathroomScanScene {
     final id = _text(json['scanId'], 36);
     if (!_uuidV4.hasMatch(id)) _invalid();
     final source = _choice(json['source'], ScanSource.values);
+    if ((schemaVersion == 2) != (source == ScanSource.arkit)) _invalid();
     final version = _text(json['sourceVersion'], 80);
     final capturedAt = _instant(json['capturedAt']);
     final warningValues = _list(json['warnings'], 16);
@@ -192,13 +215,16 @@ final class BathroomScanScene {
         element['classificationConfidence'],
         ScanClassificationConfidence.values,
       );
-      if (source == ScanSource.arcore &&
+      if (source != ScanSource.roomplan &&
           (kind != ScanElementKind.unknown ||
-              !{
-                'horizontal_upward',
-                'horizontal_downward',
-                'vertical',
-              }.contains(nativeCategory) ||
+              !(source == ScanSource.arkit
+                      ? {'horizontal', 'vertical'}
+                      : {
+                          'horizontal_upward',
+                          'horizontal_downward',
+                          'vertical',
+                        })
+                  .contains(nativeCategory) ||
               dimensions[1] != 0 ||
               confidence != ScanClassificationConfidence.unknown)) {
         _invalid();
@@ -232,8 +258,37 @@ final class BathroomScanScene {
         ),
       );
     }
+    final measurements = <ScanDistanceEstimate>[];
+    if (schemaVersion == 2) {
+      if (points.isNotEmpty || !warnings.contains('depth_unavailable')) {
+        _invalid();
+      }
+      final measurementIds = <String>{};
+      for (final raw in _list(json['measurements'], 20)) {
+        final measurement = _object(raw, {'id', 'start', 'end'});
+        final id = _text(measurement['id'], 36);
+        if (!_uuidV4.hasMatch(id) || !measurementIds.add(id)) _invalid();
+        ScanVector3 vector(Object? raw) {
+          final coordinates = _fixedList(
+            raw,
+            3,
+          ).map((v) => _number(v, -50, 50)).toList();
+          return ScanVector3(coordinates[0], coordinates[1], coordinates[2]);
+        }
+
+        final distance = ScanDistanceEstimate._(
+          id,
+          vector(measurement['start']),
+          vector(measurement['end']),
+        );
+        if (distance.metres < 0.02 || distance.metres > 10) _invalid();
+        measurements.add(distance);
+      }
+    }
     if (elements.isEmpty && points.isEmpty) _invalid();
     final result = BathroomScanScene._(
+      schemaVersion: schemaVersion,
+      measurements: List.unmodifiable(measurements),
       scanId: id,
       source: source,
       sourceVersion: version,
@@ -247,6 +302,8 @@ final class BathroomScanScene {
     final encoded = utf8.encode(jsonEncode(result.toJson()));
     if (encoded.length > maxEncodedBytes) _invalid();
     return BathroomScanScene._(
+      schemaVersion: result.schemaVersion,
+      measurements: result.measurements,
       scanId: result.scanId,
       source: result.source,
       sourceVersion: result.sourceVersion,
@@ -259,6 +316,8 @@ final class BathroomScanScene {
     );
   }
 
+  final int schemaVersion;
+  final List<ScanDistanceEstimate> measurements;
   final String scanId;
   final ScanSource source;
   final String sourceVersion;
@@ -270,8 +329,11 @@ final class BathroomScanScene {
 
   final String fingerprint;
 
-  String get sourceLabel =>
-      source == ScanSource.roomplan ? 'iPhone RoomPlan' : 'Android ARCore';
+  String get sourceLabel => switch (source) {
+    ScanSource.roomplan => 'iPhone RoomPlan',
+    ScanSource.arcore => 'Android ARCore',
+    ScanSource.arkit => 'iPhone ARKit camera',
+  };
 
   ScanElement? elementById(String id) {
     for (final element in elements) {
@@ -281,7 +343,7 @@ final class BathroomScanScene {
   }
 
   Map<String, Object?> toJson() => {
-    'schemaVersion': 1,
+    'schemaVersion': schemaVersion,
     'scanId': scanId,
     'source': source.name,
     'sourceVersion': sourceVersion,
@@ -293,6 +355,8 @@ final class BathroomScanScene {
     'warnings': List<String>.of(warnings),
     'elements': elements.map((e) => e.toJson()).toList(),
     'points': points.map((p) => p.toJson()).toList(),
+    if (schemaVersion == 2)
+      'measurements': measurements.map((m) => m.toJson()).toList(),
   };
 }
 

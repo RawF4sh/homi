@@ -122,6 +122,61 @@ void main() {
     return BathroomScanReview.fromJson(jsonDecode(utf8.decode(bytes!)), id);
   }
 
+  test(
+    'switching capability to ARKit preserves the old model until successful capture, then survives restart',
+    () async {
+      final previous = _scene(interruptedId);
+      await seed(
+        BathroomScanReview(
+          scene: previous,
+          reviewed: {'door-1'},
+          labels: {'door-1': ScanElementKind.door},
+          difficulties: {ScanDifficulty.enteringBathroom},
+        ),
+      );
+      scanner.onCapabilities = () async => const BathroomScanCapabilities(
+        supported: true,
+        source: 'arkit',
+        reason: 'available',
+        depthSupported: false,
+      );
+      final session = make();
+      await session.initialize();
+      expect(session.review.scene!.fingerprint, previous.fingerprint);
+      for (final code in [
+        'scan_cancelled',
+        'scan_interrupted',
+        'scan_failed',
+        'scan_permission_denied',
+      ]) {
+        scanner.onStart = (_) async => throw PlatformException(code: code);
+        await session.capture();
+        expect((await persisted()).scene!.fingerprint, previous.fingerprint);
+        expect((await persisted()).labels, {'door-1': ScanElementKind.door});
+      }
+      scanner.onStart = (id) async => BathroomScanScene.fromJson(
+        scanSceneJson(source: 'arkit')
+          ..['scanId'] = id
+          ..['measurements'] = [
+            {
+              'id': interruptedId,
+              'start': [0, 0, 0],
+              'end': [1.25, 0, 0],
+            },
+          ],
+      );
+      await session.capture();
+      final fingerprint = session.review.scene!.fingerprint;
+      disposeSession(session);
+      final restored = make();
+      await restored.initialize();
+      expect(restored.review.scene!.source, ScanSource.arkit);
+      expect(restored.review.scene!.fingerprint, fingerprint);
+      expect(restored.review.scene!.measurements.single.metres, 1.25);
+      expect(restored.review.reviewed, isEmpty);
+    },
+  );
+
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('sah-scan-session-test-');
     secrets = MemorySecrets();

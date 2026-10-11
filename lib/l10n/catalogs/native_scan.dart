@@ -1,4 +1,152 @@
 const nativeScanTranslations = <String, Map<String, String>>{
+  "Camera-only scan": {
+    "es": "Escaneo solo con cámara",
+    "zh-Hans": "仅相机扫描",
+    "zh-Hant": "僅相機掃描",
+    "vi": "Quét chỉ bằng camera",
+    "fil": "Pag-scan gamit lang ang camera",
+  },
+  "Camera surface preview": {
+    "es": "Vista previa de superficies",
+    "zh-Hans": "相机表面预览",
+    "zh-Hant": "相機表面預覽",
+    "vi": "Xem trước bề mặt qua camera",
+    "fil": "Preview ng mga ibabaw sa camera",
+  },
+  "Undo point or distance": {
+    "es": "Deshacer punto o distancia",
+    "zh-Hans": "撤销点或距离",
+    "zh-Hant": "復原點或距離",
+    "vi": "Hoàn tác điểm hoặc khoảng cách",
+    "fil": "I-undo ang punto o distansya",
+  },
+  "Add first point (optional)": {
+    "es": "Añadir primer punto (opcional)",
+    "zh-Hans": "添加起点（可选）",
+    "zh-Hant": "新增起點（選填）",
+    "vi": "Thêm điểm đầu (tùy chọn)",
+    "fil": "Idagdag ang unang punto (opsyonal)",
+  },
+  "Add second point": {
+    "es": "Añadir segundo punto",
+    "zh-Hans": "添加终点",
+    "zh-Hant": "新增終點",
+    "vi": "Thêm điểm thứ hai",
+    "fil": "Idagdag ang ikalawang punto",
+  },
+  "Move slowly to find surfaces. Keep a clear path; photos and manual assessment are always available.": {
+    "es":
+        "Muévase despacio para detectar superficies. Mantenga el paso despejado; siempre puede usar fotos y evaluación manual.",
+    "zh-Hans": "缓慢移动以寻找表面。保持通道畅通；您随时可以使用照片和手动评估。",
+    "zh-Hant": "緩慢移動以尋找表面。保持通道暢通；您隨時可以使用照片和手動評估。",
+    "vi":
+        "Di chuyển chậm để tìm bề mặt. Giữ lối đi thông thoáng; bạn luôn có thể dùng ảnh và đánh giá thủ công.",
+    "fil":
+        "Dahan-dahang kumilos para makita ang mga ibabaw. Panatilihing maluwag ang daan; maaari pa ring gumamit ng larawan at manwal na pagtatasa.",
+  },
+  "Move slowly in good light. Point at a textured surface to restore tracking.": {
+    "es":
+        "Muévase despacio con buena luz. Apunte a una superficie con detalles para recuperar el seguimiento.",
+    "zh-Hans": "在光线充足处缓慢移动。对准有纹理的表面以恢复跟踪。",
+    "zh-Hant": "在光線充足處緩慢移動。對準有紋理的表面以恢復追蹤。",
+    "vi":
+        "Di chuyển chậm ở nơi đủ sáng. Hướng vào bề mặt có hoa văn để khôi phục theo dõi.",
+    "fil":
+        "Dahan-dahang kumilos sa maliwanag na lugar. Itutok sa ibabaw na may detalye para maibalik ang pagsubaybay.",
+  },
+  "Aim at the second point on the same highlighted surface, then add it.": {
+    "es": "Apunte al segundo punto de la misma superficie resaltada y añádalo.",
+    "zh-Hans": "对准同一高亮表面上的终点，然后添加。",
+    "zh-Hant": "對準同一醒目表面上的終點，然後新增。",
+    "vi": "Hướng vào điểm thứ hai trên cùng bề mặt được tô sáng rồi thêm điểm.",
+    "fil":
+        "Itutok sa ikalawang punto sa parehong naka-highlight na ibabaw, saka idagdag ito.",
+  },
+  "Finish to review surfaces, or aim at two points on one highlighted surface to estimate a distance.": {
+    "es":
+        "Termine para revisar las superficies, o marque dos puntos en una superficie resaltada para estimar una distancia.",
+    "zh-Hans": "完成后可查看表面，或在同一高亮表面上选择两点来估算距离。",
+    "zh-Hant": "完成後可查看表面，或在同一醒目表面上選擇兩點來估算距離。",
+    "vi":
+        "Hoàn tất để xem các bề mặt, hoặc chọn hai điểm trên cùng bề mặt được tô sáng để ước tính khoảng cách.",
+    "fil":
+        "Tapusin para suriin ang mga ibabaw, o pumili ng dalawang punto sa iisang naka-highlight na ibabaw para tantiyahin ang distansya.",
+  },
+  "Aim at a highlighted surface and try again.": {
+    "es": "Apunte a una superficie resaltada e inténtelo de nuevo.",
+    "zh-Hans": "对准高亮表面后重试。",
+    "zh-Hant": "對準醒目表面後再試。",
+    "vi": "Hướng vào bề mặt được tô sáng rồi thử lại.",
+    "fil": "Itutok sa naka-highlight na ibabaw at subukan muli.",
+  },
+  "Distance estimate added. Review it after finishing.": {
+    "es": "Estimación de distancia añadida. Revísela al terminar.",
+    "zh-Hans": "已添加距离估算。完成后请查看。",
+    "zh-Hant": "已新增距離估算。完成後請查看。",
+    "vi": "Đã thêm khoảng cách ước tính. Xem lại sau khi hoàn tất.",
+    "fil": "Naidagdag ang tantiya ng distansya. Suriin ito pagkatapos.",
+  },
+  "Use two points on the same surface, 2 cm to 10 m apart. Undo to start again.": {
+    "es":
+        "Use dos puntos de la misma superficie, separados entre 2 cm y 10 m. Deshaga para empezar de nuevo.",
+    "zh-Hans": "请在同一表面上选取间距为2厘米至10米的两点。撤销后可重新开始。",
+    "zh-Hant": "請在同一表面上選取間距為2公分至10公尺的兩點。復原後可重新開始。",
+    "vi":
+        "Chọn hai điểm trên cùng bề mặt, cách nhau từ 2 cm đến 10 m. Hoàn tác để bắt đầu lại.",
+    "fil":
+        "Gumamit ng dalawang punto sa parehong ibabaw na 2 cm hanggang 10 m ang pagitan. I-undo para magsimulang muli.",
+  },
+  "Start camera scan": {
+    "es": "Iniciar escaneo con cámara",
+    "zh-Hans": "开始相机扫描",
+    "zh-Hant": "開始相機掃描",
+    "vi": "Bắt đầu quét bằng camera",
+    "fil": "Simulan ang pag-scan sa camera",
+  },
+  "This iPhone uses camera-only scanning. Capture surfaces and optional distance estimates.": {
+    "es":
+        "Este iPhone escanea solo con la cámara. Capture superficies y, si quiere, estime distancias.",
+    "zh-Hans": "此iPhone使用仅相机扫描，可采集表面并选择估算距离。",
+    "zh-Hant": "此iPhone使用僅相機掃描，可擷取表面並選擇估算距離。",
+    "vi":
+        "iPhone này quét chỉ bằng camera. Ghi lại bề mặt và tùy chọn ước tính khoảng cách.",
+    "fil":
+        "Camera lang ang ginagamit ng iPhone na ito sa pag-scan. Kunan ang mga ibabaw at opsyonal na tantiyahin ang distansya.",
+  },
+  "Camera-only surface model. Identify features yourself; detected patches are not full walls or clearances.": {
+    "es":
+        "Modelo de superficies obtenido solo con cámara. Identifique los elementos; las zonas detectadas no representan paredes completas ni espacios libres.",
+    "zh-Hans": "仅相机表面模型。请自行识别物体；检测到的局部表面并非完整墙壁或通行净空。",
+    "zh-Hant": "僅相機表面模型。請自行辨識物體；偵測到的局部表面並非完整牆壁或通行淨空。",
+    "vi":
+        "Mô hình bề mặt chỉ từ camera. Bạn cần tự xác định vật thể; các mảng phát hiện không phải toàn bộ tường hay khoảng trống sử dụng được.",
+    "fil":
+        "Modelo ng ibabaw mula sa camera lang. Ikaw ang tutukoy sa mga bagay; hindi buong dingding o maluwag na daanan ang mga natukoy na bahagi.",
+  },
+  "Estimated distances": {
+    "es": "Distancias estimadas",
+    "zh-Hans": "估算距离",
+    "zh-Hant": "估算距離",
+    "vi": "Khoảng cách ước tính",
+    "fil": "Mga tinantiyang distansya",
+  },
+  "These camera estimates stay on this phone. Check important measurements with a tape measure.": {
+    "es":
+        "Estas estimaciones se guardan en este teléfono. Compruebe las medidas importantes con una cinta métrica.",
+    "zh-Hans": "这些相机估算保存在此手机上。请用卷尺核实重要尺寸。",
+    "zh-Hant": "這些相機估算保存在此手機上。請用捲尺核實重要尺寸。",
+    "vi":
+        "Các ước tính này được lưu trên điện thoại này. Kiểm tra số đo quan trọng bằng thước dây.",
+    "fil":
+        "Nananatili sa teleponong ito ang mga tantiya. Suriin ang mahahalagang sukat gamit ang metro.",
+  },
+  "Distance {number}: about {metres} m": {
+    "es": "Distancia {number}: aprox. {metres} m",
+    "zh-Hans": "距离{number}：约{metres}米",
+    "zh-Hant": "距離{number}：約{metres}公尺",
+    "vi": "Khoảng cách {number}: khoảng {metres} m",
+    "fil": "Distansya {number}: humigit-kumulang {metres} m",
+  },
   'Scan your bathroom': {
     'es': 'Escanee su baño',
     'zh-Hans': '扫描浴室',

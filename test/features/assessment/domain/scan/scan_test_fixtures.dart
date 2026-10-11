@@ -7,20 +7,35 @@ Map<String, Object?> scanSceneJson({
   List<Map<String, Object?>>? elements,
   List<List<num>>? points,
 }) => {
-  'schemaVersion': 1,
+  'schemaVersion': source == 'arkit' ? 2 : 1,
   'scanId': 'd6a4a6b3-74cb-4fa9-9cc0-13710e793d32',
   'source': source,
   'sourceVersion': source == 'roomplan'
       ? 'RoomPlan test fixture'
+      : source == 'arkit'
+      ? 'ARKit camera test fixture'
       : 'ARCore test fixture',
   'capturedAt': '2026-10-23T12:00:00.000Z',
   'units': 'm',
   'coordinateSystem': 'right_handed_y_up',
   'coverage': 'partial',
   'truncated': false,
-  'warnings': <String>[],
-  'elements': elements ?? [scanElementJson()],
+  'warnings': <String>[if (source == 'arkit') 'depth_unavailable'],
+  'elements':
+      elements ??
+      [
+        source == 'arkit'
+            ? scanElementJson(
+                id: 'plane-1',
+                kind: 'unknown',
+                nativeCategory: 'horizontal',
+                dimensions: [2, 0, 3],
+                confidence: 'unknown',
+              )
+            : scanElementJson(),
+      ],
   'points': points ?? <List<num>>[],
+  if (source == 'arkit') 'measurements': <Map<String, Object?>>[],
 };
 
 Map<String, Object?> scanElementJson({

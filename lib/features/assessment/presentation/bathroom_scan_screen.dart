@@ -341,7 +341,11 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     return [
       if (scene == null) ...[
         Text(
-          context.tr('Scan your bathroom'),
+          context.tr(
+            capability?.source == 'arkit'
+                ? 'Camera-only scan'
+                : 'Scan your bathroom',
+          ),
           style: Theme.of(context).textTheme.headlineMedium,
         ),
       ],
@@ -417,7 +421,11 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
                 needsSetup
                     ? context.tr('Set up 3D scanning')
                     : scene == null
-                    ? context.tr('Scan bathroom')
+                    ? context.tr(
+                        capability?.source == 'arkit'
+                            ? 'Start camera scan'
+                            : 'Scan bathroom',
+                      )
                     : context.tr('Scan again'),
               ),
             ),
@@ -450,6 +458,36 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
               : '${scene.elements.indexOf(selected) + 1}. ${context.tr((scan.review.labels[selected.id] ?? selected.kind).label)}',
           onSelect: (id) => setState(() => selectedId = id),
         ),
+        if (scene.source == ScanSource.arkit) ...[
+          Text(
+            context.tr(
+              'Camera-only surface model. Identify features yourself; detected patches are not full walls or clearances.',
+            ),
+          ),
+          if (scene.measurements.isNotEmpty)
+            ExpansionTile(
+              key: PageStorageKey('scan-distances-${scene.fingerprint}'),
+              title: Text(context.tr('Estimated distances')),
+              children: [
+                Text(
+                  context.tr(
+                    'These camera estimates stay on this phone. Check important measurements with a tape measure.',
+                  ),
+                ),
+                for (var i = 0; i < scene.measurements.length; i++)
+                  ListTile(
+                    title: Text(
+                      context.tr('Distance {number}: about {metres} m', {
+                        'number': i + 1,
+                        'metres': scene.measurements[i].metres.toStringAsFixed(
+                          2,
+                        ),
+                      }),
+                    ),
+                  ),
+              ],
+            ),
+        ],
         if (screenReader && scene.elements.isNotEmpty)
           DropdownButtonFormField<String>(
             key: ValueKey('scan-selection-${selected?.id}'),
@@ -678,8 +716,10 @@ String _readiness(BathroomScanCapabilities? capability) {
     'available' when capability.supported =>
       capability.source == 'roomplan'
           ? 'LiDAR scanning is ready on this iPhone. RoomPlan builds an approximate model for you to review.'
+          : capability.source == 'arkit'
+          ? 'This iPhone uses camera-only scanning. Capture surfaces and optional distance estimates.'
           : 'ARCore scanning is ready on this phone. It maps surfaces, and you name the bathroom features.',
-    'permission_denied' when capability.source == 'roomplan' =>
+    'permission_denied' when capability.source != 'arcore' =>
       'Camera access is blocked. Review Camera access for Safe at Home in iPhone Settings, then return and choose Check device. Photos and manual measurements remain available.',
     'permission_denied' =>
       'Camera access is needed for 3D scanning. Choose Set up 3D scanning to continue. If access is blocked, allow Camera for Safe at Home in Settings, then check device again.',

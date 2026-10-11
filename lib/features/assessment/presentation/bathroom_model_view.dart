@@ -254,6 +254,29 @@ class _ModelPainter extends CustomPainter {
           ..strokeWidth = (selected ? 2 : 1) / zoom,
       );
     }
+    for (var i = 0; i < projection.distances.length; i++) {
+      final (start, end) = projection.distances[i];
+      final a = Offset(start.x, start.y), b = Offset(end.x, end.y);
+      final line = Paint()
+        ..color = const Color(0xFFFFD66B)
+        ..strokeWidth = 3 / zoom;
+      canvas.drawLine(a, b, line);
+      canvas.drawCircle(a, 4 / zoom, line);
+      canvas.drawCircle(b, 4 / zoom, line);
+      final label = TextPainter(
+        text: TextSpan(
+          text: '${i + 1}',
+          style: TextStyle(
+            color: const Color(0xFFFFD66B),
+            backgroundColor: const Color(0xFF123F3C),
+            fontSize: 16 / zoom,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas, (a + b) / 2);
+      label.dispose();
+    }
     canvas.restore();
   }
 

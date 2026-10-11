@@ -95,6 +95,37 @@ void main() {
     expect(opens, 1);
   });
 
+  testWidgets('camera-only iPhone chooses ARKit without asking for a mode', (
+    tester,
+  ) async {
+    availability.refresh();
+    adapter.replies.single.complete(_capability('available', source: 'arkit'));
+    await pump(tester);
+    await tester.pump();
+    expect(availability.prefersScan, true);
+    expect(find.text('Start camera scan'), findsOneWidget);
+    expect(
+      tester.widget(find.byKey(const ValueKey('open-bathroom-scan'))),
+      isA<FilledButton>(),
+    );
+    expect(adapter.starts, 0);
+  });
+
+  testWidgets(
+    'camera-only iPhone with denied permission keeps manual mode primary',
+    (tester) async {
+      availability.refresh();
+      adapter.replies.single.complete(
+        _capability('permission_denied', source: 'arkit'),
+      );
+      await pump(tester);
+      await tester.pump();
+      expect(availability.prefersScan, false);
+      expect(find.text('Photos and measurements work here'), findsOneWidget);
+      expect(adapter.starts, 0);
+    },
+  );
+
   for (final reason in [
     'available',
     'permission_denied',

@@ -127,6 +127,41 @@ void main() {
     },
   );
 
+  test('ARKit camera fallback preserves source and has no depth', () async {
+    messenger.setMockMethodCallHandler(
+      channel,
+      (call) async => call.method == 'capabilities'
+          ? {
+              'supported': true,
+              'source': 'arkit',
+              'reason': 'available',
+              'depthSupported': false,
+            }
+          : scanSceneJson(source: 'arkit'),
+    );
+    final value = await adapter.capabilities();
+    expect(value.canRequestCapture, true);
+    expect(value.source, 'arkit');
+    expect(value.depthSupported, false);
+    expect((await adapter.start(id)).source.name, 'arkit');
+  });
+
+  test(
+    'iOS permission denial prioritizes manual assessment until Settings changes',
+    () {
+      for (final source in ['arkit', 'roomplan']) {
+        expect(
+          BathroomScanCapabilities(
+            supported: false,
+            source: source,
+            reason: 'permission_denied',
+          ).canRequestCapture,
+          false,
+        );
+      }
+    },
+  );
+
   test('malformed capability responses cannot enable the scanner', () async {
     for (final value in <Object?>[
       null,
