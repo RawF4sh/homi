@@ -9,6 +9,7 @@ import '../../shared/presentation/sah_components.dart';
 import 'local_help_record.dart';
 import 'local_help_repository.dart';
 import 'referral_directory.dart';
+import 'provider_search_section.dart';
 
 class LocalHelpButton extends StatelessWidget {
   const LocalHelpButton({super.key, required this.services, this.findingId});
@@ -329,7 +330,7 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
                       const SizedBox(height: 12),
                       Text(
                         context.tr(
-                          'Contacts and follow-ups stay on this device for this plan. Signing out removes them. No notifications are scheduled.',
+                          'Contacts stay on this device for this plan. Signing out removes them. Follow-ups use My next steps and its separate reminder controls.',
                         ),
                       ),
                       if (_error != null) ...[
@@ -423,6 +424,20 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
                               ].where((v) => v.isNotEmpty).join(', '),
                             }),
                           ),
+                        ExpansionTile(
+                          key: const ValueKey('local-provider-search'),
+                          leading: const Icon(Icons.search),
+                          title: Text(context.tr('Search local providers')),
+                          maintainState: true,
+                          children: [
+                            ProviderSearchSection(
+                              showHeading: false,
+                              directory: repository!.directory,
+                              confirmedCounty: r.location?.county,
+                              providerCard: (p) => _providerCard(p, r),
+                            ),
+                          ],
+                        ),
                         _heading('Official referrals'),
                         if (r.location == null ||
                             !referralCounties.any(
@@ -435,12 +450,13 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
                               'No reviewed local listing for this location. Use the national locators to ask who serves your address.',
                             ),
                           ),
-                        for (final p in repository!.directory.providers.where(
+                        for (final p in repository.directory.providers.where(
                           (p) =>
-                              p.isLocator ||
-                              r.location != null &&
-                                  (r.location!.county.isEmpty ||
-                                      p.listsCounty(r.location!.county)),
+                              !p.isLocalProvider &&
+                              (p.isLocator ||
+                                  r.location != null &&
+                                      (r.location!.county.isEmpty ||
+                                          p.listsCounty(r.location!.county))),
                         ))
                           _providerCard(p, r),
                         _heading('Saved contacts'),
@@ -565,6 +581,8 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
           children: [
             Text(p.name, style: Theme.of(context).textTheme.titleMedium),
             Text(context.tr(p.description)),
+            if (p.services.isNotEmpty)
+              Text(p.services.map((s) => context.tr(s.label)).join(' · ')),
             Text(
               context.tr(
                 coverage == ReferralCoverage.locator
@@ -575,6 +593,8 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
               ),
             ),
             if (p.counties.isNotEmpty) Text(p.counties.join(', ')),
+            if (p.cities.isNotEmpty) Text(p.cities.join(', ')),
+            if (p.areaNote != null) Text(context.tr(p.areaNote!)),
             Text(
               context.tr(
                 p.availability == ReferralAvailability.closed

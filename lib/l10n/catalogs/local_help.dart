@@ -589,4 +589,180 @@ const localHelpTranslations = <String, Map<String, String>>{
     "vi": "Việc theo dõi cục bộ gốc",
     "fil": "Mga orihinal na lokal na follow-up",
   },
+  "Search local providers": {
+    "es": "Buscar proveedores locales",
+    "zh-Hans": "搜索本地服务机构",
+    "zh-Hant": "搜尋當地服務機構",
+    "vi": "Tìm đơn vị hỗ trợ địa phương",
+    "fil": "Maghanap ng lokal na tagapagbigay",
+  },
+  "A small reviewed Bay Area directory, available offline. Search organizations, cities, counties or services. ZIP coverage and current availability must be confirmed directly.": {
+    "es":
+        "Directorio pequeño y revisado del Área de la Bahía, disponible sin conexión. Busque organizaciones, ciudades, condados o servicios. Confirme directamente la cobertura por código postal y la disponibilidad actual.",
+    "zh-Hans": "这是经审核的小型湾区名录，可离线使用。可搜索机构、城市、县或服务。请直接确认邮政编码覆盖范围和当前服务情况。",
+    "zh-Hant": "這是經審核的小型灣區名錄，可離線使用。可搜尋機構、城市、縣或服務。請直接確認郵遞區號涵蓋範圍和目前服務情況。",
+    "vi":
+        "Danh bạ nhỏ đã được rà soát tại Vùng Vịnh, dùng được ngoại tuyến. Tìm tổ chức, thành phố, quận hoặc dịch vụ. Cần xác nhận trực tiếp phạm vi mã ZIP và khả năng phục vụ hiện tại.",
+    "fil":
+        "Maliit at nasuring direktoryo ng Bay Area na magagamit offline. Maghanap ng organisasyon, lungsod, county o serbisyo. Direktang kumpirmahin ang saklaw ng ZIP at kasalukuyang kakayahang tumulong.",
+  },
+  "Search providers": {
+    "es": "Buscar proveedores",
+    "zh-Hans": "搜索服务机构",
+    "zh-Hant": "搜尋服務機構",
+    "vi": "Tìm đơn vị hỗ trợ",
+    "fil": "Maghanap ng tagapagbigay",
+  },
+  "Listed county": {
+    "es": "Condado indicado",
+    "zh-Hans": "列出的县",
+    "zh-Hant": "列出的縣",
+    "vi": "Quận được liệt kê",
+    "fil": "Nakalistang county",
+  },
+  "All listed counties": {
+    "es": "Todos los condados indicados",
+    "zh-Hans": "所有列出的县",
+    "zh-Hant": "所有列出的縣",
+    "vi": "Tất cả quận được liệt kê",
+    "fil": "Lahat ng nakalistang county",
+  },
+  "Service type": {
+    "es": "Tipo de servicio",
+    "zh-Hans": "服务类型",
+    "zh-Hant": "服務類型",
+    "vi": "Loại dịch vụ",
+    "fil": "Uri ng serbisyo",
+  },
+  "All services": {
+    "es": "Todos los servicios",
+    "zh-Hans": "所有服务",
+    "zh-Hant": "所有服務",
+    "vi": "Tất cả dịch vụ",
+    "fil": "Lahat ng serbisyo",
+  },
+  "Home repairs": {
+    "es": "Reparaciones del hogar",
+    "zh-Hans": "房屋维修",
+    "zh-Hant": "房屋維修",
+    "vi": "Sửa chữa nhà",
+    "fil": "Pagkukumpuni ng bahay",
+  },
+  "Accessibility modifications": {
+    "es": "Modificaciones de accesibilidad",
+    "zh-Hans": "无障碍改造",
+    "zh-Hant": "無障礙改造",
+    "vi": "Cải tạo hỗ trợ tiếp cận",
+    "fil": "Pagbabago para sa accessibility",
+  },
+  "Service coordination": {
+    "es": "Coordinación de servicios",
+    "zh-Hans": "服务协调",
+    "zh-Hant": "服務協調",
+    "vi": "Điều phối dịch vụ",
+    "fil": "Koordinasyon ng serbisyo",
+  },
+  "Clear search and filters": {
+    "es": "Borrar búsqueda y filtros",
+    "zh-Hans": "清除搜索和筛选",
+    "zh-Hant": "清除搜尋和篩選",
+    "vi": "Xóa tìm kiếm và bộ lọc",
+    "fil": "I-clear ang paghahanap at mga filter",
+  },
+  "Providers found: {count}": {
+    "es": "Proveedores encontrados: {count}",
+    "zh-Hans": "找到的服务机构：{count}",
+    "zh-Hant": "找到的服務機構：{count}",
+    "vi": "Số đơn vị tìm thấy: {count}",
+    "fil": "Nahanap na tagapagbigay: {count}",
+  },
+  "No providers match these filters. Clear the filters or use the official locators below to ask who serves your address.": {
+    "es":
+        "Ningún proveedor coincide con estos filtros. Bórrelos o use los localizadores oficiales de abajo para preguntar quién atiende su dirección.",
+    "zh-Hans": "没有服务机构符合这些筛选条件。请清除筛选，或使用下方官方查找工具询问谁为您的地址提供服务。",
+    "zh-Hant": "沒有服務機構符合這些篩選條件。請清除篩選，或使用下方官方查找工具詢問誰為您的地址提供服務。",
+    "vi":
+        "Không có đơn vị nào khớp bộ lọc. Xóa bộ lọc hoặc dùng công cụ tìm chính thức bên dưới để hỏi đơn vị nào phục vụ địa chỉ của bạn.",
+    "fil":
+        "Walang tagapagbigay na tumutugma sa mga filter. I-clear ang mga ito o gamitin ang opisyal na tagahanap sa ibaba upang itanong kung sino ang nagseserbisyo sa iyong address.",
+  },
+  "Home repairs and safety modifications in selected Santa Clara County communities.": {
+    "es":
+        "Reparaciones y modificaciones de seguridad en determinadas comunidades del condado de Santa Clara.",
+    "zh-Hans": "在圣克拉拉县部分社区提供房屋维修和安全改造。",
+    "zh-Hant": "在聖克拉拉縣部分社區提供房屋維修和安全改造。",
+    "vi":
+        "Sửa chữa nhà và cải tạo an toàn tại một số cộng đồng ở Quận Santa Clara.",
+    "fil":
+        "Pagkukumpuni ng bahay at pagbabago para sa kaligtasan sa piling komunidad ng Santa Clara County.",
+  },
+  "Only selected cities are listed. Funding and project selection are limited.": {
+    "es":
+        "Solo se indican determinadas ciudades. El financiamiento y la selección de proyectos son limitados.",
+    "zh-Hans": "仅列出部分城市。资金和项目名额有限。",
+    "zh-Hant": "僅列出部分城市。資金和專案名額有限。",
+    "vi":
+        "Chỉ liệt kê một số thành phố. Kinh phí và số dự án được chọn có hạn.",
+    "fil":
+        "Mga piling lungsod lang ang nakalista. Limitado ang pondo at pagpili ng proyekto.",
+  },
+  "Home repair and renovation programs for San Francisco homeowners and renters.": {
+    "es":
+        "Programas de reparación y renovación para propietarios e inquilinos de San Francisco.",
+    "zh-Hans": "为旧金山房主和租户提供房屋维修和翻新项目。",
+    "zh-Hant": "為舊金山屋主和租戶提供房屋維修和翻新計畫。",
+    "vi":
+        "Chương trình sửa chữa và cải tạo nhà cho chủ nhà và người thuê tại San Francisco.",
+    "fil":
+        "Mga programa sa pagkukumpuni at pagsasaayos ng bahay para sa may-ari at umuupa sa San Francisco.",
+  },
+  "Home repairs and accessibility improvements with financing options.": {
+    "es":
+        "Reparaciones y mejoras de accesibilidad con opciones de financiamiento.",
+    "zh-Hans": "提供房屋维修和无障碍改善，以及融资选择。",
+    "zh-Hant": "提供房屋維修和無障礙改善，以及融資選項。",
+    "vi":
+        "Sửa chữa nhà và cải thiện khả năng tiếp cận với các lựa chọn tài chính.",
+    "fil":
+        "Pagkukumpuni ng bahay at pagpapahusay ng accessibility na may mga opsyon sa pagpopondo.",
+  },
+  "Programs vary by city and property type. Marin is fully subscribed at review; ask about future opportunities. Repairs may involve a loan.": {
+    "es":
+        "Los programas varían según la ciudad y el tipo de propiedad. En la revisión, Marin no tenía cupos; pregunte por futuras oportunidades. Las reparaciones pueden implicar un préstamo.",
+    "zh-Hans": "项目因城市和房产类型而异。审核时马林县名额已满；请询问未来机会。维修可能涉及贷款。",
+    "zh-Hant": "計畫因城市和房產類型而異。審核時馬林縣名額已滿；請詢問未來機會。維修可能涉及貸款。",
+    "vi":
+        "Chương trình khác nhau theo thành phố và loại nhà. Tại thời điểm rà soát, Marin đã đủ suất; hãy hỏi về cơ hội sau này. Sửa chữa có thể cần khoản vay.",
+    "fil":
+        "Nag-iiba ang mga programa ayon sa lungsod at uri ng ari-arian. Puno na ang Marin noong pagsusuri; magtanong tungkol sa mga susunod na pagkakataon. Maaaring may pautang ang pagkukumpuni.",
+  },
+  "Assistive technology advice and home modification resource coordination.": {
+    "es":
+        "Asesoría sobre tecnología de asistencia y coordinación de recursos para modificar el hogar.",
+    "zh-Hans": "辅助技术咨询和房屋改造资源协调。",
+    "zh-Hant": "輔助科技諮詢和房屋改造資源協調。",
+    "vi": "Tư vấn công nghệ hỗ trợ và điều phối nguồn lực cải tạo nhà.",
+    "fil":
+        "Payo sa assistive technology at koordinasyon ng mapagkukunan para sa pagbabago ng bahay.",
+  },
+  "Resource coordination does not mean this organization performs repairs.": {
+    "es":
+        "La coordinación de recursos no significa que esta organización realice reparaciones.",
+    "zh-Hans": "资源协调不表示该机构亲自进行维修。",
+    "zh-Hant": "資源協調不表示該機構親自進行維修。",
+    "vi":
+        "Điều phối nguồn lực không có nghĩa là tổ chức này thực hiện sửa chữa.",
+    "fil":
+        "Ang koordinasyon ng mapagkukunan ay hindi nangangahulugang ang organisasyong ito ang gumagawa ng pagkukumpuni.",
+  },
+  "Contacts stay on this device for this plan. Signing out removes them. Follow-ups use My next steps and its separate reminder controls.": {
+    "es":
+        "Los contactos de este plan permanecen en este dispositivo y se eliminan al cerrar sesión. Los seguimientos usan Mis próximos pasos y sus controles de recordatorio separados.",
+    "zh-Hans": "此计划的联系人保存在此设备上，退出登录会将其删除。跟进事项使用“我的下一步”及其独立的提醒设置。",
+    "zh-Hant": "此計畫的聯絡人儲存在此裝置上，登出會將其刪除。追蹤事項使用「我的下一步」及其獨立的提醒設定。",
+    "vi":
+        "Liên hệ của kế hoạch này lưu trên thiết bị và bị xóa khi đăng xuất. Việc theo dõi dùng Các bước tiếp theo của tôi và phần nhắc nhở riêng.",
+    "fil":
+        "Nananatili sa device na ito ang mga contact ng plano at nabubura sa pag-sign out. Ginagamit ng mga follow-up ang Mga susunod kong hakbang at ang hiwalay nitong mga kontrol sa paalala.",
+  },
 };
