@@ -4,7 +4,7 @@ import { MAX_IMAGE_INPUT_BYTES } from '../evidence/image-sanitizer.ts';
 import { registerTrustedEvidence } from '../evidence/register-trusted-evidence.ts';
 import type { EvidenceRepository } from '../evidence/repository.ts';
 import type { EvidenceDescriptor } from '../evidence/types.ts';
-import { evidenceIdentifier, evidenceInstant, evidenceRevision, parseEvidenceAsset,
+import { evidenceIdentifier, evidenceInstant, evidenceRevision, parseEvidenceAssetAsync,
   parseEvidenceDescriptor } from '../evidence/validation.ts';
 import type { AuthenticatedUser, MatchCaseRepository } from './match-case.ts';
 
@@ -215,13 +215,14 @@ export async function handleUploadEvidence(input: Input, deps: WriteEvidenceDepe
     });
     if (result?.status !== 'saved') repositoryFailure(result);
     if (!object(result, ['status', 'asset', 'catalogRevision'])) fail('INTERNAL_ERROR');
-    const asset = parseEvidenceAsset(result.asset), descriptor = asset.descriptor;
+    const catalogRevision = result.catalogRevision;
+    const asset = await parseEvidenceAssetAsync(result.asset), descriptor = asset.descriptor;
     if (descriptor.caseId !== request.caseId || descriptor.evidenceId !== request.evidenceId
       || descriptor.findingId !== request.findingId || descriptor.evidenceRevision !== request.expectedEvidenceRevision + 1
-      || result.catalogRevision !== request.expectedCatalogRevision + 1
+      || catalogRevision !== request.expectedCatalogRevision + 1
       || descriptor.capturedAt !== request.capturedAt || descriptor.preparedAt !== preparedAt) fail('INTERNAL_ERROR');
     return success({ schemaVersion: '1', caseId: request.caseId, caseRevision: request.expectedCaseRevision,
-      catalogRevision: result.catalogRevision, evidence: descriptor });
+      catalogRevision, evidence: descriptor });
   } catch (error) { return failure(error instanceof RequestFailure ? error.code : 'INTERNAL_ERROR'); }
   finally { if (admitted) activeUploads.delete(deps); }
 }

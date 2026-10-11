@@ -14,7 +14,7 @@ import type {
   ExportCurrentReadInput, ExportPublishInput, ExportReadInput, ExportSnapshotInput, PrivateExportArtifact,
 } from '../evidence/repository.ts';
 import { canonicalJson, caseFingerprint, evidenceIdentifier, evidenceInstant, evidenceRevision,
-  formAnswersFingerprint, parseEvidenceDescriptor, parseEvidenceSelections, parseSanitizedEvidenceImage } from '../evidence/validation.ts';
+  formAnswersFingerprint, parseEvidenceDescriptor, parseEvidenceSelections, parseSanitizedEvidenceImageAsync } from '../evidence/validation.ts';
 import { parseExportArtifactMetadata } from '../exports/validation.ts';
 import { MAX_MEMORY_CASES, type CaseDraft } from '../cases/types.ts';
 import { CAPACITY_LIMITS } from '../storage/capacity-limits.ts';
@@ -247,33 +247,35 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
   }
 
   async saveEvidenceIfCurrent(input: EvidenceSaveInput) {
-    const bound = this.evidenceCase(input);
+    const { image: suppliedImage, ...binding } = input;
+    const request = structuredClone(binding);
+    const image = await parseSanitizedEvidenceImageAsync(suppliedImage);
+    const bound = this.evidenceCase(request);
     if ('status' in bound) return bound;
-    if (!evidenceIdentifier(input.evidenceId) || !evidenceIdentifier(input.findingId)
-      || !evidenceRevision(input.expectedEvidenceRevision, true)) throw new Error('Invalid evidence identity.');
-    if (!this.linked(bound.snapshot, { evidenceId: input.evidenceId, findingId: input.findingId })) return { status: 'not_found' as const };
-    const rows = this.evidence.get(input.caseId) ?? new Map<string, StoredEvidence>();
-    const existing = rows.get(input.evidenceId);
-    if ((existing?.revision ?? 0) !== input.expectedEvidenceRevision) return { status: 'evidence_conflict' as const };
-    if (existing && existing.findingId !== input.findingId) return { status: 'evidence_conflict' as const };
-    const image = parseSanitizedEvidenceImage(input.image);
-    const descriptor = parseEvidenceDescriptor({ evidenceId: input.evidenceId, evidenceRevision: (existing?.revision ?? 0) + 1,
-      caseId: input.caseId, findingId: input.findingId, mediaType: image.mediaType, byteLength: image.byteLength,
-      sha256: image.sha256, width: image.width, height: image.height, capturedAt: input.capturedAt,
-      preparedAt: input.preparedAt, processingVersion: image.processingVersion });
+    if (!evidenceIdentifier(request.evidenceId) || !evidenceIdentifier(request.findingId)
+      || !evidenceRevision(request.expectedEvidenceRevision, true)) throw new Error('Invalid evidence identity.');
+    if (!this.linked(bound.snapshot, { evidenceId: request.evidenceId, findingId: request.findingId })) return { status: 'not_found' as const };
+    const rows = this.evidence.get(request.caseId) ?? new Map<string, StoredEvidence>();
+    const existing = rows.get(request.evidenceId);
+    if ((existing?.revision ?? 0) !== request.expectedEvidenceRevision) return { status: 'evidence_conflict' as const };
+    if (existing && existing.findingId !== request.findingId) return { status: 'evidence_conflict' as const };
+    const descriptor = parseEvidenceDescriptor({ evidenceId: request.evidenceId, evidenceRevision: (existing?.revision ?? 0) + 1,
+      caseId: request.caseId, findingId: request.findingId, mediaType: image.mediaType, byteLength: image.byteLength,
+      sha256: image.sha256, width: image.width, height: image.height, capturedAt: request.capturedAt,
+      preparedAt: request.preparedAt, processingVersion: image.processingVersion });
     if (existing && instantMicros(descriptor.preparedAt) < instantMicros(existing.preparedAt)) {
       throw new Error('Evidence preparation time moved backwards.');
     }
-    const catalogRevision = this.nextCatalogRevision(input.caseId);
+    const catalogRevision = this.nextCatalogRevision(request.caseId);
     const replacedBytes = existing?.asset?.bytes.byteLength ?? 0;
     if ((!existing && (this.assetCount() >= this.evidenceLimits.maxAssets
-      || this.assetCount(input.userId) >= CAPACITY_LIMITS.evidencePerOwner))
-      || this.byteCount() - this.exportBytesForCase(input.caseId) - replacedBytes + image.byteLength > this.evidenceLimits.maxBytes) return { status: 'quota_exceeded' as const };
+      || this.assetCount(request.userId) >= CAPACITY_LIMITS.evidencePerOwner))
+      || this.byteCount() - this.exportBytesForCase(request.caseId) - replacedBytes + image.byteLength > this.evidenceLimits.maxBytes) return { status: 'quota_exceeded' as const };
     const asset = { descriptor, bytes: image.bytes };
-    rows.set(input.evidenceId, { revision: descriptor.evidenceRevision, findingId: descriptor.findingId, preparedAt: descriptor.preparedAt, asset });
-    this.evidence.set(input.caseId, rows);
-    this.catalogRevisions.set(input.caseId, catalogRevision);
-    this.invalidateExports(input.caseId);
+    rows.set(request.evidenceId, { revision: descriptor.evidenceRevision, findingId: descriptor.findingId, preparedAt: descriptor.preparedAt, asset });
+    this.evidence.set(request.caseId, rows);
+    this.catalogRevisions.set(request.caseId, catalogRevision);
+    this.invalidateExports(request.caseId);
     return { status: 'saved' as const, asset: structuredClone(asset), catalogRevision };
   }
 
@@ -302,6 +304,18 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     return { status: 'found' as const, snapshot: { snapshot: structuredClone(bound.snapshot), caseFingerprint: caseFingerprint(bound.snapshot), answers: structuredClone(answers),
       answersFingerprint: formAnswersFingerprint(answers), catalogRevision: input.expectedCatalogRevision,
       assets: structuredClone(selected.assets) } };
+  }
+
+  async loadExportReviewForUser(input: ExportSnapshotInput) {
+    const bound = this.evidenceCase(input);
+    if ('status' in bound) return bound;
+    const selected = this.selectedAssets(bound.snapshot, input.selections);
+    if ('status' in selected) return selected;
+    const answers = this.currentAnswers(input.userId, input.caseId, input.programId);
+    return { status: 'found' as const, snapshot: { snapshot: structuredClone(bound.snapshot),
+      caseFingerprint: caseFingerprint(bound.snapshot), answers: structuredClone(answers),
+      answersFingerprint: formAnswersFingerprint(answers), catalogRevision: input.expectedCatalogRevision,
+      evidence: selected.assets.map(asset => structuredClone(asset.descriptor)) } };
   }
 
   async publishExportIfCurrent(input: ExportPublishInput) {
@@ -375,7 +389,19 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     return { status: 'found' as const, artifact: structuredClone(saved.artifact.metadata) };
   }
 
-  async readExportForUserIfCurrent(input: ExportCurrentReadInput) {
+  async readExportForUserIfCurrent(input: ExportCurrentReadInput): ReturnType<EvidenceRepository['readExportForUserIfCurrent']> {
+    const current = this.currentExport(input);
+    if ('status' in current) return current;
+    return { status: 'found', artifact: structuredClone(current.artifact) };
+  }
+
+  async reviewExportForUserIfCurrent(input: ExportCurrentReadInput): ReturnType<EvidenceRepository['reviewExportForUserIfCurrent']> {
+    const current = this.currentExport(input);
+    if ('status' in current) return current;
+    return { status: 'found', artifact: structuredClone(current.artifact.metadata) };
+  }
+
+  private currentExport(input: ExportCurrentReadInput): StoredExport | EvidenceRepositoryFailure {
     const entry = this.cases.get(input.caseId);
     const saved = this.exports.get(input.artifactId);
     if (!entry || entry.userId !== input.userId || !saved || saved.userId !== input.userId || saved.caseId !== input.caseId) {
@@ -386,7 +412,10 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     if (saved.contextFingerprint !== input.contextFingerprint) return { status: 'generation_conflict' as const };
     if (!evidenceInstant(input.checkedAt)) throw new Error('Invalid export read time.');
     if (!this.checkExportClock(saved, input.checkedAt)) return { status: 'expired' as const };
-    return { status: 'found' as const, artifact: structuredClone(saved.artifact) };
+    if (!(saved.artifact.bytes instanceof Uint8Array) || saved.artifact.bytes.byteLength !== saved.artifact.metadata.byteLength) {
+      throw new Error('Invalid private repository data.');
+    }
+    return saved;
   }
 
   private exportBindingsCurrent(snapshot: CaseSnapshot, saved: StoredExport): EvidenceRepositoryFailure | null {

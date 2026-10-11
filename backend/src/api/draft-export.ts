@@ -8,10 +8,10 @@ import { planPacketWithForm } from '../forms/prepare-form-packet.ts';
 import { renderDraftExport, DraftExportRenderError } from '../exports/render-draft-export.ts';
 import type { ExportArtifactMetadata } from '../exports/types.ts';
 import { EXPORT_LIFETIME_MS, MAX_EXPORT_BYTES, parseExportArtifactMetadata } from '../exports/validation.ts';
-import type { EvidenceRepository, EvidenceRepositoryFailure, ExportSnapshot } from '../evidence/repository.ts';
-import type { EvidenceCatalog, EvidenceSelection } from '../evidence/types.ts';
+import type { EvidenceRepository, EvidenceRepositoryFailure, ExportReviewSnapshot } from '../evidence/repository.ts';
+import type { EvidenceAsset, EvidenceCatalog, EvidenceSelection } from '../evidence/types.ts';
 import { exportEvidenceFitsBudget } from '../evidence/export-budget.ts';
-import { canonicalJson, evidenceIdentifier as id, evidenceRevision as revision, parseEvidenceAsset,
+import { canonicalJson, evidenceIdentifier as id, evidenceRevision as revision, parseEvidenceAssetAsync, parseEvidenceAssetsAsync,
   parseEvidenceDescriptor, parseEvidenceSelections, formAnswersFingerprint } from '../evidence/validation.ts';
 import type { Match, ProgramDefinition } from '../types.ts';
 import type { AuthenticatedUser } from './match-case.ts';
@@ -114,35 +114,49 @@ function binary(bytes: Uint8Array, mediaType: 'image/png' | 'application/pdf', s
 }
 
 interface Context {
-  source: ExportSnapshot; template: VerifiedFormTemplate; templateBytes: Uint8Array;
+  source: ExportReviewSnapshot; assets: EvidenceAsset[]; template: VerifiedFormTemplate; templateBytes: Uint8Array;
   program: ProgramDefinition; match: Match; fingerprint: string; evaluatedAt: string; formContextId: string;
 }
 
-async function loadContext(userId: string, request: CreateRequest, deps: DraftExportDependencies): Promise<Context> {
-  const loaded = await storage(() => deps.cases.loadExportSnapshotForUser({ userId, caseId: request.caseId,
-    revision: request.expectedCaseRevision, expectedCatalogRevision: request.expectedEvidenceCatalogRevision,
-    programId: request.programId, selections: structuredClone(request.selectedEvidence) }));
-  if (loaded.status !== 'found') return repositoryFailure(loaded);
-  if (!Array.isArray(loaded.snapshot.assets) || loaded.snapshot.assets.length !== request.selectedEvidence.length) fail('INTERNAL_ERROR');
-  const descriptors = loaded.snapshot.assets.map(asset => {
-    const descriptor = parseEvidenceDescriptor(asset.descriptor);
-    if (!(asset.bytes instanceof Uint8Array) || asset.bytes.byteLength !== descriptor.byteLength) fail('INTERNAL_ERROR');
-    return descriptor;
-  });
-  if (!exportEvidenceFitsBudget(descriptors)) fail('EXPORT_REVIEW_REQUIRED');
-  const source = structuredClone(loaded.snapshot), { snapshot } = source;
+async function loadContext(userId: string, request: CreateRequest, deps: DraftExportDependencies, images = true): Promise<Context> {
+  const input = { userId, caseId: request.caseId, revision: request.expectedCaseRevision,
+    expectedCatalogRevision: request.expectedEvidenceCatalogRevision,
+    programId: request.programId, selections: structuredClone(request.selectedEvidence) };
+  let source: ExportReviewSnapshot;
+  let assets: EvidenceAsset[] = [];
+  if (images) {
+    const loaded = await storage(() => deps.cases.loadExportSnapshotForUser(input));
+    if (loaded.status !== 'found') return repositoryFailure(loaded);
+    if (!Array.isArray(loaded.snapshot.assets) || loaded.snapshot.assets.length !== request.selectedEvidence.length) fail('INTERNAL_ERROR');
+    const evidence = loaded.snapshot.assets.map(asset => {
+      const descriptor = parseEvidenceDescriptor(asset.descriptor);
+      if (!(asset.bytes instanceof Uint8Array) || asset.bytes.byteLength !== descriptor.byteLength) fail('INTERNAL_ERROR');
+      return descriptor;
+    });
+    if (!exportEvidenceFitsBudget(evidence)) fail('EXPORT_REVIEW_REQUIRED');
+    const { assets: supplied, ...review } = loaded.snapshot;
+    source = structuredClone({ ...review, evidence });
+    assets = await parseEvidenceAssetsAsync(supplied);
+    source.evidence = assets.map(asset => asset.descriptor);
+  } else {
+    const loaded = await storage(() => deps.cases.loadExportReviewForUser(input));
+    if (loaded.status !== 'found') return repositoryFailure(loaded);
+    source = structuredClone(loaded.snapshot);
+    if (!Array.isArray(source.evidence) || source.evidence.length !== request.selectedEvidence.length) fail('INTERNAL_ERROR');
+    source.evidence = source.evidence.map(parseEvidenceDescriptor);
+    if (!exportEvidenceFitsBudget(source.evidence)) fail('EXPORT_REVIEW_REQUIRED');
+  }
+  const { snapshot } = source;
   const validatedAt = clock(deps);
   matchPrograms(snapshot, [], { evaluatedAt: validatedAt, evaluationDate: validatedAt.slice(0, 10) });
   if (snapshot.caseId !== request.caseId || snapshot.revision !== request.expectedCaseRevision
     || source.catalogRevision !== request.expectedEvidenceCatalogRevision || source.caseFingerprint !== hash(snapshot)) fail('INTERNAL_ERROR');
-  if (!Array.isArray(source.assets) || source.assets.length !== request.selectedEvidence.length) fail('INTERNAL_ERROR');
-  source.assets = source.assets.map((asset, index) => {
-    const parsed = parseEvidenceAsset(asset), selected = request.selectedEvidence[index], d = parsed.descriptor;
+  source.evidence.forEach((d, index) => {
+    const selected = request.selectedEvidence[index];
     const finding = snapshot.findings.find(finding => finding.id === d.findingId);
     if (d.caseId !== snapshot.caseId || d.evidenceId !== selected.evidenceId || d.evidenceRevision !== selected.expectedEvidenceRevision
       || !finding || finding.reviewState !== 'confirmed' || !finding.evidenceIds.includes(d.evidenceId)
       || instantMicros(d.preparedAt) > instantMicros(validatedAt)) fail('INTERNAL_ERROR');
-    return parsed;
   });
   const registry = structuredClone(await storage(() => deps.loadRegistry()));
   matchPrograms(snapshot, registry, { evaluatedAt: validatedAt, evaluationDate: validatedAt.slice(0, 10) });
@@ -172,8 +186,8 @@ async function loadContext(userId: string, request: CreateRequest, deps: DraftEx
   const match = matchPrograms(snapshot, [program], { evaluatedAt, evaluationDate: evaluatedAt.slice(0, 10) }).matches[0];
   const fingerprint = hash({ renderingVersion: 'draft-export-v1', snapshot, program, match, template,
     formAnswers: source.answers, catalogRevision: source.catalogRevision,
-    evidence: source.assets.map(asset => asset.descriptor), evaluationDate: evaluatedAt.slice(0, 10) });
-  return { source, template, templateBytes: detachedForm.bytes, program, match, fingerprint, evaluatedAt, formContextId: formContext.formContextId };
+    evidence: source.evidence, evaluationDate: evaluatedAt.slice(0, 10) });
+  return { source, assets, template, templateBytes: detachedForm.bytes, program, match, fingerprint, evaluatedAt, formContextId: formContext.formContextId };
 }
 
 function metadata(context: Context, userId: string, artifactId: string, generatedAt: string,
@@ -191,7 +205,7 @@ function metadata(context: Context, userId: string, artifactId: string, generate
     exportContextId: context.fingerprint, generatedAt, expiresAt: deadline, recheckAfter: packet.recheckAfter,
     status: 'draft', isDemo: match.isDemo, mediaType: 'application/pdf', byteLength: file.byteLength,
     sha256: file.sha256, pageCount: file.pageCount, renderingVersion: 'draft-export-v1',
-    selectedEvidence: source.assets.map(({ descriptor: d }) => ({ evidenceId: d.evidenceId, evidenceRevision: d.evidenceRevision,
+    selectedEvidence: source.evidence.map(d => ({ evidenceId: d.evidenceId, evidenceRevision: d.evidenceRevision,
       findingId: d.findingId, sha256: d.sha256, reviewedAt: generatedAt, reviewedBy: userId })),
     missingItems: packet.missingItems.map(item => item.id === 'form-rendering'
       ? { ...item, description: 'Inspect every populated field and evidence page in this incomplete draft. Complete all outstanding reviews before any submission.' } : item),
@@ -206,9 +220,11 @@ async function createExport(userId: string, request: CreateRequest, deps: DraftE
     const context = await loadContext(userId, request, deps), { source, template } = context;
     const generatedAt = context.evaluatedAt;
     if (context.match.recheckAfter !== null && instantMicros(context.match.recheckAfter) <= instantMicros(generatedAt)) fail('EXPORT_EXPIRED');
-    const rendered = await renderDraftExport(source.snapshot, template, context.templateBytes,
-      { programId: request.programId, templateSha256: template.templateSha256, plannedAt: generatedAt }, source.answers, source.assets);
-    const current = await loadContext(userId, request, deps);
+    const rendering = renderDraftExport(source.snapshot, template, context.templateBytes,
+      { programId: request.programId, templateSha256: template.templateSha256, plannedAt: generatedAt }, source.answers, context.assets);
+    context.assets = [];
+    const rendered = await rendering;
+    const current = await loadContext(userId, request, deps, false);
     if (current.fingerprint !== context.fingerprint) fail('EXPORT_GENERATION_CONFLICT');
     const artifactId = deps.newArtifactId?.() ?? `export-${randomUUID()}`;
     const expected = metadata(context, userId, artifactId, generatedAt, rendered);
@@ -220,16 +236,32 @@ async function createExport(userId: string, request: CreateRequest, deps: DraftE
       programId: request.programId, expectedCaseFingerprint: source.caseFingerprint,
       expectedAnswersFingerprint: source.answersFingerprint, selections: structuredClone(request.selectedEvidence),
       contextFingerprint: context.fingerprint, generationKey: request.generationKey,
-      artifact: { metadata: structuredClone(expected), bytes: Uint8Array.from(rendered.bytes) }, checkedAt }));
+      artifact: { metadata: structuredClone(expected), bytes: rendered.bytes }, checkedAt }));
     if (!('artifact' in saved)) return repositoryFailure(saved);
     const result = parseExportArtifactMetadata(saved.artifact);
     const reconstructed = metadata(context, userId, result.artifactId, result.generatedAt,
       { sha256: result.sha256, byteLength: result.byteLength, pageCount: rendered.pageCount });
     if (canonicalJson(result) !== canonicalJson(reconstructed)) fail('INTERNAL_ERROR');
     if (saved.status === 'saved' && canonicalJson(result) !== canonicalJson(expected)) fail('INTERNAL_ERROR');
-    await currentArtifact(userId, result, context.fingerprint, deps);
+    await reviewCurrentArtifact(userId, result, context.fingerprint, deps);
     return json(result);
   } finally { activeRenders.delete(deps); }
+}
+
+async function reviewCurrentArtifact(userId: string, expected: ExportArtifactMetadata,
+  contextFingerprint: string, deps: DraftExportDependencies): Promise<void> {
+  const loaded = await storage(() => deps.cases.reviewExportForUserIfCurrent({ userId, caseId: expected.caseId,
+    artifactId: expected.artifactId, contextFingerprint, checkedAt: clock(deps) }));
+  if (loaded.status !== 'found') return repositoryFailure(loaded, true);
+  const metadata = parseExportArtifactMetadata(loaded.artifact);
+  if (canonicalJson(metadata) !== canonicalJson(expected)) fail('INTERNAL_ERROR');
+  returnedArtifactIsFresh(metadata, deps);
+}
+
+function returnedArtifactIsFresh(metadata: ExportArtifactMetadata, deps: DraftExportDependencies): void {
+  const returnedAt = instantMicros(clock(deps));
+  if (returnedAt < instantMicros(metadata.generatedAt)) fail('INTERNAL_ERROR');
+  if (returnedAt >= instantMicros(metadata.expiresAt)) fail('EXPORT_EXPIRED');
 }
 
 async function currentArtifact(userId: string, expected: ExportArtifactMetadata, contextFingerprint: string, deps: DraftExportDependencies) {
@@ -241,10 +273,8 @@ async function currentArtifact(userId: string, expected: ExportArtifactMetadata,
   if (canonicalJson(metadata) !== canonicalJson(expected) || !(bytes instanceof Uint8Array)
     || bytes.length !== metadata.byteLength || bytesHash(bytes) !== metadata.sha256
     || Buffer.from(bytes.subarray(0, 5)).toString('ascii') !== '%PDF-') fail('INTERNAL_ERROR');
-  const returnedAt = instantMicros(clock(deps));
-  if (returnedAt < instantMicros(metadata.generatedAt)) fail('INTERNAL_ERROR');
-  if (returnedAt >= instantMicros(metadata.expiresAt)) fail('EXPORT_EXPIRED');
-  return { metadata, bytes: Uint8Array.from(bytes) };
+  returnedArtifactIsFresh(metadata, deps);
+  return { metadata, bytes };
 }
 
 async function processRequest(input: { body: unknown; bearerToken: string | null }, deps: DraftExportDependencies, route: ExportRoute): Promise<DraftExportResult> {
@@ -271,7 +301,7 @@ async function processRequest(input: { body: unknown; bearerToken: string | null
       revision: request.expectedCaseRevision, expectedCatalogRevision: request.expectedCatalogRevision!,
       evidenceId: request.evidenceId!, expectedEvidenceRevision: request.expectedEvidenceRevision! }));
     if (loaded.status !== 'found') return repositoryFailure(loaded, true);
-    const asset = parseEvidenceAsset(loaded.asset), d = asset.descriptor;
+    const asset = await parseEvidenceAssetAsync(loaded.asset), d = asset.descriptor;
     if (d.caseId !== request.caseId || d.evidenceId !== request.evidenceId || d.evidenceRevision !== request.expectedEvidenceRevision) fail('INTERNAL_ERROR');
     return binary(asset.bytes, 'image/png', d.sha256);
   }
@@ -285,7 +315,7 @@ async function processRequest(input: { body: unknown; bearerToken: string | null
   const context = await loadContext(userId, { schemaVersion: '1', caseId: request.caseId, expectedCaseRevision: request.expectedCaseRevision,
     programId: expected.programId, expectedFormContextId: expected.formContextId, expectedAnswerRevision: expected.answerRevision,
     expectedEvidenceCatalogRevision: expected.evidenceCatalogRevision, generationKey: 'download-context',
-    selectedEvidence: expected.selectedEvidence.map(item => ({ evidenceId: item.evidenceId, expectedEvidenceRevision: item.evidenceRevision, reviewedForExport: true })) }, deps);
+    selectedEvidence: expected.selectedEvidence.map(item => ({ evidenceId: item.evidenceId, expectedEvidenceRevision: item.evidenceRevision, reviewedForExport: true })) }, deps, false);
   if (context.fingerprint !== expected.exportContextId) fail('EXPORT_GENERATION_CONFLICT');
   if (canonicalJson(metadata(context, userId, expected.artifactId, expected.generatedAt,
     { byteLength: expected.byteLength, sha256: expected.sha256, pageCount: expected.pageCount })) !== canonicalJson(expected)) fail('INTERNAL_ERROR');
