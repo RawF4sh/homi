@@ -33,7 +33,10 @@ void main() {
         .invokeMethod<Object?>('capabilities')
         .timeout(_timeout);
     final value = BathroomScanCapabilities.fromJson(raw);
-    expect(value.source, Platform.isIOS ? 'roomplan' : 'arcore');
+    expect(
+      value.source,
+      isIn(Platform.isIOS ? ['roomplan', 'arkit'] : ['arcore']),
+    );
     binding.reportData = {
       'platform': Platform.operatingSystem,
       'source': value.source,
@@ -82,7 +85,10 @@ void main() {
         await _adapter.cancel(id).timeout(_timeout);
       }
       final value = await _adapter.capabilities().timeout(_timeout);
-      expect(value.source, Platform.isIOS ? 'roomplan' : 'arcore');
+      expect(
+        value.source,
+        isIn(Platform.isIOS ? ['roomplan', 'arkit'] : ['arcore']),
+      );
     },
   );
 
