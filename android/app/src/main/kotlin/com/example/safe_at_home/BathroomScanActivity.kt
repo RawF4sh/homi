@@ -78,7 +78,7 @@ class BathroomScanActivity : ComponentActivity() {
 
     private fun showNotice() {
         val column = column()
-        column.addView(text("Scan your bathroom", 26f))
+        column.addView(text("Scan this room", 26f))
         column.addView(text("Move slowly from a safe position. Keep the camera facing walls, floor and fixtures. Do not walk backward or step over obstacles while looking at the screen.", 18f))
         column.addView(text("This captures an approximate arrangement of surfaces and points. Android does not automatically identify toilets, sinks or doors. You will review the model and identify what it shows.", 18f))
         column.addView(text("Safe at Home does not save or upload raw camera frames. The reviewed geometry stays in your encrypted case on this device. Backgrounding or exceeding three minutes cancels this scan.", 16f))
@@ -94,7 +94,7 @@ class BathroomScanActivity : ComponentActivity() {
         notice.movementMethod = LinkMovementMethod.getInstance()
         notice.setLinkTextColor(Color.rgb(22, 94, 86))
         column.addView(notice)
-        column.addView(button("Start bathroom scan") {
+        column.addView(button("Start room scan") {
             if (!startRequested) {
                 startRequested = true
                 startIfReady()
@@ -208,15 +208,15 @@ class BathroomScanActivity : ComponentActivity() {
         val cameraView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
             preserveEGLContextOnPause = false
-            contentDescription = scanText("Live bathroom camera view. Detected surfaces and sampled points are outlined.")
+            contentDescription = scanText("Live room camera view. Detected surfaces and sampled points are outlined.")
             setRenderer(scanRenderer)
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         }
         surface = cameraView
         column.addView(cameraView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         val controls = column()
-        controls.addView(text("Bathroom scan", 24f))
-        status = text("Finding position. Move slowly while facing the bathroom.", 16f)
+        controls.addView(text("Room scan", 24f))
+        status = text("Finding position. Move slowly while facing the room.", 16f)
         controls.addView(status)
         reviewButton = button("Finish and review 3D scan") { finishScan() }.apply { isEnabled = false }
         controls.addView(reviewButton)

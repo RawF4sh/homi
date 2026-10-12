@@ -3,6 +3,48 @@ package com.example.safe_at_home
 internal object AppScanTranslations {
     fun text(english: String, language: String): String = messages[english]?.get(language) ?: english
     private val messages = mapOf(
+        "Scan this room" to mapOf(
+            "es" to "Escanee esta habitación",
+            "zh-Hans" to "扫描此房间",
+            "zh-Hant" to "掃描此房間",
+            "vi" to "Quét phòng này",
+            "fil" to "I-scan ang kuwartong ito",
+        ),
+        "Move slowly and follow the camera guidance. Stay on a safe, clear path. Scan only this room." to mapOf(
+            "es" to "Muévase despacio y siga las indicaciones de la cámara. Permanezca en un camino seguro y despejado. Escanee solo esta habitación.",
+            "zh-Hans" to "缓慢移动并遵循相机指引。保持在安全、畅通的路径上。仅扫描此房间。",
+            "zh-Hant" to "緩慢移動並遵循相機指引。保持在安全、暢通的路徑上。僅掃描此房間。",
+            "vi" to "Di chuyển chậm và làm theo hướng dẫn camera. Đi trên lối an toàn, thông thoáng. Chỉ quét phòng này.",
+            "fil" to "Dahan-dahang gumalaw at sundin ang gabay ng camera. Manatili sa ligtas at maluwag na daanan. I-scan lamang ang kuwartong ito.",
+        ),
+        "Start room scan" to mapOf(
+            "es" to "Iniciar escaneo de habitación",
+            "zh-Hans" to "开始房间扫描",
+            "zh-Hant" to "開始房間掃描",
+            "vi" to "Bắt đầu quét phòng",
+            "fil" to "Simulan ang pag-scan ng kuwarto",
+        ),
+        "Live room camera view. Detected surfaces and sampled points are outlined." to mapOf(
+            "es" to "Vista de cámara de la habitación en vivo. Se resaltan las superficies detectadas y los puntos muestreados.",
+            "zh-Hans" to "房间实时相机视图。已标出检测到的表面和采样点。",
+            "zh-Hant" to "房間即時相機檢視。已標出偵測到的表面和取樣點。",
+            "vi" to "Hình ảnh phòng trực tiếp từ camera. Các bề mặt và điểm lấy mẫu được đánh dấu.",
+            "fil" to "Live na camera ng kuwarto. May balangkas ang mga natukoy na ibabaw at sample na punto.",
+        ),
+        "Room scan" to mapOf(
+            "es" to "Escaneo de habitación",
+            "zh-Hans" to "房间扫描",
+            "zh-Hant" to "房間掃描",
+            "vi" to "Quét phòng",
+            "fil" to "Pag-scan ng kuwarto",
+        ),
+        "Finding position. Move slowly while facing the room." to mapOf(
+            "es" to "Buscando posición. Muévase despacio mirando hacia la habitación.",
+            "zh-Hans" to "正在定位。请面向房间缓慢移动。",
+            "zh-Hant" to "正在定位。請面向房間緩慢移動。",
+            "vi" to "Đang xác định vị trí. Di chuyển chậm và hướng vào phòng.",
+            "fil" to "Hinahanap ang posisyon. Dahan-dahang gumalaw habang nakaharap sa kuwarto.",
+        ),
         "Camera-only scan" to mapOf(
             "es" to "Escaneo solo con cámara",
             "zh-Hans" to "仅相机扫描",
