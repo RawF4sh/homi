@@ -98,6 +98,36 @@ test('PDF contains no interactive widgets, embedded attachments, private identif
   }
 });
 
+test('sanitized RGBA pixels and transparency survive PDF image and alpha-mask embedding exactly', async () => {
+  const pixels = Buffer.from([255, 0, 0, 255, 0, 255, 0, 64, 0, 0, 255, 128,
+    255, 255, 255, 0, 21, 87, 146, 1, 0, 0, 0, 255]);
+  const source = await sharp(pixels, { raw: { width: 3, height: 2, channels: 4 } }).png().toBuffer();
+  const image = await sanitizeEvidenceImage(source);
+  const decoded = await sharp(image.bytes).ensureAlpha().raw().toBuffer();
+  assert.equal(createHash('sha256').update(decoded).digest('hex'), createHash('sha256').update(pixels).digest('hex'));
+  const f = await fixture();
+  const { bytes, ...descriptor } = image;
+  f.assets = [{ descriptor: { ...f.assets[0].descriptor, ...descriptor }, bytes }];
+  const rendered = await render(f);
+  const document = await PDFDocument.load(rendered.bytes, { updateMetadata: false });
+  assert.equal(document.getPageCount(), 2);
+  const rgbImages = document.context.enumerateIndirectObjects().flatMap(([, value]) => value instanceof PDFRawStream
+    && value.dict.get(PDFName.of('Subtype')) === PDFName.of('Image')
+    && value.dict.get(PDFName.of('ColorSpace')) === PDFName.of('DeviceRGB') ? [value] : []);
+  assert.equal(rgbImages.length, 1);
+  const rgb = Buffer.from(decodePDFRawStream(rgbImages[0]).decode());
+  const alphaStream = document.context.lookup(rgbImages[0].dict.get(PDFName.of('SMask')));
+  assert.ok(alphaStream instanceof PDFRawStream);
+  const alpha = Buffer.from(decodePDFRawStream(alphaStream).decode());
+  assert.equal(rgb.length, 18); assert.equal(alpha.length, 6);
+  const reconstructed = Buffer.alloc(pixels.length);
+  for (let index = 0; index < alpha.length; index++) {
+    rgb.copy(reconstructed, index * 4, index * 3, index * 3 + 3);
+    reconstructed[index * 4 + 3] = alpha[index];
+  }
+  assert.equal(createHash('sha256').update(reconstructed).digest('hex'), createHash('sha256').update(pixels).digest('hex'));
+});
+
 test('no evidence produces just the draft form, with unresolved fields still explicitly drafts', async () => {
   const f = await fixture();
   const result = await renderDraftExport(f.snapshot, f.form.template, f.form.bytes, f.context, undefined, []);

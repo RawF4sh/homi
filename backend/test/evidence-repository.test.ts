@@ -52,6 +52,54 @@ async function publication(repository: MemoryCaseRepository): Promise<ExportPubl
 }
 const download = { userId: 'alice', caseId: 'case-a', artifactId: 'artifact-a', contextFingerprint: CONTEXT, checkedAt: NOW };
 
+test('streaming validation freezes caller identity and bytes before yielding', async () => {
+  const repository = setup();
+  const image = structuredClone(await imagePromise);
+  const expectedHash = image.sha256;
+  const input = { ...binding, evidenceId: 'photo-a', expectedEvidenceRevision: 0,
+    findingId: 'finding-a', image, capturedAt: null, preparedAt: NOW };
+  const pending = repository.saveEvidenceIfCurrent(input);
+  input.userId = 'bob'; input.caseId = 'case-b'; input.evidenceId = 'photo-b';
+  input.image.bytes.fill(0); input.image.sha256 = 'f'.repeat(64);
+  const result = await pending;
+  assert.equal(result.status, 'saved');
+  if (result.status !== 'saved') throw new Error('Expected fictional image save.');
+  assert.equal(result.asset.descriptor.caseId, 'case-a');
+  assert.equal(result.asset.descriptor.evidenceId, 'photo-a');
+  assert.equal(result.asset.descriptor.sha256, expectedHash);
+  const bob = await repository.readEvidenceCatalogForUser('bob', 'case-b');
+  assert.equal(bob.status, 'found');
+  if (bob.status === 'found') assert.equal(bob.catalog.evidence.length, 0);
+});
+
+test('case changes during streaming validation prevent publication under an old revision', async () => {
+  const repository = setup();
+  const pending = repository.saveEvidenceIfCurrent({ ...binding, evidenceId: 'photo-a', expectedEvidenceRevision: 0,
+    findingId: 'finding-a', image: await imagePromise, capturedAt: null, preparedAt: NOW });
+  const { revision: _, ...draft } = makeCase();
+  draft.findings[0].observation = 'A corrected fictional observation.';
+  assert.equal((await repository.replaceIfCurrent('alice', 'case-a', 1, draft)).status, 'saved');
+  assert.equal((await pending).status, 'conflict');
+  const catalog = await repository.readEvidenceCatalogForUser('alice', 'case-a');
+  assert.equal(catalog.status, 'found');
+  if (catalog.status === 'found') assert.equal(catalog.catalog.evidence.length, 0);
+});
+
+test('concurrent streaming validations cannot both claim the same catalog revision', async () => {
+  const repository = setup();
+  const image = await imagePromise;
+  const results = await Promise.all(['photo-a', 'photo-b'].map(evidenceId => repository.saveEvidenceIfCurrent({
+    ...binding, evidenceId, expectedEvidenceRevision: 0, findingId: 'finding-a', image, capturedAt: null, preparedAt: NOW,
+  })));
+  assert.deepEqual(results.map(result => result.status).sort(), ['evidence_conflict', 'saved']);
+  const catalog = await repository.readEvidenceCatalogForUser('alice', 'case-a');
+  assert.equal(catalog.status, 'found');
+  if (catalog.status === 'found') {
+    assert.equal(catalog.catalog.catalogRevision, 1);
+    assert.equal(catalog.catalog.evidence.length, 1);
+  }
+});
+
 test('evidence selections require explicit review, unique exact IDs and a bounded ordered list', () => {
   assert.deepEqual(parseEvidenceSelections(selections), selections);
   assert.deepEqual(parseEvidenceSelections([]), []);

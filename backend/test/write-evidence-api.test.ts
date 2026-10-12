@@ -402,3 +402,22 @@ test('output descriptors are detached from a mutable repository result', async (
   if (returned?.status === 'saved') { returned.asset.descriptor.findingId = 'PRIVATE late mutation'; returned.asset.bytes.fill(0); }
   assert.equal(result.evidence.findingId, 'finding-a'); assert.equal(result.evidence.width, 3);
 });
+
+test('upload captures the saved catalog revision before asynchronous result validation', async () => {
+  const state = await setup(), save = state.repository.saveEvidenceIfCurrent.bind(state.repository);
+  let mutated = false;
+  state.repository.saveEvidenceIfCurrent = async input => {
+    const result = await save(input);
+    if (result.status !== 'saved') return result;
+    const asset = result.asset;
+    Object.defineProperty(result, 'asset', { enumerable: true, get() {
+      queueMicrotask(() => { result.catalogRevision = 99; mutated = true; });
+      return asset;
+    } });
+    return result;
+  };
+  const result = uploaded(await state.upload());
+  assert.equal(mutated, true);
+  assert.equal(result.catalogRevision, 1);
+  assert.equal(result.evidence.evidenceRevision, 1);
+});
