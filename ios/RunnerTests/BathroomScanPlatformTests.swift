@@ -17,7 +17,7 @@ final class BathroomScanPlatformTests: XCTestCase {
     let finish = UIButton(type: .system)
     let layout = BathroomScanCaptureLayout(camera: UIView(), status: UILabel(),
       cancelButton: cancel, finishButton: finish, language: "es")
-    XCTAssertEqual(layout.heading.text, "Escanee su baño")
+    XCTAssertEqual(layout.heading.text, "Escanee esta habitación")
     XCTAssertEqual(cancel.title(for: .normal), "Cancelar escaneo")
     XCTAssertEqual(finish.title(for: .normal), "Terminar escaneo")
     XCTAssertEqual(BathroomScanText.text("Cancel scan", language: "zh-Hant"), "取消掃描")

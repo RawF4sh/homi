@@ -280,12 +280,12 @@ final class BathroomScanCaptureLayout: UIView {
 
   init(camera: UIView, status: UILabel, cancelButton: UIButton, finishButton: UIButton, language: String = "en") {
     super.init(frame: .zero)
-    heading.text = BathroomScanText.text("Scan your bathroom", language: language)
+    heading.text = BathroomScanText.text("Scan this room", language: language)
     heading.font = .preferredFont(forTextStyle: .title2)
     heading.adjustsFontForContentSizeCategory = true
     heading.numberOfLines = 0
     heading.accessibilityTraits = .header
-    status.text = BathroomScanText.text("Move slowly and follow the camera guidance. Stay on a safe, clear path. Scan only this bathroom.", language: language)
+    status.text = BathroomScanText.text("Move slowly and follow the camera guidance. Stay on a safe, clear path. Scan only this room.", language: language)
     status.font = .preferredFont(forTextStyle: .body)
     status.adjustsFontForContentSizeCategory = true
     status.numberOfLines = 0
@@ -477,7 +477,7 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
     var configuration = RoomCaptureSession.Configuration()
     configuration.isCoachingEnabled = true
     captureView?.captureSession.run(configuration: configuration)
-    setDeadline(seconds: 180, message: "This scan reached its three-minute limit. Start a shorter bathroom scan.")
+    setDeadline(seconds: 180, message: "This scan reached its three-minute limit. Start a shorter room scan.")
   }
 
   override func viewDidDisappear(_ animated: Bool) {
@@ -522,7 +522,7 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
       }
     case .unexpectedStop:
       Task { @MainActor [weak self] in
-        self?.fail("scan_interrupted", "The scan stopped unexpectedly. Start the bathroom scan again.")
+        self?.fail("scan_interrupted", "The scan stopped unexpectedly. Start the room scan again.")
       }
     }
     return false
@@ -546,7 +546,7 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
     } catch BathroomScanGeometry.Invalid.empty {
       fail("scan_failed", "No usable room geometry was found. Scan the walls and fixtures again.")
     } catch BathroomScanGeometry.Invalid.limit {
-      fail("scan_limit", "This room model is too large. Scan only one bathroom.")
+      fail("scan_limit", "This room model is too large. Scan only one room.")
     } catch {
       fail("scan_failed", "The room geometry could not be safely read. Please scan again.")
     }
@@ -652,6 +652,48 @@ enum BathroomScanText {
     messages[english]?[language] ?? english
   }
   private static let messages: [String: [String: String]] = [
+    "Scan this room": [
+      "es": "Escanee esta habitación",
+      "zh-Hans": "扫描此房间",
+      "zh-Hant": "掃描此房間",
+      "vi": "Quét phòng này",
+      "fil": "I-scan ang kuwartong ito",
+    ],
+    "Move slowly and follow the camera guidance. Stay on a safe, clear path. Scan only this room.": [
+      "es": "Muévase despacio y siga las indicaciones de la cámara. Permanezca en un camino seguro y despejado. Escanee solo esta habitación.",
+      "zh-Hans": "缓慢移动并遵循相机指引。保持在安全、畅通的路径上。仅扫描此房间。",
+      "zh-Hant": "緩慢移動並遵循相機指引。保持在安全、暢通的路徑上。僅掃描此房間。",
+      "vi": "Di chuyển chậm và làm theo hướng dẫn camera. Đi trên lối an toàn, thông thoáng. Chỉ quét phòng này.",
+      "fil": "Dahan-dahang gumalaw at sundin ang gabay ng camera. Manatili sa ligtas at maluwag na daanan. I-scan lamang ang kuwartong ito.",
+    ],
+    "Start room scan": [
+      "es": "Iniciar escaneo de habitación",
+      "zh-Hans": "开始房间扫描",
+      "zh-Hant": "開始房間掃描",
+      "vi": "Bắt đầu quét phòng",
+      "fil": "Simulan ang pag-scan ng kuwarto",
+    ],
+    "Live room camera view. Detected surfaces and sampled points are outlined.": [
+      "es": "Vista de cámara de la habitación en vivo. Se resaltan las superficies detectadas y los puntos muestreados.",
+      "zh-Hans": "房间实时相机视图。已标出检测到的表面和采样点。",
+      "zh-Hant": "房間即時相機檢視。已標出偵測到的表面和取樣點。",
+      "vi": "Hình ảnh phòng trực tiếp từ camera. Các bề mặt và điểm lấy mẫu được đánh dấu.",
+      "fil": "Live na camera ng kuwarto. May balangkas ang mga natukoy na ibabaw at sample na punto.",
+    ],
+    "Room scan": [
+      "es": "Escaneo de habitación",
+      "zh-Hans": "房间扫描",
+      "zh-Hant": "房間掃描",
+      "vi": "Quét phòng",
+      "fil": "Pag-scan ng kuwarto",
+    ],
+    "Finding position. Move slowly while facing the room.": [
+      "es": "Buscando posición. Muévase despacio mirando hacia la habitación.",
+      "zh-Hans": "正在定位。请面向房间缓慢移动。",
+      "zh-Hant": "正在定位。請面向房間緩慢移動。",
+      "vi": "Đang xác định vị trí. Di chuyển chậm và hướng vào phòng.",
+      "fil": "Hinahanap ang posisyon. Dahan-dahang gumalaw habang nakaharap sa kuwarto.",
+    ],
     "Camera-only scan": [
       "es": "Escaneo solo con cámara",
       "zh-Hans": "仅相机扫描",
