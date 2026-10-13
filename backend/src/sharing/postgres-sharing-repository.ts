@@ -1,4 +1,5 @@
 import { COLLABORATION_ROUTES, executeCollaboration, type CollaborationRoute } from './collaboration.ts';
+import { executeSensitive, type SensitiveRoute, type SensitiveRequest } from './sensitive.ts';
 import type { ProgramDefinition } from '../types.ts';
 import { parseProgressRecord, emptyProgress, programReports } from '../tracking/progress.ts';
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
@@ -22,6 +23,9 @@ export class PostgresSharingRepository implements SharingRepository {
   private readonly pool: Pool;
   private readonly registry: () => Promise<ProgramDefinition[]>;
   constructor(pool: Pool, registry: () => Promise<ProgramDefinition[]> = async()=>[]) { this.pool = pool; this.registry=registry; }
+  async sensitive(userId: string, route: SensitiveRoute, request: SensitiveRequest): Promise<SharingResult> {
+    return this.transaction(userId, client => executeSensitive(client, route, request));
+  }
   private async transaction<T>(userId: string, action: (client: PoolClient, now: string) => Promise<T>): Promise<T> {
     check(evidenceIdentifier(userId)); const client = await this.pool.connect(); let broken = false;
     try {

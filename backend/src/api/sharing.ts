@@ -1,10 +1,13 @@
 import { COLLABORATION_ROUTES } from '../sharing/collaboration.ts';
+import { SENSITIVE_ROUTES, handleSensitiveSharing } from './sensitive-sharing.ts';
+import type { SensitiveRoute } from '../sharing/sensitive.ts';
 import { evidenceIdentifier } from '../evidence/validation.ts';
 import { randomBytes, createHash } from 'node:crypto';
 import { AccountClosedError } from '../lifecycle/types.ts';
 import { parseSharingRequest, type SharingRepository, type SharingRoute } from '../sharing/contracts.ts';
 import type { AuthenticatedUser } from './match-case.ts';
-export interface SharingDependencies { authenticate(token: string): Promise<AuthenticatedUser | null>; sharing: SharingRepository; collaborationEnabled?: boolean }
+export interface SharingDependencies { authenticate(token: string): Promise<AuthenticatedUser | null>;
+  reauthenticate?(token: string): Promise<AuthenticatedUser | null>; sharing: SharingRepository; collaborationEnabled?: boolean; sensitiveEnabled?: boolean }
 export async function handleSharing(input: { body: unknown; bearerToken: string | null }, deps: SharingDependencies, route: SharingRoute) {
   const fail = (status: number, code: string) => ({ status, body: { schemaVersion: '3', error: { code, message: 'Reopen sharing and check current access before trying again.' } }, headers: { 'Cache-Control': 'no-store' } });
   try {
@@ -12,6 +15,7 @@ export async function handleSharing(input: { body: unknown; bearerToken: string 
     const user = await deps.authenticate(input.bearerToken);
     if (!user) return fail(401, 'UNAUTHENTICATED');
     if (!evidenceIdentifier(user.userId)) return fail(500, 'INTERNAL_ERROR');
+    if ((SENSITIVE_ROUTES as readonly string[]).includes(route)) return await handleSensitiveSharing(input, deps, route as SensitiveRoute);
     if((COLLABORATION_ROUTES as readonly string[]).includes(route) && deps.collaborationEnabled!==true) return fail(404,'SHARING_NOT_FOUND');
     let request; try { request = parseSharingRequest(route, input.body); } catch { return fail(400, 'INVALID_REQUEST'); }
     const code = route === 'create-invitation' ? randomBytes(32).toString('base64url') : request.code;

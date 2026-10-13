@@ -54,9 +54,9 @@ export function reportLines(state: HomeSafetyState, catalog: EvidenceCatalog, at
   return lines;
 }
 
-export async function renderHomeSafetyReport(lines: string[]): Promise<{ bytes: Uint8Array; pageCount: number }> {
+export async function renderHomeSafetyReport(lines: string[], title = 'Safe at Home - educational room and checklist report'): Promise<{ bytes: Uint8Array; pageCount: number }> {
   const pdf = await PDFDocument.create();
-  pdf.setTitle('Safe at Home - educational room and checklist report');
+  pdf.setTitle(title);
   const text = await embedReviewedTextFont(pdf, lines);
   const wrapped: string[] = [];
   for (const line of lines) {

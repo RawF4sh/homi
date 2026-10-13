@@ -1,3 +1,4 @@
+import { changeScanModel, decodeScanRecord, parseScanRequest, scanState, scanModelKey, scanRoomValid, type ScanSave, type ScanResult, type ScanModelRecord } from '../assessment/scan-model.ts';
 import { changeProgress, emptyProgress, parseProgressRecord, parseProgressRequest, type ProgressContext, type ProgressRecord, type ProgressResult, type ProgressSave } from '../tracking/progress.ts';
 import { assessmentForSafetyReview, changeHomeSafety, emptyHomeSafety, homeSafetyState, parseHomeSafetyRequest, type HomeSafetySave, type HomeSafetyResult } from '../assessment/home-safety.ts';
 import { emptyPlanName, changePlanName, parseSavePlanNameRequest, parseNamedCaseListPage,
@@ -110,6 +111,25 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     const next=structuredClone({...entry,snapshot:{...entry.snapshot,revision:caseRevision}});
     this.programIntake.set(key,saved);this.cases.set(input.caseId,next);this.invalidateCaseOutputs(input.caseId);
     return {status:'saved',saved:structuredClone(saved),caseRevision};
+  }
+  private readonly scanModels = new Map<string, ScanModelRecord>();
+  async readScanModelForUser(userId: string, caseId: string, roomId: string|null): Promise<ScanResult> {
+    const entry=this.cases.get(caseId);if(!entry || entry.userId!==userId)return {status:'not_found'};
+    return {status:'found',state:structuredClone(scanState(caseId,roomId,entry.snapshot.revision,this.scanModels.get(JSON.stringify([caseId,scanModelKey(roomId)]))??null))};
+  }
+  async saveScanModelForUser(userId: string, raw: ScanSave, at: string): Promise<ScanResult> {
+    const input=parseScanRequest(raw,true) as ScanSave,entry=this.cases.get(input.caseId);
+    if(!entry || entry.userId!==userId)return {status:'not_found'};
+    const key=JSON.stringify([input.caseId,scanModelKey(input.roomId)]),old=this.scanModels.get(key)??null,result=changeScanModel(old,input,userId,entry.snapshot.revision,at);
+    if(!('record' in result))return result;
+    if(result.status==='changed') {
+      if(!scanRoomValid(input.roomId,input.reviewJson,this.homeSafety.get(input.caseId)?.document.rooms??[]))return {status:'not_found'};
+      if(!old && [...this.scanModels.values()].filter(r=>r.caseId===input.caseId).length>=33)return {status:'limit'};
+      const size=Buffer.byteLength(JSON.stringify(result.record)),prior=old===null?0:Buffer.byteLength(JSON.stringify(old));
+      if(this.byteCount()-prior+size>this.evidenceLimits.maxBytes)return {status:'limit'};
+      this.scanModels.set(key,result.record);
+    }
+    return {status:'found',state:structuredClone(scanState(input.caseId,input.roomId,entry.snapshot.revision,result.record,input.mutationId))};
   }
   private readonly progress = new Map<string, ProgressRecord>();
   async readProgressForUser(userId: string, caseId: string): Promise<ProgressResult> {
@@ -649,7 +669,7 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
   }
 
   private byteCount(): number {
-    let total = 0;
+    let total = [...this.scanModels.values()].reduce((n,r)=>n+Buffer.byteLength(JSON.stringify(r)),0);
     for (const rows of this.evidence.values()) for (const row of rows.values()) total += row.asset?.bytes.byteLength ?? 0;
     for (const row of this.exports.values()) total += row.artifact.bytes.byteLength;
     return total;

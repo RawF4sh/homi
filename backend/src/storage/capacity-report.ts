@@ -2,8 +2,8 @@ import type { Pool, PoolClient } from 'pg';
 import { CAPACITY_LIMITS } from './capacity-limits.ts';
 import { assertMigrationsCurrent } from './migrate.ts';
 
-const TABLES = ['repository_quota', 'cases', 'matches', 'packets', 'form_answers', 'evidence', 'exports',
-  'deleted_cases', 'closed_accounts', 'account_deletion_previews', 'auth_deletion_jobs', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'case_shares'] as const;
+const TABLES = ['repository_quota', 'cases', 'case_scan_models', 'matches', 'packets', 'form_answers', 'evidence', 'exports',
+  'deleted_cases', 'closed_accounts', 'account_deletion_previews', 'auth_deletion_jobs', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'case_shares', 'share_sensitive'] as const;
 type Table = typeof TABLES[number];
 interface Quota { cases: number; evidence: number; activeExports: number; binaryBytes: number }
 export interface CapacityReport {
@@ -74,7 +74,8 @@ export async function readCapacityReport(pool: Pool): Promise<CapacityReport> {
         AND expires_at<=transaction_timestamp()) AS expired_pdf_payloads,
       (SELECT count(*)::text FROM safeathome_private.auth_deletion_jobs WHERE completed_at IS NULL) AS pending_auth_deletions,
       ((SELECT COALESCE(sum(octet_length(bytes)),0) FROM safeathome_private.evidence)
-        +(SELECT COALESCE(sum(octet_length(bytes)),0) FROM safeathome_private.exports))::text AS binary_bytes,
+        +(SELECT COALESCE(sum(octet_length(bytes)),0) FROM safeathome_private.exports)
+        +(SELECT COALESCE(sum(octet_length(record)),0) FROM safeathome_private.case_scan_models))::text AS binary_bytes,
       (SELECT COALESCE(max(n),0)::text FROM (SELECT count(*) n FROM safeathome_private.cases GROUP BY owner_id) t) AS cases_per_owner,
       (SELECT COALESCE(max(n),0)::text FROM (SELECT count(*) n FROM safeathome_private.evidence e
         JOIN safeathome_private.cases c USING(case_id) GROUP BY c.owner_id) t) AS evidence_per_owner,

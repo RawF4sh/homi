@@ -1,4 +1,5 @@
 import { check, object, uuid, instant } from './validation.ts';
+import { SENSITIVE_ROUTES, parseSensitiveRequest, type SensitiveRoute, type SensitiveRequest } from './sensitive.ts';
 export { check, object, uuid, instant } from './validation.ts';
 import { COLLABORATION_ROUTES, parseCollaborationRequest, type CollaborationRequest, type CollaborationRoute } from './collaboration.ts';
 import { evidenceIdentifier, evidenceRevision } from '../evidence/validation.ts';
@@ -6,7 +7,7 @@ import type { CaseSnapshot } from '../types.ts';
 
 
 export const SHARING_ROUTES = ['preview-sharing', 'create-invitation', 'list-sharing', 'change-sharing', 'revoke-sharing',
-  'review-invitation', 'accept-invitation', 'list-shared-cases', 'read-shared-case', 'add-shared-note', ...COLLABORATION_ROUTES] as const;
+  'review-invitation', 'accept-invitation', 'list-shared-cases', 'read-shared-case', 'add-shared-note', ...COLLABORATION_ROUTES, ...SENSITIVE_ROUTES] as const;
 export type SharingRoute = typeof SHARING_ROUTES[number];
 export interface ShareScope { findingIds: string[]; programIds: string[]; allowHelperNotes: boolean }
 export interface SharedCaseProjection {
@@ -27,7 +28,10 @@ export interface SharedView { membership: CaseMembership; projection: SharedCase
 export type SharingRequest = CollaborationRequest & { schemaVersion: '3'; caseId?: string; expectedCaseRevision?: number; invitationId?: string;
   recipientId?: string; role?: 'viewer' | 'helper'; scope?: ShareScope; expiresAt?: string | null;
   expectedPermissionRevision?: number; code?: string; membershipId?: string; mutationId?: string; note?: string };
-export interface SharingRepository { execute(userId: string, route: SharingRoute, request: SharingRequest, tokenHash?: string): Promise<SharingResult> }
+export interface SharingRepository {
+  execute(userId: string, route: SharingRoute, request: SharingRequest, tokenHash?: string): Promise<SharingResult>;
+  sensitive?(userId: string, route: SensitiveRoute, request: SensitiveRequest): Promise<SharingResult>;
+}
 export type SharingResult = { status: 'ok'; data: Record<string, unknown> } | { status: 'not_found' | 'conflict' | 'quota_exceeded' | 'invalid_request' };
 export function parseScope(value: unknown): ShareScope {
   object(value, ['findingIds', 'programIds', 'allowHelperNotes']);
@@ -37,7 +41,7 @@ export function parseScope(value: unknown): ShareScope {
   check(typeof value.allowHelperNotes === 'boolean');
   return structuredClone(value) as unknown as ShareScope;
 }
-const keys: Record<Exclude<SharingRoute,CollaborationRoute>, string[]> = {
+const keys: Record<Exclude<SharingRoute,CollaborationRoute | SensitiveRoute>, string[]> = {
   'preview-sharing': ['caseId', 'expectedCaseRevision', 'scope'],
   'create-invitation': ['caseId', 'expectedCaseRevision', 'invitationId', 'recipientId', 'role', 'scope', 'expiresAt'],
   'list-sharing': ['caseId'], 'change-sharing': ['caseId', 'expectedCaseRevision', 'invitationId', 'expectedPermissionRevision', 'role', 'scope', 'expiresAt'],
@@ -47,8 +51,9 @@ const keys: Record<Exclude<SharingRoute,CollaborationRoute>, string[]> = {
   'add-shared-note': ['membershipId', 'expectedPermissionRevision', 'mutationId', 'note'],
 };
 export function parseSharingRequest(route: SharingRoute, value: unknown): SharingRequest {
+  if ((SENSITIVE_ROUTES as readonly string[]).includes(route)) return parseSensitiveRequest(route as SensitiveRoute, value);
   if((COLLABORATION_ROUTES as readonly string[]).includes(route)) return parseCollaborationRequest(route as CollaborationRoute,value);
-  object(value, ['schemaVersion', ...keys[route as Exclude<SharingRoute,CollaborationRoute>]]); check(value.schemaVersion === '3');
+  object(value, ['schemaVersion', ...keys[route as Exclude<SharingRoute,CollaborationRoute | SensitiveRoute>]]); check(value.schemaVersion === '3');
   if ('caseId' in value) check(evidenceIdentifier(value.caseId));
   for (const key of ['invitationId', 'recipientId', 'membershipId', 'mutationId']) if (key in value) check(uuid(value[key]));
   for (const key of ['expectedCaseRevision', 'expectedPermissionRevision']) if (key in value) check(evidenceRevision(value[key]));

@@ -14,7 +14,9 @@ export interface DurableServerOptions {
   pool: Pool;
   homeSafetyEnabled?: boolean;
   trackingEnabled?: boolean;
+  scanSyncEnabled?: boolean;
   sharingEnabled?: boolean;
+  sensitiveSharingEnabled?: boolean;
   auth: SupabaseAuthConfig;
   fetchImpl?: typeof fetch;
   loadRegistry?: DraftExportDependencies['loadRegistry'];
@@ -38,12 +40,15 @@ export async function createDurableServer(options: DurableServerOptions) {
     loadFormTemplate: options.loadFormTemplate ?? (async () => null),
   };
   const verifiedAuthenticate = createSupabaseAuthenticator(options.auth, options.fetchImpl, true);
-  const sharingDependencies = { collaborationEnabled: options.trackingEnabled === true && options.sharingEnabled === true, authenticate: async (token: string) => {
+  const sharingAuthenticate = async (token: string) => {
     const user = await verifiedAuthenticate(token);
     return user && !await cases.isAccountClosed(user.userId) ? user : null;
-  }, sharing: new PostgresSharingRepository(options.pool,dependencies.loadRegistry) };
+  };
+  const sharingDependencies = { sensitiveEnabled: options.sensitiveSharingEnabled === true && options.sharingEnabled === true,
+    collaborationEnabled: options.trackingEnabled === true && options.sharingEnabled === true, authenticate: sharingAuthenticate,
+    reauthenticate: sharingAuthenticate, sharing: new PostgresSharingRepository(options.pool,dependencies.loadRegistry) };
   const server = createMatchingServer(dependencies, dependencies, dependencies,
-    dependencies, dependencies, dependencies, { hosted: true, sharingDependencies: options.sharingEnabled === true ? sharingDependencies : undefined, lifecycleDependencies, caseListDependencies: dependencies, requestTrackingDependencies: dependencies, assessmentDependencies: dependencies, programIntakeDependencies: dependencies, planNameDependencies: dependencies, homeSafetyDependencies: options.homeSafetyEnabled ? dependencies : undefined, progressDependencies: options.trackingEnabled === true ? dependencies : undefined });
+    dependencies, dependencies, dependencies, { hosted: true, sharingDependencies: options.sharingEnabled === true ? sharingDependencies : undefined, lifecycleDependencies, caseListDependencies: dependencies, requestTrackingDependencies: dependencies, assessmentDependencies: dependencies, programIntakeDependencies: dependencies, planNameDependencies: dependencies, homeSafetyDependencies: options.homeSafetyEnabled ? dependencies : undefined, progressDependencies: options.trackingEnabled === true ? dependencies : undefined, scanModelDependencies: options.scanSyncEnabled === true ? dependencies : undefined });
   return { server, cases };
 }
 
@@ -65,6 +70,8 @@ async function main() {
   try {
     const { server } = await createDurableServer({ pool, auth,
       sharingEnabled: process.env.SAH_PERMISSION_SHARING_ENABLED === 'true',
+      sensitiveSharingEnabled: process.env.SAH_SENSITIVE_SHARING_ENABLED === 'true',
+      scanSyncEnabled: process.env.SAH_SCAN_SYNC_ENABLED === 'true',
       homeSafetyEnabled: process.env.SAFEATHOME_HOME_SAFETY_ENABLED === 'true', trackingEnabled: process.env.SAH_TRACKING_ENABLED === 'true',
       loadRegistry: bundle.loadRegistry, loadFormTemplate: bundle.loadFormTemplate });
     await new Promise<void>((resolve, reject) => {

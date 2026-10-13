@@ -1,3 +1,4 @@
+import { changeScanModel, decodeScanRecord, parseScanRequest, scanState, scanModelKey, scanRoomValid, type ScanSave, type ScanResult, type ScanModelRecord } from '../assessment/scan-model.ts';
 import { changeProgress, emptyProgress, parseProgressRecord, parseProgressRequest, type ProgressContext, type ProgressRecord, type ProgressResult, type ProgressSave } from '../tracking/progress.ts';
 import { assessmentForSafetyReview, changeHomeSafety, emptyHomeSafety, homeSafetyState, parseHomeSafetyRecord, parseHomeSafetyRequest, type HomeSafetySave, type HomeSafetyResult } from '../assessment/home-safety.ts';
 import { emptyPlanName, changePlanName, parseStoredPlanName, parseSavePlanNameRequest, parseNamedCaseListPage,
@@ -198,6 +199,35 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       await this.invalidateCase(tx,input.caseId);return {status:'saved',saved,caseRevision};
     });
   }
+  async readScanModelForUser(userId: string, caseId: string, roomId: string|null): Promise<ScanResult> {
+    return this.transaction(userId, false, async tx => {
+      const entry=await this.caseRow(tx,userId,caseId); if(!entry)return {status:'not_found'};
+      const row=(await tx.client.query(`SELECT record FROM ${S}.case_scan_models WHERE case_id=$1 AND room_key=$2`,[caseId,scanModelKey(roomId)])).rows[0];
+      return {status:'found',state:scanState(caseId,roomId,entry.snapshot.revision,row?decodeScanRecord(row.record):null)};
+    });
+  }
+  async saveScanModelForUser(userId: string, raw: ScanSave, at: string): Promise<ScanResult> {
+    const input=parseScanRequest(raw,true) as ScanSave;
+    return this.transaction(userId,true,async tx=>{
+      const entry=await this.caseRow(tx,userId,input.caseId,true);if(!entry)return {status:'not_found'};
+      const key=scanModelKey(input.roomId);
+      const old=(await tx.client.query(`SELECT record FROM ${S}.case_scan_models WHERE case_id=$1 AND room_key=$2`,[input.caseId,key])).rows[0]?.record as Buffer|undefined;
+      const result=changeScanModel(old?decodeScanRecord(old):null,input,userId,entry.snapshot.revision,await this.clock(tx,at));
+      if(!('record' in result))return result;
+      if(result.status==='changed') {
+        const safety=(await tx.client.query(`SELECT home_safety FROM ${S}.cases WHERE case_id=$1`,[input.caseId])).rows[0].home_safety;
+        if(!scanRoomValid(input.roomId,input.reviewJson,safety===null?[]:parseHomeSafetyRecord(safety).document.rooms))return {status:'not_found'};
+        const count=Number((await tx.client.query(`SELECT count(*) AS count FROM ${S}.case_scan_models WHERE case_id=$1`,[input.caseId])).rows[0].count);
+        if(!old && count>=33)return {status:'limit'};
+        const bytes=Buffer.from(JSON.stringify(result.record)),delta=bytes.byteLength-(old?.byteLength??0);
+        if(tx.quota!.bytes+delta>CAPACITY_LIMITS.binaryBytes)return {status:'limit'};
+        await tx.client.query(`INSERT INTO ${S}.case_scan_models(case_id,room_key,record) VALUES($1,$2,$3)
+          ON CONFLICT(case_id,room_key) DO UPDATE SET record=EXCLUDED.record`,[input.caseId,key,bytes]);
+        await this.quotaDelta(tx,0,0,0,delta);
+      }
+      return {status:'found',state:scanState(input.caseId,input.roomId,entry.snapshot.revision,result.record,input.mutationId)};
+    });
+  }
   private async progressContext(tx: Tx, userId: string, caseId: string, lock = false): Promise<ProgressContext | null> {
     const entry = await this.caseRow(tx, userId, caseId, lock); if (!entry) return null;
     const row = (await tx.client.query(`SELECT progress FROM ${S}.cases WHERE case_id=$1 AND owner_id=$2`, [caseId, userId])).rows[0];
@@ -331,7 +361,9 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       nameFingerprint: row.name_fingerprint }));
     const inventory: Record<string, { total: number; active: number; bytes: number; fingerprint: string }> = {};
     const content: Record<string, string> = {
+      case_scan_models: "jsonb_build_array(case_id,room_key,encode(sha256(record),'hex'))::text",
       case_shares: 'to_jsonb(case_shares)::text',
+      share_sensitive: 'to_jsonb(share_sensitive)::text',
       matches: 'jsonb_build_array(case_id,response)::text',
       packets: 'jsonb_build_array(case_id,generation_key,packet_id,context_fingerprint,packet)::text',
       form_answers: 'jsonb_build_array(case_id,program_id,answer_revision,record)::text',
@@ -342,19 +374,19 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       evidence: "jsonb_build_array(case_id,evidence_id,finding_id,revision,prepared_at,descriptor,encode(sha256(bytes),'hex'))::text",
       exports: "jsonb_build_array(case_id,artifact_id,generation_key,bindings,metadata,invalidated,last_checked_at,extract(epoch FROM expires_at),encode(sha256(bytes),'hex'))::text",
     };
-    for (const table of ['case_shares', 'matches', 'packets', 'form_answers', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'evidence', 'exports']) {
-      const binary = table === 'evidence' || table === 'exports';
+    for (const table of ['case_scan_models', 'case_shares', 'share_sensitive', 'matches', 'packets', 'form_answers', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'evidence', 'exports']) {
+      const binary = table === 'evidence' || table === 'exports' || table === 'case_scan_models';
       const row = (await tx.client.query(`SELECT count(*) AS total,count(size) AS active,
         COALESCE(sum(size),0) AS bytes,
         encode(sha256(convert_to(COALESCE(string_agg(row_hash,'' ORDER BY row_hash),''),'UTF8')),'hex') AS fingerprint
-        FROM (SELECT ${binary ? 'octet_length(bytes)' : '0'} AS size,
+        FROM (SELECT ${binary ? `octet_length(${table==='case_scan_models'?'record':'bytes'})` : '0'} AS size,
           encode(sha256(convert_to(${content[table]},'UTF8')),'hex') AS row_hash
           FROM ${S}.${table} WHERE case_id=ANY($1::text[])) AS inventory`, [ids])).rows[0];
       check(validHash(row.fingerprint));
       inventory[table] = { total: integer(row.total, true), active: integer(row.active, true), bytes: integer(row.bytes, true), fingerprint: row.fingerprint };
     }
     const counts = { cases: ids.length, evidence: inventory.evidence.active, exports: inventory.exports.active,
-      storedBytes: inventory.evidence.bytes + inventory.exports.bytes };
+      storedBytes: inventory.evidence.bytes + inventory.exports.bytes + inventory.case_scan_models.bytes };
     return { ids, counts, fingerprint: digest(canonicalJson({ cases, inventory })) };
   }
 
@@ -371,8 +403,9 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       (SELECT count(*) FROM ${S}.evidence WHERE case_id=ANY($1::text[])) AS assets,
       (SELECT count(bytes) FROM ${S}.exports WHERE case_id=ANY($1::text[])) AS artifacts,
       ((SELECT COALESCE(sum(octet_length(bytes)),0) FROM ${S}.evidence WHERE case_id=ANY($1::text[]))+
-       (SELECT COALESCE(sum(octet_length(bytes)),0) FROM ${S}.exports WHERE case_id=ANY($1::text[]))) AS bytes`, [ids])).rows[0];
-    for (const table of ['case_shares', 'matches', 'packets', 'form_answers', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'evidence', 'exports']) {
+       (SELECT COALESCE(sum(octet_length(bytes)),0) FROM ${S}.exports WHERE case_id=ANY($1::text[])) +
+       (SELECT COALESCE(sum(octet_length(record)),0) FROM ${S}.case_scan_models WHERE case_id=ANY($1::text[]))) AS bytes`, [ids])).rows[0];
+    for (const table of ['case_scan_models', 'case_shares', 'share_sensitive', 'matches', 'packets', 'form_answers', 'request_history', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'evidence', 'exports']) {
       await tx.client.query(`DELETE FROM ${S}.${table} WHERE case_id=ANY($1::text[])`, [ids]);
     }
     const removed = await tx.client.query(`DELETE FROM ${S}.cases WHERE owner_id=$1 AND case_id=ANY($2::text[])`, [userId, ids]);
