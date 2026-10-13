@@ -25,7 +25,8 @@
     "research:scfhp": "node src/research-scfhp.ts",
     "backup": "node tool/backup.ts",
     "capacity": "node tool/capacity.ts",
-    "profile:memory": "node tool/profile-memory.ts"
+    "profile:memory": "node tool/profile-memory.ts",
+    "profile:linux-memory": "node tool/profile-linux-memory.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
