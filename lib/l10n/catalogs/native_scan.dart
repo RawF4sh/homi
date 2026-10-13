@@ -1,4 +1,54 @@
 const nativeScanTranslations = <String, Map<String, String>>{
+  "Scan this room": {
+    "es": "Escanee esta habitación",
+    "zh-Hans": "扫描此房间",
+    "zh-Hant": "掃描此房間",
+    "vi": "Quét phòng này",
+    "fil": "I-scan ang kuwartong ito",
+  },
+  "Move slowly and follow the camera guidance. Stay on a safe, clear path. Scan only this room.": {
+    "es":
+        "Muévase despacio y siga las indicaciones de la cámara. Permanezca en un camino seguro y despejado. Escanee solo esta habitación.",
+    "zh-Hans": "缓慢移动并遵循相机指引。保持在安全、畅通的路径上。仅扫描此房间。",
+    "zh-Hant": "緩慢移動並遵循相機指引。保持在安全、暢通的路徑上。僅掃描此房間。",
+    "vi":
+        "Di chuyển chậm và làm theo hướng dẫn camera. Đi trên lối an toàn, thông thoáng. Chỉ quét phòng này.",
+    "fil":
+        "Dahan-dahang gumalaw at sundin ang gabay ng camera. Manatili sa ligtas at maluwag na daanan. I-scan lamang ang kuwartong ito.",
+  },
+  "Start room scan": {
+    "es": "Iniciar escaneo de habitación",
+    "zh-Hans": "开始房间扫描",
+    "zh-Hant": "開始房間掃描",
+    "vi": "Bắt đầu quét phòng",
+    "fil": "Simulan ang pag-scan ng kuwarto",
+  },
+  "Live room camera view. Detected surfaces and sampled points are outlined.": {
+    "es":
+        "Vista de cámara de la habitación en vivo. Se resaltan las superficies detectadas y los puntos muestreados.",
+    "zh-Hans": "房间实时相机视图。已标出检测到的表面和采样点。",
+    "zh-Hant": "房間即時相機檢視。已標出偵測到的表面和取樣點。",
+    "vi":
+        "Hình ảnh phòng trực tiếp từ camera. Các bề mặt và điểm lấy mẫu được đánh dấu.",
+    "fil":
+        "Live na camera ng kuwarto. May balangkas ang mga natukoy na ibabaw at sample na punto.",
+  },
+  "Room scan": {
+    "es": "Escaneo de habitación",
+    "zh-Hans": "房间扫描",
+    "zh-Hant": "房間掃描",
+    "vi": "Quét phòng",
+    "fil": "Pag-scan ng kuwarto",
+  },
+  "Finding position. Move slowly while facing the room.": {
+    "es": "Buscando posición. Muévase despacio mirando hacia la habitación.",
+    "zh-Hans": "正在定位。请面向房间缓慢移动。",
+    "zh-Hant": "正在定位。請面向房間緩慢移動。",
+    "vi": "Đang xác định vị trí. Di chuyển chậm và hướng vào phòng.",
+    "fil":
+        "Hinahanap ang posisyon. Dahan-dahang gumalaw habang nakaharap sa kuwarto.",
+  },
+
   "Camera-only scan": {
     "es": "Escaneo solo con cámara",
     "zh-Hans": "仅相机扫描",

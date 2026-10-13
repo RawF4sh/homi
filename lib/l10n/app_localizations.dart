@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'app_language.dart';
 import 'catalogs/common.dart';
 import 'catalogs/sharing.dart';
+import 'catalogs/sensitive_sharing.dart';
 import 'catalogs/tracking.dart';
 import 'catalogs/local_help.dart';
 import 'catalogs/home_safety.dart';
@@ -14,6 +15,8 @@ import 'catalogs/assessment.dart';
 import 'catalogs/journey.dart';
 import 'catalogs/lifecycle.dart';
 import 'catalogs/native_scan.dart';
+import 'catalogs/scan_sync.dart';
+import 'catalogs/room_scans.dart';
 import 'catalogs/programs.dart';
 import 'catalogs/redesign.dart';
 import 'catalogs/scan.dart';
@@ -34,7 +37,9 @@ class AppLocalizations {
     GlobalCupertinoLocalizations.delegate,
   ];
   static const catalogs = [
+    scanSyncTranslations,
     sharingTranslations,
+    sensitiveSharingTranslations,
     trackingTranslations,
     localHelpTranslations,
     homeSafetyTranslations,
@@ -48,6 +53,7 @@ class AppLocalizations {
     redesignTranslations,
     lifecycleTranslations,
     nativeScanTranslations,
+    roomScanTranslations,
     commonTranslations,
   ];
   static final Map<String, Map<String, String>> translations = {
