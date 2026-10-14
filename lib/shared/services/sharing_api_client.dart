@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import '../models/sensitive_sharing.dart';
 import '../models/sharing.dart';
 import '../models/export_contract_values.dart';
 import 'matching_api_client.dart';
@@ -106,11 +107,72 @@ class SharingApiClient {
     }
   }
 
+  Future<SensitiveResponse> sensitive(
+    String route,
+    Map<String, Object?> fields, {
+    required bool Function() isCurrent,
+    required String expectedCaseId,
+  }) async {
+    if (!sensitiveSharingRoutes.contains(route)) {
+      throw ArgumentError('Unknown selected-data route.');
+    }
+    void guard() => _current(isCurrent);
+    guard();
+    final json = await _post(
+      route,
+      {'schemaVersion': '3', ...fields},
+      guard: guard,
+      saving: route == 'publish-sensitive-sharing',
+      maxBytes: route.endsWith('-photo')
+          ? 12 * 1024 * 1024
+          : route.endsWith('-report')
+          ? 3 * 1024 * 1024
+          : sharingMaxResponseBytes,
+    );
+    guard();
+    try {
+      final r = SensitiveResponse.fromJson(route, json);
+      if (r.membershipId != fields['membershipId'] ||
+          r.permissionRevision !=
+              (fields['expectedPermissionRevision'] as int) +
+                  (route == 'publish-sensitive-sharing' ? 1 : 0) ||
+          r.caseId != null && r.caseId != expectedCaseId ||
+          r.sourceHash != null &&
+              (fields['sourceHash'] ?? fields['previewHash']) != null &&
+              r.sourceHash != (fields['sourceHash'] ?? fields['previewHash']) ||
+          r.descriptor != null &&
+              (r.descriptor!.caseId != expectedCaseId ||
+                  r.descriptor!.evidenceId != fields['evidenceId'] ||
+                  r.descriptor!.evidenceRevision !=
+                      fields['expectedEvidenceRevision']) ||
+          route == 'publish-sensitive-sharing' &&
+              r.acknowledgement != fields['mutationId']) {
+        throw const FormatException();
+      }
+      if (fields['expectedCaseRevision'] != null &&
+              r.caseRevision != null &&
+              r.caseRevision != fields['expectedCaseRevision'] ||
+          fields['expectedCatalogRevision'] != null &&
+              r.catalogRevision != null &&
+              r.catalogRevision != fields['expectedCatalogRevision']) {
+        throw const FormatException();
+      }
+      return r;
+    } catch (_) {
+      throw _error(
+        route == 'publish-sensitive-sharing'
+            ? 'SHARING_SAVE_UNCERTAIN'
+            : 'UNEXPECTED_RESPONSE',
+      );
+    }
+  }
+
   Future<Object?> _post(
     String route,
     Map<String, Object?> body, {
     required void Function() guard,
     bool saving = false,
+    int maxBytes = sharingMaxResponseBytes,
   }) async {
     guard();
     final clock = Stopwatch()..start();
@@ -143,13 +205,13 @@ class SharingApiClient {
           endpoint: _base.resolve('/v3/$route'),
           bearerToken: token,
           body: utf8.encode(jsonEncode(body)),
-          maxResponseBytes: sharingMaxResponseBytes,
+          maxResponseBytes: maxBytes,
         ),
       );
       guard();
       final response = await exchange.response.timeout(remaining);
       guard();
-      if (response.body.length > sharingMaxResponseBytes) {
+      if (response.body.length > maxBytes) {
         throw _error('RESPONSE_TOO_LARGE');
       }
       if (response.statusCode >= 300 && response.statusCode < 400) {

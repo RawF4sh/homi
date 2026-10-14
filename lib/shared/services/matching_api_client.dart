@@ -233,6 +233,14 @@ class MatchingApiException implements Exception {
 
   factory MatchingApiException.forCode(String code, {int? statusCode}) {
     const messages = {
+      'SCAN_MODEL_CONFLICT':
+          'The account model changed. Check both copies before replacing either.',
+      'SCAN_MODEL_MUTATION_CONFLICT':
+          'This model upload identifier was already used. Review the account copy.',
+      'SCAN_MODEL_LIMIT':
+          'Model storage is full. Existing account and device copies are retained.',
+      'SCAN_MODEL_SAVE_UNCERTAIN':
+          'The model upload could not be confirmed. Retry the same pending upload.',
       'SHARING_NOT_FOUND':
           'Sharing could not be confirmed. Refresh access before trying again.',
       'SHARING_CONFLICT':
