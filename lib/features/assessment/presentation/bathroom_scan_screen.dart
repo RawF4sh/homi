@@ -6,7 +6,9 @@ import '../application/bathroom_scan_adapter.dart';
 import '../application/bathroom_scan_session.dart';
 import '../domain/scan/bathroom_scan_scene.dart';
 import '../domain/scan/scan_suggestions.dart';
+import '../domain/assessment_location.dart';
 import 'bathroom_model_view.dart';
+import 'scan_model_sync_panel.dart';
 
 class BathroomScanScreen extends StatefulWidget {
   const BathroomScanScreen({
@@ -246,7 +248,13 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     },
     child: Scaffold(
       appBar: AppBar(
-        title: Text(context.tr('Bathroom in 3D')),
+        title: Text(
+          scan.room == null
+              ? context.tr('Bathroom in 3D')
+              : context.tr('{room} in 3D', {
+                  'room': scan.room!.name ?? context.tr(scan.location.title),
+                }),
+        ),
         leading: BackButton(onPressed: close),
       ),
       bottomNavigationBar:
@@ -283,7 +291,7 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
             if (snapshot.connectionState != ConnectionState.done) {
               return Center(
                 child: CircularProgressIndicator(
-                  semanticsLabel: context.tr('Opening private bathroom scan'),
+                  semanticsLabel: context.tr('Opening private room scan'),
                 ),
               );
             }
@@ -344,7 +352,9 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           context.tr(
             capability?.source == 'arkit'
                 ? 'Camera-only scan'
-                : 'Scan your bathroom',
+                : scan.room == null
+                ? 'Scan your bathroom'
+                : 'Scan this room',
           ),
           style: Theme.of(context).textTheme.headlineMedium,
         ),
@@ -354,6 +364,13 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           context.tr(
             'This case or account has changed. Return to the assessment.',
           ),
+        ),
+      if (scan.synchronization != null)
+        ScanModelSyncPanel(
+          scan: scan,
+          enabled: enabled,
+          run: run,
+          confirm: confirm,
         ),
       if (notice != null) _notice(notice!),
       if (scan.notice != null) _notice(scan.notice!),
@@ -401,7 +418,11 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           Text(
-            context.tr('Lights on, clear path, move slowly. Up to 3 minutes.'),
+            context.tr(
+              scan.location == AssessmentLocation.stairs
+                  ? 'Scan from a safe landing; do not walk on stairs.'
+                  : 'Lights on, clear path, move slowly. Up to 3 minutes.',
+            ),
           ),
           Text(
             context.tr(
@@ -424,7 +445,9 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
                     ? context.tr(
                         capability?.source == 'arkit'
                             ? 'Start camera scan'
-                            : 'Scan bathroom',
+                            : scan.room == null
+                            ? 'Scan bathroom'
+                            : 'Scan room',
                       )
                     : context.tr('Scan again'),
               ),
@@ -513,11 +536,11 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           context.tr('What would you like help with?'),
           style: Theme.of(context).textTheme.titleLarge,
         ),
-        for (final difficulty in ScanDifficulty.values)
+        for (final difficulty in scan.availableDifficulties)
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
             controlAffinity: ListTileControlAffinity.leading,
-            title: Text(context.tr(difficulty.label)),
+            title: Text(context.tr(difficulty.labelFor(scan.location))),
             value: scan.review.difficulties.contains(difficulty),
             onChanged: enabled
                 ? (value) => run(() => scan.setDifficulty(difficulty, value!))
@@ -619,7 +642,13 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           ],
         ),
       ],
-      Text(context.tr('The 3D model stays on this phone.')),
+      Text(
+        context.tr(
+          scan.synchronization == null
+              ? 'The 3D model stays on this phone.'
+              : 'Device models stay on this phone until you explicitly save a private account copy.',
+        ),
+      ),
     ];
   }
 
@@ -718,7 +747,7 @@ String _readiness(BathroomScanCapabilities? capability) {
           ? 'LiDAR scanning is ready on this iPhone. RoomPlan builds an approximate model for you to review.'
           : capability.source == 'arkit'
           ? 'This iPhone uses camera-only scanning. Capture surfaces and optional distance estimates.'
-          : 'ARCore scanning is ready on this phone. It maps surfaces, and you name the bathroom features.',
+          : 'ARCore scanning is ready on this phone. It maps surfaces, and you name the room features.',
     'permission_denied' when capability.source != 'arcore' =>
       'Camera access is blocked. Review Camera access for Safe at Home in iPhone Settings, then return and choose Check device. Photos and manual measurements remain available.',
     'permission_denied' =>

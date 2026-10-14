@@ -12,11 +12,18 @@ import '../../application/home_safety/home_safety_session.dart';
 import '../../domain/assessment_location.dart';
 import '../../domain/home_safety/home_safety.dart';
 import '../live_assessment_screen.dart';
+import '../room_scan_cards.dart';
 import '../../../tracking/program_progress_screen.dart';
 
 class HomeSafetyScreen extends StatefulWidget {
-  const HomeSafetyScreen({super.key, required this.services, this.catalog});
+  const HomeSafetyScreen({
+    super.key,
+    required this.services,
+    this.catalog,
+    this.scansFirst = false,
+  });
   final HomeSafetyCatalog? catalog;
+  final bool scansFirst;
   final AppServices services;
   @override
   State<HomeSafetyScreen> createState() => _HomeSafetyScreenState();
@@ -27,6 +34,7 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
   late Future<void> ready;
   String? selectedRoom, error;
   bool working = false;
+  int scanEpoch = 0;
   @override
   void initState() {
     super.initState();
@@ -39,6 +47,14 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
     final next = HomeSafetySession(services: widget.services, catalog: catalog);
     session = next;
     await next.initialize();
+    try {
+      if (await next.recoverScanRoomLinks() > 0) await next.save();
+    } catch (_) {
+      if (mounted && next.isCurrent) {
+        error =
+            'Room scan concerns could not be linked yet. Saved work is retained.';
+      }
+    }
   }
 
   bool get enabled =>
@@ -75,6 +91,7 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
       barrierDismissible: false,
       builder: (_) => _RoomDialog(room: room, onSave: s.edit),
     );
+    if (mounted && s.isCurrent) setState(() => scanEpoch++);
   }
 
   Future<void> editNotes(RoomInstance room, SafetyQuestion question) async {
@@ -301,6 +318,35 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
     await s.refresh();
   });
 
+  Future<void> openRoomScan(RoomInstance? room) => run(() async {
+    final previous = session!;
+    if (previous.hasPending &&
+        !previous.offline &&
+        !previous.caseWriteBlocked) {
+      await previous.save();
+      if (previous.conflict != null || previous.needsReconcile) return;
+    }
+    previous.guard();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LiveAssessmentScreen(
+          services: widget.services,
+          scanRoom: room,
+          legacyScan: room == null,
+          startWithRoomScan: room?.type != AssessmentLocation.outdoorPaths,
+        ),
+      ),
+    );
+    if (!mounted || !previous.isCurrent) return;
+    previous.dispose();
+    setState(() {
+      scanEpoch++;
+      ready = initialize();
+    });
+    await ready;
+  });
+
   Future<void> openReport() => run(() async {
     final s = session!;
     await s.save();
@@ -520,7 +566,13 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
       final s = session;
       if (loading.hasError) {
         return Scaffold(
-          appBar: AppBar(title: Text(context.tr('Rooms and checklist'))),
+          appBar: AppBar(
+            title: Text(
+              context.tr(
+                widget.scansFirst ? 'Room scans' : 'Rooms and checklist',
+              ),
+            ),
+          ),
           body: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -535,7 +587,13 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
       }
       if (loading.connectionState != ConnectionState.done || s == null) {
         return Scaffold(
-          appBar: AppBar(title: Text(context.tr('Rooms and checklist'))),
+          appBar: AppBar(
+            title: Text(
+              context.tr(
+                widget.scansFirst ? 'Room scans' : 'Rooms and checklist',
+              ),
+            ),
+          ),
           body: const Center(child: CircularProgressIndicator()),
         );
       }
@@ -556,7 +614,11 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
               appBar: AppBar(
                 title: Text(
                   room == null
-                      ? context.tr('Rooms and checklist')
+                      ? context.tr(
+                          widget.scansFirst
+                              ? 'Room scans'
+                              : 'Rooms and checklist',
+                        )
                       : roomTitle(room),
                 ),
                 leading: BackButton(
@@ -593,29 +655,31 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
                     child: ListView(
                       padding: const EdgeInsets.all(20),
                       children: [
-                        Text(
-                          context.tr(
-                            'Home safety questions adapted from CDC STEADI. This is not a clinical fall-risk score or a safety certification.',
+                        if (!widget.scansFirst || room != null) ...[
+                          Text(
+                            context.tr(
+                              'Home safety questions adapted from CDC STEADI. This is not a clinical fall-risk score or a safety certification.',
+                            ),
                           ),
-                        ),
-                        TextButton(
-                          onPressed: enabled
-                              ? () => run(() async {
-                                  if (!await launchUrl(
-                                    Uri.parse(s.catalog.sourceUrl),
-                                    mode: LaunchMode.externalApplication,
-                                  )) {
-                                    throw StateError('Source unavailable.');
-                                  }
-                                })
-                              : null,
-                          child: Text(context.tr('View CDC source (2017)')),
-                        ),
-                        Text(
-                          context.tr(
-                            'Checklist translations are provided by the app; they are not official CDC translations.',
+                          TextButton(
+                            onPressed: enabled
+                                ? () => run(() async {
+                                    if (!await launchUrl(
+                                      Uri.parse(s.catalog.sourceUrl),
+                                      mode: LaunchMode.externalApplication,
+                                    )) {
+                                      throw StateError('Source unavailable.');
+                                    }
+                                  })
+                                : null,
+                            child: Text(context.tr('View CDC source (2017)')),
                           ),
-                        ),
+                          Text(
+                            context.tr(
+                              'Checklist translations are provided by the app; they are not official CDC translations.',
+                            ),
+                          ),
+                        ],
                         if (error != null)
                           SahNotice(
                             message: context.tr(error!),
@@ -685,7 +749,28 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
                             label: Text(context.tr('Save checklist online')),
                           ),
                         const SizedBox(height: 16),
-                        if (room == null)
+                        if (room == null && widget.scansFirst) ...[
+                          FilledButton.icon(
+                            key: const ValueKey('rooms-add'),
+                            onPressed: editable && s.document.rooms.length < 32
+                                ? roomDialog
+                                : null,
+                            icon: const Icon(Icons.add),
+                            label: Text(context.tr('Add a room')),
+                          ),
+                          const SizedBox(height: 16),
+                          RoomScanCards(
+                            key: ValueKey('room-scans-$scanEpoch'),
+                            store: widget.services.store,
+                            caseId: s.caseId,
+                            rooms: s.document.rooms,
+                            isCurrent: () => mounted && s.isCurrent,
+                            enabled: editable,
+                            onOpen: openRoomScan,
+                            onChecklist: (r) =>
+                                setState(() => selectedRoom = r.id),
+                          ),
+                        ] else if (room == null)
                           ...roomList(s)
                         else
                           ...roomChecklist(s, room),
@@ -742,6 +827,22 @@ class _HomeSafetyScreenState extends State<HomeSafetyScreen> {
       ),
   ];
   List<Widget> roomChecklist(HomeSafetySession s, RoomInstance room) => [
+    FilledButton.icon(
+      key: ValueKey('scan-room-${room.id}'),
+      onPressed: editable ? () => openRoomScan(room) : null,
+      icon: Icon(
+        room.type == AssessmentLocation.outdoorPaths
+            ? Icons.photo_camera_outlined
+            : Icons.view_in_ar,
+      ),
+      label: Text(
+        context.tr(
+          room.type == AssessmentLocation.outdoorPaths
+              ? 'Use photos and measurements'
+              : 'Open room scan',
+        ),
+      ),
+    ),
     Text(progressText(s, room)),
     Text(
       context.tr(

@@ -6,6 +6,7 @@ import '../../../../shared/models/contracts.dart';
 import '../../../../shared/services/home_safety_api_client.dart';
 import '../../../../shared/services/matching_api_client.dart';
 import '../../domain/home_safety/home_safety.dart';
+import '../live_assessment_session.dart';
 
 class HomeSafetySession extends ChangeNotifier {
   HomeSafetySession({required this.services, required this.catalog}) {
@@ -268,6 +269,38 @@ class HomeSafetySession extends ChangeNotifier {
     guard();
     _publish(baseline, queue);
   });
+
+  Future<int> recoverScanRoomLinks() async {
+    guard();
+    if (!initialized ||
+        busy ||
+        conflict != null ||
+        needsReconcile ||
+        caseWriteBlocked) {
+      return 0;
+    }
+    final bindings = await LiveAssessmentSession.savedScanRoomBindings(
+      services.store,
+      caseId,
+    );
+    guard();
+    var added = 0;
+    for (final binding in bindings.entries) {
+      if (!document.rooms.any((r) => r.id == binding.value) ||
+          !snapshot.findings.any((f) => f.id == binding.key) ||
+          document.findingRooms.any((l) => l.findingId == binding.key)) {
+        continue;
+      }
+      await edit({
+        'type': 'assign_finding',
+        'roomId': binding.value,
+        'findingId': binding.key,
+      });
+      added++;
+    }
+    return added;
+  }
+
   Future<void> refresh() => _run(
     () => services.coordinator.serialize(() async {
       final fresh = await api.read(caseId, isCurrent: () => isCurrent);

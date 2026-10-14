@@ -13,11 +13,15 @@ class AssessmentScanEntry extends StatelessWidget {
     required this.onOpen,
     required this.onCheck,
     this.saved = SavedScanState.none,
+    this.rooms = false,
+    this.roomTitle,
   });
 
   final BathroomScanAvailability availability;
   final VoidCallback? onOpen, onCheck;
   final SavedScanState saved;
+  final bool rooms;
+  final String? roomTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +30,9 @@ class AssessmentScanEntry extends StatelessWidget {
     final hasModel =
         saved == SavedScanState.unreviewed || saved == SavedScanState.reviewed;
     final primary = availability.prefersScan || hasModel;
-    final title = hasModel
+    final title = rooms || roomTitle != null
+        ? 'Room scans'
+        : hasModel
         ? 'Bathroom scan saved'
         : saved == SavedScanState.otherDevice
         ? 'Bathroom scanned on another phone'
@@ -78,9 +84,12 @@ class AssessmentScanEntry extends StatelessWidget {
         children: [
           Semantics(
             header: true,
-            child: Text(context.tr(title), style: theme.textTheme.titleLarge),
+            child: Text(
+              roomTitle ?? context.tr(title),
+              style: theme.textTheme.titleLarge,
+            ),
           ),
-          if (description != null) ...[
+          if (description != null && !rooms && roomTitle == null) ...[
             const SizedBox(height: 8),
             Text(context.tr(description)),
           ],
@@ -92,7 +101,11 @@ class AssessmentScanEntry extends StatelessWidget {
               icon: const Icon(Icons.view_in_ar),
               label: Text(
                 context.tr(
-                  hasModel
+                  rooms
+                      ? 'Room scans'
+                      : roomTitle != null
+                      ? 'Open room scan'
+                      : hasModel
                       ? 'Review bathroom scan'
                       : capability?.source == 'arkit'
                       ? 'Start camera scan'

@@ -2,117 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 
 import '../../../shared/models/case_draft.dart';
 import '../../../shared/services/local_private_store.dart';
 import '../domain/scan/bathroom_scan_scene.dart';
+import '../domain/home_safety/home_safety.dart';
+import '../domain/assessment_location.dart';
 import '../domain/scan/scan_suggestions.dart';
 import 'bathroom_scan_adapter.dart';
-
-class BathroomScanReview {
-  BathroomScanReview({
-    this.scene,
-    this.pendingScanId,
-    Set<String> reviewed = const {},
-    Map<String, ScanElementKind> labels = const {},
-    Set<ScanDifficulty> difficulties = const {},
-    Set<String> dismissed = const {},
-  }) : reviewed = Set.unmodifiable(reviewed),
-       labels = Map.unmodifiable(labels),
-       difficulties = Set.unmodifiable(difficulties),
-       dismissed = Set.unmodifiable(dismissed);
-
-  final BathroomScanScene? scene;
-  final String? pendingScanId;
-  final Set<String> reviewed, dismissed;
-  final Map<String, ScanElementKind> labels;
-  final Set<ScanDifficulty> difficulties;
-
-  BathroomScanReview copyWith({
-    String? pendingScanId,
-    bool clearPending = false,
-    Set<String>? reviewed,
-    Map<String, ScanElementKind>? labels,
-    Set<ScanDifficulty>? difficulties,
-    Set<String>? dismissed,
-  }) => BathroomScanReview(
-    scene: scene,
-    pendingScanId: clearPending ? null : pendingScanId ?? this.pendingScanId,
-    reviewed: reviewed ?? this.reviewed,
-    labels: labels ?? this.labels,
-    difficulties: difficulties ?? this.difficulties,
-    dismissed: dismissed ?? this.dismissed,
-  );
-
-  Map<String, Object?> toJson(String caseId) => {
-    'version': 1,
-    'caseId': caseId,
-    'scene': scene?.toJson(),
-    'pendingScanId': pendingScanId,
-    'reviewed': reviewed.toList()..sort(),
-    'labels': {for (final e in labels.entries) e.key: e.value.name},
-    'difficulties': difficulties.map((e) => e.name).toList()..sort(),
-    'dismissed': dismissed.toList()..sort(),
-  };
-
-  factory BathroomScanReview.fromJson(Object? raw, String caseId) {
-    if (raw is! Map ||
-        raw['version'] != 1 ||
-        raw['caseId'] != caseId ||
-        raw.keys.length != 8) {
-      throw const FormatException('Invalid private scan review.');
-    }
-    final scene = raw['scene'] == null
-        ? null
-        : BathroomScanScene.fromJson(raw['scene']);
-    final pending = raw['pendingScanId'];
-    if (pending != null && (pending is! String || !isCaseUuidV4(pending))) {
-      throw const FormatException('Invalid pending scan.');
-    }
-    Set<String> strings(Object? value, int maximum) {
-      if (value is! List ||
-          value.length > maximum ||
-          value.any((e) => e is! String) ||
-          value.toSet().length != value.length) {
-        throw const FormatException('Invalid private scan selection.');
-      }
-      return value.cast<String>().toSet();
-    }
-
-    final ids = scene?.elements.map((e) => e.id).toSet() ?? <String>{};
-    final reviewed = strings(raw['reviewed'], 256);
-    final labels = raw['labels'];
-    final dismissed = strings(raw['dismissed'], 256);
-    if (!ids.containsAll(reviewed) ||
-        labels is! Map ||
-        labels.length > 256 ||
-        !ids.containsAll(labels.keys) ||
-        dismissed.any(
-          (id) => !RegExp(r'^[a-zA-Z0-9_.:-]{1,128}$').hasMatch(id),
-        )) {
-      throw const FormatException('Scan review has invalid bindings.');
-    }
-    try {
-      return BathroomScanReview(
-        scene: scene,
-        pendingScanId: pending as String?,
-        reviewed: reviewed,
-        labels: {
-          for (final e in labels.entries)
-            e.key as String: ScanElementKind.values.byName(e.value as String),
-        },
-        difficulties: strings(
-          raw['difficulties'],
-          ScanDifficulty.values.length,
-        ).map(ScanDifficulty.values.byName).toSet(),
-        dismissed: dismissed,
-      );
-    } catch (_) {
-      throw const FormatException('Invalid private scan review values.');
-    }
-  }
-}
+import 'scan_model_sync.dart';
+import '../../../shared/services/scan_model_api_client.dart';
+import '../domain/scan/bathroom_scan_review.dart';
+export '../domain/scan/bathroom_scan_review.dart';
 
 class ScanScopeExpired implements Exception {
   const ScanScopeExpired();
@@ -130,12 +33,45 @@ class BathroomScanSession extends ChangeNotifier {
     required this.caseId,
     required this.isCurrent,
     required this.adapter,
-  });
+    this.room,
+    ScanModelApiClient? syncApi,
+    int Function()? caseRevision,
+  }) {
+    if (syncApi != null && caseRevision != null) {
+      synchronization = ScanModelSync(
+        api: syncApi,
+        store: store,
+        caseId: caseId,
+        room: room,
+        storageKey: key,
+        isCurrent: () => !_disposed && isCurrent(),
+        caseRevision: caseRevision,
+        localReview: () => review,
+        applyReview: _save,
+      )..addListener(_changed);
+    }
+  }
   final LocalPrivateStore store;
   final String caseId;
   final bool Function() isCurrent;
   final BathroomScanAdapter adapter;
-  String get key => 'assessment:$caseId:bathroom-scan';
+  final RoomInstance? room;
+  ScanModelSync? synchronization;
+  AssessmentLocation get location => room?.type ?? AssessmentLocation.bathroom;
+  static String storageKey(String caseId, {RoomInstance? room}) => room == null
+      ? 'assessment:$caseId:bathroom-scan'
+      : 'assessment:$caseId:room-scan:${sha256.convert(utf8.encode(room.id))}';
+  String get key => storageKey(caseId, room: room);
+  List<ScanDifficulty> get availableDifficulties => ScanDifficulty.values
+      .where(
+        (d) =>
+            location == AssessmentLocation.bathroom ||
+            d == ScanDifficulty.enteringBathroom ||
+            d == ScanDifficulty.movingAround ||
+            location == AssessmentLocation.kitchen &&
+                d == ScanDifficulty.sinkUse,
+      )
+      .toList();
   BathroomScanReview review = BathroomScanReview();
   BathroomScanCapabilities? capabilities;
   bool busy = false, dirty = false, initialized = false, _disposed = false;
@@ -154,19 +90,24 @@ class BathroomScanSession extends ChangeNotifier {
 
   static Future<BathroomScanReview?> readSaved(
     LocalPrivateStore store,
-    String caseId,
-  ) async {
-    final bytes = await store.readBytes('assessment:$caseId:bathroom-scan');
+    String caseId, {
+    RoomInstance? room,
+  }) async {
+    final bytes = await store.readBytes(storageKey(caseId, room: room));
     if (bytes == null) return null;
     if (bytes.length > 768 * 1024) {
       throw const FormatException('Private scan exceeds its storage bound.');
     }
-    return BathroomScanReview.fromJson(jsonDecode(utf8.decode(bytes)), caseId);
+    return BathroomScanReview.fromJson(
+      jsonDecode(utf8.decode(bytes)),
+      caseId,
+      room: room,
+    );
   }
 
   Future<void> initialize() async {
     guard();
-    final saved = await readSaved(store, caseId);
+    final saved = await readSaved(store, caseId, room: room);
     guard();
     if (saved != null) review = saved;
     if (review.pendingScanId != null) {
@@ -174,6 +115,7 @@ class BathroomScanSession extends ChangeNotifier {
           'The previous scan was interrupted. Your saved model is retained. Start a new scan when ready.';
       await _save(review.copyWith(clearPending: true));
     }
+    await synchronization?.initialize();
     await refreshCapabilities();
     initialized = true;
     _changed();
@@ -201,7 +143,7 @@ class BathroomScanSession extends ChangeNotifier {
   Future<void> _save(BathroomScanReview next) async {
     guard();
     final bytes = Uint8List.fromList(
-      utf8.encode(jsonEncode(next.toJson(caseId))),
+      utf8.encode(jsonEncode(next.toJson(caseId, room: room))),
     );
     if (bytes.length > 768 * 1024) {
       throw const FormatException('Private scan exceeds its storage bound.');
@@ -237,6 +179,21 @@ class BathroomScanSession extends ChangeNotifier {
     }
   }
 
+  Future<void> checkAccountModel() => _run(() => synchronization!.refresh());
+  Future<void> uploadModel({
+    bool replaceAccount = false,
+    bool removeAccount = false,
+  }) => _run(
+    () => synchronization!.upload(
+      replaceAccount: replaceAccount,
+      removeAccount: removeAccount,
+    ),
+  );
+  Future<void> retryModelUpload() => _run(() => synchronization!.retry());
+  Future<void> restoreModel() => _run(() => synchronization!.restore());
+  Future<void> discardSyncRecovery() =>
+      _run(() => synchronization!.discardRecovery());
+
   Future<void> retrySave() => _run(() => _save(review));
 
   Future<void> discardUnsaved() => _run(() async {
@@ -244,7 +201,11 @@ class BathroomScanSession extends ChangeNotifier {
     guard();
     review = bytes == null
         ? BathroomScanReview()
-        : BathroomScanReview.fromJson(jsonDecode(utf8.decode(bytes)), caseId);
+        : BathroomScanReview.fromJson(
+            jsonDecode(utf8.decode(bytes)),
+            caseId,
+            room: room,
+          );
     dirty = false;
     _changed();
   });
@@ -345,6 +306,7 @@ class BathroomScanSession extends ChangeNotifier {
     if (scene == null) return const [];
     return previewBathroomImprovements(
       scene: scene,
+      room: room,
       difficulties: review.difficulties,
       identifiedKinds: review.labels,
     );
@@ -356,6 +318,7 @@ class BathroomScanSession extends ChangeNotifier {
     return {
       for (final suggestion in suggestBathroomImprovements(
         scene: scene,
+        room: room,
         reviewedElementIds: review.reviewed,
         difficulties: review.difficulties,
         identifiedKinds: {
@@ -382,6 +345,7 @@ class BathroomScanSession extends ChangeNotifier {
       final reviewed = {...review.reviewed, ...current.relatedElementIds};
       final result = suggestBathroomImprovements(
         scene: review.scene!,
+        room: room,
         reviewedElementIds: reviewed,
         difficulties: review.difficulties,
         identifiedKinds: {
@@ -401,6 +365,11 @@ class BathroomScanSession extends ChangeNotifier {
 
   Future<void> setDifficulty(ScanDifficulty difficulty, bool value) =>
       _run(() async {
+        if (!availableDifficulties.contains(difficulty)) {
+          throw const FormatException(
+            'This difficulty does not apply to this room.',
+          );
+        }
         final next = {...review.difficulties};
         if (value) {
           next.add(difficulty);
@@ -443,6 +412,8 @@ class BathroomScanSession extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    synchronization?.removeListener(_changed);
+    synchronization?.dispose();
     unawaited(cancelCapture().catchError((Object _) {}));
     super.dispose();
   }
@@ -460,7 +431,7 @@ String scanErrorMessage(Object error) {
       'Scanning is unavailable on this device. Continue with photos and manual measurements.',
     'scan_busy' => 'Another camera session is active. Close it and try again.',
     'scan_limit' =>
-      'This scan reached its limit. Try a shorter bathroom scan with fewer objects.',
+      'This scan reached its limit. Try a shorter room scan with fewer objects.',
     _ =>
       'The scan could not be processed. Your previous model is retained. Try again in good light, or use photos and manual measurements.',
   };

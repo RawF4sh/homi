@@ -3,6 +3,8 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import '../../../shared/services/local_private_store.dart';
+import '../../../shared/models/export_contract_values.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/live_app.dart';
@@ -137,6 +139,56 @@ class LiveAssessmentSession extends ChangeNotifier {
   final Map<String, AnnotationState> _annotationStates = {};
   final Map<String, EvidenceDescriptor> _savedEvidence = {};
   final Map<String, String> _scanImports = {};
+  final Map<String, String> _scanImportRooms = {};
+  Set<String> activeScanImportsForRoom(String? roomId) => {
+    for (final id in activeScanImports)
+      if (_scanImportRooms[id] == roomId) id,
+  };
+
+  static Map<String, String> scanRoomBindings(Map<String, Object?> value) {
+    final imports = value['scanImports'] as Map? ?? {};
+    final rooms = value['scanImportRooms'] ?? <String, Object?>{};
+    if (rooms is! Map || rooms.length > 256) {
+      throw const FormatException('Invalid scan room journal.');
+    }
+    final result = <String, String>{};
+    for (final e in rooms.entries) {
+      final findingId = imports[e.key];
+      if (e.key is! String ||
+          findingId is! String ||
+          !isCaseUuidV4(findingId) ||
+          e.value is! String ||
+          (e.value as String).isEmpty ||
+          (e.value as String).runes.length > 200) {
+        throw const FormatException('Invalid scan room binding.');
+      }
+      final roomId = ExportContractValues.id(e.value);
+      if (result.containsKey(findingId) && result[findingId] != roomId) {
+        throw const FormatException('Conflicting scan room binding.');
+      }
+      result[findingId] = roomId;
+    }
+    return result;
+  }
+
+  static Future<Map<String, String>> savedScanRoomBindings(
+    LocalPrivateStore store,
+    String caseId,
+  ) async {
+    final bytes = await store.readBytes('assessment:$caseId:draft');
+    if (bytes == null) return {};
+    if (bytes.length > 512 * 1024) {
+      throw const FormatException('Invalid assessment size.');
+    }
+    final value = Map<String, Object?>.from(
+      jsonDecode(utf8.decode(bytes)) as Map,
+    );
+    if (value['version'] != 1 || value['caseId'] != caseId) {
+      throw const FormatException('Invalid assessment identity.');
+    }
+    return scanRoomBindings(value);
+  }
+
   String? importedScanFinding(String suggestionId) =>
       _scanImports[suggestionId];
 
@@ -257,6 +309,10 @@ class LiveAssessmentSession extends ChangeNotifier {
         throw const FormatException('Invalid scan import journal');
       }
       _scanImports.addAll(Map<String, String>.from(scanImports));
+      scanRoomBindings(local);
+      _scanImportRooms.addAll(
+        Map<String, String>.from(local['scanImportRooms'] as Map? ?? {}),
+      );
       evidence.restoreLocal(
         Map<String, Object?>.from(local['evidence'] as Map),
       );
@@ -724,8 +780,14 @@ class LiveAssessmentSession extends ChangeNotifier {
     late String id;
     _replacingLocal = true;
     try {
-      id = controller.startFinding(AssessmentArea.bathroom);
-      controller.setObservation(id, suggestion.observation);
+      id = controller.startFinding(
+        suggestion.room?.type.area ?? AssessmentArea.bathroom,
+      );
+      controller.setObservation(
+        id,
+        suggestion.room?.type.observationWithLocation(suggestion.observation) ??
+            suggestion.observation,
+      );
       if (!controller.confirm(id).applied) {
         throw StateError('The observation needs review.');
       }
@@ -734,6 +796,9 @@ class LiveAssessmentSession extends ChangeNotifier {
         'findings': sync.replacementFindings.map((e) => e.toJson()).toList(),
       });
       _scanImports[suggestion.id] = id;
+      if (suggestion.room != null) {
+        _scanImportRooms[suggestion.id] = suggestion.room!.id;
+      }
     } catch (_) {
       controller.restoreLocal(before);
       rethrow;
@@ -770,6 +835,7 @@ class LiveAssessmentSession extends ChangeNotifier {
       'assessmentState': state?.toJson(),
       'pendingRequest': pendingRequest,
       'scanImports': Map<String, String>.from(_scanImports),
+      'scanImportRooms': Map<String, String>.from(_scanImportRooms),
     };
     final bytes = Uint8List.fromList(utf8.encode(jsonEncode(value)));
     if (bytes.length > 512 * 1024) {

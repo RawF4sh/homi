@@ -11,6 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../features/tracking/device_reminders.dart';
 import '../features/tracking/progress_service.dart';
 import '../shared/services/progress_api_client.dart';
+import '../shared/services/scan_model_api_client.dart';
 import '../features/tracking/program_progress_screen.dart';
 import 'appearance.dart';
 import 'theme.dart';
@@ -46,7 +47,9 @@ class LiveAppConfig {
     required this.publishableKey,
     this.emailDeliveryEnabled = false,
     this.permissionSharingEnabled = false,
+    this.sensitiveSharingEnabled = false,
     this.trackingEnabled = false,
+    this.scanSyncEnabled = false,
     this.homeSafetyEnabled = false,
     this.localHelpEnabled = const bool.fromEnvironment(
       'SAH_LOCAL_HELP_ENABLED',
@@ -72,7 +75,9 @@ class LiveAppConfig {
   final String publishableKey;
   final bool emailDeliveryEnabled;
   final bool permissionSharingEnabled;
+  final bool sensitiveSharingEnabled;
   final bool trackingEnabled;
+  final bool scanSyncEnabled;
   final bool homeSafetyEnabled;
   final bool localHelpEnabled;
   Uri get callback => Uri.parse('safeathome://auth/callback');
@@ -82,11 +87,15 @@ class LiveAppConfig {
     supabaseUrl: Uri.parse(const String.fromEnvironment('SUPABASE_URL')),
     publishableKey: const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY'),
     trackingEnabled: const bool.fromEnvironment('SAH_TRACKING_ENABLED'),
+    scanSyncEnabled: const bool.fromEnvironment('SAH_SCAN_SYNC_ENABLED'),
     homeSafetyEnabled: const bool.fromEnvironment(
       'SAFEATHOME_HOME_SAFETY_ENABLED',
     ),
     permissionSharingEnabled: const bool.fromEnvironment(
       'SAH_PERMISSION_SHARING_ENABLED',
+    ),
+    sensitiveSharingEnabled: const bool.fromEnvironment(
+      'SAH_SENSITIVE_SHARING_ENABLED',
     ),
     emailDeliveryEnabled: const bool.fromEnvironment(
       'SAH_EMAIL_DELIVERY_ENABLED',
@@ -135,6 +144,13 @@ class AppServices {
       tokenProvider: token,
       transport: this.transport,
     );
+    scanModels = config.scanSyncEnabled
+        ? ScanModelApiClient(
+            baseUri: config.apiOrigin,
+            tokenProvider: token,
+            transport: this.transport,
+          )
+        : null;
     planNames = PlanNamesApiClient(
       baseUri: config.apiOrigin,
       tokenProvider: token,
@@ -245,6 +261,7 @@ class AppServices {
   late final CaseEvidenceApiClient cases;
   late final CaseDiscoveryApiClient discovery;
   late final PlanNamesApiClient planNames;
+  late final ScanModelApiClient? scanModels;
   late final SharingApiClient sharing;
   late final DraftExportApiClient exports;
   late final AnnotatedExportApiClient annotatedExports;

@@ -1,8 +1,11 @@
 import 'dart:async';
 import '../../shared/models/collaboration.dart';
+import '../../shared/models/sensitive_sharing.dart';
+import '../../shared/models/evidence.dart';
+import '../requests/private_draft_preview.dart';
 import '../../shared/models/request_tracking.dart';
 import '../../shared/services/matching_api_client.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide SensitiveContent;
 import '../../app/live_app.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/models/sharing.dart';
@@ -10,6 +13,7 @@ import '../../shared/models/case_draft.dart';
 import '../../shared/models/contracts.dart' show Finding;
 
 part 'collaboration_screen.dart';
+part 'sensitive_sharing_screen.dart';
 
 abstract class _OnlineState<T extends StatefulWidget> extends State<T>
     with WidgetsBindingObserver {
@@ -350,6 +354,26 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
                                   if (current) await reload();
                                 },
                           child: Text(context.tr('Shared tasks and proposals')),
+                        ),
+                      if (services.config.sensitiveSharingEnabled &&
+                          share.membership.role == 'helper' &&
+                          share.membership.state == 'active')
+                        TextButton(
+                          onPressed: busy
+                              ? null
+                              : () async {
+                                  await Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => SensitiveSharingScreen(
+                                        services: services,
+                                        membership: share.membership,
+                                        ownerView: true,
+                                      ),
+                                    ),
+                                  );
+                                  if (current) await reload();
+                                },
+                          child: Text(context.tr('Detailed helper access')),
                         ),
 
                       ExpansionTile(
@@ -787,6 +811,27 @@ class _SharedCaseState extends _OnlineState<SharedCaseScreen> {
           if (view != null) ...[
             AccessDetails(membership: view!.membership!),
             ProjectionContent(projection: view!.projection!),
+            if (services.config.sensitiveSharingEnabled &&
+                view!.membership!.role == 'helper')
+              OutlinedButton(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final grant = _grant;
+                        setState(clearContent);
+                        await Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SensitiveSharingScreen(
+                              services: services,
+                              membership: grant,
+                              ownerView: false,
+                            ),
+                          ),
+                        );
+                        if (current) await reload();
+                      },
+                child: Text(context.tr('Detailed helper access')),
+              ),
             if (services.config.trackingEnabled)
               OutlinedButton(
                 onPressed: busy

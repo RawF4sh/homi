@@ -252,7 +252,7 @@ class AssessmentFlowScreen extends StatelessWidget {
     final value = draft.observation.trim();
     if (scanFindingIds.contains(draft.id)) {
       final source = RegExp(
-        r' Source: (?:iPhone RoomPlan|Android ARCore) partial scan '
+        r' Source: (?:iPhone RoomPlan|Android ARCore|iPhone ARKit camera) partial scan '
         r'[^;]+; resident-reviewed identification\. '
         r'Model elements: \[.*\]\. Scene SHA-256: [0-9a-f]{64}\. '
         r'Rule [a-z0-9_.]+ v[0-9]+\. Scan geometry is approximate; '

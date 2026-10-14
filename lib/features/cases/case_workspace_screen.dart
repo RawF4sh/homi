@@ -372,6 +372,20 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                 ),
                 if (services.config.homeSafetyEnabled)
                   SahActionTile(
+                    key: const ValueKey('case-room-scans'),
+                    title: context.tr('Room scans'),
+                    icon: Icons.view_in_ar,
+                    onTap: c.busy || c.snapshot == null
+                        ? null
+                        : () => open(
+                            HomeSafetyScreen(
+                              services: services,
+                              scansFirst: true,
+                            ),
+                          ),
+                  ),
+                if (services.config.homeSafetyEnabled)
+                  SahActionTile(
                     key: const ValueKey('case-rooms-checklist'),
                     title: context.tr('Rooms and checklist'),
                     subtitle: context.tr(

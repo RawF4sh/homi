@@ -15,6 +15,8 @@ import 'assessment_flow_screen.dart';
 import 'assessment_copy.dart';
 import 'bathroom_scan_screen.dart';
 import 'save_status_card.dart';
+import 'home_safety/home_safety_screen.dart';
+import '../domain/home_safety/home_safety.dart';
 import '../application/assessment_sync.dart';
 import '../application/assessment_flow.dart';
 import '../domain/assessment_location.dart';
@@ -26,8 +28,13 @@ class LiveAssessmentScreen extends StatefulWidget {
     super.key,
     required this.services,
     this.initialFindingId,
+    this.scanRoom,
+    this.startWithRoomScan = false,
+    this.legacyScan = false,
   });
   final String? initialFindingId;
+  final RoomInstance? scanRoom;
+  final bool startWithRoomScan, legacyScan;
   final AppServices services;
   @override
   State<LiveAssessmentScreen> createState() => _LiveAssessmentScreenState();
@@ -65,11 +72,25 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
         session.flow.openFinding(findingId);
       }
       if (mounted) scanAvailability.refresh();
+      if (widget.scanRoom != null &&
+          !widget.startWithRoomScan &&
+          findingId == null) {
+        openManualConcern(photo: true);
+      }
+      if (widget.startWithRoomScan) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted &&
+              session.isCurrent &&
+              ModalRoute.of(context)?.isCurrent == true) {
+            unawaited(openBathroomScan());
+          }
+        });
+      }
     });
   }
 
   static final _scanSource = RegExp(
-    r' Source: (?:iPhone RoomPlan|Android ARCore) partial scan ',
+    r' Source: (?:iPhone RoomPlan|Android ARCore|iPhone ARKit camera) partial scan ',
   );
 
   Future<void> refreshSavedScan() async {
@@ -78,6 +99,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       final review = await BathroomScanSession.readSaved(
         widget.services.store,
         session.caseId,
+        room: widget.scanRoom,
       );
       next = review?.scene == null
           ? session.controller.drafts.any(
@@ -194,12 +216,41 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
 
   void openManualConcern({required bool photo}) {
     session.guard();
-    if (session.flow.step != AssessmentStep.chooseArea) return;
-    session.flow.chooseLocation(AssessmentLocation.bathroom);
+    if (session.flow.step == AssessmentStep.review) {
+      session.flow.startAnother();
+    }
+    if (session.flow.step != AssessmentStep.chooseArea) {
+      setState(() {
+        notice =
+            'Finish the open concern before starting another room. Your unfinished work is still here.';
+      });
+      return;
+    }
+    session.flow.chooseLocation(
+      widget.scanRoom?.type ?? AssessmentLocation.bathroom,
+    );
     if (!photo) session.flow.continueWithoutPhoto();
   }
 
   Future<void> openBathroomScan() async {
+    if (widget.scanRoom == null &&
+        !widget.legacyScan &&
+        widget.services.config.homeSafetyEnabled) {
+      await run(() async {
+        await session.flush();
+        session.guard();
+        if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+        unawaited(
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  HomeSafetyScreen(services: widget.services, scansFirst: true),
+            ),
+          ),
+        );
+      });
+      return;
+    }
     var finish = false;
     await run(() async {
       session.guard();
@@ -207,8 +258,11 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       session.guard();
       if (!mounted) return;
       final scanner = BathroomScanSession(
+        syncApi: widget.services.scanModels,
+        caseRevision: () => widget.services.coordinator.currentCase().revision,
         store: widget.services.store,
         caseId: session.caseId,
+        room: widget.scanRoom,
         isCurrent: () => session.isCurrent,
         adapter:
             widget.services.bathroomScanAdapter ??
@@ -222,7 +276,8 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
             importedFinding: (id) => session.localSaveFailed
                 ? null
                 : session.importedScanFinding(id),
-            activeImports: () => session.activeScanImports,
+            activeImports: () =>
+                session.activeScanImportsForRoom(widget.scanRoom?.id),
             onImport: session.importScanObservation,
             onContinue: (_) {
               session.guard();
@@ -361,11 +416,25 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
               onChooseLocation: chooseLocation,
               locationStatus: {
                 if (_hasSavedModel)
-                  AssessmentLocation.bathroom: '3D scan saved',
+                  widget.scanRoom?.type ?? AssessmentLocation.bathroom:
+                      '3D scan saved',
               },
-              areaTools: _hasSavedModel
+              areaTools:
+                  _hasSavedModel &&
+                      widget.scanRoom == null &&
+                      (!widget.services.config.homeSafetyEnabled ||
+                          widget.legacyScan)
                   ? null
                   : AssessmentScanEntry(
+                      rooms:
+                          widget.scanRoom == null &&
+                          !widget.legacyScan &&
+                          widget.services.config.homeSafetyEnabled,
+                      roomTitle:
+                          widget.scanRoom?.name ??
+                          (widget.scanRoom == null
+                              ? null
+                              : context.tr(widget.scanRoom!.type.title)),
                       availability: scanAvailability,
                       saved: savedScan,
                       onCheck: busy || !session.isCurrent
