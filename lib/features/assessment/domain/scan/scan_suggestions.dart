@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:crypto/crypto.dart';
 
 import 'bathroom_scan_scene.dart';
+import '../home_safety/home_safety.dart';
+import '../assessment_location.dart';
 
 const maxScanSuggestions = 20;
 
@@ -13,6 +15,15 @@ enum ScanDifficulty {
   toiletTransfer,
   sinkUse,
   movingAround;
+
+  String labelFor(AssessmentLocation room) =>
+      room == AssessmentLocation.bathroom
+      ? label
+      : switch (this) {
+          enteringBathroom => 'Getting through the doorway',
+          movingAround => 'Moving around this room',
+          _ => label,
+        };
 
   String get label => switch (this) {
     enteringBathroom => 'Getting through the bathroom doorway',
@@ -26,6 +37,7 @@ enum ScanDifficulty {
 final class ScanSuggestion {
   ScanSuggestion._({
     required BathroomScanScene scene,
+    this.room,
     required this.ruleId,
     required this.elementId,
     required List<String> relatedElementIds,
@@ -38,6 +50,7 @@ final class ScanSuggestion {
        observation =
            '$detail Source: ${scene.sourceLabel} partial scan '
            '${scene.scanId}; resident-reviewed identification. '
+           '${room == null ? '' : 'Room ID: ${room.id}; area: ${room.type.name}. '}'
            'Model elements: ${jsonEncode(relatedElementIds)}. '
            'Scene SHA-256: ${scene.fingerprint}. '
            'Rule $ruleId v$currentRuleVersion. Scan geometry is approximate; '
@@ -64,6 +77,7 @@ final class ScanSuggestion {
 
   late final String id;
   final String ruleId;
+  final RoomInstance? room;
   static const currentRuleVersion = '1';
   String get ruleVersion => currentRuleVersion;
   final String sceneFingerprint;
@@ -95,11 +109,13 @@ final class ScanSuggestionCandidate {
 
 List<ScanSuggestionCandidate> previewBathroomImprovements({
   required BathroomScanScene scene,
+  RoomInstance? room,
   required Set<ScanDifficulty> difficulties,
   Map<String, ScanElementKind> identifiedKinds = const {},
 }) => List.unmodifiable([
   for (final proposal in suggestBathroomImprovements(
     scene: scene,
+    room: room,
     reviewedElementIds: {for (final element in scene.elements) element.id},
     difficulties: difficulties,
     identifiedKinds: identifiedKinds,
@@ -109,6 +125,7 @@ List<ScanSuggestionCandidate> previewBathroomImprovements({
 
 List<ScanSuggestion> suggestBathroomImprovements({
   required BathroomScanScene scene,
+  RoomInstance? room,
   required Set<String> reviewedElementIds,
   required Set<ScanDifficulty> difficulties,
   Map<String, ScanElementKind> identifiedKinds = const {},
@@ -117,6 +134,7 @@ List<ScanSuggestion> suggestBathroomImprovements({
       identifiedKinds.keys.any((id) => !reviewedElementIds.contains(id))) {
     throw ArgumentError('Review must refer to the current scan elements');
   }
+  final bathroom = room == null || room.type == AssessmentLocation.bathroom;
   ScanElementKind kindOf(ScanElement element) =>
       identifiedKinds[element.id] ?? element.kind;
   final reviewed =
@@ -140,6 +158,7 @@ List<ScanSuggestion> suggestBathroomImprovements({
       suggestions.add(
         ScanSuggestion._(
           scene: scene,
+          room: room,
           ruleId: rule,
           elementId: element.id,
           relatedElementIds: [element.id],
@@ -154,18 +173,21 @@ List<ScanSuggestion> suggestBathroomImprovements({
     if ((kind == ScanElementKind.door || kind == ScanElementKind.opening) &&
         difficulties.contains(ScanDifficulty.enteringBathroom)) {
       add(
-        rule: 'bathroom.doorway_report',
-        title: 'Make the bathroom entrance easier to use',
-        detail:
-            'Resident reports difficulty getting through the bathroom entry '
-            'and has identified this doorway or opening in the scan.',
+        rule: bathroom ? 'bathroom.doorway_report' : 'room.doorway_report',
+        title: bathroom
+            ? 'Make the bathroom entrance easier to use'
+            : 'Make the doorway easier to use',
+        detail: bathroom
+            ? 'Resident reports difficulty getting through the bathroom entry and has identified this doorway or opening in the scan.'
+            : 'Resident reports difficulty getting through this room’s entry and has identified this doorway or opening in the scan.',
         action:
             'Check the actual clear opening, door movement and approach in '
             'person. Discuss suitable access changes with a qualified assessor; '
             'model width is not the clear opening.',
       );
     }
-    if (kind == ScanElementKind.bathtub &&
+    if (bathroom &&
+        kind == ScanElementKind.bathtub &&
         difficulties.contains(ScanDifficulty.bathing)) {
       add(
         rule: 'bathroom.bathing_report',
@@ -179,7 +201,8 @@ List<ScanSuggestion> suggestBathroomImprovements({
             'placement or structural fixings.',
       );
     }
-    if (kind == ScanElementKind.toilet &&
+    if (bathroom &&
+        kind == ScanElementKind.toilet &&
         difficulties.contains(ScanDifficulty.toiletTransfer)) {
       add(
         rule: 'bathroom.toilet_report',
@@ -193,10 +216,11 @@ List<ScanSuggestion> suggestBathroomImprovements({
             'based on this model alone.',
       );
     }
-    if (kind == ScanElementKind.sink &&
+    if ((bathroom || room.type == AssessmentLocation.kitchen) &&
+        kind == ScanElementKind.sink &&
         difficulties.contains(ScanDifficulty.sinkUse)) {
       add(
-        rule: 'bathroom.sink_report',
+        rule: bathroom ? 'bathroom.sink_report' : 'room.sink_report',
         title: 'Make the sink easier to reach',
         detail:
             'Resident reports difficulty reaching or using the sink '
@@ -216,13 +240,16 @@ List<ScanSuggestion> suggestBathroomImprovements({
     suggestions.add(
       ScanSuggestion._(
         scene: scene,
-        ruleId: 'bathroom.movement_report',
+        room: room,
+        ruleId: bathroom ? 'bathroom.movement_report' : 'room.movement_report',
         elementId: element.id,
         relatedElementIds: [element.id],
-        title: 'Create an easier route through the bathroom',
-        detail:
-            'Resident reports difficulty moving around the bathroom and '
-            'has reviewed part of its scanned layout.',
+        title: bathroom
+            ? 'Create an easier route through the bathroom'
+            : 'Create an easier route through this room',
+        detail: bathroom
+            ? 'Resident reports difficulty moving around the bathroom and has reviewed part of its scanned layout.'
+            : 'Resident reports difficulty moving around this room and has reviewed part of its scanned layout.',
         nextAction:
             'Walk through the usual route with an assessor and consider '
             'whether movable items can be repositioned. Check hidden obstacles '
@@ -275,7 +302,10 @@ List<ScanSuggestion> suggestBathroomImprovements({
       suggestions.add(
         ScanSuggestion._(
           scene: scene,
-          ruleId: 'bathroom.modeled_doorway_overlap',
+          room: room,
+          ruleId: bathroom
+              ? 'bathroom.modeled_doorway_overlap'
+              : 'room.modeled_doorway_overlap',
           elementId: door.id,
           relatedElementIds: [door.id, object.id],
           title: 'Check a possible doorway obstruction',
