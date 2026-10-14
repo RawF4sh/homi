@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.dart';
+import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/features/assessment/domain/scan/bathroom_scan_scene.dart';
@@ -7,6 +9,76 @@ import 'package:safe_at_home/features/assessment/domain/scan/scan_suggestions.da
 import 'scan_test_fixtures.dart';
 
 void main() {
+  test(
+    'room suggestions are scoped, rename-stable and do not apply bathroom rules elsewhere',
+    () {
+      final scene = fictionalScanScene(
+        elements: [
+          scanElementJson(),
+          scanElementJson(id: 'tub', kind: 'bathtub'),
+          scanElementJson(id: 'toilet', kind: 'toilet'),
+        ],
+      );
+      List<ScanSuggestion> suggestions(
+        String id,
+        String name,
+        AssessmentLocation type,
+      ) => suggestBathroomImprovements(
+        scene: scene,
+        room: RoomInstance(id: id, type: type, name: name),
+        reviewedElementIds: scene.elements.map((e) => e.id).toSet(),
+        difficulties: ScanDifficulty.values.toSet(),
+      );
+      final first = suggestions(
+        'bed-one',
+        'Bedroom',
+        AssessmentLocation.bedroom,
+      );
+      expect(
+        first.any(
+          (s) => s.ruleId.contains('bathing') || s.ruleId.contains('toilet'),
+        ),
+        false,
+      );
+      expect(
+        first.any(
+          (s) => s.title.contains('bathroom') || s.detail.contains('bathroom'),
+        ),
+        false,
+      );
+      expect(
+        first.map((s) => s.id),
+        suggestions(
+          'bed-one',
+          'Renamed',
+          AssessmentLocation.bedroom,
+        ).map((s) => s.id),
+      );
+      expect(
+        first
+            .map((s) => s.id)
+            .toSet()
+            .intersection(
+              suggestions(
+                'bed-two',
+                'Bedroom',
+                AssessmentLocation.bedroom,
+              ).map((s) => s.id).toSet(),
+            ),
+        isEmpty,
+      );
+      expect(first.every((s) => s.room!.id == 'bed-one'), true);
+      expect(
+        suggestions(
+          'bath-one',
+          'Bathroom',
+          AssessmentLocation.bathroom,
+        ).any((s) => s.ruleId == 'bathroom.bathing_report'),
+        true,
+      );
+    },
+  );
+
   test(
     'unreviewed geometry cannot produce suggestions even with reported difficulty',
     () {

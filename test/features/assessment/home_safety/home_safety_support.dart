@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
 import 'package:safe_at_home/app/live_app.dart';
@@ -13,6 +14,15 @@ import '../../../services/case_evidence_api_client_test.dart' as http;
 import '../../tracking/device_reminders_test.dart' show FakeNotificationDevice;
 
 class SafetyStore extends MemoryPrivateStore {
+  final bytes = <String, Uint8List>{};
+  @override
+  Future<Uint8List?> readBytes(String key) async =>
+      bytes[key] == null ? null : Uint8List.fromList(bytes[key]!);
+  @override
+  Future<void> writeBytes(String key, Uint8List value) async {
+    bytes[key] = Uint8List.fromList(value);
+  }
+
   bool fail = false;
   @override
   Future<void> writeJson(String key, Map<String, Object?> value) {

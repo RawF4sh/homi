@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.dart';
+import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -94,9 +96,14 @@ void main() {
   var current = true;
   final sessions = <BathroomScanSession>{};
 
-  BathroomScanSession make({LocalPrivateStore? storage, String id = caseId}) {
+  BathroomScanSession make({
+    LocalPrivateStore? storage,
+    String id = caseId,
+    RoomInstance? room,
+  }) {
     final value = BathroomScanSession(
       store: storage ?? store,
+      room: room,
       caseId: id,
       isCurrent: () => current,
       adapter: scanner,
@@ -121,6 +128,148 @@ void main() {
     expect(bytes, isNotNull);
     return BathroomScanReview.fromJson(jsonDecode(utf8.decode(bytes!)), id);
   }
+
+  test(
+    'named rooms keep independent models, retain legacy scans and survive rename/restart',
+    () async {
+      final legacy = BathroomScanReview(scene: fictionalScanScene());
+      await seed(legacy);
+      final first = RoomInstance(
+        id: 'bath-one',
+        type: AssessmentLocation.bathroom,
+        name: 'Upstairs',
+      );
+      final second = RoomInstance(
+        id: 'bath-two',
+        type: AssessmentLocation.bathroom,
+        name: 'Downstairs',
+      );
+      final kitchen = RoomInstance(
+        id: 'kitchen/with unicode 厨房',
+        type: AssessmentLocation.kitchen,
+        name: 'Kitchen',
+      );
+      final a = make(room: first),
+          b = make(room: second),
+          c = make(room: kitchen);
+      for (final scan in [a, b, c]) {
+        await scan.initialize();
+        expect(scan.review.scene, isNull);
+        await scan.capture();
+      }
+      final fingerprints = [
+        a,
+        b,
+        c,
+      ].map((s) => s.review.scene!.fingerprint).toSet();
+      expect(fingerprints, hasLength(3));
+      await a.setDifficulty(ScanDifficulty.enteringBathroom, true);
+      expect(b.review.difficulties, isEmpty);
+      final oldA = a.review.scene!.fingerprint;
+      disposeSession(a);
+      final renamed = make(
+        room: RoomInstance(
+          id: first.id,
+          type: first.type,
+          name: 'Renamed bathroom',
+        ),
+      );
+      await renamed.initialize();
+      expect(renamed.review.scene!.fingerprint, oldA);
+      expect(
+        renamed.review.difficulties,
+        contains(ScanDifficulty.enteringBathroom),
+      );
+      await renamed.clearModel();
+      expect(
+        (await BathroomScanSession.readSaved(
+          store,
+          caseId,
+          room: second,
+        ))!.scene!.fingerprint,
+        b.review.scene!.fingerprint,
+      );
+      expect(
+        (await BathroomScanSession.readSaved(store, caseId))!.toJson(caseId),
+        legacy.toJson(caseId),
+      );
+      await expectLater(
+        c.setDifficulty(ScanDifficulty.bathing, true),
+        throwsFormatException,
+      );
+      expect(c.availableDifficulties, contains(ScanDifficulty.sinkUse));
+    },
+  );
+
+  test(
+    'room identity, type and record version reject cross-room replay without overwriting bytes',
+    () async {
+      final room = RoomInstance(
+        id: 'one',
+        type: AssessmentLocation.bedroom,
+        name: null,
+      );
+      final s = make(room: room);
+      await s.initialize();
+      await s.capture();
+      final saved = await store.readBytes(s.key);
+      final other = RoomInstance(id: 'two', type: room.type, name: null);
+      await store.writeBytes(
+        BathroomScanSession.storageKey(caseId, room: other),
+        saved!,
+      );
+      await expectLater(make(room: other).initialize(), throwsFormatException);
+      await expectLater(
+        make(
+          room: RoomInstance(
+            id: room.id,
+            type: AssessmentLocation.kitchen,
+            name: null,
+          ),
+        ).initialize(),
+        throwsFormatException,
+      );
+      final raw = jsonDecode(utf8.decode(saved)) as Map<String, dynamic>;
+      raw['version'] = 2.0;
+      expect(
+        () => BathroomScanReview.fromJson(raw, caseId, room: room),
+        throwsFormatException,
+      );
+      expect(await store.readBytes(s.key), saved);
+    },
+  );
+
+  test(
+    'lost room capture response retains that room and leaves its neighbor unchanged',
+    () async {
+      final room = RoomInstance(
+        id: 'one',
+        type: AssessmentLocation.bedroom,
+        name: null,
+      );
+      final other = RoomInstance(id: 'two', type: room.type, name: null);
+      final a = make(room: room), b = make(room: other);
+      await a.initialize();
+      await b.initialize();
+      await a.capture();
+      await b.capture();
+      final beforeA = a.review.scene!.fingerprint,
+          beforeB = b.review.scene!.fingerprint;
+      scanner.onStart = (_) =>
+          Future.error(PlatformException(code: 'scan_interrupted'));
+      await a.capture();
+      expect(a.review.scene!.fingerprint, beforeA);
+      expect(
+        (await BathroomScanSession.readSaved(
+          store,
+          caseId,
+          room: other,
+        ))!.scene!.fingerprint,
+        beforeB,
+      );
+      expect(a.review.pendingScanId, isNull);
+    },
+  );
 
   test(
     'switching capability to ARKit preserves the old model until successful capture, then survives restart',

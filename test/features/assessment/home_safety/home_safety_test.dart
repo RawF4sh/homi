@@ -1,14 +1,79 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/features/assessment/application/home_safety/home_safety_session.dart';
 import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.dart';
 import 'package:safe_at_home/shared/services/matching_api_client.dart';
 import 'home_safety_support.dart';
+import 'package:safe_at_home/shared/models/contracts.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'saved scan room associations recover exactly once and do not override owner reassignment',
+    () async {
+      final h = await safetyHarness();
+      var s = HomeSafetySession(
+        services: h.services,
+        catalog: h.server.catalog,
+      );
+      await s.initialize();
+      await s.edit(addRoom('first'));
+      await s.edit(addRoom('second'));
+      await s.save();
+      const id = 'e1b5a17d-3f77-4c5b-b806-526fbe222213';
+      h.server.snapshot = CaseSnapshot.fromJson({
+        ...h.server.snapshot.toJson(),
+        'revision': h.server.snapshot.revision + 1,
+        'findings': [
+          {
+            'id': id,
+            'room': 'other',
+            'observation': 'Fictional room scan concern',
+            'reviewState': 'confirmed',
+            'evidenceIds': <String>[],
+            'measurements': <Object>[],
+          },
+        ],
+      });
+      await h.store.writeBytes(
+        'assessment:${s.caseId}:draft',
+        Uint8List.fromList(
+          utf8.encode(
+            jsonEncode({
+              'version': 1,
+              'caseId': s.caseId,
+              'scanImports': {'suggestion': id},
+              'scanImportRooms': {'suggestion': 'first'},
+            }),
+          ),
+        ),
+      );
+      await s.refresh();
+      expect(await s.recoverScanRoomLinks(), 1);
+      expect(await s.recoverScanRoomLinks(), 0);
+      s.dispose();
+      s = HomeSafetySession(services: h.services, catalog: h.server.catalog);
+      await s.initialize();
+      expect(s.document.findingRooms.single.roomId, 'first');
+      expect(await s.recoverScanRoomLinks(), 0);
+      await s.save();
+      await s.edit({
+        'type': 'assign_finding',
+        'roomId': 'second',
+        'findingId': id,
+      });
+      await s.save();
+      expect(await s.recoverScanRoomLinks(), 0);
+      expect(s.document.findingRooms.single.roomId, 'second');
+      s.dispose();
+      h.services.dispose();
+      h.auth.dispose();
+    },
+  );
+
   test(
     'addressed progress is explicit, restart-safe and invalidated by changed answers or findings',
     () async {

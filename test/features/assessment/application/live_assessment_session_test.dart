@@ -3,6 +3,8 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.dart';
+import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -341,6 +343,50 @@ void main() {
     reviewedElementIds: {'door-1'},
     difficulties: {ScanDifficulty.enteringBathroom},
   ).single;
+
+  test(
+    'room-scoped imports retain area and room bindings across restart without duplicate findings',
+    () async {
+      final current = make();
+      await current.initialize();
+      ScanSuggestion inRoom(String id, AssessmentLocation type) =>
+          suggestBathroomImprovements(
+            scene: fictionalScanScene(),
+            room: RoomInstance(id: id, type: type, name: 'Fictional room'),
+            reviewedElementIds: {'door-1'},
+            difficulties: {ScanDifficulty.enteringBathroom},
+          ).single;
+      final bedroom = inRoom('bed-one', AssessmentLocation.bedroom);
+      final entrance = inRoom('entrance-two', AssessmentLocation.entrance);
+      final bedId = await current.importScanObservation(bedroom);
+      final entryId = await current.importScanObservation(entrance);
+      expect(current.controller.toFinding(bedId)!.room, 'other');
+      expect(
+        AssessmentLocation.fromObservation(
+          AssessmentArea.other,
+          current.controller.toFinding(bedId)!.observation,
+        ),
+        AssessmentLocation.bedroom,
+      );
+      expect(current.controller.toFinding(entryId)!.room, 'entrance');
+      expect(current.activeScanImportsForRoom('bed-one'), {bedroom.id});
+      expect(current.activeScanImportsForRoom(null), isEmpty);
+      expect(
+        await LiveAssessmentSession.savedScanRoomBindings(
+          services.store,
+          current.caseId,
+        ),
+        {bedId: 'bed-one', entryId: 'entrance-two'},
+      );
+      current.dispose();
+      active = null;
+      final resumed = make();
+      await resumed.initialize();
+      expect(await resumed.importScanObservation(bedroom), bedId);
+      expect(resumed.controller.findings, hasLength(2));
+      expect(resumed.activeScanImportsForRoom('entrance-two'), {entrance.id});
+    },
+  );
 
   test(
     'confirmed scan import is atomic, idempotent and never a manual measurement',
@@ -1319,6 +1365,160 @@ void main() {
       await reopened.close();
     },
   );
+
+  testWidgets(
+    'named room entry opens capture directly and Continue returns without forcing a photo',
+    (tester) async {
+      final room = RoomInstance(
+        id: 'guest-room',
+        type: AssessmentLocation.bedroom,
+        name: 'Guest room',
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => LiveAssessmentScreen(
+                      services: services,
+                      scanRoom: room,
+                      startWithRoomScan: true,
+                    ),
+                  ),
+                ),
+                child: const Text('Open named room'),
+              ),
+            ),
+          ),
+        ),
+      );
+      Future<void> until(bool Function() done) async {
+        for (var i = 0; i < 400 && !done(); i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(done(), true);
+      }
+
+      await tester.tap(find.text('Open named room'));
+      await tester.pump();
+      final start = find.byKey(const ValueKey('bathroom-start-scan'));
+      await until(
+        () =>
+            start.evaluate().isNotEmpty &&
+            tester.widget<ButtonStyleButton>(start).enabled,
+      );
+      expect(find.text('Guest room in 3D'), findsOneWidget);
+      await tester.ensureVisible(start);
+      await tester.tap(start);
+      await tester.pump();
+      final next = find.byKey(const ValueKey('bathroom-continue'));
+      await until(
+        () =>
+            next.evaluate().isNotEmpty &&
+            tester.widget<ButtonStyleButton>(next).enabled,
+      );
+      expect(capture.requests, isEmpty);
+      await tester.tap(next);
+      await tester.pump();
+      await until(
+        () =>
+            find.text('Open named room').evaluate().isNotEmpty &&
+            find.byType(LiveAssessmentScreen).evaluate().isEmpty,
+      );
+      final savedRoom = await tester.runAsync(
+        () => BathroomScanSession.readSaved(
+          services.store,
+          saved['caseId'] as String,
+          room: room,
+        ),
+      );
+      expect(savedRoom!.scene, isNotNull);
+      expect(
+        await tester.runAsync(
+          () => BathroomScanSession.readSaved(
+            services.store,
+            saved['caseId'] as String,
+          ),
+        ),
+        isNull,
+      );
+      expect(capture.requests, isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  for (final completed in [false, true]) {
+    testWidgets(
+      'opening another room preserves ${completed ? 'reviewed findings and opens the new room' : 'unfinished details with an explanation'}',
+      (tester) async {
+        await tester.runAsync(() async {
+          final previous = make();
+          await previous.initialize();
+          previous.flow.chooseLocation(AssessmentLocation.bedroom);
+          previous.flow.continueWithoutPhoto();
+          previous.flow.setObservationText(
+            'Fictional retained bedroom concern',
+          );
+          if (completed) expect(previous.flow.saveDetails(), true);
+          await previous.flush();
+          previous.dispose();
+          active = null;
+        });
+        await tester.pumpWidget(
+          MaterialApp(
+            home: LiveAssessmentScreen(
+              services: services,
+              scanRoom: RoomInstance(
+                id: 'outside',
+                type: AssessmentLocation.outdoorPaths,
+                name: 'Fictional garden',
+              ),
+            ),
+          ),
+        );
+        for (
+          var i = 0;
+          i < 400 && find.byType(AssessmentFlowScreen).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        final flow = tester
+            .widget<AssessmentFlowScreen>(find.byType(AssessmentFlowScreen))
+            .flow;
+        if (completed) {
+          expect(flow.location, AssessmentLocation.outdoorPaths);
+          expect(flow.step, AssessmentStep.viewPrompt);
+          expect(
+            flow.controller.findings.single.observation,
+            contains('Fictional retained bedroom concern'),
+          );
+        } else {
+          expect(flow.location, AssessmentLocation.bedroom);
+          expect(flow.step, AssessmentStep.details);
+          expect(flow.observationText, 'Fictional retained bedroom concern');
+          expect(
+            find.text(
+              'Finish the open concern before starting another room. Your unfinished work is still here.',
+            ),
+            findsOneWidget,
+          );
+        }
+        expect(capture.requests, isEmpty);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
 
   testWidgets(
     'background callback after expiry observes synchronous stale flush failure',

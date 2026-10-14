@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.dart';
+import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -76,7 +78,7 @@ class _WidgetScanner implements BathroomScanAdapter {
 }
 
 class _Harness {
-  _Harness(this.directory) {
+  _Harness(this.directory, {RoomInstance? room}) {
     store = _WidgetStore(
       directory: directory,
       accountId: 'fictional-widget-owner',
@@ -85,6 +87,7 @@ class _Harness {
     session = BathroomScanSession(
       store: store,
       caseId: caseId,
+      room: room,
       isCurrent: () => current.value,
       adapter: scanner,
     );
@@ -103,7 +106,9 @@ class _Harness {
 
   Future<void> seed(BathroomScanReview review) => store.writeBytes(
     session.key,
-    Uint8List.fromList(utf8.encode(jsonEncode(review.toJson(caseId)))),
+    Uint8List.fromList(
+      utf8.encode(jsonEncode(review.toJson(caseId, room: session.room))),
+    ),
   );
 
   Widget app({double textScale = 1}) => MaterialApp(
@@ -293,6 +298,47 @@ void main() {
       await Directory.systemTemp.createTemp('sah-scan-widget-'),
     ),
   );
+  testWidgets(
+    'a named bedroom opens its own model and offers room prompts instead of bathroom tasks',
+    (tester) async {
+      final directory = await tester.runAsync(
+        () => Directory.systemTemp.createTemp('sah-bedroom-review-'),
+      );
+      final h = _Harness(
+        directory!,
+        room: RoomInstance(
+          id: 'bedroom-a',
+          type: AssessmentLocation.bedroom,
+          name: 'Guest bedroom',
+        ),
+      );
+      await tester.runAsync(
+        () => h.seed(BathroomScanReview(scene: fictionalScanScene())),
+      );
+      await _open(tester, h, textScale: 2);
+      expect(find.text('Guest bedroom in 3D'), findsOneWidget);
+      await _reveal(tester, find.text('Getting through the doorway'));
+      expect(find.text('Getting into or using the bath'), findsNothing);
+      expect(
+        find.text('Sitting down on or getting up from the toilet'),
+        findsNothing,
+      );
+      expect(find.text('Getting through the doorway'), findsOneWidget);
+      await tester.tap(find.text('Getting through the doorway'));
+      await _idle(tester, h);
+      expect(
+        h.session.suggestedImprovements.single.title,
+        'Make the doorway easier to use',
+      );
+      await tester.tap(find.byKey(const ValueKey('bathroom-continue')));
+      await tester.pumpAndSettle();
+      expect(h.continued, true);
+      expect(h.usedPhotos, false);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   testWidgets(
     'camera-only capture saves estimates and manual fallback keeps the model',
     (tester) async {
