@@ -14,7 +14,7 @@ const ORIGIN = 'https://fictional-project.supabase.co';
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const CLOSED_OWNER = 'fictional-closed-owner';
 const PREVIEW_OWNER = 'fictional-preview-owner';
-const PRIVATE_TABLES = ['case_shares', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'cases', 'matches', 'packets', 'form_answers', 'evidence', 'exports', 'request_history',
+const PRIVATE_TABLES = ['case_scan_models', 'share_sensitive', 'case_shares', 'assessment_metadata', 'evidence_annotations', 'program_intake', 'cases', 'matches', 'packets', 'form_answers', 'evidence', 'exports', 'request_history',
   'deleted_cases', 'closed_accounts', 'account_deletion_previews', 'auth_deletion_jobs'];
 let source: TestPostgres, target: TestPostgres, sourceAdmin: Pool, targetAdmin: Pool, sourceRuntime: Pool;
 let targetRuntime: Pool, sourceOperator: Pool, repo: PostgresCaseRepository;
@@ -126,7 +126,7 @@ test('account plan names survive quarantine restore with independent revision an
   await sourceAdmin.query('UPDATE safeathome_private.cases SET plan_name=$2 WHERE case_id=$1', [cleared.caseId, clearedState]);
   const archive = await captureDatabaseBackup(sourceAdmin, ORIGIN);
   const encoded = JSON.parse(archive.toString('utf8'));
-  assert.deepEqual(encoded.migrations.map((entry: { version: string }) => entry.version), ['001', '002', '003', '004', '005', '006', '007', '008', '009', '010']);
+  assert.deepEqual(encoded.migrations.map((entry: { version: string }) => entry.version), ['001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012']);
   assert.deepEqual(encoded.tables.cases.find((row: { case_id: string }) => row.case_id === named.caseId).plan_name, state);
   await restoreDatabaseBackup(targetAdmin, archive, ORIGIN);
   const restored = new PostgresCaseRepository(targetRuntime);
@@ -146,6 +146,8 @@ test('verified five-migration legacy backup restores into current quarantine wit
   const legacy = change(await captureDatabaseBackup(sourceAdmin, ORIGIN), archive => {
     archive.migrations = archive.migrations.slice(0, 5);
     delete archive.tables.case_shares;
+    delete archive.tables.case_scan_models;
+    delete archive.tables.share_sensitive;
     for (const row of archive.tables.cases) { delete row.plan_name; delete row.home_safety; delete row.progress; delete row.collaboration; }
   });
   const before = Buffer.from(legacy);
