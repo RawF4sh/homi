@@ -131,7 +131,7 @@ test('viewer grants cannot write and revocation prevents later proposal acceptan
 });
 test('verified migration-009 archives fill absent columns without creating collaboration access',async()=>{
  await seed();const origin='https://fictional-collaboration.supabase.co';const archive=JSON.parse((await captureDatabaseBackup(admin,origin)).toString('utf8'));
- archive.migrations=archive.migrations.slice(0,9);for(const c of archive.tables.cases)delete c.collaboration;for(const s of archive.tables.case_shares)delete s.collaboration_scope;
+ archive.migrations=archive.migrations.slice(0,9);delete archive.tables.case_scan_models;delete archive.tables.share_sensitive;for(const row of archive.tables.case_shares)delete row.sensitive_scope;for(const c of archive.tables.cases)delete c.collaboration;for(const s of archive.tables.case_shares)delete s.collaboration_scope;
  const bytes=Buffer.from(JSON.stringify(archive));await validateDatabaseBackup(bytes,origin);
  const old=await TestPostgres.start();try{const db=old.pool();await applyMigrations(db);await restoreDatabaseBackup(db,bytes,origin);
    assert.equal((await db.query('SELECT collaboration FROM safeathome_private.cases')).rows[0].collaboration,null);

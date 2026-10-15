@@ -13,7 +13,7 @@ import { intakeDefinition } from '../../src/programs/intake.ts';
 
 let cluster: TestPostgres, target: TestPostgres, admin: Pool, runtime: Pool, targetAdmin: Pool, targetRuntime: Pool;
 let repo: PostgresCaseRepository;
-const names = ['case_shares','assessment_metadata','evidence_annotations','program_intake','cases','matches','packets','form_answers','evidence','exports','request_history','deleted_cases','closed_accounts','account_deletion_previews','auth_deletion_jobs'];
+const names = ['case_scan_models','share_sensitive','case_shares','assessment_metadata','evidence_annotations','program_intake','cases','matches','packets','form_answers','evidence','exports','request_history','deleted_cases','closed_accounts','account_deletion_previews','auth_deletion_jobs'];
 before(async()=>{
  [cluster,target]=await Promise.all([TestPostgres.start(),TestPostgres.start()]);
  admin=cluster.pool();targetAdmin=target.pool();

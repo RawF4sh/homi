@@ -22,10 +22,10 @@ before(async () => {
   openPools();
 });
 beforeEach(async () => {
-  await admin.query(`TRUNCATE safeathome_private.case_shares, safeathome_private.program_intake, safeathome_private.assessment_metadata, safeathome_private.evidence_annotations, safeathome_private.cases, safeathome_private.matches, safeathome_private.packets,
+  await admin.query(`TRUNCATE safeathome_private.case_scan_models, safeathome_private.share_sensitive, safeathome_private.case_shares, safeathome_private.program_intake, safeathome_private.assessment_metadata, safeathome_private.evidence_annotations, safeathome_private.cases, safeathome_private.matches, safeathome_private.packets,
     safeathome_private.form_answers, safeathome_private.evidence, safeathome_private.exports,
     safeathome_private.request_history, safeathome_private.deleted_cases, safeathome_private.closed_accounts,
-    safeathome_private.account_deletion_previews, safeathome_private.auth_deletion_jobs;
+    safeathome_private.account_deletion_previews, safeathome_private.auth_deletion_jobs CASCADE;
     UPDATE safeathome_private.repository_quota SET case_count=0,asset_count=0,artifact_count=0,stored_bytes=0`);
 });
 after(async () => { await cluster?.close(); });
