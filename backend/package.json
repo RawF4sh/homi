@@ -26,7 +26,8 @@
     "backup": "node tool/backup.ts",
     "capacity": "node tool/capacity.ts",
     "profile:memory": "node tool/profile-memory.ts",
-    "profile:linux-memory": "node tool/profile-linux-memory.ts"
+    "profile:linux-memory": "node tool/profile-linux-memory.ts",
+    "profile:native-amd64": "node tool/profile-native-amd64.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

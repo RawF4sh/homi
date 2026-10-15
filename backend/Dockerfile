@@ -5,6 +5,9 @@ ENV NODE_ENV=production \
     SAFEATHOME_HOST=0.0.0.0 \
     SAFEATHOME_DATABASE_CA_FILE=/app/certs/supabase-root-2021.crt
 
+ENV MALLOC_ARENA_MAX=2 \
+    VIPS_CONCURRENCY=1
+
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 

@@ -235,9 +235,11 @@ export async function sanitizeEvidenceImage(input: Uint8Array): Promise<Sanitize
       .png({ compressionLevel: 6, palette: false, progressive: false }).timeout({ seconds: 5 }).toBuffer({ resolveWithObject: true });
     dimensions(info.width, info.height);
     check(data.byteLength <= MAX_SANITIZED_IMAGE_BYTES, 'IMAGE_TOO_LARGE');
-    const canonical = Buffer.concat([PNG_SIGNATURE, ...chunks(data)
-      .filter(chunk => ['IHDR', 'IDAT', 'IEND'].includes(chunk.type)).map(chunk => chunk.bytes)]);
-    const verified = await validateSanitizedEvidenceImageAsync(canonical);
+    const retained = chunks(data).filter(chunk => ['IHDR', 'IDAT', 'IEND'].includes(chunk.type));
+    const canonical = new Uint8Array(PNG_SIGNATURE.length + retained.reduce((sum, chunk) => sum + chunk.bytes.length, 0));
+    canonical.set(PNG_SIGNATURE); let offset = PNG_SIGNATURE.length;
+    for (const chunk of retained) { canonical.set(chunk.bytes, offset); offset += chunk.bytes.length; }
+    const verified = await validatePreparedCanonicalImage({ bytes: canonical, ...inspectCanonicalEvidencePng(canonical) });
     check(verified.width === info.width && verified.height === info.height);
     return { mediaType: 'image/png', ...verified, processingVersion: IMAGE_PROCESSING_VERSION };
   } catch (error) {

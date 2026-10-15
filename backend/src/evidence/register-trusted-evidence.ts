@@ -59,7 +59,10 @@ export async function registerTrustedEvidence(
     }
   } catch { return { status: 'service_unavailable' }; }
   let image: SanitizedEvidenceImage;
-  try { image = await parseSanitizedEvidenceImageAsync(await (deps.sanitize ?? sanitizeEvidenceImage)(request.bytes)); }
+  try {
+    image = deps.sanitize ? await parseSanitizedEvidenceImageAsync(await deps.sanitize(request.bytes))
+      : await sanitizeEvidenceImage(request.bytes);
+  }
   catch { return { status: 'invalid_image' }; }
   try {
     const preparedAt = serverTime(deps.now());
