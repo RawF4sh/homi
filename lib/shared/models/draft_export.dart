@@ -193,8 +193,11 @@ class ExportArtifactMetadata {
         .toList(),
     'warnings': List.of(warnings),
   };
+
+  static const clockSkewAllowance = Duration(minutes: 2);
+
   bool isAvailableAt(DateTime now) =>
-      !now.isBefore(DateTime.parse(generatedAt)) &&
+      !now.add(clockSkewAllowance).isBefore(DateTime.parse(generatedAt)) &&
       now.isBefore(DateTime.parse(expiresAt)) &&
       (recheckAfter == null || now.isBefore(DateTime.parse(recheckAfter!)));
 }

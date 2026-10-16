@@ -308,7 +308,15 @@ void main() {
       isFalse,
     );
     expect(
-      artifact().isAvailableAt(DateTime.parse('2026-10-17T19:00:00.123455Z')),
+      artifact().isAvailableAt(DateTime.parse('2026-10-17T18:59:16.123456Z')),
+      isTrue,
+    );
+    expect(
+      artifact().isAvailableAt(DateTime.parse('2026-10-17T18:58:00.123456Z')),
+      isTrue,
+    );
+    expect(
+      artifact().isAvailableAt(DateTime.parse('2026-10-17T18:58:00.123455Z')),
       isFalse,
     );
     for (final expiry in [stamp, '2026-10-17T19:15:00.123457Z']) {
