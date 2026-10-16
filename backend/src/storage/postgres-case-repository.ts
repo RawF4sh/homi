@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import { CAPACITY_LIMITS } from './capacity-limits.ts';
+import { readPrivateBytea } from './private-bytea.ts';
 import type { CaseSnapshot, DraftPacket, MatchResponse } from '../types.ts';
 import type { MatchCaseRepository } from '../api/match-case.ts';
 import type { CreatePacketInput, CreatePacketResult, PacketCaseRepository } from '../api/prepare-packet.ts';
@@ -515,10 +516,8 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     }
     if (!exportEvidenceFitsBudget(descriptors)) return { status: 'selection_too_large' };
     if (bytes) for (const descriptor of descriptors) {
-      const row = (await tx.client.query(`SELECT bytes FROM ${S}.evidence WHERE case_id=$1 AND evidence_id=$2`,
-        [snapshot.caseId, descriptor.evidenceId])).rows[0];
-      check(row);
-      assets.push(await parseEvidenceAssetAsync({ descriptor, bytes: row.bytes }));
+      const payload = await readPrivateBytea(tx.client, 'evidence', snapshot.caseId, descriptor.evidenceId, descriptor.byteLength);
+      assets.push(await parseEvidenceAssetAsync({ descriptor, bytes: payload }));
     }
     return { descriptors, assets };
   }
@@ -538,13 +537,14 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
     return this.transaction(request.userId, false, async tx => {
       const bound = await this.bound(tx, request);
       if ('status' in bound) return bound;
-      const row = (await tx.client.query(`SELECT * FROM ${S}.evidence WHERE case_id=$1 AND evidence_id=$2`,
+      const row = (await tx.client.query(`SELECT evidence_id,finding_id,revision,prepared_at,descriptor FROM ${S}.evidence WHERE case_id=$1 AND evidence_id=$2`,
         [request.caseId, request.evidenceId])).rows[0];
       if (!row || row.descriptor === null) return { status: 'not_found' };
       const descriptor = this.descriptor(row, request.caseId);
       if (!linked(bound.snapshot, descriptor)) return { status: 'not_found' };
       if (descriptor.evidenceRevision !== request.expectedEvidenceRevision) return { status: 'evidence_conflict' };
-      return { status: 'found', asset: await parseEvidenceAssetAsync({ descriptor, bytes: row.bytes }) };
+      const bytes = await readPrivateBytea(tx.client, 'evidence', request.caseId, request.evidenceId, descriptor.byteLength);
+      return { status: 'found', asset: await parseEvidenceAssetAsync({ descriptor, bytes }) };
     });
   }
   async saveEvidenceIfCurrent(input: EvidenceSaveInput): ReturnType<EvidenceRepository['saveEvidenceIfCurrent']> {
@@ -764,10 +764,8 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       check(saved.byteLength === saved.metadata.byteLength);
       let bytes: Uint8Array | undefined;
       if (includeBytes) {
-        const row = (await tx.client.query(`SELECT bytes FROM ${S}.exports WHERE artifact_id=$1 AND case_id=$2`,
-          [request.artifactId, request.caseId])).rows[0];
-        check(row && row.bytes instanceof Uint8Array); validatePdf(row.bytes, saved.metadata);
-        bytes = Uint8Array.from(row.bytes);
+        bytes = await readPrivateBytea(tx.client, 'exports', request.caseId, request.artifactId, saved.metadata.byteLength);
+        validatePdf(bytes, saved.metadata);
       }
       const after = await this.clock(tx, at);
       if (!await this.checkExportClock(tx, saved, after)) return { status: 'expired' };
