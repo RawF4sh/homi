@@ -382,6 +382,11 @@ void main() {
       expect(created!['recipientId'], '22222222-2222-4222-8222-222222222222');
       expect((created!['scope'] as Map)['findingIds'], ['selected']);
       expect((created!['scope'] as Map)['allowHelperNotes'], false);
+      expect(
+        created!['expiresAt'],
+        matches(RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$')),
+        reason: 'The HTTP contract requires millisecond UTC precision.',
+      );
       expect(find.byKey(const ValueKey('invitation-code')), findsOneWidget);
       expect(tester.takeException(), isNull);
     },

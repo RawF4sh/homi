@@ -200,10 +200,11 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
               ? editing!.expiresAt
               : days == null
               ? null
-              : DateTime.now()
-                    .toUtc()
-                    .add(Duration(days: days!))
-                    .toIso8601String(),
+              : DateTime.fromMillisecondsSinceEpoch(
+                  DateTime.now().millisecondsSinceEpoch +
+                      Duration(days: days!).inMilliseconds,
+                  isUtc: true,
+                ).toIso8601String(),
         };
       });
     }
