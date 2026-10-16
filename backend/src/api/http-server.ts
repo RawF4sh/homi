@@ -48,11 +48,13 @@ export interface HttpServerOptions {
 }
 
 const ACCOUNT_HEAVY_ROUTES = new Set(['/v3/read-scan-model', '/v3/save-scan-model', '/v1/upload-evidence', '/v1/download-evidence',
+  '/v3/preview-sensitive-photo', '/v3/read-sensitive-photo', '/v3/preview-sensitive-report', '/v3/read-sensitive-report',
   '/v1/create-draft-export', '/v1/download-draft-export', '/v2/create-draft-export', '/v2/download-draft-export']);
 
 interface RequestAccountGate { acquire(userId: string): boolean; receipt(): boolean }
 
 const HEAVY_ROUTES = new Set(['/v3/read-scan-model', '/v3/save-scan-model', '/v1/upload-evidence', '/v1/download-evidence',
+  '/v3/preview-sensitive-photo', '/v3/read-sensitive-photo', '/v3/preview-sensitive-report', '/v3/read-sensitive-report',
   '/v1/create-draft-export', '/v1/download-draft-export', '/v2/create-draft-export', '/v2/download-draft-export', '/v1/delete-case', '/v1/confirm-account-deletion']);
 
 async function authenticateBeforeUpload(

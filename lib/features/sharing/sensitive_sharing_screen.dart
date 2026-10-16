@@ -29,12 +29,14 @@ class _SensitiveSharingState extends _OnlineState<SensitiveSharingScreen> {
       uncertain = false;
   int days = 7;
   late int permission;
+  String? parentExpiresAt;
   Map<String, Object?>? pending;
   Timer? timer;
   @override
   void initState() {
     super.initState();
     permission = widget.membership.revision;
+    parentExpiresAt = widget.membership.expiresAt;
     unawaited(reload());
     timer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (current && !widget.ownerView && !busy) unawaited(reload());
@@ -102,6 +104,7 @@ class _SensitiveSharingState extends _OnlineState<SensitiveSharingScreen> {
       throw const FormatException();
     }
     permission = grant.revision;
+    parentExpiresAt = grant.expiresAt;
     final next = await request(
       widget.ownerView ? 'list-sensitive-options' : 'read-sensitive-sharing',
       binding,
@@ -129,7 +132,7 @@ class _SensitiveSharingState extends _OnlineState<SensitiveSharingScreen> {
   });
   Future<void> prepare() => run((valid) async {
     final expiry = DateTime.now().toUtc().add(Duration(days: days));
-    final parentExpiry = DateTime.tryParse(widget.membership.expiresAt ?? '');
+    final parentExpiry = DateTime.tryParse(parentExpiresAt ?? '');
     final until = parentExpiry != null && parentExpiry.isBefore(expiry)
         ? parentExpiry
         : expiry;
@@ -247,28 +250,42 @@ class _SensitiveSharingState extends _OnlineState<SensitiveSharingScreen> {
       style: Theme.of(context).textTheme.titleMedium,
     ),
     for (final (i, p) in data.photos.indexed)
-      ListTile(
-        leading: selecting
-            ? Checkbox(
-                semanticLabel: context.tr('Photo {number}', {'number': i + 1}),
-                value: photos.contains(p.evidenceId),
-                onChanged: busy || uncertain
-                    ? null
-                    : (v) => changed(() {
-                        v == true
-                            ? photos.add(p.evidenceId)
-                            : photos.remove(p.evidenceId);
-                      }),
-              )
-            : const Icon(Icons.photo_outlined),
-        title: Text(context.tr('Photo {number}', {'number': i + 1})),
-        subtitle: selecting
-            ? Text(context.tr('Preview each selected photo before publishing.'))
-            : null,
-        trailing: TextButton(
-          onPressed: busy || uncertain ? null : () => openPhoto(p),
-          child: Text(context.tr('Preview')),
-        ),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: selecting
+                ? Checkbox(
+                    semanticLabel: context.tr('Photo {number}', {
+                      'number': i + 1,
+                    }),
+                    value: photos.contains(p.evidenceId),
+                    onChanged: busy || uncertain
+                        ? null
+                        : (v) => changed(() {
+                            v == true
+                                ? photos.add(p.evidenceId)
+                                : photos.remove(p.evidenceId);
+                          }),
+                  )
+                : const Icon(Icons.photo_outlined),
+            title: Text(context.tr('Photo {number}', {'number': i + 1})),
+            subtitle: selecting
+                ? Text(
+                    context.tr(
+                      'Preview each selected photo before publishing.',
+                    ),
+                  )
+                : null,
+          ),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: TextButton(
+              onPressed: busy || uncertain ? null : () => openPhoto(p),
+              child: Text(context.tr('Preview')),
+            ),
+          ),
+        ],
       ),
     Text(
       context.tr('Selected measurements'),
@@ -363,6 +380,8 @@ class _SensitiveSharingState extends _OnlineState<SensitiveSharingScreen> {
                 ),
               ),
               DropdownButtonFormField<int>(
+                isExpanded: true,
+                itemHeight: null,
                 initialValue: days,
                 decoration: InputDecoration(
                   labelText: context.tr('Access duration'),

@@ -56,6 +56,15 @@ durable server; the executable uses `SAFEATHOME_HOME_SAFETY_ENABLED=true`.
 The explicitly fictional local server enables them for development tests.
 No migration runs automatically on startup.
 
+## Detailed helper sharing
+
+`sensitive-sharing.schema.json` and `fixtures/sensitive-sharing.json` define eight
+additive selected-data operations. Owner previews and exact permission/source
+bindings cover individual photos, measurements and private answers. Filtered PDFs
+require independent opt-in and exclude photo bytes and full application packets.
+Migration 012 and a separate default-off flag are required; see
+[implementation and remaining acceptance](../../docs/sensitive-sharing-implementation.md).
+
 ## Additive referral tasks
 
 Progress requests may opt into `includeReferrals: true`. Without that capability,

@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import { createHash } from 'node:crypto';
-import { canonicalJson, evidenceIdentifier, evidenceRevision } from '../evidence/validation.ts';
+import { canonicalJson, evidenceIdentifier, evidenceRevision, parseEvidenceDescriptor } from '../evidence/validation.ts';
 import { intakeDefinition } from '../programs/intake.ts';
 import { object, check, uuid, instant } from './validation.ts';
 
@@ -77,8 +77,30 @@ export function validateSensitiveScope(v: unknown) {
     && typeof v.sourceHash === 'string' && /^[a-f0-9]{64}$/.test(v.sourceHash) && typeof v.requestHash === 'string' && /^[a-f0-9]{64}$/.test(v.requestHash)
     && Buffer.byteLength(JSON.stringify(v)) <= 65536);
   object(v.content, ['photos', 'measurements', 'answers']);
+  check(Array.isArray(v.content.photos) && Array.isArray(v.content.measurements) && Array.isArray(v.content.answers));
+  for (const row of v.content.photos) check(parseEvidenceDescriptor(row).byteLength <= 8 * 1024 * 1024);
+  for (const row of v.content.measurements) {
+    object(row, ['id', 'findingId', 'type', 'value', 'unit', 'method', 'confirmed']);
+    check(evidenceIdentifier(row.findingId) && evidenceIdentifier(row.type)
+      && row.id === sensitiveId('measurement', row.findingId, row.type)
+      && typeof row.value === 'number' && Number.isFinite(row.value) && row.unit === 'mm'
+      && ['manual', 'estimated'].includes(row.method as string) && typeof row.confirmed === 'boolean');
+  }
+  for (const row of v.content.answers) {
+    object(row, ['id', 'programId', 'key', 'label', 'category', 'questionnaireVersion', 'intakeRevision', 'value', 'reviewState']);
+    check(evidenceIdentifier(row.programId) && evidenceIdentifier(row.key)
+      && row.id === sensitiveId('answer', row.programId, row.key)
+      && typeof row.label === 'string' && row.label.length > 0 && row.label.length <= 300
+      && ['financial', 'health', 'private'].includes(row.category as string)
+      && typeof row.questionnaireVersion === 'string' && /^[a-f0-9]{64}$/.test(row.questionnaireVersion)
+      && evidenceRevision(row.intakeRevision) && ['reported', 'unknown'].includes(row.reviewState as string)
+      && (row.value === null) === (row.reviewState === 'unknown')
+      && (row.value === null || typeof row.value === 'boolean' || typeof row.value === 'number' && Number.isFinite(row.value)
+        || typeof row.value === 'string' && row.value.length <= 600));
+  }
   for (const [key, ids] of [['photos', 'photoIds'], ['measurements', 'measurementIds'], ['answers', 'answerIds']] as const) {
     check(Array.isArray(v.content[key]) && v.content[key].length === selection[ids].length);
-    check(v.content[key].every((row: any) => selection[ids].includes(key === 'photos' ? row.evidenceId : row.id)));
+    const actual = v.content[key].map((row: any) => key === 'photos' ? row.evidenceId : row.id);
+    check(new Set(actual).size === actual.length && actual.every((id: string) => selection[ids].includes(id)));
   }
 }

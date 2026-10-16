@@ -36,6 +36,9 @@ String _hash(Object? v) {
   return s;
 }
 
+String _selectedId(String kind, String parent, String key) =>
+    '$kind-${sha256.convert(utf8.encode(jsonEncode([parent, key])))}';
+
 List<T> _list<T>(Object? value, int max, T Function(Object?) parse) {
   if (value is! List || value.length > max) throw const FormatException();
   return List.unmodifiable(value.map(parse));
@@ -92,7 +95,9 @@ class SharedMeasurement {
         !(j['value'] as num).isFinite ||
         j['unit'] != 'mm' ||
         !{'manual', 'estimated'}.contains(j['method']) ||
-        j['confirmed'] is! bool) {
+        j['confirmed'] is! bool ||
+        j['id'] !=
+            _selectedId('measurement', _id(j['findingId']), _id(j['type']))) {
       throw const FormatException();
     }
     return SharedMeasurement._(
@@ -142,6 +147,7 @@ class SharedIntakeAnswer {
         }),
         v = j['value'];
     if (!{'financial', 'health', 'private'}.contains(j['category']) ||
+        j['id'] != _selectedId('answer', _id(j['programId']), _id(j['key'])) ||
         !{'reported', 'unknown'}.contains(j['reviewState']) ||
         (v == null) != (j['reviewState'] == 'unknown') ||
         !(v == null ||
@@ -227,7 +233,13 @@ class SensitiveResponse {
         descriptor.sha256,
         8 * 1024 * 1024,
       );
-      if (bytes.length != descriptor.byteLength) throw const FormatException();
+      const png = [137, 80, 78, 71, 13, 10, 26, 10];
+      if (bytes.length != descriptor.byteLength ||
+          bytes.length < png.length ||
+          List.generate(png.length, (i) => bytes[i]).join(',') !=
+              png.join(',')) {
+        throw const FormatException();
+      }
       return SensitiveResponse._(
         id,
         revision,

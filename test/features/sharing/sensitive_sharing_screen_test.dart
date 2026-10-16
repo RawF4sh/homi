@@ -64,7 +64,7 @@ class _Server {
 
   Future<MatchingHttpResponse> handle(MatchingHttpRequest r) async {
     final body = http.requestJson(r), route = r.endpoint.path.split('/').last;
-    if (denied)
+    if (denied) {
       return http.jsonResponse({
         'schemaVersion': '3',
         'error': {
@@ -72,6 +72,7 @@ class _Server {
           'message': 'Fictional revoked access',
         },
       }, status: 404);
+    }
     switch (route) {
       case 'list-sharing':
         return http.jsonResponse({
@@ -122,7 +123,7 @@ class _Server {
   }
 }
 
-Future<AppServices> mount(
+Future<AppServices> _mount(
   WidgetTester tester,
   _Server server, {
   bool owner = true,
@@ -174,7 +175,7 @@ Future<void> tap(WidgetTester tester, Finder finder) async {
     finder,
     160,
     scrollable: find.byType(Scrollable).first,
-    maxScrolls: 70,
+    maxScrolls: 300,
   );
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
@@ -192,7 +193,7 @@ void main() {
     'owner starts with no private selections and only explicit preview/confirmation publishes one measurement',
     (tester) async {
       final server = _Server();
-      final app = await mount(tester, server);
+      final app = await _mount(tester, server);
       expect(
         tester
             .widgetList<Checkbox>(find.byType(Checkbox))
@@ -230,7 +231,7 @@ void main() {
     'uncertain publication retries the identical mutation and never silently enables more fields',
     (tester) async {
       final server = _Server()..loseSave = true;
-      await mount(tester, server);
+      await _mount(tester, server);
       await tap(tester, find.text('Review selected information'));
       await tap(tester, find.text('Confirm and publish selected information'));
       expect(server.writes, hasLength(1));
@@ -244,7 +245,7 @@ void main() {
     'helper media clears on background and revoked foreground access has no offline copy',
     (tester) async {
       final server = _Server();
-      final app = await mount(tester, server, owner: false);
+      final app = await _mount(tester, server, owner: false);
       expect(find.byType(Checkbox), findsNothing);
       await tap(tester, find.text('Preview').first);
       expect(find.bySemanticsLabel('Selected shared photo'), findsOneWidget);
@@ -271,7 +272,7 @@ void main() {
     'a photo response arriving after sign-out cannot repopulate the helper view',
     (tester) async {
       final server = _Server()..latePhoto = Completer<MatchingHttpResponse>();
-      final app = await mount(tester, server, owner: false);
+      final app = await _mount(tester, server, owner: false);
       await tester.tap(find.text('Preview').first);
       await tester.pump();
       await app.session.signOut();
@@ -293,7 +294,7 @@ void main() {
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
-        await mount(tester, _Server(), locale: locale, scale: 3.2);
+        await _mount(tester, _Server(), locale: locale, scale: 3.2);
         await tap(
           tester,
           find.text(
@@ -308,7 +309,7 @@ void main() {
           ),
           180,
           scrollable: find.byType(Scrollable).first,
-          maxScrolls: 80,
+          maxScrolls: 300,
         );
         expect(tester.takeException(), isNull);
         await end(tester);

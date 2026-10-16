@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { parseSensitiveRequest, sensitiveQuestionMetadata, SENSITIVE_ROUTES, type SensitiveRoute } from '../src/sharing/sensitive.ts';
+import { parseSensitiveRequest, sensitiveQuestionMetadata, validateSensitiveScope, SENSITIVE_ROUTES, type SensitiveRoute } from '../src/sharing/sensitive.ts';
 import { handleSharing } from '../src/api/sharing.ts';
 const fixtures = JSON.parse(readFileSync(new URL('../../contracts/v3/fixtures/sensitive-sharing.json', import.meta.url), 'utf8'));
 test('all eight selected-data request fixtures parse and reject forged privilege/category/owner fields', () => {
@@ -18,6 +18,23 @@ test('source categories are exact-version server metadata with independent finan
   assert.equal(metadata.questions.find(q => q.key === 'professionalOrderReported')!.category, 'health');
   assert.equal(metadata.questions.find(q => q.key === 'willingServicesReported')!.category, 'private');
   assert.equal(Object.hasOwn(sensitiveQuestionMetadata(), 'invented-program'), false);
+});
+test('backup selection validation rejects extra private fields, duplicated content and invented item identities', () => {
+  const fixture = fixtures.find((f: any) => f.route === 'publish-sensitive-sharing');
+  const r = fixture.response;
+  const scope = { selection: r.selection, allowPdf: r.allowPdf, expiresAt: r.expiresAt, content: r.content,
+    sourceHash: r.sourceHash, caseRevision: r.caseRevision, catalogRevision: r.catalogRevision,
+    publishedAt: '2026-10-24T00:00:00.000Z', mutationId: fixture.request.mutationId, requestHash: 'b'.repeat(64) };
+  validateSensitiveScope(scope);
+  for (const key of ['photos', 'measurements', 'answers']) {
+    const corrupt = structuredClone(scope);
+    corrupt.content[key][0].privateOwnerRecord = { income: 123 };
+    assert.throws(() => validateSensitiveScope(corrupt));
+  }
+  const forged = structuredClone(scope); forged.content.measurements[0].id = 'measurement-invented';
+  assert.throws(() => validateSensitiveScope(forged));
+  const duplicate = structuredClone(scope); duplicate.content.answers[1] = duplicate.content.answers[0];
+  assert.throws(() => validateSensitiveScope(duplicate));
 });
 test('selected-data endpoints stay denied until their separate trusted feature flag is enabled', async () => {
   let executed = false;
