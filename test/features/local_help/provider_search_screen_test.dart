@@ -15,12 +15,86 @@ import 'local_help_screen_test.dart' show make, tap, reveal;
 import 'referral_test_support.dart';
 
 const providerId = 'provider-cid-san-mateo';
-Finder providerAction(String label) => find.descendant(
-  of: find.byKey(const ValueKey(providerId)),
-  matching: find.text(label),
-);
+Finder providerAction(String label, {String id = providerId}) =>
+    find.descendant(of: find.byKey(ValueKey(id)), matching: find.text(label));
 
 void main() {
+  testWidgets(
+    'new county listings do not show the old unsupported-location message',
+    (tester) async {
+      final app = await make();
+      await LocalHelpRepository(
+        app.coordinator,
+      ).confirmLocation(HelpLocation(city: '', county: 'Alameda', zip: null));
+      await tester.pumpWidget(
+        localized(const Locale('en'), LocalHelpScreen(services: app)),
+      );
+      await tester.pumpAndSettle();
+      await tap(tester, find.byKey(const ValueKey('local-provider-search')));
+      await reveal(tester, find.text('Providers found: 3'));
+      await reveal(tester, find.text('Official referrals'));
+      expect(
+        find.text(
+          'No reviewed local listing for this location. Use the national locators to ask who serves your address.',
+        ),
+        findsNothing,
+      );
+      await reveal(tester, find.byKey(const ValueKey('referral-211-national')));
+      expect(find.byKey(const ValueKey('referral-211-bay-area')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'closed Sonoma intake is visible before opening details and keeps contact actions',
+    (tester) async {
+      final app = await make();
+      await LocalHelpRepository(
+        app.coordinator,
+      ).confirmLocation(HelpLocation(city: '', county: 'Sonoma', zip: null));
+      final opened = <Uri>[];
+      await tester.pumpWidget(
+        localized(
+          const Locale('en'),
+          LocalHelpScreen(
+            services: app,
+            openExternal: (uri) async {
+              opened.add(uri);
+              return true;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tap(tester, find.byKey(const ValueKey('local-provider-search')));
+      const closedId = 'provider-habitat-sonoma-county';
+      final row = find.byKey(const ValueKey('provider-result-$closedId'));
+      await reveal(tester, row);
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text('Intake closed: ask about alternatives.'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey(closedId)), findsNothing);
+      expect(opened, isEmpty);
+      await tap(tester, row);
+      await tap(tester, providerAction('Call organization', id: closedId));
+      expect(opened.single.toString(), 'tel:7075787707');
+      await tap(tester, providerAction('Save contact', id: closedId));
+      await tester.tap(find.text('Save on this device'));
+      await tester.pumpAndSettle();
+      expect(
+        (await LocalHelpRepository(
+          app.coordinator,
+        ).load()).contacts.single.providerId,
+        closedId,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'only confirmed county changes the filter; stale coverage stays unknown',
     (tester) async {
@@ -45,7 +119,7 @@ void main() {
       await tester.pumpAndSettle();
       await reveal(tester, find.text('Providers found: 2'));
       await tap(tester, find.text('Confirm location'));
-      await reveal(tester, find.text('Providers found: 1'));
+      await reveal(tester, find.text('Providers found: 2'));
       await tap(
         tester,
         find.byKey(
@@ -72,7 +146,7 @@ void main() {
         findsOneWidget,
       );
       await tap(tester, find.text('Clear search and filters'));
-      await reveal(tester, find.text('Providers found: 4'));
+      await reveal(tester, find.text('Providers found: 12'));
       expect((await repo.load()).location!.county, 'Santa Clara County');
       expect(tester.takeException(), isNull);
     },
@@ -92,7 +166,7 @@ void main() {
       await tap(tester, find.byKey(const ValueKey('local-provider-search')));
       await reveal(tester, find.text('Providers found: 0'));
       await tap(tester, find.text('Clear search and filters'));
-      await reveal(tester, find.text('Providers found: 4'));
+      await reveal(tester, find.text('Providers found: 12'));
       final query = find.byKey(const ValueKey('provider-search-query'));
       await reveal(tester, query);
       await tester.enterText(query, 'San José');
@@ -121,7 +195,7 @@ void main() {
         find.byKey(const ValueKey('referral-rebuilding-together-national')),
       );
       await tap(tester, find.text('Clear search and filters'));
-      await reveal(tester, find.text('Providers found: 4'));
+      await reveal(tester, find.text('Providers found: 12'));
       expect(tester.takeException(), isNull);
     },
   );
@@ -191,43 +265,42 @@ void main() {
     },
   );
 
-  testWidgets(
-    'new local provider creates and reopens its shared follow-up identity',
-    (tester) async {
-      final h = await ReferralHarness.create();
-      addTearDown(h.dispose);
-      await tester.pumpWidget(
-        localized(const Locale('en'), LocalHelpScreen(services: h.app)),
-      );
-      await tester.pumpAndSettle();
-      await tap(tester, find.byKey(const ValueKey('local-provider-search')));
-      await tap(
-        tester,
-        find.byKey(const ValueKey('provider-result-$providerId')),
-      );
-      await tap(tester, providerAction('Add follow-up'));
-      expect(find.byType(ProgramProgressScreen), findsOneWidget);
-      expect(h.server.tasks, isEmpty);
-      await tap(tester, find.text('Add next step'));
-      expect(find.byType(TaskEditorScreen), findsOneWidget);
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'Next step'),
-        'Fictional ask about modifications',
-      );
-      await tap(tester, find.text('Save task'));
-      expect(
-        (h.server.tasks.values.single['referral'] as Map)['providerId'],
-        providerId,
-      );
-      expect(h.server.tasks.values.single['programId'], isNull);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      await tap(tester, providerAction('Add follow-up'));
-      await reveal(tester, find.text('Fictional ask about modifications'));
-      expect(h.server.tasks, hasLength(1));
-      expect(h.device.requests, 0);
-    },
-  );
+  for (final id in [providerId, 'provider-habitat-east-bay-silicon-valley']) {
+    testWidgets(
+      'provider $id creates and reopens its shared follow-up identity',
+      (tester) async {
+        final h = await ReferralHarness.create();
+        addTearDown(h.dispose);
+        await tester.pumpWidget(
+          localized(const Locale('en'), LocalHelpScreen(services: h.app)),
+        );
+        await tester.pumpAndSettle();
+        await tap(tester, find.byKey(const ValueKey('local-provider-search')));
+        await tap(tester, find.byKey(ValueKey('provider-result-$id')));
+        await tap(tester, providerAction('Add follow-up', id: id));
+        expect(find.byType(ProgramProgressScreen), findsOneWidget);
+        expect(h.server.tasks, isEmpty);
+        await tap(tester, find.text('Add next step'));
+        expect(find.byType(TaskEditorScreen), findsOneWidget);
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Next step'),
+          'Fictional ask about modifications',
+        );
+        await tap(tester, find.text('Save task'));
+        expect(
+          (h.server.tasks.values.single['referral'] as Map)['providerId'],
+          id,
+        );
+        expect(h.server.tasks.values.single['programId'], isNull);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await tap(tester, providerAction('Add follow-up', id: id));
+        await reveal(tester, find.text('Fictional ask about modifications'));
+        expect(h.server.tasks, hasLength(1));
+        expect(h.device.requests, 0);
+      },
+    );
+  }
 
   for (final locale in AppLocalizations.supportedLocales) {
     testWidgets(
@@ -255,7 +328,7 @@ void main() {
         await tester.pumpAndSettle();
         await reveal(
           tester,
-          find.text(tr.text('Providers found: {count}', {'count': '1'})),
+          find.text(tr.text('Providers found: {count}', {'count': '4'})),
         );
         await tap(tester, find.text(tr.text('Clear search and filters')));
         await tap(tester, find.text(tr.text('All services')));
@@ -274,7 +347,7 @@ void main() {
         await tester.pumpAndSettle();
         await reveal(
           tester,
-          find.text(tr.text('Providers found: {count}', {'count': '1'})),
+          find.text(tr.text('Providers found: {count}', {'count': '4'})),
         );
         expect(tester.takeException(), isNull);
       },

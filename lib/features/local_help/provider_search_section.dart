@@ -179,8 +179,13 @@ class _ProviderSearchSectionState extends State<ProviderSearchSection>
             child: ExpansionTile(
               key: ValueKey('provider-result-${p.id}'),
               title: Text(p.name),
-              subtitle: Text(
-                p.services.map((s) => context.tr(s.label)).join(' · '),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(p.services.map((s) => context.tr(s.label)).join(' · ')),
+                  if (p.availability == ReferralAvailability.closed)
+                    Text(context.tr('Intake closed: ask about alternatives.')),
+                ],
               ),
               children: [widget.providerCard(p)],
             ),

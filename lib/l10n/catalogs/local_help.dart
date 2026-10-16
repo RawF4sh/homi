@@ -765,4 +765,163 @@ const localHelpTranslations = <String, Map<String, String>>{
     "fil":
         "Nananatili sa device na ito ang mga contact ng plano at nabubura sa pag-sign out. Ginagamit ng mga follow-up ang Mga susunod kong hakbang at ang hiwalay nitong mga kontrol sa paalala.",
   },
+  "Home repairs and accessibility improvements in selected East Bay and Santa Clara County communities.": {
+    "es":
+        "Reparaciones y mejoras de accesibilidad en determinadas comunidades de East Bay y del condado de Santa Clara.",
+    "zh-Hans": "在东湾和圣克拉拉县部分社区提供房屋维修和无障碍改善。",
+    "zh-Hant": "在東灣和聖克拉拉縣部分社區提供房屋維修和無障礙改善。",
+    "vi":
+        "Sửa chữa nhà và cải thiện khả năng tiếp cận tại một số cộng đồng ở East Bay và Quận Santa Clara.",
+    "fil":
+        "Pagkukumpuni ng bahay at pagpapahusay ng accessibility sa piling komunidad ng East Bay at Santa Clara County.",
+  },
+  "Only selected cities are served. Ask about your address, funding and any loan terms.": {
+    "es":
+        "Solo se atienden determinadas ciudades. Consulte por su dirección, financiamiento y condiciones de los préstamos.",
+    "zh-Hans": "仅服务部分城市。请询问您的地址、资金和任何贷款条款。",
+    "zh-Hant": "僅服務部分城市。請詢問您的地址、資金和任何貸款條款。",
+    "vi":
+        "Chỉ phục vụ một số thành phố. Hãy hỏi về địa chỉ của bạn, kinh phí và điều khoản vay nếu có.",
+    "fil":
+        "Piling lungsod lang ang sakop. Magtanong tungkol sa iyong address, pondo at anumang kondisyon ng pautang.",
+  },
+  "Home repairs and safety modifications in selected Sonoma County communities.": {
+    "es":
+        "Reparaciones y modificaciones de seguridad en determinadas comunidades del condado de Sonoma.",
+    "zh-Hans": "在索诺马县部分社区提供房屋维修和安全改造。",
+    "zh-Hant": "在索諾馬縣部分社區提供房屋維修和安全改造。",
+    "vi": "Sửa chữa nhà và cải tạo an toàn tại một số cộng đồng ở Quận Sonoma.",
+    "fil":
+        "Pagkukumpuni ng bahay at pagbabago para sa kaligtasan sa piling komunidad ng Sonoma County.",
+  },
+  "Selected Sonoma County communities only; confirm address coverage, funding and project selection.": {
+    "es":
+        "Solo determinadas comunidades del condado de Sonoma; confirme la cobertura de su dirección, el financiamiento y la selección de proyectos.",
+    "zh-Hans": "仅限索诺马县部分社区；请确认地址覆盖范围、资金和项目名额。",
+    "zh-Hant": "僅限索諾馬縣部分社區；請確認地址涵蓋範圍、資金和專案名額。",
+    "vi":
+        "Chỉ tại một số cộng đồng ở Quận Sonoma; hãy xác nhận phạm vi địa chỉ, kinh phí và việc chọn dự án.",
+    "fil":
+        "Piling komunidad lang sa Sonoma County; kumpirmahin ang saklaw ng address, pondo at pagpili ng proyekto.",
+  },
+  "Home rehabilitation and safety repairs for selected Solano County homeowners.": {
+    "es":
+        "Rehabilitación y reparaciones de seguridad para propietarios seleccionados del condado de Solano.",
+    "zh-Hans": "为索拉诺县经选定的房主提供房屋修复和安全维修。",
+    "zh-Hant": "為索拉諾縣經選定的屋主提供房屋修復和安全維修。",
+    "vi":
+        "Phục hồi nhà và sửa chữa an toàn cho các chủ nhà được chọn tại Quận Solano.",
+    "fil":
+        "Rehabilitasyon ng bahay at pagkukumpuni para sa kaligtasan ng mga piling may-ari ng bahay sa Solano County.",
+  },
+  "The published veteran application deadline was April 30, 2026. Ask about current programs and address coverage.": {
+    "es":
+        "El plazo publicado para solicitudes de veteranos fue el 30 de abril de 2026. Consulte por los programas actuales y la cobertura de su dirección.",
+    "zh-Hans": "公布的退伍军人申请截止日期为2026年4月30日。请询问当前项目和地址覆盖范围。",
+    "zh-Hant": "公布的退伍軍人申請截止日期為2026年4月30日。請詢問目前計畫和地址涵蓋範圍。",
+    "vi":
+        "Hạn nhận hồ sơ cựu chiến binh đã công bố là ngày 30 tháng 4 năm 2026. Hãy hỏi về chương trình hiện tại và phạm vi địa chỉ.",
+    "fil":
+        "Ang inilathalang takdang petsa ng aplikasyon para sa beterano ay Abril 30, 2026. Magtanong tungkol sa kasalukuyang programa at saklaw ng address.",
+  },
+  "Home accessibility modifications and assistive technology support in Marin County.": {
+    "es":
+        "Modificaciones de accesibilidad del hogar y apoyo con tecnología de asistencia en el condado de Marin.",
+    "zh-Hans": "在马林县提供房屋无障碍改造和辅助技术支持。",
+    "zh-Hant": "在馬林縣提供房屋無障礙改造和輔助科技支援。",
+    "vi":
+        "Cải tạo nhà để hỗ trợ tiếp cận và hỗ trợ công nghệ trợ giúp tại Quận Marin.",
+    "fil":
+        "Pagbabago sa bahay para sa accessibility at suporta sa assistive technology sa Marin County.",
+  },
+  "Ask for the home modifications team to discuss ramps, grab bars and available support.": {
+    "es":
+        "Pida hablar con el equipo de modificaciones del hogar sobre rampas, barras de apoyo y ayuda disponible.",
+    "zh-Hans": "请联系房屋改造团队，咨询坡道、扶手和可获得的支持。",
+    "zh-Hant": "請聯絡房屋改造團隊，諮詢坡道、扶手和可獲得的支援。",
+    "vi":
+        "Hãy liên hệ nhóm cải tạo nhà để trao đổi về đường dốc, thanh vịn và hỗ trợ hiện có.",
+    "fil":
+        "Hilinging makausap ang pangkat sa pagbabago ng bahay tungkol sa rampa, grab bar at magagamit na suporta.",
+  },
+  "Home repair and accessibility program assistance in Napa County cities.": {
+    "es":
+        "Asistencia de programas de reparación y accesibilidad del hogar en ciudades del condado de Napa.",
+    "zh-Hans": "在纳帕县城市提供房屋维修和无障碍项目协助。",
+    "zh-Hant": "在納帕縣城市提供房屋維修和無障礙計畫協助。",
+    "vi":
+        "Hỗ trợ chương trình sửa chữa nhà và khả năng tiếp cận tại các thành phố thuộc Quận Napa.",
+    "fil":
+        "Tulong sa mga programa sa pagkukumpuni ng bahay at accessibility sa mga lungsod ng Napa County.",
+  },
+  "City programs differ. Ask the Housing Division about loans, grants and construction management; this is not a contractor booking.": {
+    "es":
+        "Los programas varían según la ciudad. Consulte a la División de Vivienda sobre préstamos, subvenciones y gestión de obras; esto no es una reserva de contratista.",
+    "zh-Hans": "各城市项目不同。请向住房部门咨询贷款、补助和施工管理；这不是承包商预约。",
+    "zh-Hant": "各城市計畫不同。請向住房部門諮詢貸款、補助和施工管理；這不是承包商預約。",
+    "vi":
+        "Chương trình khác nhau theo thành phố. Hỏi Phòng Nhà ở về khoản vay, trợ cấp và quản lý xây dựng; đây không phải đặt lịch nhà thầu.",
+    "fil":
+        "Magkakaiba ang programa ng bawat lungsod. Magtanong sa Housing Division tungkol sa pautang, grant at pamamahala ng konstruksyon; hindi ito pag-book ng kontratista.",
+  },
+  "Home accessibility modifications in Berkeley and consultations in nearby Alameda County cities.": {
+    "es":
+        "Modificaciones de accesibilidad del hogar en Berkeley y consultas en ciudades cercanas del condado de Alameda.",
+    "zh-Hans": "在伯克利提供房屋无障碍改造，并在阿拉米达县邻近城市提供咨询。",
+    "zh-Hant": "在柏克萊提供房屋無障礙改造，並在阿拉米達縣鄰近城市提供諮詢。",
+    "vi":
+        "Cải tạo nhà để hỗ trợ tiếp cận tại Berkeley và tư vấn tại các thành phố lân cận thuộc Quận Alameda.",
+    "fil":
+        "Pagbabago sa bahay para sa accessibility sa Berkeley at konsultasyon sa mga kalapit na lungsod ng Alameda County.",
+  },
+  "Funded modifications are limited to Berkeley. The other listed cities receive consultations with more limited support.": {
+    "es":
+        "Las modificaciones financiadas se limitan a Berkeley. Las otras ciudades indicadas reciben consultas con apoyo más limitado.",
+    "zh-Hans": "获资助的改造仅限伯克利。其他列出的城市提供咨询，支持较为有限。",
+    "zh-Hant": "獲資助的改造僅限柏克萊。其他列出的城市提供諮詢，支援較為有限。",
+    "vi":
+        "Cải tạo được tài trợ chỉ có tại Berkeley. Các thành phố khác được liệt kê nhận tư vấn với hỗ trợ hạn chế hơn.",
+    "fil":
+        "Sa Berkeley lang may pinopondohang pagbabago. Ang iba pang nakalistang lungsod ay may konsultasyon na may mas limitadong suporta.",
+  },
+  "Minor home repairs and safety modifications in selected Alameda County communities.": {
+    "es":
+        "Reparaciones menores y modificaciones de seguridad en determinadas comunidades del condado de Alameda.",
+    "zh-Hans": "在阿拉米达县部分社区提供小型房屋维修和安全改造。",
+    "zh-Hant": "在阿拉米達縣部分社區提供小型房屋維修和安全改造。",
+    "vi":
+        "Sửa chữa nhỏ và cải tạo an toàn tại một số cộng đồng ở Quận Alameda.",
+    "fil":
+        "Maliliit na pagkukumpuni ng bahay at pagbabago para sa kaligtasan sa piling komunidad ng Alameda County.",
+  },
+  "Selected communities only. Oakland has a waiting list; Union City is awaiting funding. Confirm current restrictions directly.": {
+    "es":
+        "Solo determinadas comunidades. Oakland tiene lista de espera; Union City espera financiamiento. Confirme directamente las restricciones actuales.",
+    "zh-Hans": "仅限部分社区。奥克兰有等候名单；联合市正在等待资金。请直接确认当前限制。",
+    "zh-Hant": "僅限部分社區。奧克蘭有候補名單；聯合市正在等待資金。請直接確認目前限制。",
+    "vi":
+        "Chỉ tại một số cộng đồng. Oakland có danh sách chờ; Union City đang chờ kinh phí. Xác nhận trực tiếp các hạn chế hiện tại.",
+    "fil":
+        "Piling komunidad lang. May waiting list ang Oakland; naghihintay ng pondo ang Union City. Direktang kumpirmahin ang kasalukuyang limitasyon.",
+  },
+  "Sonoma County home repair program contact; repair requests are not being accepted at review.": {
+    "es":
+        "Contacto del programa de reparación del hogar del condado de Sonoma; no se aceptaban solicitudes de reparación en la revisión.",
+    "zh-Hans": "索诺马县房屋维修项目联系人；审核时未接收维修申请。",
+    "zh-Hant": "索諾馬縣房屋維修計畫聯絡人；審核時未受理維修申請。",
+    "vi":
+        "Liên hệ chương trình sửa chữa nhà tại Quận Sonoma; không nhận yêu cầu sửa chữa tại thời điểm rà soát.",
+    "fil":
+        "Contact ng programa sa pagkukumpuni ng bahay sa Sonoma County; hindi tumatanggap ng kahilingan sa pagkukumpuni noong pagsusuri.",
+  },
+  "Home repair intake is closed at review. Ask about future openings or use another listed organization.": {
+    "es":
+        "La recepción de solicitudes de reparación estaba cerrada en la revisión. Consulte por futuras aperturas o use otra organización indicada.",
+    "zh-Hans": "审核时房屋维修申请接收已关闭。请询问未来开放情况，或联系其他列出的机构。",
+    "zh-Hant": "審核時房屋維修申請受理已關閉。請詢問未來開放情況，或聯絡其他列出的機構。",
+    "vi":
+        "Không nhận hồ sơ sửa chữa nhà tại thời điểm rà soát. Hỏi về đợt mở lại hoặc liên hệ tổ chức khác trong danh sách.",
+    "fil":
+        "Sarado ang pagtanggap para sa pagkukumpuni ng bahay noong pagsusuri. Magtanong tungkol sa muling pagbubukas o gumamit ng ibang nakalistang organisasyon.",
+  },
 };

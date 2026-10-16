@@ -68,7 +68,12 @@ void main() {
           false,
         );
         expect(p.sources, isNotEmpty);
-        expect(p.availability, ReferralAvailability.unknown);
+        expect(
+          p.availability,
+          p.id == 'provider-habitat-sonoma-county'
+              ? ReferralAvailability.closed
+              : ReferralAvailability.unknown,
+        );
       }
       expect(
         referralDestination(

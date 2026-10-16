@@ -8,18 +8,141 @@ void main() {
   const directory = OfficialReferralDirectory();
   const silicon = 'provider-rebuilding-together-silicon-valley';
   test(
+    'all nine counties have reviewed records without inventing city-wide funding',
+    () {
+      expect(localProviderCatalog.expand((p) => p.counties).toSet(), {
+        'Alameda',
+        'Contra Costa',
+        'Marin',
+        'Napa',
+        'San Francisco',
+        'San Mateo',
+        'Santa Clara',
+        'Solano',
+        'Sonoma',
+      });
+      for (final county
+          in localProviderCatalog.expand((p) => p.counties).toSet()) {
+        expect(
+          searchLocalProviders(directory, county: '$county County'),
+          isNotEmpty,
+        );
+      }
+      expect(
+        searchLocalProviders(directory, query: 'Petaluma').single.id,
+        'provider-rebuilding-together-petaluma',
+      );
+      expect(
+        searchLocalProviders(directory, query: 'Yountville').single.id,
+        'provider-napa-housing-rehabilitation',
+      );
+      expect(
+        searchLocalProviders(directory, query: 'Berkeley').single.id,
+        'provider-cil-residential-access',
+      );
+      expect(
+        directory.provider('provider-cil-residential-access')!.areaNote,
+        contains('limited to Berkeley'),
+      );
+      expect(
+        directory
+            .provider('provider-habitat-east-bay-silicon-valley')!
+            .areaNote,
+        contains('selected cities'),
+      );
+      expect(
+        directory
+            .provider('provider-rebuilding-together-solano-county')!
+            .areaNote,
+        contains('April 30, 2026'),
+      );
+      expect(
+        directory.provider('provider-alameda-county-healthy-homes')!.areaNote,
+        contains('awaiting funding'),
+      );
+      expect(
+        directory.provider('provider-rebuilding-together-petaluma')!.cities,
+        isNot(contains('Calistoga')),
+      );
+    },
+  );
+
+  test(
+    'original four identities and contact destinations remain unchanged',
+    () {
+      const original = {
+        'provider-rebuilding-together-silicon-valley': (
+          'https://rebuildingtogethersv.org/apply/',
+          '4085789519',
+        ),
+        'provider-rebuilding-together-san-francisco': (
+          'https://rebuildingtogethersf.org/apply/',
+          '4159051611',
+        ),
+        'provider-habitat-greater-san-francisco': (
+          'https://habitatgsf.org/home-repair-work/',
+          '4156251000',
+        ),
+        'provider-cid-san-mateo': (
+          'https://www.cidsanmateo.org/services/assistive-technology.php',
+          '6506451780',
+        ),
+      };
+      for (final entry in original.entries) {
+        final p = directory.provider(entry.key)!;
+        expect((p.website, p.phone), entry.value);
+        expect(p.reviewedOn, '2026-10-24');
+      }
+    },
+  );
+
+  test(
+    'closed intake remains discoverable with its closure and alternatives intact',
+    () {
+      final p = searchLocalProviders(
+        directory,
+        county: 'Sonoma',
+        query: 'Habitat',
+      ).single;
+      expect(p.availability, ReferralAvailability.closed);
+      expect(p.areaNote, contains('intake is closed at review'));
+      expect(p.needsReview(DateTime.parse(p.reviewAfter)), isTrue);
+      expect(
+        p.coverage('Sonoma', DateTime(2026, 11, 24)),
+        ReferralCoverage.unknown,
+      );
+      expect(
+        searchLocalProviders(
+          directory,
+          county: 'Sonoma',
+          query: 'Rebuilding',
+        ).single.availability,
+        ReferralAvailability.unknown,
+      );
+    },
+  );
+  test(
     'catalog has stable unique identities, sources and bounded review dates',
     () {
       expect(
         directory.providers.map((p) => p.id).toSet().length,
         directory.providers.length,
       );
-      expect(localProviderCatalogVersion, 'bay-area-2026-10-24-v1');
+      expect(localProviderCatalogVersion, 'bay-area-2026-10-25-v2');
       for (final p in localProviderCatalog) {
         expect(directory.provider(p.id), same(p));
         expect(p.isLocalProvider, isTrue);
         expect(p.counties, isNotEmpty);
         expect(p.sources, contains(p.website));
+        for (final copy in [p.description, ?p.areaNote]) {
+          for (final locale in ['es', 'zh-Hans', 'zh-Hant', 'vi', 'fil']) {
+            expect(
+              AppLocalizations.translations[copy]?[locale],
+              isNotEmpty,
+              reason: '${p.id}: missing $locale content',
+            );
+          }
+        }
         for (final source in p.sources) {
           expect(Uri.parse(source).scheme, 'https');
         }
@@ -31,10 +154,15 @@ void main() {
           ).difference(DateTime.parse(p.reviewedOn)).inDays,
           30,
         );
-        expect(p.availability, ReferralAvailability.unknown);
-        expect(p.needsReview(DateTime(2026, 11, 23)), isTrue);
         expect(
-          p.coverage(p.counties.first, DateTime(2026, 11, 23)),
+          p.availability,
+          p.id == 'provider-habitat-sonoma-county'
+              ? ReferralAvailability.closed
+              : ReferralAvailability.unknown,
+        );
+        expect(p.needsReview(DateTime.parse(p.reviewAfter)), isTrue);
+        expect(
+          p.coverage(p.counties.first, DateTime.parse(p.reviewAfter)),
           ReferralCoverage.unknown,
         );
       }
@@ -45,7 +173,7 @@ void main() {
     'search finds individual organizations rather than national locators',
     () {
       final all = searchLocalProviders(directory);
-      expect(all, hasLength(4));
+      expect(all, hasLength(12));
       expect(
         all.any((p) => p.isLocator || officialReferrals.contains(p)),
         isFalse,
@@ -90,7 +218,7 @@ void main() {
     () {
       expect(
         searchLocalProviders(directory, service: ReferralService.homeRepair),
-        hasLength(3),
+        hasLength(9),
       );
       expect(
         searchLocalProviders(
@@ -129,8 +257,8 @@ void main() {
           query: tr.text('Service coordination'),
           translate: tr.text,
         );
-        expect(results.single.id, 'provider-cid-san-mateo');
-        expect(results.single.name, contains('(CID)'));
+        expect(results.map((p) => p.id), contains('provider-cid-san-mateo'));
+        expect(results, hasLength(4));
       }
       final tr = AppLocalizations(const Locale('es'));
       expect(
@@ -138,8 +266,11 @@ void main() {
           directory,
           query: 'tecnologia',
           translate: tr.text,
-        ).single.id,
-        'provider-cid-san-mateo',
+        ).map((p) => p.id),
+        containsAll([
+          'provider-cid-san-mateo',
+          'provider-marin-center-independent-living',
+        ]),
       );
     },
   );

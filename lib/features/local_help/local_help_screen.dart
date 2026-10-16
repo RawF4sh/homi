@@ -440,10 +440,10 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
                         ),
                         _heading('Official referrals'),
                         if (r.location == null ||
-                            !referralCounties.any(
-                              (c) =>
-                                  normalizeReferralCounty(c) ==
-                                  normalizeReferralCounty(r.location!.county),
+                            !repository.directory.providers.any(
+                              (p) =>
+                                  !p.isLocator &&
+                                  p.listsCounty(r.location!.county),
                             ))
                           Text(
                             context.tr(
