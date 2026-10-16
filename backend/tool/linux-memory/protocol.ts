@@ -17,14 +17,40 @@ export const API_ORIGIN = 'http://api:8788';
 export const AUTH = { projectUrl: 'https://synthetic-memory.invalid', publishableKey: 'sb_publishable_synthetic_linux_memory' };
 export const baseRequest = { schemaVersion: '1' as const, caseId: CASE_ID, expectedCaseRevision: 1 };
 
+export type SessionMode = 'boundary' | 'long';
+export type LinuxWorkloadMode = SessionMode;
+export const LONG_SESSION_ITERATIONS = 12;
+export const LONG_SESSION_INTERVAL_MS = 10_000;
+export const LONG_SESSION_SCENARIOS = ['upload-repeat-16mp', 'pdf-repeat-16mp'] as const;
+export function parseWorkloadMode(value = 'boundary'): LinuxWorkloadMode {
+  if (value !== 'boundary' && value !== 'long') throw new Error('Unknown synthetic workload mode.');
+  return value;
+}
+export function assertWorkloadMode(scenario: Scenario, mode: LinuxWorkloadMode): void {
+  parseScenario(scenario); parseWorkloadMode(mode);
+  if (mode === 'long' && !LONG_SESSION_SCENARIOS.some(item => item === scenario)) {
+    throw new Error('Long sessions require a repeat scenario.');
+  }
+}
+
 export function syntheticDiagnostic(phase: string, error: unknown) {
   const name = error instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,48}$/.test(error.name) ? error.name : 'Error';
   const permittedCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'EACCES', 'ENOENT', 'EADDRINUSE',
-    'ERR_TLS_CERT_ALTNAME_INVALID', 'SELF_SIGNED_CERT_IN_CHAIN', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'CERT_HAS_EXPIRED',
+    'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH',
+    'ERR_TLS_CERT_ALTNAME_INVALID', 'SELF_SIGNED_CERT_IN_CHAIN', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID',
     'UNABLE_TO_VERIFY_LEAF_SIGNATURE', '42501', '28P01', '3D000', '42P01', '08006', '53300', '57014']);
   const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
     && permittedCodes.has(error.code) ? error.code : undefined;
-  console.error(JSON.stringify({ kind: 'synthetic-diagnostic', phase, errorName: name, ...(code ? { code } : {}) }));
+  const knownReasons = new Map([
+    ['Connection terminated due to connection timeout', 'connection_timeout'],
+    ['timeout exceeded when trying to connect', 'connection_timeout'],
+    ['Connection terminated unexpectedly', 'connection_terminated_unexpectedly'],
+    ['Connection terminated', 'connection_terminated'],
+    ['The server does not support SSL connections', 'server_ssl_unsupported'],
+  ]);
+  const reason = error instanceof Error ? knownReasons.get(error.message) : undefined;
+  console.error(JSON.stringify({ kind: 'synthetic-diagnostic', phase, errorName: name,
+    ...(code ? { code } : {}), ...(reason ? { reason } : {}) }));
 }
 
 export function parseScenario(value: string): Scenario {

@@ -35,6 +35,8 @@ async function main() {
   phase = 'admin-tls';
   const admin = await syntheticPool(true);
   try {
+    phase = 'admin-connect';
+    await admin.query('SELECT 1');
     phase = 'migrations';
     await applyMigrations(admin);
     phase = 'bootstrap-runtime';

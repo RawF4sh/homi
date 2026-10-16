@@ -1,6 +1,7 @@
 import { readFile, statfs } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import type { Pool } from 'pg';
+import sharp from 'sharp';
 import { createDurableServer } from '../../src/api/durable-server.ts';
 import { loadRuntimeBenefitsBundle } from '../../src/programs/runtime-bundle.ts';
 import { AUTH, syntheticAuthFetch, syntheticDiagnostic, syntheticPool } from './protocol.ts';
@@ -9,6 +10,9 @@ export async function createSyntheticMemoryServer(pool: Pool) {
   const bundle = await loadRuntimeBenefitsBundle('scfhp-eaa-draft-v1');
   return createDurableServer({ pool, auth: AUTH, fetchImpl: syntheticAuthFetch,
     loadRegistry: bundle.loadRegistry, loadFormTemplate: bundle.loadFormTemplate });
+}
+export function allocatorArenaMax(value = process.env.MALLOC_ARENA_MAX): number | null {
+  return value !== undefined && /^(0|[1-9][0-9]*)$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : null;
 }
 export function parseCgroupInteger(value: string): number {
   if (!/^(0|[1-9][0-9]*)\n?$/.test(value) || !Number.isSafeInteger(Number(value))) throw new Error('Invalid cgroup measurement.');
@@ -64,7 +68,8 @@ async function main() {
   });
   phase = 'baseline-memory';
   console.log(JSON.stringify({ schemaVersion: '1', kind: 'ready', runtime: { node: process.versions.node,
-    platform: process.platform, arch: process.arch, uid: process.getuid!(), execArgv: process.execArgv }, baseline: await memorySnapshot() }));
+    platform: process.platform, arch: process.arch, uid: process.getuid!(), execArgv: process.execArgv,
+    allocatorArenaMax: allocatorArenaMax(), sharpConcurrency: sharp.concurrency() }, baseline: await memorySnapshot() }));
 }
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   main().catch(error => { syntheticDiagnostic(phase, error); process.exit(1); });

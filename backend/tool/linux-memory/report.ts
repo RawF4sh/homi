@@ -4,8 +4,10 @@ import { MEMORY_SCENARIOS, PROFILE_NODE_VERSION, PROFILE_SERVICE_BYTES, PROFILE_
 export interface LinuxMemoryScenarioInput {
   scenario: MemoryScenario;
   architecture: 'amd64' | 'arm64';
+  expectedMode?: 'boundary' | 'long';
   ready: unknown;
   memory: unknown;
+  checkpoints?: unknown;
   workload: unknown;
   clientExitCode: number | null;
   apiHealthyAfterWorkload: boolean;
@@ -17,18 +19,35 @@ export interface LinuxMemorySnapshot {
   cgroup: { version: 2; currentBytes: number; peakBytes: number; limitBytes: number; swapMaxBytes: number;
     cpuMax: string; events: Record<string, number> };
 }
+export interface LinuxMemoryCheckpoint {
+  iteration: number; elapsedMs: number; memory: LinuxMemorySnapshot;
+}
+export interface LinuxMemoryRetentionTrend {
+  interpretation: 'descriptive_samples_not_proof_of_no_leaks';
+  sampleCount: number; earlyIterations: number[]; lateIterations: number[];
+  firstCheckpointElapsedMs: number; lastCheckpointElapsedMs: number;
+  earlyMeanRssBytes: number; lateMeanRssBytes: number; rssMeanDeltaBytes: number;
+  earlyMeanCgroupCurrentBytes: number; lateMeanCgroupCurrentBytes: number; cgroupCurrentMeanDeltaBytes: number;
+  maxRssGrowthBytes: number; cgroupPeakGrowthBytes: number;
+}
 interface ApiContainerOutcome { running: boolean | null; exitCode: number | null; oomKilled: boolean | null }
 export interface LinuxMemoryScenarioResult {
   schemaVersion: '1'; scenario: MemoryScenario; architecture: 'amd64' | 'arm64';
+  mode: 'boundary' | 'long';
   status: 'passed' | 'failed'; failures: string[];
   thresholds: { headroomTargetBytes: number; serviceReferenceBytes: number };
-  runtime: { node: string; platform: 'linux'; arch: 'x64' | 'arm64'; uid: number; execArgv: string[] } | null;
+  runtime: { node: string; platform: 'linux'; arch: 'x64' | 'arm64'; uid: number; execArgv: string[];
+    allocatorArenaMax: 2; sharpConcurrency: 1 } | null;
   baseline: LinuxMemorySnapshot | null;
   memory: LinuxMemorySnapshot | null;
+  checkpoints: LinuxMemoryCheckpoint[];
+  retentionTrend: LinuxMemoryRetentionTrend | null;
   cgroupEventsDelta: Record<string, number> | null;
   api: { beforeStop: ApiContainerOutcome; afterStop: ApiContainerOutcome };
   workload: { iterations: number; inputBytes: number; selectedEvidenceBytes: number; selectedEvidencePixels: number;
-    iterationElapsedMs: number[]; assertions: Record<string, boolean> } | null;
+    iterationElapsedMs: number[]; assertions: Record<string, boolean>;
+    session: { iterationStartElapsedMs: number[]; elapsedMs: number;
+      renderRequests: number; newGenerationRequests: number; retryGenerationRequests: number } | null } | null;
 }
 
 const MIB = 1024 * 1024;
@@ -40,6 +59,11 @@ const UPLOAD_ASSERTIONS = ['httpCaseCreated', 'fixtureInputBounds', 'fixturePixe
   'exactDimensions', 'pngMetadata', 'replacementDigestStable', 'previewAccepted', 'previewDigestMatches',
   'pngMagic', 'singleCurrentPhoto', 'crossOwnerArtifactDenied'];
 const REJECTION_ASSERTIONS = ['httpCaseCreated', 'pixelLimitRejected', 'inputByteLimitRejected', 'aggregateLimitRejected', 'noPartialUpload'];
+const LONG_ASSERTIONS = ['pacingRespected', 'completeSession', 'noRateLimitResponses'];
+const LONG_PDF_ASSERTIONS = ['artifactFreshEachIteration', 'retryBytesStable'];
+const LONG_ITERATIONS = 12;
+const LONG_INTERVAL_MS = 10_000;
+const REPEAT_SCENARIOS = ['pdf-repeat-16mp', 'upload-repeat-16mp'];
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -77,11 +101,12 @@ function parseMemory(value: unknown): LinuxMemorySnapshot | null {
 }
 
 function parseRuntime(value: unknown, architecture: LinuxMemoryScenarioInput['architecture']): LinuxMemoryScenarioResult['runtime'] {
-  if (!exact(value, ['node', 'platform', 'arch', 'uid', 'execArgv']) || value.node !== PROFILE_NODE_VERSION
+  if (!exact(value, ['node', 'platform', 'arch', 'uid', 'execArgv', 'allocatorArenaMax', 'sharpConcurrency']) || value.node !== PROFILE_NODE_VERSION
     || value.platform !== 'linux' || value.arch !== (architecture === 'amd64' ? 'x64' : 'arm64')
-    || !integer(value.uid, 1, 4_294_967_294) || !sameStrings(value.execArgv, PROFILE_WORKER_NODE_ARGS)) return null;
+    || !integer(value.uid, 1, 4_294_967_294) || !sameStrings(value.execArgv, PROFILE_WORKER_NODE_ARGS)
+    || value.allocatorArenaMax !== 2 || value.sharpConcurrency !== 1) return null;
   return { node: PROFILE_NODE_VERSION, platform: 'linux', arch: value.arch as 'x64' | 'arm64',
-    uid: value.uid, execArgv: [...PROFILE_WORKER_NODE_ARGS] };
+    uid: value.uid, execArgv: [...PROFILE_WORKER_NODE_ARGS], allocatorArenaMax: 2, sharpConcurrency: 1 };
 }
 
 function validContainerConfiguration(value: unknown): boolean {
@@ -121,9 +146,11 @@ function containerOutcome(value: unknown): ApiContainerOutcome {
     oomKilled: typeof state.OOMKilled === 'boolean' ? state.OOMKilled : null };
 }
 
-function parseWorkload(value: unknown, scenario: MemoryScenario): LinuxMemoryScenarioResult['workload'] {
-  const iterations = scenario === 'pdf-repeat-16mp' || scenario === 'upload-repeat-16mp' ? 3 : 1;
-  if (!exact(value, ['schemaVersion', 'kind', 'scenario', 'status', 'iterations', 'workload', 'assertions', 'iterationElapsedMs'])
+function parseWorkload(value: unknown, scenario: MemoryScenario, mode: 'boundary' | 'long'): LinuxMemoryScenarioResult['workload'] {
+  const iterations = mode === 'long' ? LONG_ITERATIONS : REPEAT_SCENARIOS.includes(scenario) ? 3 : 1;
+  const fields = ['schemaVersion', 'kind', 'scenario', 'status', 'iterations', 'workload', 'assertions', 'iterationElapsedMs'];
+  if (mode === 'long') fields.push('mode', 'iterationStartElapsedMs', 'elapsedMs', 'renderRequests', 'newGenerationRequests', 'retryGenerationRequests');
+  if (!exact(value, fields)
     || value.schemaVersion !== '1' || value.kind !== 'workload' || value.scenario !== scenario
     || !['passed', 'failed'].includes(String(value.status)) || value.iterations !== iterations
     || !Array.isArray(value.iterationElapsedMs) || value.iterationElapsedMs.length !== iterations
@@ -140,19 +167,70 @@ function parseWorkload(value: unknown, scenario: MemoryScenario): LinuxMemorySce
   if (['pdf-near24mb', 'pdf-repeat-16mp'].includes(scenario) && sizes.inputBytes < 23 * MIB) return null;
   if (scenario.startsWith('upload-') && !integer(sizes.inputBytes,
     (scenario === 'upload-near8mb-jpeg' ? 7.5 : 6) * MIB, 8 * MIB)) return null;
+  let session: NonNullable<LinuxMemoryScenarioResult['workload']>['session'] = null;
+  if (mode === 'long') {
+    const starts = value.iterationStartElapsedMs, durations = value.iterationElapsedMs;
+    if (value.mode !== 'long' || !Array.isArray(starts) || starts.length !== LONG_ITERATIONS
+      || !starts.every(item => integer(item)) || !integer(value.elapsedMs, LONG_INTERVAL_MS * (LONG_ITERATIONS - 1))
+      || starts.some((item, index) => index > 0 && (item - starts[index - 1] < LONG_INTERVAL_MS
+        || item < starts[index - 1] + durations[index - 1]))
+      || value.elapsedMs < starts.at(-1)! + durations.at(-1)!) return null;
+    const isPdf = scenario.startsWith('pdf-');
+    if (value.renderRequests !== (isPdf ? LONG_ITERATIONS : 0) || value.newGenerationRequests !== (isPdf ? 1 : 0)
+      || value.retryGenerationRequests !== (isPdf ? LONG_ITERATIONS - 1 : 0)) return null;
+    session = { iterationStartElapsedMs: [...starts], elapsedMs: value.elapsedMs,
+      renderRequests: Number(value.renderRequests), newGenerationRequests: Number(value.newGenerationRequests),
+      retryGenerationRequests: Number(value.retryGenerationRequests) };
+  }
   return { iterations, inputBytes: sizes.inputBytes, selectedEvidenceBytes: sizes.selectedEvidenceBytes,
     selectedEvidencePixels: expectedPixels, iterationElapsedMs: [...value.iterationElapsedMs],
-    assertions: { ...value.assertions } as Record<string, boolean> };
+    assertions: { ...value.assertions } as Record<string, boolean>, session };
+}
+
+function parseCheckpoints(value: unknown, mode: 'boundary' | 'long'): { valid: boolean; checkpoints: LinuxMemoryCheckpoint[] } {
+  if (mode === 'boundary') return { valid: value === undefined || (Array.isArray(value) && value.length === 0), checkpoints: [] };
+  if (!Array.isArray(value)) return { valid: false, checkpoints: [] };
+  let valid = value.length === LONG_ITERATIONS;
+  const checkpoints: LinuxMemoryCheckpoint[] = [];
+  for (const [index, candidate] of value.slice(0, LONG_ITERATIONS).entries()) {
+    if (!exact(candidate, ['iteration', 'elapsedMs', 'memory']) || !integer(candidate.iteration, 1, LONG_ITERATIONS)
+      || !integer(candidate.elapsedMs, 1)) { valid = false; continue; }
+    const memory = parseMemory(candidate.memory);
+    if (!memory) { valid = false; continue; }
+    if (candidate.iteration !== index + 1 || (checkpoints.length > 0 && candidate.elapsedMs <= checkpoints.at(-1)!.elapsedMs)) valid = false;
+    checkpoints.push({ iteration: candidate.iteration, elapsedMs: candidate.elapsedMs, memory });
+  }
+  return { valid, checkpoints };
+}
+
+function retentionTrend(checkpoints: LinuxMemoryCheckpoint[]): LinuxMemoryRetentionTrend {
+  const early = checkpoints.slice(0, 3), late = checkpoints.slice(-3);
+  const mean = (values: LinuxMemoryCheckpoint[], metric: (item: LinuxMemorySnapshot) => number) =>
+    Math.round(values.reduce((sum, item) => sum + metric(item.memory), 0) / values.length);
+  const earlyRss = mean(early, item => item.rssBytes), lateRss = mean(late, item => item.rssBytes);
+  const earlyCurrent = mean(early, item => item.cgroup.currentBytes), lateCurrent = mean(late, item => item.cgroup.currentBytes);
+  const first = checkpoints[0], last = checkpoints.at(-1)!;
+  return { interpretation: 'descriptive_samples_not_proof_of_no_leaks', sampleCount: checkpoints.length,
+    earlyIterations: early.map(item => item.iteration), lateIterations: late.map(item => item.iteration),
+    firstCheckpointElapsedMs: first.elapsedMs, lastCheckpointElapsedMs: last.elapsedMs,
+    earlyMeanRssBytes: earlyRss, lateMeanRssBytes: lateRss, rssMeanDeltaBytes: lateRss - earlyRss,
+    earlyMeanCgroupCurrentBytes: earlyCurrent, lateMeanCgroupCurrentBytes: lateCurrent,
+    cgroupCurrentMeanDeltaBytes: lateCurrent - earlyCurrent,
+    maxRssGrowthBytes: last.memory.maxRssBytes - first.memory.maxRssBytes,
+    cgroupPeakGrowthBytes: last.memory.cgroup.peakBytes - first.memory.cgroup.peakBytes };
 }
 
 export function evaluateLinuxMemoryScenario(input: LinuxMemoryScenarioInput): LinuxMemoryScenarioResult {
   const failures: string[] = [];
   const fail = (code: string) => { if (!failures.includes(code)) failures.push(code); };
+  const mode = input.expectedMode ?? 'boundary';
   const result: LinuxMemoryScenarioResult = { schemaVersion: '1', scenario: input.scenario, architecture: input.architecture,
+    mode,
     status: 'failed', failures, thresholds: { headroomTargetBytes: PROFILE_TARGET_BYTES, serviceReferenceBytes: PROFILE_SERVICE_BYTES },
-    runtime: null, baseline: null, memory: null, cgroupEventsDelta: null, workload: null,
+    runtime: null, baseline: null, memory: null, checkpoints: [], retentionTrend: null, cgroupEventsDelta: null, workload: null,
     api: { beforeStop: containerOutcome(input.beforeStopInspect), afterStop: containerOutcome(input.afterStopInspect) } };
-  if (!MEMORY_SCENARIOS.includes(input.scenario) || !['amd64', 'arm64'].includes(input.architecture)) {
+  if (!MEMORY_SCENARIOS.includes(input.scenario) || !['amd64', 'arm64'].includes(input.architecture)
+    || !['boundary', 'long'].includes(mode) || (mode === 'long' && !REPEAT_SCENARIOS.includes(input.scenario))) {
     fail('scenario_configuration_invalid'); return result;
   }
   if (exact(input.ready, ['schemaVersion', 'kind', 'runtime', 'baseline']) && input.ready.schemaVersion === '1' && input.ready.kind === 'ready') {
@@ -163,20 +241,33 @@ export function evaluateLinuxMemoryScenario(input: LinuxMemoryScenarioInput): Li
   if (!result.baseline) fail('baseline_memory_invalid');
   result.memory = parseMemory(input.memory);
   if (!result.memory) fail('final_memory_invalid');
-  for (const snapshot of [result.baseline, result.memory]) {
+  const parsedCheckpoints = parseCheckpoints(input.checkpoints, mode);
+  if (!parsedCheckpoints.valid) fail('iteration_checkpoints_invalid');
+  result.checkpoints = parsedCheckpoints.checkpoints;
+  const snapshots = [result.baseline, ...result.checkpoints.map(item => item.memory), result.memory];
+  let previous: LinuxMemorySnapshot | null = null;
+  for (const snapshot of snapshots) {
     if (!snapshot) continue;
     if (snapshot.cgroup.events.oom !== 0 || snapshot.cgroup.events.oom_kill !== 0
       || (snapshot.cgroup.events.oom_group_kill ?? 0) !== 0) fail('oom_detected');
+    if (snapshot.cgroup.events.max !== 0) fail('cgroup_hard_limit_pressure_detected');
     if (snapshot.maxRssBytes > PROFILE_TARGET_BYTES) fail('rss_headroom_target_exceeded');
     if (snapshot.cgroup.peakBytes > PROFILE_TARGET_BYTES) fail('cgroup_headroom_target_exceeded');
     if (snapshot.maxRssBytes >= PROFILE_SERVICE_BYTES || snapshot.cgroup.peakBytes >= snapshot.cgroup.limitBytes) fail('service_reference_exceeded');
+    if (previous && (snapshot.maxRssBytes < previous.maxRssBytes || snapshot.cgroup.peakBytes < previous.cgroup.peakBytes
+      || snapshot.cgroup.limitBytes !== previous.cgroup.limitBytes || snapshot.cgroup.cpuMax !== previous.cgroup.cpuMax
+      || Object.keys(previous.cgroup.events).length !== Object.keys(snapshot.cgroup.events).length
+      || Object.entries(previous.cgroup.events).some(([key, count]) => snapshot.cgroup.events[key] === undefined || snapshot.cgroup.events[key] < count))) {
+      fail('memory_counters_regressed');
+    }
+    previous = snapshot;
   }
   if (result.baseline && result.memory) {
     const a = result.baseline, b = result.memory;
-    if (b.maxRssBytes < a.maxRssBytes || b.cgroup.peakBytes < a.cgroup.peakBytes
-      || b.cgroup.limitBytes !== a.cgroup.limitBytes || b.cgroup.cpuMax !== a.cgroup.cpuMax
-      || Object.entries(a.cgroup.events).some(([key, count]) => b.cgroup.events[key] === undefined || b.cgroup.events[key] < count)) fail('memory_counters_regressed');
-    else result.cgroupEventsDelta = Object.fromEntries(Object.entries(b.cgroup.events).map(([key, count]) => [key, count - (a.cgroup.events[key] ?? 0)]));
+    if (!failures.includes('memory_counters_regressed')) result.cgroupEventsDelta = Object.fromEntries(Object.entries(b.cgroup.events).map(([key, count]) => [key, count - (a.cgroup.events[key] ?? 0)]));
+  }
+  if (mode === 'long' && parsedCheckpoints.valid && !failures.includes('memory_counters_regressed')) {
+    result.retentionTrend = retentionTrend(result.checkpoints);
   }
   if (!validContainerConfiguration(input.beforeStopInspect) || !validContainerConfiguration(input.afterStopInspect)) fail('container_configuration_invalid');
   if (!record(input.beforeStopInspect) || !record(input.afterStopInspect) || typeof input.beforeStopInspect.Id !== 'string'
@@ -185,11 +276,20 @@ export function evaluateLinuxMemoryScenario(input: LinuxMemoryScenarioInput): Li
   if (!validContainerState(input.afterStopInspect, false)) fail('api_exit_failed');
   if (input.clientExitCode !== 0) fail('client_exit_failed');
   if (input.apiHealthyAfterWorkload !== true) fail('api_unhealthy');
-  result.workload = parseWorkload(input.workload, input.scenario);
+  result.workload = parseWorkload(input.workload, input.scenario, mode);
   if (!result.workload) fail('workload_invalid');
   else {
+    if (mode === 'long' && result.workload.session && parsedCheckpoints.valid) {
+      const session = result.workload.session;
+      if (result.checkpoints.some((checkpoint, index) => checkpoint.elapsedMs < session.iterationStartElapsedMs[index]
+        + result.workload!.iterationElapsedMs[index] - 1 || checkpoint.elapsedMs > session.elapsedMs
+        || (index + 1 < LONG_ITERATIONS && checkpoint.elapsedMs > session.iterationStartElapsedMs[index + 1]))) {
+        fail('checkpoint_timing_invalid'); result.retentionTrend = null;
+      }
+    }
     const required = [...COMMON_ASSERTIONS, ...(input.scenario.startsWith('pdf-') ? PDF_ASSERTIONS
-      : input.scenario.startsWith('upload-') ? UPLOAD_ASSERTIONS : REJECTION_ASSERTIONS)];
+      : input.scenario.startsWith('upload-') ? UPLOAD_ASSERTIONS : REJECTION_ASSERTIONS),
+    ...(mode === 'long' ? LONG_ASSERTIONS : []), ...(mode === 'long' && input.scenario.startsWith('pdf-') ? LONG_PDF_ASSERTIONS : [])];
     if (!exact(result.workload.assertions, required)) fail('workload_assertions_incomplete');
     if (!record(input.workload) || input.workload.status !== 'passed'
       || Object.values(result.workload.assertions).some(flag => flag !== true)) fail('workload_failed');

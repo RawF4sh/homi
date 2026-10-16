@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import type { UploadEvidenceResponse } from '../../src/api/write-evidence.ts';
 import type { EvidenceCatalog } from '../../src/evidence/types.ts';
@@ -9,11 +10,81 @@ import type { CaseSnapshot } from '../../src/types.ts';
 import { readFixture } from '../memory/fixture.ts';
 import type { Scenario, WorkloadMetrics } from '../memory/workload.ts';
 import { AGGREGATE_CASE_ID, API_ORIGIN, CASE_ID, OTHER_TOKEN, TOKEN, baseRequest, parseScenario,
-  scenarioFixture, syntheticDiagnostic, syntheticDraft } from './protocol.ts';
+  scenarioFixture, syntheticDiagnostic, syntheticDraft, assertWorkloadMode, parseWorkloadMode,
+  LONG_SESSION_INTERVAL_MS, LONG_SESSION_ITERATIONS, type LinuxWorkloadMode } from './protocol.ts';
 
 export interface LinuxWorkloadReport {
   schemaVersion: '1'; kind: 'workload'; scenario: Scenario; status: 'passed' | 'failed'; iterations: number;
   workload: WorkloadMetrics; assertions: Record<string, boolean>; iterationElapsedMs: number[];
+  mode?: 'long'; iterationStartElapsedMs?: number[]; elapsedMs?: number;
+  renderRequests?: number; newGenerationRequests?: number; retryGenerationRequests?: number;
+}
+export interface LinuxWorkloadProgress {
+  schemaVersion: '1'; kind: 'workload-progress'; scenario: Scenario; mode: 'long';
+  iteration: number; plannedIterations: 12; iterationElapsedMs: number; elapsedMs: number;
+}
+export interface LinuxWorkloadOptions {
+  mode?: LinuxWorkloadMode; signal?: AbortSignal;
+  now?: () => number;
+  wait?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
+  onProgress?: (progress: LinuxWorkloadProgress) => void | Promise<void>;
+}
+
+export async function runPacedLongSession(operation: (index: number, started: number) => Promise<void>, options: LinuxWorkloadOptions = {}) {
+  const now = options.now ?? (() => Math.floor(performance.now()));
+  const wait = options.wait ?? ((milliseconds, signal) => sleep(milliseconds, undefined, { signal }));
+  const initial = now();
+  const starts: number[] = [], durations: number[] = [];
+  for (let index = 0; index < LONG_SESSION_ITERATIONS; index++) {
+    options.signal?.throwIfAborted();
+    const earliest = index === 0 ? initial : initial + starts[index - 1] + LONG_SESSION_INTERVAL_MS;
+    const delay = earliest - now();
+    if (delay > 0) await wait(delay, options.signal);
+    options.signal?.throwIfAborted();
+    const start = now();
+    if (!Number.isSafeInteger(start) || start < earliest) throw new Error('Invalid synthetic pacing clock.');
+    starts.push(start - initial);
+    await operation(index, start);
+    options.signal?.throwIfAborted();
+    const end = now();
+    if (!Number.isSafeInteger(end) || end <= start) throw new Error('Invalid synthetic operation clock.');
+    durations.push(end - start);
+  }
+  return { starts, durations, elapsedMs: now() - initial };
+}
+
+export function createProgressAcknowledger(publish: (progress: LinuxWorkloadProgress) => void,
+  signals: { on(event: 'SIGUSR2', listener: () => void): unknown; off(event: 'SIGUSR2', listener: () => void): unknown } = process,
+  timeoutMs = 30_000) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) throw new Error('Invalid acknowledgement deadline.');
+  let pending: { resolve: () => void; reject: (error: Error) => void; timer: NodeJS.Timeout } | undefined;
+  let disposed = false;
+  const acknowledge = () => { if (pending) { const current = pending; pending = undefined; clearTimeout(current.timer); current.resolve(); } };
+  signals.on('SIGUSR2', acknowledge);
+  return {
+    report(progress: LinuxWorkloadProgress): Promise<void> {
+      if (disposed || pending) return Promise.reject(new Error('Invalid progress acknowledgement state.'));
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { pending = undefined; reject(new Error('Memory checkpoint acknowledgement timed out.')); }, timeoutMs);
+        pending = { resolve, reject, timer };
+        try { publish(progress); } catch (error) {
+          if (pending) { clearTimeout(pending.timer); pending = undefined; }
+          reject(error);
+        }
+      });
+    },
+    dispose() {
+      disposed = true; signals.off('SIGUSR2', acknowledge);
+      if (pending) { const current = pending; pending = undefined; clearTimeout(current.timer); current.reject(new Error('Memory checkpoint cancelled.')); }
+    },
+  };
+}
+
+export function artifactIsFresh(artifact: Pick<ExportArtifactMetadata, 'generatedAt' | 'expiresAt' | 'recheckAfter'>, now: number) {
+  const generated = Date.parse(artifact.generatedAt), expires = Date.parse(artifact.expiresAt);
+  const policyDeadline = artifact.recheckAfter === null ? expires : Date.parse(artifact.recheckAfter);
+  return Number.isFinite(now) && Number.isFinite(generated) && Number.isFinite(expires) && Number.isFinite(policyDeadline)
+    && generated <= now && now < expires && now < policyDeadline;
 }
 const privateResponse = (response: Response) => response.headers.get('cache-control') === 'no-store'
   && response.headers.get('x-content-type-options') === 'nosniff';
@@ -36,16 +107,44 @@ export async function digestResponse(response: Response, maximum: number) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-export async function runLinuxWorkload(scenario: Scenario, directory: string, transport: typeof fetch = fetch): Promise<LinuxWorkloadReport> {
-  parseScenario(scenario);
-  const iterations = scenario === 'pdf-repeat-16mp' || scenario === 'upload-repeat-16mp' ? 3 : 1;
+export async function runLinuxWorkload(scenario: Scenario, directory: string, transport: typeof fetch = fetch,
+  options: LinuxWorkloadOptions = {}): Promise<LinuxWorkloadReport> {
+  const mode = parseWorkloadMode(options.mode);
+  assertWorkloadMode(scenario, mode);
+  const long = mode === 'long', now = options.now ?? (() => Math.floor(performance.now())), sessionStarted = now();
+  const iterations = long ? LONG_SESSION_ITERATIONS : scenario === 'pdf-repeat-16mp' || scenario === 'upload-repeat-16mp' ? 3 : 1;
   const report: LinuxWorkloadReport = { schemaVersion: '1', kind: 'workload', scenario, status: 'failed', iterations,
-    workload: { inputBytes: 0, selectedEvidenceBytes: 0, selectedEvidencePixels: 0 }, assertions: {}, iterationElapsedMs: [] };
+    workload: { inputBytes: 0, selectedEvidenceBytes: 0, selectedEvidencePixels: 0 }, assertions: {}, iterationElapsedMs: [],
+    ...(long ? { mode: 'long', iterationStartElapsedMs: [], elapsedMs: 0, renderRequests: 0, newGenerationRequests: 0, retryGenerationRequests: 0 } : {}) };
   const check = (name: string, value: boolean) => { report.assertions[name] = (report.assertions[name] ?? true) && value; };
-  const post = (route: string, body: unknown, token = TOKEN) => transport(`${API_ORIGIN}/v1/${route}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(120_000),
-  });
+  const post = async (route: string, body: unknown, token = TOKEN) => {
+    const timeout = AbortSignal.timeout(120_000);
+    const response = await transport(`${API_ORIGIN}/v1/${route}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body), redirect: 'error', signal: options.signal ? AbortSignal.any([timeout, options.signal]) : timeout,
+    });
+    if (long) check('noRateLimitResponses', response.status !== 429);
+    return response;
+  };
+  const runIterations = async (operation: (index: number) => Promise<void>) => {
+    const iteration = async (index: number, started = now()) => {
+      if (long) report.iterationStartElapsedMs!.push(started - sessionStarted);
+      await operation(index);
+      const elapsed = now() - started;
+      if (!Number.isSafeInteger(elapsed) || elapsed < 1) throw new Error('Invalid synthetic operation clock.');
+      report.iterationElapsedMs.push(elapsed);
+      if (long) {
+        if (!Object.values(report.assertions).every(Boolean)) throw new Error('Synthetic iteration assertions failed.');
+        await options.onProgress?.({ schemaVersion: '1', kind: 'workload-progress', scenario, mode: 'long',
+          iteration: index + 1, plannedIterations: 12, iterationElapsedMs: elapsed, elapsedMs: now() - sessionStarted });
+      }
+    };
+    if (long) {
+      await runPacedLongSession(iteration, { ...options, now });
+      check('pacingRespected', report.iterationStartElapsedMs!.every((start, index, all) => index === 0 || start - all[index - 1] >= LONG_SESSION_INTERVAL_MS));
+      check('completeSession', report.iterationElapsedMs.length === LONG_SESSION_ITERATIONS);
+    } else for (let index = 0; index < iterations; index++) await iteration(index);
+  };
   const json = async <T>(route: string, body: unknown, token = TOKEN, expectedStatus = 200): Promise<T> => {
     const response = await post(route, body, token);
     check('privateNoStore', privateResponse(response));
@@ -65,6 +164,7 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
     check('ordinaryReadAccepted', value.caseId === CASE_ID && value.revision === 1);
   };
   try {
+    options.signal?.throwIfAborted();
     if (scenario.startsWith('upload-') || scenario === 'reject-oversize') {
       const created = await json<CaseSnapshot>('create-case', syntheticDraft(1));
       check('httpCaseCreated', created.caseId === CASE_ID && created.revision === 1);
@@ -86,25 +186,31 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
         expectedEvidenceCatalogRevision: count, generationKey: 'synthetic-linux-memory-retry',
         selectedEvidence: Array.from({ length: count }, (_, index) => ({ evidenceId: `synthetic-photo-${index + 1}`,
           expectedEvidenceRevision: 1, reviewedForExport: true })) };
-      let artifactId: string | undefined;
-      for (let index = 0; index < iterations; index++) {
-        const started = performance.now();
+      let artifactId: string | undefined, artifactDigest: string | undefined;
+      await runIterations(async index => {
+        if (long) {
+          report.renderRequests!++; if (index === 0) report.newGenerationRequests!++; else report.retryGenerationRequests!++;
+        }
         const [artifact] = await Promise.all([json<ExportArtifactMetadata>('create-draft-export', body), ordinaryRead()]);
         check('draftOnly', artifact.status === 'draft' && artifact.warnings.includes('INCOMPLETE_DRAFT')
           && artifact.warnings.includes('NOT_SUBMITTED') && artifact.warnings.includes('POLICY_CURRENTNESS_UNKNOWN'));
         check('exactPagesAndSelection', artifact.pageCount === 5 + count && artifact.selectedEvidence.length === count);
         check('retryIdentityPreserved', artifactId === undefined || artifactId === artifact.artifactId);
+        if (long) {
+          check('artifactFreshEachIteration', artifactIsFresh(artifact, Date.now()));
+          check('retryBytesStable', artifactDigest === undefined || artifactDigest === artifact.sha256);
+        }
         check('boundToExactEvidence', artifact.selectedEvidence.every((selected, selectedIndex) =>
           selected.evidenceId === `synthetic-photo-${selectedIndex + 1}` && selected.evidenceRevision === 1 && selected.sha256 === fixture.metadata.sha256));
-        artifactId = artifact.artifactId;
+        artifactId = artifact.artifactId; artifactDigest = artifact.sha256;
         const response = await post('download-draft-export', { ...baseRequest, artifactId });
         check('privateNoStore', privateResponse(response));
         check('downloadAccepted', response.status === 200 && response.headers.get('content-type') === 'application/pdf');
         const downloaded = await digestResponse(response, 32 * 1024 * 1024);
         check('pdfMagic', downloaded.prefix.subarray(0, 5).toString('ascii') === '%PDF-');
         check('downloadDigestMatches', downloaded.bytes === artifact.byteLength && downloaded.sha256 === artifact.sha256);
-        report.iterationElapsedMs.push(Math.ceil(performance.now() - started));
-      }
+        if (long) check('artifactFreshEachIteration', artifactIsFresh(artifact, Date.now()));
+      });
       check('crossOwnerArtifactDenied', await failure('download-draft-export', { ...baseRequest, artifactId }, 404, 'ARTIFACT_NOT_FOUND', OTHER_TOKEN));
     } else if (scenario.startsWith('upload-')) {
       const { name } = scenarioFixture(scenario);
@@ -116,8 +222,8 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
       const body = { ...baseRequest, evidenceId: 'synthetic-photo-1', findingId: 'synthetic-finding', capturedAt: null,
         imageBase64: fixture.bytes.toString('base64') };
       let previousHash: string | undefined;
-      for (let index = 0; index < iterations; index++) {
-        const started = performance.now(), revision = index + 1;
+      await runIterations(async index => {
+        const revision = index + 1;
         const [uploaded] = await Promise.all([json<UploadEvidenceResponse>('upload-evidence', { ...body,
           expectedCatalogRevision: index, expectedEvidenceRevision: index }), ordinaryRead()]);
         const descriptor = uploaded.evidence;
@@ -136,8 +242,7 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
         const catalog = await json<EvidenceCatalog>('list-evidence', baseRequest);
         check('singleCurrentPhoto', catalog.catalogRevision === revision && catalog.caseRevision === 1
           && catalog.evidence.length === 1 && catalog.evidence[0].evidenceRevision === revision && catalog.evidence[0].sha256 === descriptor.sha256);
-        report.iterationElapsedMs.push(Math.ceil(performance.now() - started));
-      }
+      });
       check('crossOwnerArtifactDenied', await failure('download-evidence', { ...baseRequest, expectedCatalogRevision: iterations,
         evidenceId: 'synthetic-photo-1', expectedEvidenceRevision: iterations }, 404, 'ARTIFACT_NOT_FOUND', OTHER_TOKEN));
     } else {
@@ -160,13 +265,22 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
     await ordinaryRead();
     check('workerCompleted', true);
   } catch (error) { syntheticDiagnostic('http-workload', error); check('workerCompleted', false); }
+  if (long) report.elapsedMs = now() - sessionStarted;
   report.status = Object.values(report.assertions).every(Boolean) && report.iterationElapsedMs.length === iterations ? 'passed' : 'failed';
   return report;
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  if (process.argv.length !== 4) { console.error('Synthetic HTTP workload arguments are invalid.'); process.exitCode = 1; }
-  else Promise.resolve().then(() => runLinuxWorkload(parseScenario(process.argv[2]), process.argv[3])).then(report => {
-    console.log(JSON.stringify(report)); if (report.status !== 'passed') process.exitCode = 1;
-  }, () => { console.error('Synthetic HTTP workload failed.'); process.exitCode = 1; });
+  if (process.argv.length !== 4 && process.argv.length !== 5) { console.error('Synthetic HTTP workload arguments are invalid.'); process.exitCode = 1; }
+  else {
+    let acknowledger: ReturnType<typeof createProgressAcknowledger> | undefined;
+    Promise.resolve().then(() => {
+      const mode = parseWorkloadMode(process.argv[4]);
+      if (mode === 'long') acknowledger = createProgressAcknowledger(progress => console.log(JSON.stringify(progress)));
+      return runLinuxWorkload(parseScenario(process.argv[2]), process.argv[3], fetch, { mode,
+        ...(acknowledger ? { onProgress: acknowledger.report } : {}) });
+    }).then(report => {
+      console.log(JSON.stringify(report)); if (report.status !== 'passed') process.exitCode = 1;
+    }, () => { console.error('Synthetic HTTP workload failed.'); process.exitCode = 1; }).finally(() => { acknowledger?.dispose(); });
+  }
 }

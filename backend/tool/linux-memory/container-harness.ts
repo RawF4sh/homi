@@ -4,7 +4,8 @@ import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SCENARIOS, type Scenario } from '../memory/workload.ts';
-import { evaluateLinuxMemoryScenario } from './report.ts';
+import { evaluateLinuxMemoryScenario, type LinuxMemoryScenarioInput } from './report.ts';
+import { LONG_SESSION_ITERATIONS, type SessionMode } from './protocol.ts';
 
 const BACKEND = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const FIXTURES = '/lab/sah-memory-fixtures';
@@ -14,12 +15,14 @@ const POSTGRES_IMAGE = 'postgres:18.4-bookworm';
 export interface LinuxOptions {
   socket: string; architecture: 'amd64' | 'arm64'; emulation: 'none' | 'qemu-system';
   output: string; scenarios: Scenario[]; docker: string; openssl: string;
+  mode: SessionMode;
+  imageSource?: 'registry' | 'cache';
 }
 export function parseLinuxOptions(args: string[]): LinuxOptions {
   const values: Record<string, string> = {};
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i], value = args[i + 1];
-    if (!['--socket', '--architecture', '--emulation', '--output', '--scenario', '--docker', '--openssl'].includes(key)
+    if (!['--socket', '--architecture', '--emulation', '--output', '--scenario', '--docker', '--openssl', '--mode', '--image-source'].includes(key)
       || !value || value.startsWith('--') || Object.hasOwn(values, key)) throw new Error('Invalid Linux profile arguments.');
     values[key] = value;
   }
@@ -32,26 +35,37 @@ export function parseLinuxOptions(args: string[]): LinuxOptions {
   }
   const selected = values['--scenario'] ?? 'all';
   if (selected !== 'all' && !SCENARIOS.includes(selected as Scenario)) throw new Error('Unknown scenario.');
+  const mode = values['--mode'] ?? 'boundary';
+  if (mode !== 'boundary' && mode !== 'long') throw new Error('Unknown session mode.');
+  const imageSource = values['--image-source'] ?? 'registry';
+  if (imageSource !== 'registry' && imageSource !== 'cache') throw new Error('Unknown image source.');
+  const repeated: Scenario[] = ['upload-repeat-16mp', 'pdf-repeat-16mp'];
+  if (mode === 'long' && selected !== 'all' && !repeated.includes(selected as Scenario)) throw new Error('Long sessions require a repeated upload or PDF scenario.');
   return { socket, output, architecture: values['--architecture'] as LinuxOptions['architecture'],
-    emulation: values['--emulation'] as LinuxOptions['emulation'], scenarios: selected === 'all' ? [...SCENARIOS] : [selected as Scenario],
+    emulation: values['--emulation'] as LinuxOptions['emulation'], mode, imageSource,
+    scenarios: selected === 'all' ? mode === 'long' ? repeated : [...SCENARIOS] : [selected as Scenario],
     docker: values['--docker'] ?? 'docker', openssl: values['--openssl'] ?? 'openssl' };
 }
 export interface CommandResult { code: number | null; stdout: string; stderr: string; timedOut: boolean }
-export function runCommand(file: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs = 120_000, signal?: AbortSignal): Promise<CommandResult> {
+export function runCommand(file: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs = 120_000,
+  signal?: AbortSignal, onStdout?: (chunk: string) => void): Promise<CommandResult> {
   return new Promise((resolveResult, reject) => {
     const child = spawn(file, args, { shell: false, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const cancel = () => child.kill('SIGKILL');
     signal?.addEventListener('abort', cancel, { once: true });
     if (signal?.aborted) cancel();
-    let stdout = '', stderr = '', timedOut = false, overflow = false;
+    let stdout = '', stderr = '', timedOut = false, overflow = false, observerFailed = false;
     const append = (isError: boolean, data: Buffer) => {
       if (stdout.length + stderr.length + data.length > 2 * 1024 * 1024) { overflow = true; child.kill('SIGKILL'); return; }
-      if (isError) stderr += data.toString('utf8'); else stdout += data.toString('utf8');
+      if (isError) stderr += data.toString('utf8'); else {
+        const text = data.toString('utf8'); stdout += text;
+        try { onStdout?.(text); } catch { observerFailed = true; child.kill('SIGKILL'); }
+      }
     };
     child.stdout.on('data', data => append(false, data)); child.stderr.on('data', data => append(true, data));
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
     child.on('error', error => { clearTimeout(timer); signal?.removeEventListener('abort', cancel); reject(error); });
-    child.on('close', code => { clearTimeout(timer); signal?.removeEventListener('abort', cancel); resolveResult({ code: overflow || signal?.aborted ? -1 : code, stdout, stderr, timedOut }); });
+    child.on('close', code => { clearTimeout(timer); signal?.removeEventListener('abort', cancel); resolveResult({ code: overflow || observerFailed || signal?.aborted ? -1 : code, stdout, stderr, timedOut }); });
   });
 }
 export function localDockerEnvironment(socket: string, config: string): NodeJS.ProcessEnv {
@@ -66,11 +80,59 @@ export function apiContainerArgs(name: string, network: string, volume: string, 
     'node', '--max-old-space-size=64', '--max-semi-space-size=1', 'tool/linux-memory/server.ts'];
 }
 function jsonLines(output: string, kind: string): unknown | undefined {
+  return allJsonLines(output, kind).reverse()[0];
+}
+function allJsonLines(output: string, kind: string): unknown[] {
   return output.split('\n').filter(line => line.startsWith('{')).map(line => {
     try { return JSON.parse(line); } catch { return undefined; }
-  }).reverse().find(value => value?.kind === kind);
+  }).filter(value => value?.kind === kind);
+}
+export function parseCheckpointProgress(line: string, scenario: Scenario, expectedIteration: number): { iteration: number; elapsedMs: number } | undefined {
+  if (!line.startsWith('{')) return;
+  const value = JSON.parse(line);
+  if (value.kind !== 'workload-progress') return;
+  const keys = ['schemaVersion', 'kind', 'scenario', 'mode', 'iteration', 'plannedIterations', 'iterationElapsedMs', 'elapsedMs'];
+  if (Object.keys(value).length !== keys.length || !keys.every(key => Object.hasOwn(value, key))
+    || value.schemaVersion !== '1' || value.scenario !== scenario || value.mode !== 'long'
+    || value.plannedIterations !== LONG_SESSION_ITERATIONS || value.iteration !== expectedIteration
+    || expectedIteration < 1 || expectedIteration > LONG_SESSION_ITERATIONS
+    || !Number.isSafeInteger(value.elapsedMs) || value.elapsedMs < 1
+    || !Number.isSafeInteger(value.iterationElapsedMs) || value.iterationElapsedMs < 1) throw new Error('Invalid session checkpoint progress.');
+  return { iteration: value.iteration, elapsedMs: value.elapsedMs };
 }
 const delay = (ms: number) => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
+
+type MeasuredScenario = Pick<LinuxMemoryScenarioInput,
+  'scenario' | 'architecture' | 'expectedMode' | 'ready' | 'checkpoints' | 'workload' | 'clientExitCode'>;
+interface ScenarioFinalization {
+  inspect: () => Promise<unknown>;
+  snapshot: () => Promise<unknown>;
+  stop: () => Promise<void>;
+}
+function inspectionRunning(value: unknown): boolean | undefined {
+  if (!value || typeof value !== 'object' || !('State' in value) || !value.State || typeof value.State !== 'object'
+    || !('Running' in value.State) || typeof value.State.Running !== 'boolean') return;
+  return value.State.Running;
+}
+
+export async function finalizeMeasuredScenario(input: MeasuredScenario, operations: ScenarioFinalization) {
+  let before: unknown, after: unknown, memory: unknown;
+  const failures: string[] = [];
+  try { before = await operations.inspect(); } catch { failures.push('api_initial_inspection_failed'); }
+  if (inspectionRunning(before) === true) {
+    try { memory = await operations.snapshot(); } catch { failures.push('final_memory_capture_failed'); }
+  }
+  if (inspectionRunning(before) !== false) {
+    try { await operations.stop(); } catch { failures.push('api_graceful_stop_failed'); }
+  }
+  try { after = await operations.inspect(); } catch { failures.push('api_final_inspection_failed'); }
+  const workload = input.workload as { assertions?: Record<string, boolean> } | undefined;
+  const result = evaluateLinuxMemoryScenario({ ...input, memory, beforeStopInspect: before, afterStopInspect: after,
+    apiHealthyAfterWorkload: inspectionRunning(before) === true && workload?.assertions?.ordinaryReadAccepted === true
+      && workload?.assertions?.workerCompleted === true });
+  if (failures.length) { result.failures.push(...failures); result.status = 'failed'; }
+  return result;
+}
 
 export async function profileLinux(options: LinuxOptions): Promise<boolean> {
   const socket = await lstat(options.socket);
@@ -92,10 +154,12 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
   const cancel = () => abort.abort();
   process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
   const report: Record<string, unknown> = { schemaVersion: '1', kind: 'linux-memory-profile', status: 'failed',
-    startedAt: new Date().toISOString(), architecture: options.architecture, emulation: options.emulation,
+    startedAt: new Date().toISOString(), architecture: options.architecture, emulation: options.emulation, mode: options.mode,
+    imageSource: options.imageSource ?? 'registry',
     host: { platform: process.platform, arch: process.arch }, targetBytes: 400_000_000, limitBytes: 500_000_000,
     cases: [], cleanup: { status: 'pending' }, boundaries: ['synthetic auth transport', 'internal HTTP, verified database TLS',
-      'API cgroup excludes PostgreSQL/client/fixture generation', 'no hosted load or provider usage'] };
+      'API cgroup excludes PostgreSQL/client/fixture generation',
+      'no production API or Supabase/Railway requests; hosted runner usage may apply'] };
   const checked = async (args: string[], timeout = 120_000) => {
     if (abort.signal.aborted) throw new Error('Linux profile interrupted; cleaning up owned resources.');
     const result = await runCommand(options.docker, args, env, timeout, abort.signal);
@@ -114,18 +178,28 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
     do { if (await check()) return; await delay(500); } while (Date.now() < end);
     throw new Error(`${description} deadline exceeded.`);
   };
-  const toolContainer = async (suffix: string, network: string, volume: string, image: string, command: string[], user = '1000:1000') => {
+  const toolContainer = async (suffix: string, network: string, volume: string, image: string, command: string[], user = '1000:1000',
+    onLine?: (line: string) => Promise<void>) => {
     const name = `${id}-${suffix}`;
     await create('container', name, ['create', '--name', name, '--label', `${LABEL}=${id}`, '--network', network,
       '--memory', '1200000000', '--memory-swap', '1200000000', '--cpus', '1', '--pids-limit', '128',
       '--read-only', '--security-opt', 'no-new-privileges', '--user', user,
       '--mount', `type=volume,src=${volume},dst=/lab${suffix === 'prepare' ? '' : ',readonly'}`,
       '--tmpfs', '/tmp:rw,noexec,nosuid,size=16777216', image, ...command]);
-    const result = await runCommand(options.docker, ['start', '--attach', name], env, 600_000, abort.signal);
+    let remaining = '', observed: Promise<void> = Promise.resolve(), observationError: unknown;
+    const result = await runCommand(options.docker, ['start', '--attach', name], env, 600_000, abort.signal, onLine ? chunk => {
+      remaining += chunk;
+      const lines = remaining.split('\n'); remaining = lines.pop()!;
+      for (const line of lines) observed = observed.then(async () => {
+        if (!observationError) await onLine(line);
+      }).catch(error => { observationError = error; });
+    } : undefined);
+    await observed;
     await writeFile(join(temporary, `${suffix}-log.txt`), result.stdout + result.stderr, { mode: 0o600 });
     const state = (await inspect(name)).State;
     if (state.Running) await checked(['stop', '--time', '10', name]);
-    return { ...result, code: result.code !== 0 || state.Running || state.OOMKilled || result.timedOut ? -1 : state.ExitCode };
+    if (observationError) console.error('Session checkpoint observation failed; retaining partial measurements as a failed run.');
+    return { ...result, code: observationError || result.code !== 0 || state.Running || state.OOMKilled || result.timedOut ? -1 : state.ExitCode };
   };
   let success = false;
   try {
@@ -135,8 +209,11 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
     report.engine = { version: info.ServerVersion, architecture: info.Architecture, kernel: info.KernelVersion, cgroupVersion: info.CgroupVersion };
     const imageDetails: Record<string, unknown> = {};
     for (const tag of [NODE_IMAGE, POSTGRES_IMAGE]) {
-      console.log(`Pulling public ${tag} for linux/${options.architecture}.`);
-      await checked(['pull', '--platform', `linux/${options.architecture}`, tag], 600_000);
+      if (options.imageSource === 'cache') console.log(`Inspecting cached ${tag} for linux/${options.architecture}.`);
+      else {
+        console.log(`Pulling public ${tag} for linux/${options.architecture}.`);
+        await checked(['pull', '--platform', `linux/${options.architecture}`, tag], 600_000);
+      }
       const image = JSON.parse(await checked(['image', 'inspect', tag]))[0];
       if (image.Architecture !== options.architecture || image.Os !== 'linux' || !image.RepoDigests?.length) throw new Error('Pinned image identity unavailable.');
       imageDetails[tag] = { id: image.Id, digest: image.RepoDigests[0], architecture: image.Architecture };
@@ -209,22 +286,45 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
         }
         return ready !== undefined;
       });
-      const client = await toolContainer(`client-${index}`, network, volume, labImage, ['node', 'tool/linux-memory/workload.ts', scenario, FIXTURES]);
-      const workload = jsonLines(client.stdout, 'workload');
-      const apiLogs = await runCommand(options.docker, ['logs', api], env, 30_000, abort.signal);
-      await writeFile(join(temporary, `api-${index}-log.txt`), apiLogs.stdout + apiLogs.stderr, { mode: 0o600 });
-      const before = await inspect(api);
-      let memory: unknown;
-      if (before.State.Running) {
+      let samples = 0;
+      const checkpointMemory = async () => {
+        const previousCount = samples;
         await checked(['kill', '--signal', 'SIGUSR2', api]);
-        await waitFor('Cgroup snapshot', async () => { memory = jsonLines(await checked(['logs', api]), 'memory'); return memory !== undefined; }, 30_000);
-        await checked(['stop', '--time', '30', api]);
-      }
-      const after = await inspect(api);
-      const completedRead = (workload as { assertions?: Record<string, boolean> } | undefined)?.assertions;
-      const result = evaluateLinuxMemoryScenario({ scenario, architecture: options.architecture, ready, memory, workload,
-        clientExitCode: client.code, apiHealthyAfterWorkload: before.State.Running && completedRead?.ordinaryReadAccepted === true
-          && completedRead?.workerCompleted === true, beforeStopInspect: before, afterStopInspect: after });
+        let snapshot: unknown;
+        await waitFor('Cgroup snapshot', async () => {
+          const entries = allJsonLines(await checked(['logs', api]), 'memory');
+          if (entries.length > previousCount + 1) throw new Error('Unexpected extra memory snapshot.');
+          if (entries.length === previousCount + 1) { snapshot = entries[previousCount]; samples++; return true; }
+          return false;
+        }, 30_000);
+        return snapshot;
+      };
+      const checkpoints: { iteration: number; elapsedMs: number; memory: unknown }[] = [];
+      const onProgress = async (line: string) => {
+        const progress = parseCheckpointProgress(line, scenario, checkpoints.length + 1);
+        if (!progress) return;
+        const memory = await checkpointMemory();
+        checkpoints.push({ ...progress, memory });
+        console.log(`Checkpoint ${progress.iteration}/${LONG_SESSION_ITERATIONS}: ${scenario}.`);
+        await checked(['kill', '--signal', 'SIGUSR2', `${id}-client-${index}`]);
+      };
+      let client: CommandResult | undefined;
+      const observationFailures: string[] = [];
+      try {
+        client = await toolContainer(`client-${index}`, network, volume, labImage,
+          ['node', 'tool/linux-memory/workload.ts', scenario, FIXTURES, ...(options.mode === 'long' ? ['long'] : [])],
+          '1000:1000', options.mode === 'long' ? onProgress : undefined);
+      } catch { observationFailures.push('client_observation_failed'); }
+      try {
+        const apiLogs = await runCommand(options.docker, ['logs', api], env, 30_000, abort.signal);
+        await writeFile(join(temporary, `api-${index}-log.txt`), apiLogs.stdout + apiLogs.stderr, { mode: 0o600 });
+        if (apiLogs.code !== 0 || apiLogs.timedOut) observationFailures.push('api_diagnostic_capture_failed');
+      } catch { observationFailures.push('api_diagnostic_capture_failed'); }
+      const result = await finalizeMeasuredScenario({ scenario, architecture: options.architecture, ready,
+        workload: client ? jsonLines(client.stdout, 'workload') : undefined, expectedMode: options.mode, checkpoints,
+        clientExitCode: client?.code ?? null }, { inspect: () => inspect(api), snapshot: checkpointMemory,
+        stop: async () => { await checked(['stop', '--time', '30', api]); } });
+      if (observationFailures.length) { result.failures.push(...observationFailures); result.status = 'failed'; }
       (report.cases as unknown[]).push(result);
       console.log(JSON.stringify(result));
       await checked(['rm', '--force', db, api]); await checked(['volume', 'rm', data]);
@@ -245,12 +345,22 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
     report.cleanup = { status: failed.length ? 'failed' : 'passed', remainingOwnedResources: failed };
     report.finishedAt = new Date().toISOString(); report.status = success && !failed.length ? 'passed' : 'failed';
     if (report.status !== 'passed') report.diagnosticDirectory = basename(temporary);
-    await reportHandle.writeFile(JSON.stringify(report, null, 2) + '\n'); await reportHandle.close();
-    await rm(join(temporary, 'tls'), { recursive: true, force: true });
-    await rm(join(temporary, 'runtime-context'), { recursive: true, force: true });
-    await rm(join(temporary, 'lab-context'), { recursive: true, force: true });
-    if (report.status === 'passed') await rm(temporary, { recursive: true, force: true });
-    process.off('SIGINT', cancel); process.off('SIGTERM', cancel);
+    try {
+      await reportHandle.writeFile(JSON.stringify(report, null, 2) + '\n');
+    } finally {
+      try { await reportHandle.close(); }
+      finally {
+        try {
+          const deletions = await Promise.allSettled(['tls', 'runtime-context', 'lab-context']
+            .map(name => rm(join(temporary, name), { recursive: true, force: true })));
+          const rejected = deletions.find(result => result.status === 'rejected');
+          if (rejected?.status === 'rejected') throw rejected.reason;
+          if (report.status === 'passed') await rm(temporary, { recursive: true, force: true });
+        } finally {
+          process.off('SIGINT', cancel); process.off('SIGTERM', cancel);
+        }
+      }
+    }
   }
   return report.status === 'passed';
 }
