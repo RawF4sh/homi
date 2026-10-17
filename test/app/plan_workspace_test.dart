@@ -126,7 +126,14 @@ void main() {
         expect(find.byKey(const ValueKey('case-room-scans')), findsNothing);
         await tapKey(tester, 'case-assistant');
         expect(find.byType(PlanAssistantScreen), findsOneWidget);
-        expect(find.text(words.text('AI coming later')), findsOneWidget);
+        expect(
+          find.text(
+            words.text(
+              'AI chat is available on compatible iPhones. Android AI is coming later.',
+            ),
+          ),
+          findsOneWidget,
+        );
         expect(find.byType(TextField), findsNothing);
         await tapKey(tester, 'assistant-rooms');
         expect(find.byType(PlanAssistantScreen), findsNothing);
@@ -308,7 +315,12 @@ void main() {
       await tester.pumpAndSettle();
       await preview(tester, dark ? 'assistant-dark' : 'assistant');
       expect(find.byType(TextField), findsNothing);
-      expect(find.text('AI coming later'), findsOneWidget);
+      expect(
+        find.text(
+          'AI chat is available on compatible iPhones. Android AI is coming later.',
+        ),
+        findsOneWidget,
+      );
       await tapKey(tester, 'assistant-next-step');
       await tapKey(tester, 'assistant-rooms');
       await tapKey(tester, 'assistant-help');

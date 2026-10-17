@@ -62,6 +62,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PlanAssistantScreen(
+          coordinator: services.coordinator,
           onSection: (section) {
             Navigator.of(context).pop();
             _selectTab(section);
