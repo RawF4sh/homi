@@ -31,7 +31,7 @@ function inputFor(scenario: LinuxMemoryScenarioInput['scenario'] = 'pdf-solid-16
   const selectedEvidenceBytes = scenario.startsWith('upload-') ? 21_000_000 : inputBytes * (scenario === 'pdf-six-16mp' ? 6 : 1);
   return { scenario, architecture: 'amd64' as 'amd64' | 'arm64',
     ready: { schemaVersion: '1', kind: 'ready', runtime: { node: '24.22.0', platform: 'linux', arch: 'x64', uid: 1000,
-      execArgv: ['--max-old-space-size=64', '--max-semi-space-size=1'] }, baseline: snapshot() }, memory: snapshot(),
+      execArgv: ['--max-old-space-size=64', '--max-semi-space-size=1'], allocatorArenaMax: 2, sharpConcurrency: 1 }, baseline: snapshot() }, memory: snapshot(),
     workload: { schemaVersion: '1', kind: 'workload', scenario, status: 'passed', iterations,
       workload: { inputBytes, selectedEvidenceBytes, selectedEvidencePixels: scenario === 'pdf-six-16mp' ? 15_996_000
         : scenario === 'upload-near8mb-jpeg' ? 7_290_000 : scenario === 'reject-oversize' ? 32_000_000 : 16_000_000 },
@@ -96,6 +96,9 @@ const metricFailures: [string, (input: ReturnType<typeof inputFor>) => void, str
   ['forced GC flag', i => { i.ready.runtime.execArgv.push('--expose-gc'); }, 'runtime_invalid'],
   ['wrong V8 heap limit', i => { i.ready.runtime.execArgv[0] = '--max-old-space-size=128'; }, 'runtime_invalid'],
   ['root runtime', i => { i.ready.runtime.uid = 0; }, 'runtime_invalid'],
+  ['different allocator arena limit', i => { i.ready.runtime.allocatorArenaMax = 4; }, 'runtime_invalid'],
+  ['unbounded allocator arenas', i => { i.ready.runtime.allocatorArenaMax = 0; }, 'runtime_invalid'],
+  ['increased Sharp image concurrency', i => { i.ready.runtime.sharpConcurrency = 2; }, 'runtime_invalid'],
   ['KiB conversion mismatch', i => { i.memory.maxRssBytes++; }, 'final_memory_invalid'],
   ['current exceeds peak', i => { i.memory.cgroup.currentBytes = 300_000_001; }, 'final_memory_invalid'],
   ['zero peak', i => { i.memory.cgroup.peakBytes = 0; }, 'final_memory_invalid'],
@@ -126,6 +129,15 @@ test('absent memory, partial cgroup events, and snapshot error reports cannot pa
   }
   input.memory = snapshot(); input.ready = undefined;
   assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('baseline_memory_invalid'));
+});
+
+test('reports without the measured allocator and Sharp settings cannot pass the current runtime profile', () => {
+  for (const field of ['allocatorArenaMax', 'sharpConcurrency']) {
+    const input = inputFor(); Reflect.deleteProperty(input.ready.runtime, field);
+    assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('runtime_invalid'));
+  }
+  const report = evaluateLinuxMemoryScenario(inputFor());
+  assert.equal(report.runtime?.allocatorArenaMax, 2); assert.equal(report.runtime?.sharpConcurrency, 1);
 });
 
 const containerFailures: [string, (inspect: ReturnType<typeof inspection>) => void][] = [
@@ -217,4 +229,156 @@ test('ordinary safety failures preserve measured peaks for diagnosis without acc
   const result = evaluateLinuxMemoryScenario(input);
   assert.equal(result.status, 'failed'); assert.equal(result.memory?.cgroup.peakBytes, 450_000_000);
   assert.deepEqual(result.failures, ['cgroup_headroom_target_exceeded', 'client_exit_failed', 'workload_assertions_incomplete']);
+});
+
+function longInput(scenario: 'pdf-repeat-16mp' | 'upload-repeat-16mp' = 'pdf-repeat-16mp') {
+  const input = inputFor(scenario);
+  const iterations = 12;
+  return { ...input, expectedMode: 'long' as const,
+    checkpoints: Array.from({ length: iterations }, (_, index) => ({ iteration: index + 1,
+      elapsedMs: index * 10_000 + 125, memory: snapshot() })),
+    workload: { ...input.workload, mode: 'long', iterations,
+      iterationElapsedMs: Array<number>(iterations).fill(125),
+      iterationStartElapsedMs: Array.from({ length: iterations }, (_, index) => index * 10_000),
+      elapsedMs: 110_126, renderRequests: scenario.startsWith('pdf-') ? 12 : 0,
+      newGenerationRequests: scenario.startsWith('pdf-') ? 1 : 0,
+      retryGenerationRequests: scenario.startsWith('pdf-') ? 11 : 0,
+      assertions: { ...input.workload.assertions, pacingRespected: true, completeSession: true, noRateLimitResponses: true,
+        ...(scenario.startsWith('pdf-') ? { artifactFreshEachIteration: true, retryBytesStable: true } : {}) } as Record<string, boolean> } };
+}
+
+test('explicit long upload and PDF modes require 12 paced iterations with memory after every iteration', () => {
+  for (const scenario of ['pdf-repeat-16mp', 'upload-repeat-16mp'] as const) {
+    const input = longInput(scenario), report = evaluateLinuxMemoryScenario(input);
+    assert.equal(report.status, 'passed', report.failures.join(','));
+    assert.equal(report.mode, 'long'); assert.equal(report.checkpoints.length, 12);
+    assert.deepEqual(report.workload?.session, { iterationStartElapsedMs: input.workload.iterationStartElapsedMs,
+      elapsedMs: 110_126, renderRequests: scenario.startsWith('pdf-') ? 12 : 0,
+      newGenerationRequests: scenario.startsWith('pdf-') ? 1 : 0, retryGenerationRequests: scenario.startsWith('pdf-') ? 11 : 0 });
+    assert.deepEqual(report.retentionTrend, { interpretation: 'descriptive_samples_not_proof_of_no_leaks', sampleCount: 12,
+      earlyIterations: [1, 2, 3], lateIterations: [10, 11, 12], firstCheckpointElapsedMs: 125, lastCheckpointElapsedMs: 110_125,
+      earlyMeanRssBytes: 204_800_000, lateMeanRssBytes: 204_800_000, rssMeanDeltaBytes: 0,
+      earlyMeanCgroupCurrentBytes: 220_000_000, lateMeanCgroupCurrentBytes: 220_000_000, cgroupCurrentMeanDeltaBytes: 0,
+      maxRssGrowthBytes: 0, cgroupPeakGrowthBytes: 0 });
+  }
+});
+
+test('retention summaries report current-memory movement separately from cumulative peak growth and detach input', () => {
+  const input = longInput();
+  input.checkpoints.forEach(({ memory }, index) => {
+    memory.rssBytes += index * 1_000_000;
+    memory.cgroup.currentBytes -= index * 500_000;
+    memory.maxRssKiB += index * 1000; memory.maxRssBytes = memory.maxRssKiB * 1024;
+    memory.cgroup.peakBytes += index * 2_000_000;
+  });
+  input.memory = structuredClone(input.checkpoints.at(-1)!.memory);
+  const report = evaluateLinuxMemoryScenario(input);
+  assert.equal(report.status, 'passed', report.failures.join(','));
+  assert.equal(report.retentionTrend?.rssMeanDeltaBytes, 9_000_000);
+  assert.equal(report.retentionTrend?.cgroupCurrentMeanDeltaBytes, -4_500_000);
+  assert.equal(report.retentionTrend?.maxRssGrowthBytes, 11_264_000);
+  assert.equal(report.retentionTrend?.cgroupPeakGrowthBytes, 22_000_000);
+  input.checkpoints[0].memory.rssBytes = 1; input.workload.iterationStartElapsedMs[0] = 123;
+  assert.equal(report.checkpoints[0].memory.rssBytes, 204_800_000);
+  assert.equal(report.workload?.session?.iterationStartElapsedMs[0], 0);
+});
+
+test('boundary and long workload modes cannot substitute for one another or broaden the scenario set', () => {
+  const long = longInput();
+  assert.ok(evaluateLinuxMemoryScenario({ ...long, expectedMode: 'boundary' }).failures.includes('workload_invalid'));
+  assert.ok(evaluateLinuxMemoryScenario({ ...inputFor('pdf-repeat-16mp'), expectedMode: 'long' }).failures.includes('workload_invalid'));
+  assert.deepEqual(evaluateLinuxMemoryScenario({ ...long, scenario: 'pdf-solid-16mp' }).failures, ['scenario_configuration_invalid']);
+  assert.deepEqual(evaluateLinuxMemoryScenario({ ...long, expectedMode: 'unsupported' as 'long' }).failures, ['scenario_configuration_invalid']);
+});
+
+const longWorkloadFailures: [string, (input: ReturnType<typeof longInput>) => void][] = [
+  ['truncated iterations', input => { input.workload.iterations = 11; }],
+  ['truncated durations', input => { input.workload.iterationElapsedMs.pop(); }],
+  ['truncated starts', input => { input.workload.iterationStartElapsedMs.pop(); }],
+  ['unpaced requests', input => { input.workload.iterationStartElapsedMs[1]--; }],
+  ['overlapping requests', input => { input.workload.iterationElapsedMs[0] = 10_001; }],
+  ['short total elapsed', input => { input.workload.elapsedMs = 110_124; }],
+  ['nonfinite elapsed', input => { input.workload.elapsedMs = Infinity; }],
+  ['rendering skipped', input => { input.workload.renderRequests = 1; }],
+  ['new artifacts each iteration', input => { input.workload.newGenerationRequests = 12; }],
+  ['retries skipped', input => { input.workload.retryGenerationRequests = 0; }],
+];
+for (const [name, change] of longWorkloadFailures) test(`long report fails closed for ${name}`, () => {
+  const input = longInput(); change(input);
+  assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('workload_invalid'));
+});
+
+test('long assertion omissions and failed response checks fail even if all measurements are within target', () => {
+  for (const assertion of ['pacingRespected', 'completeSession', 'noRateLimitResponses', 'artifactFreshEachIteration', 'retryBytesStable']) {
+    const input = longInput(); delete input.workload.assertions[assertion];
+    assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('workload_assertions_incomplete'));
+    input.workload.assertions[assertion] = false;
+    assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('workload_failed'));
+  }
+});
+
+test('missing, truncated, duplicated, reordered, malformed or extra long checkpoints cannot pass', () => {
+  const changes: ((input: ReturnType<typeof longInput>) => unknown)[] = [
+    () => undefined, () => null,
+    input => input.checkpoints.slice(0, 11),
+    input => [...input.checkpoints, input.checkpoints[11]],
+    input => input.checkpoints.map((item, index) => index === 5 ? input.checkpoints[4] : item),
+    input => [...input.checkpoints].reverse(),
+    input => input.checkpoints.map((item, index) => index === 5 ? { ...item, memory: {} } : item),
+    input => input.checkpoints.map((item, index) => index === 5 ? { ...item, elapsedMs: 1 } : item),
+  ];
+  for (const change of changes) {
+    const input = longInput();
+    const result = evaluateLinuxMemoryScenario({ ...input, checkpoints: change(input) });
+    assert.equal(result.status, 'failed'); assert.equal(result.retentionTrend, null);
+    assert.ok(result.failures.includes('iteration_checkpoints_invalid'));
+  }
+  const input = longInput(); input.checkpoints.pop(); input.checkpoints[5].memory.cgroup.peakBytes = 401_000_000;
+  const failed = evaluateLinuxMemoryScenario(input);
+  assert.equal(failed.checkpoints.length, 11);
+  assert.ok(failed.failures.includes('cgroup_headroom_target_exceeded'));
+});
+
+test('per-iteration checkpoint clocks must correspond to completed workload iterations', () => {
+  for (const elapsedMs of [122, 10_001, 120_000]) {
+    const input = longInput(); input.checkpoints[0].elapsedMs = elapsedMs;
+    const result = evaluateLinuxMemoryScenario(input);
+    assert.equal(result.status, 'failed'); assert.equal(result.retentionTrend, null);
+    assert.ok(result.failures.includes(elapsedMs === 122 || elapsedMs === 10_001 ? 'checkpoint_timing_invalid' : 'iteration_checkpoints_invalid'));
+  }
+  const rounding = longInput(); rounding.checkpoints[0].elapsedMs--;
+  assert.equal(evaluateLinuxMemoryScenario(rounding).status, 'passed');
+});
+
+test('every checkpoint must satisfy RSS, cgroup, hard-limit and OOM checks even if final metrics appear healthy', () => {
+  const mutations: [(memory: ReturnType<typeof snapshot>) => void, string][] = [
+    [memory => { memory.maxRssKiB = 400_000; memory.maxRssBytes = 409_600_000; }, 'rss_headroom_target_exceeded'],
+    [memory => { memory.cgroup.peakBytes = 401_000_000; }, 'cgroup_headroom_target_exceeded'],
+    [memory => { memory.cgroup.peakBytes = memory.cgroup.limitBytes; }, 'service_reference_exceeded'],
+    [memory => { memory.cgroup.events.oom = 1; }, 'oom_detected'],
+    [memory => { memory.cgroup.events.oom_kill = 1; }, 'oom_detected'],
+    [memory => { memory.cgroup.events.max = 1; }, 'cgroup_hard_limit_pressure_detected'],
+  ];
+  for (const [change, failure] of mutations) {
+    const input = longInput(); change(input.checkpoints[5].memory);
+    const report = evaluateLinuxMemoryScenario(input);
+    assert.ok(report.failures.includes(failure), report.failures.join(','));
+    assert.ok(report.failures.includes('memory_counters_regressed'));
+    assert.equal(report.retentionTrend, null); assert.equal(report.cgroupEventsDelta, null);
+  }
+});
+
+test('monotonic checkpoint counters and final snapshot are required across the full session', () => {
+  for (const change of [
+    (memory: ReturnType<typeof snapshot>) => { memory.maxRssKiB--; memory.maxRssBytes -= 1024; },
+    (memory: ReturnType<typeof snapshot>) => { memory.cgroup.peakBytes--; },
+    (memory: ReturnType<typeof snapshot>) => { memory.cgroup.limitBytes -= 4096; },
+    (memory: ReturnType<typeof snapshot>) => { memory.cgroup.cpuMax = '50000 50000'; },
+    (memory: ReturnType<typeof snapshot>) => { Object.assign(memory.cgroup.events, { oom_group_kill: 0 }); },
+  ]) {
+    const input = longInput(); change(input.checkpoints[7].memory);
+    assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('memory_counters_regressed'));
+  }
+  const input = longInput(); input.memory.cgroup.peakBytes--;
+  assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('memory_counters_regressed'));
 });

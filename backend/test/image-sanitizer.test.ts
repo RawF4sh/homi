@@ -140,3 +140,15 @@ test('caller mutation after invocation cannot replace image pixels or metadata',
   const result = await pending;
   assert.equal(result.width, 12); assert.equal(result.height, 8);
 });
+
+test('sanitizer returns an exact private allocation without sharing input, pooled backing storage or other results', async () => {
+  const input = await image(), original = Buffer.from(input);
+  const first = await sanitizeEvidenceImage(input), second = await sanitizeEvidenceImage(input);
+  assert.equal(first.bytes.constructor, Uint8Array);
+  assert.equal(first.bytes.byteOffset, 0); assert.equal(first.bytes.buffer.byteLength, first.byteLength);
+  assert.notEqual(first.bytes.buffer, input.buffer); assert.notEqual(first.bytes.buffer, second.bytes.buffer);
+  const expected = createHash('sha256').update(second.bytes).digest('hex');
+  first.bytes.fill(0);
+  assert.deepEqual(input, original); assert.equal(createHash('sha256').update(second.bytes).digest('hex'), expected);
+  assert.equal(second.sha256, expected);
+});

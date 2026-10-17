@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { createSupabaseAuthenticator } from '../src/auth/supabase-auth.ts';
 import { AUTH, OTHER, OTHER_TOKEN, OWNER, TOKEN, parseScenario, syntheticAuthFetch } from '../tool/linux-memory/protocol.ts';
-import { parseCgroupEvents, parseCgroupInteger } from '../tool/linux-memory/server.ts';
+import { allocatorArenaMax, parseCgroupEvents, parseCgroupInteger } from '../tool/linux-memory/server.ts';
 import { digestResponse, runLinuxWorkload } from '../tool/linux-memory/workload.ts';
 
 test('container telemetry requires finite byte limits and complete nonduplicated cgroup counters', () => {
@@ -15,6 +15,13 @@ test('container telemetry requires finite byte limits and complete nonduplicated
   for (const value of ['low 0\nhigh 0\nmax 0\noom 0\n',
     'low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\nlow 1\n',
     'low 0\nhigh 0\nmax 0\noom 0\noom_kill -1\n']) assert.throws(() => parseCgroupEvents(value));
+});
+
+test('allocator telemetry rejects values that do not represent a canonical decimal startup setting', () => {
+  assert.equal(allocatorArenaMax('2'), 2); assert.equal(allocatorArenaMax('4'), 4); assert.equal(allocatorArenaMax('0'), 0);
+  for (const value of ['', '0x2', ' 2', '2 ', '2\n', '+2', '02', '2.0', '-2', 'NaN', '9007199254740992']) {
+    assert.equal(allocatorArenaMax(value), null);
+  }
 });
 
 test('synthetic auth transport exercises provider parsing and separates fictional owners', async () => {

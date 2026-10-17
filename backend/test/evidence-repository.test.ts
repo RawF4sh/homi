@@ -6,6 +6,7 @@ import { MemoryCaseRepository } from '../src/api/memory-case-repository.ts';
 import { sanitizeEvidenceImage } from '../src/evidence/image-sanitizer.ts';
 import { parseEvidenceSelections, parseEvidenceAsset, parseSanitizedEvidenceImage } from '../src/evidence/validation.ts';
 import type { ExportPublishInput } from '../src/evidence/repository.ts';
+import type { SanitizedEvidenceImage } from '../src/evidence/types.ts';
 import type { CaseSnapshot } from '../src/types.ts';
 import { createSavedFormAnswers } from '../src/forms/form-answers.ts';
 import { registerTrustedEvidence, type TrustedEvidenceRegistration } from '../src/evidence/register-trusted-evidence.ts';
@@ -347,4 +348,39 @@ test('trusted registration does not expose private decoder or storage exception 
   const result = await registerTrustedEvidence(await registration(), { cases: repository, now: () => new Date(NOW),
     sanitize: async () => { throw new Error('private filename /secret/location'); } });
   assert.deepEqual(result, { status: 'invalid_image' });
+});
+
+test('injected sanitizers cannot bypass canonical byte, dimension or digest validation', async () => {
+  for (const change of [
+    (value: SanitizedEvidenceImage) => { value.bytes[0] ^= 255; },
+    (value: SanitizedEvidenceImage) => { value.width++; },
+    (value: SanitizedEvidenceImage) => { value.sha256 = '0'.repeat(64); },
+    (value: SanitizedEvidenceImage) => { value.byteLength++; },
+  ]) {
+    const repository = setup(), supplied = structuredClone(await imagePromise); change(supplied);
+    let saved = false; const originalSave = repository.saveEvidenceIfCurrent.bind(repository);
+    repository.saveEvidenceIfCurrent = async input => { saved = true; return originalSave(input); };
+    const result = await registerTrustedEvidence(await registration(), { cases: repository, now: () => new Date(NOW),
+      sanitize: async () => supplied });
+    assert.deepEqual(result, { status: 'invalid_image' }); assert.equal(saved, false);
+  }
+});
+
+test('injected sanitizer bytes and metadata are captured before late adapter mutation reaches storage', async () => {
+  const repository = setup(), expected = structuredClone(await imagePromise), supplied = structuredClone(expected);
+  const originalBytes = supplied.bytes; let scheduled = false, mutated = false;
+  Object.defineProperty(supplied, 'bytes', { enumerable: true, get() {
+    if (!scheduled) {
+      scheduled = true; queueMicrotask(() => { originalBytes.fill(0); supplied.sha256 = '0'.repeat(64); mutated = true; });
+    }
+    return originalBytes;
+  } });
+  const originalSave = repository.saveEvidenceIfCurrent.bind(repository);
+  repository.saveEvidenceIfCurrent = async input => {
+    const bytes = input.image.bytes; await Promise.resolve();
+    assert.equal(mutated, true); assert.deepEqual(bytes, expected.bytes); assert.equal(input.image.sha256, expected.sha256);
+    return originalSave(input);
+  };
+  const result = await registerTrustedEvidence(await registration(), { cases: repository, now: () => new Date(NOW), sanitize: async () => supplied });
+  assert.equal(result.status, 'saved');
 });
