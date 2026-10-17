@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_language.dart';
 import 'catalogs/common.dart';
+import 'catalogs/plan_workspace.dart';
 import 'catalogs/sharing.dart';
 import 'catalogs/sensitive_sharing.dart';
 import 'catalogs/tracking.dart';
@@ -37,6 +38,7 @@ class AppLocalizations {
     GlobalCupertinoLocalizations.delegate,
   ];
   static const catalogs = [
+    planWorkspaceTranslations,
     scanSyncTranslations,
     sharingTranslations,
     sensitiveSharingTranslations,

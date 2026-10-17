@@ -7,7 +7,6 @@ import 'package:safe_at_home/features/auth/login_screen.dart';
 import 'package:safe_at_home/features/cases/case_home_screen.dart';
 import 'package:safe_at_home/features/cases/profile_editor_screen.dart';
 import 'package:safe_at_home/features/settings/account_settings_screen.dart';
-import 'package:safe_at_home/shared/presentation/sah_components.dart';
 import 'case_coordinator_test.dart' show FakeSession, FakeTransport;
 import 'live_workflows_test.dart' show MemoryPrivateStore, services, input;
 import '../services/case_evidence_api_client_test.dart' as http;
@@ -191,26 +190,15 @@ void main() {
       await reveal(tester, find.text('1 of 8 answered'));
       expect(find.text('1 of 8 answered'), findsOneWidget);
 
-      await reveal(tester, find.byKey(const ValueKey('case-programs')));
+      await tester.tap(find.byKey(const ValueKey('plan-tab-help')));
+      await tester.pumpAndSettle();
       expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('case-programs')),
-          matching: find.text('Save online first.'),
+        find.text(
+          'Sync your plan before checking assistance. Local contacts are still available.',
         ),
         findsOneWidget,
       );
-      expect(
-        tester
-            .widget<SahActionTile>(find.byKey(const ValueKey('case-programs')))
-            .onTap,
-        isNull,
-      );
-      expect(
-        tester
-            .widget<SahActionTile>(find.byKey(const ValueKey('case-programs')))
-            .status,
-        'Cannot start yet',
-      );
+      expect(find.byKey(const ValueKey('program-refresh')), findsNothing);
       expect(transport.requests.map((r) => r.endpoint.path), [
         '/v2/list-cases',
         '/v1/create-case',

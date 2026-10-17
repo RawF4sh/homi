@@ -15,8 +15,15 @@ import '../requests/private_export_screen.dart';
 import '../requests/request_history_screen.dart';
 
 class LiveProgramsScreen extends StatefulWidget {
-  const LiveProgramsScreen({super.key, required this.services});
+  const LiveProgramsScreen({
+    super.key,
+    required this.services,
+    this.workspaceMode = false,
+    this.header,
+  });
   final AppServices services;
+  final bool workspaceMode;
+  final Widget? header;
   @override
   State<LiveProgramsScreen> createState() => _LiveProgramsScreenState();
 }
@@ -328,15 +335,21 @@ class _LiveProgramsScreenState extends State<LiveProgramsScreen>
         !c.hasUnsavedChanges;
     return Scaffold(
       appBar: AppBar(
-        title: Text(context.tr('Possible assistance')),
-        actions: [LocalHelpButton(services: widget.services)],
+        title: Text(
+          context.tr(widget.workspaceMode ? 'Help' : 'Possible assistance'),
+        ),
+        actions: [
+          if (!widget.workspaceMode) LocalHelpButton(services: widget.services),
+        ],
       ),
       body: SafeArea(
         child: SahContent(
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              SahPageHeader(title: context.tr('Possible assistance')),
+              if (widget.header != null) widget.header!,
+              if (!widget.workspaceMode)
+                SahPageHeader(title: context.tr('Possible assistance')),
               if (widget.services.config.trackingEnabled)
                 Align(
                   alignment: AlignmentDirectional.centerStart,

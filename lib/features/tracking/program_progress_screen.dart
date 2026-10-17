@@ -17,17 +17,19 @@ class ProgramProgressScreen extends StatefulWidget {
     super.key,
     required this.services,
     this.tasksFirst = false,
+    this.workspaceMode = false,
     this.findingId,
     this.referralId,
   });
   final AppServices services;
   final bool tasksFirst;
+  final bool workspaceMode;
   final String? findingId, referralId;
   @override
-  State<ProgramProgressScreen> createState() => _ProgramProgressScreenState();
+  State<ProgramProgressScreen> createState() => ProgramProgressScreenState();
 }
 
-class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
+class ProgramProgressScreenState extends State<ProgramProgressScreen> {
   late final String _caseId = widget.services.coordinator.currentCase().caseId;
   late final int _generation = widget.services.coordinator.generation;
   late bool _tasks =
@@ -35,6 +37,7 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
       widget.findingId != null ||
       widget.referralId != null;
   bool _busy = true, _fresh = false;
+  bool get canLeave => !_busy;
   String? _error;
   ProgressService get service => widget.services.progress!;
   ProgressSnapshot? get saved => service.cached[_caseId];
@@ -371,7 +374,15 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
     final today = DateTime.now().toIso8601String().substring(0, 10);
     return Scaffold(
       appBar: AppBar(
-        title: Text(context.tr(_tasks ? 'My next steps' : 'Program progress')),
+        title: Text(
+          context.tr(
+            widget.workspaceMode
+                ? 'Tasks'
+                : _tasks
+                ? 'My next steps'
+                : 'Program progress',
+          ),
+        ),
         actions: [
           IconButton(
             onPressed: _busy ? null : _load,
@@ -385,11 +396,12 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              Text(
-                context.tr(
-                  'Manual reports do not verify submission, eligibility, approval, or completed repairs.',
+              if (!widget.workspaceMode)
+                Text(
+                  context.tr(
+                    'Manual reports do not verify submission, eligibility, approval, or completed repairs.',
+                  ),
                 ),
-              ),
               const SizedBox(height: 12),
               if (widget.findingId != null) ...[
                 Text(context.tr('Next steps for this concern')),
@@ -413,7 +425,9 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
                         widget.referralId!,
                   }),
                 ),
-              if (widget.findingId == null && widget.referralId == null)
+              if (!widget.workspaceMode &&
+                  widget.findingId == null &&
+                  widget.referralId == null)
                 SegmentedButton<bool>(
                   segments: [
                     ButtonSegment(
@@ -521,11 +535,6 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
                   onPressed: editable ? () => _edit() : null,
                   icon: const Icon(Icons.add),
                   label: Text(context.tr('Add next step')),
-                ),
-                Text(
-                  context.tr(
-                    'Due dates are personal targets. They are not verified agency deadlines. A responsible person label does not share this plan or assign a signed-in helper.',
-                  ),
                 ),
                 if (tasks.isEmpty)
                   Padding(
@@ -697,10 +706,34 @@ class _ProgramProgressScreenState extends State<ProgramProgressScreen> {
                     ),
                   ),
                 const SizedBox(height: 16),
-                Text(
-                  context.tr(
-                    'Reminders are local to this device. Open the app to sync remote changes. Device settings may delay or prevent delivery.',
-                  ),
+                ExpansionTile(
+                  title: Text(context.tr('About tasks and reminders')),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        context.tr(
+                          'Manual reports do not verify submission, eligibility, approval, or completed repairs.',
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        context.tr(
+                          'Due dates are personal targets. They are not verified agency deadlines. A responsible person label does not share this plan or assign a signed-in helper.',
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        context.tr(
+                          'Reminders are local to this device. Open the app to sync remote changes. Device settings may delay or prevent delivery.',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ] else ...[
                 if (state == null || state.programs.isEmpty)

@@ -73,6 +73,8 @@ void main() {
         localized(const Locale('en'), CaseWorkspaceScreen(services: off)),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('plan-tab-help')));
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('case-local-help')), findsNothing);
       final app = await make();
       await tester.pumpWidget(
@@ -81,6 +83,9 @@ void main() {
           CaseWorkspaceScreen(key: UniqueKey(), services: app),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('plan-tab-help')));
       await tester.pumpAndSettle();
       await tap(tester, find.byKey(const ValueKey('case-local-help')));
       expect(find.byType(LocalHelpScreen), findsOneWidget);

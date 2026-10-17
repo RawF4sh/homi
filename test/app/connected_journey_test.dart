@@ -301,7 +301,8 @@ void main() {
       expect(revision(), 2);
       expect((serverCase!['profile'] as Map)['annualIncomeUsd'], 0);
       expect((serverCase!['profile'] as Map)['ageYears'], isNull);
-      await tap('Possible assistance and drafts');
+      await tester.tap(find.byKey(const ValueKey('plan-tab-help')));
+      await tester.pumpAndSettle();
       await tap('Details');
       await tester.scrollUntilVisible(
         find.text('A professional must review medical necessity.'),

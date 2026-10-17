@@ -17,21 +17,19 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             key: UniqueKey(),
-            home: CaseWorkspaceScreen(services: h.services),
+            home: CaseWorkspaceScreen(
+              services: h.services,
+              homeSafetyCatalog: h.server.catalog,
+            ),
           ),
         );
         await tester.pumpAndSettle();
-        final tile = find.byKey(const ValueKey('case-rooms-checklist'));
-        if (enabled) {
-          await tester.scrollUntilVisible(
-            tile,
-            300,
-            scrollable: find.byType(Scrollable).first,
-          );
-          expect(tile, findsOneWidget);
-        } else {
-          expect(tile, findsNothing);
-        }
+        await tester.tap(find.byKey(const ValueKey('plan-tab-rooms')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byType(HomeSafetyScreen),
+          enabled ? findsOneWidget : findsNothing,
+        );
         await tester.pumpWidget(const SizedBox());
         h.services.dispose();
       }

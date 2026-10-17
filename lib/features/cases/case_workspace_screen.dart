@@ -1,4 +1,6 @@
 import '../sharing/sharing_screens.dart';
+import '../assistant/plan_assistant_screen.dart';
+import '../../shared/presentation/sah_floating_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
@@ -8,6 +10,7 @@ import '../programs/live_programs_screen.dart';
 import '../tracking/program_progress_screen.dart';
 import '../local_help/local_help_screen.dart';
 import '../assessment/domain/measurement/measurement_fields.dart';
+import '../assessment/domain/home_safety/home_safety.dart';
 import '../assessment/presentation/live_assessment_screen.dart';
 import '../assessment/presentation/home_safety/home_safety_screen.dart';
 import 'case_display_details.dart';
@@ -15,8 +18,13 @@ import 'profile_editor_screen.dart';
 import 'plan_name_dialog.dart';
 
 class CaseWorkspaceScreen extends StatefulWidget {
-  const CaseWorkspaceScreen({super.key, required this.services});
+  const CaseWorkspaceScreen({
+    super.key,
+    required this.services,
+    this.homeSafetyCatalog,
+  });
   final AppServices services;
+  final HomeSafetyCatalog? homeSafetyCatalog;
 
   @override
   State<CaseWorkspaceScreen> createState() => _CaseWorkspaceScreenState();
@@ -25,6 +33,87 @@ class CaseWorkspaceScreen extends StatefulWidget {
 class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
   AppServices get services => widget.services;
   bool _renaming = false;
+  int _tab = 0;
+  String? _roomId;
+  final _roomsKey = GlobalKey<HomeSafetyScreenState>();
+  final _tasksKey = GlobalKey<ProgramProgressScreenState>();
+
+  void _selectTab(int value) {
+    if (value == _tab || !services.coordinator.isCurrent) return;
+    if (services.coordinator.hasUndurableEdits ||
+        services.coordinator.busy ||
+        _roomsKey.currentState?.canLeave == false ||
+        _tasksKey.currentState?.canLeave == false) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.tr('Finish saving before changing sections.')),
+        ),
+      );
+      return;
+    }
+    if (_roomsKey.currentState != null) {
+      _roomId = _roomsKey.currentState!.selectedRoom;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _tab = value);
+  }
+
+  void _assistant() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PlanAssistantScreen(
+          onSection: (section) {
+            Navigator.of(context).pop();
+            _selectTab(section);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _helpLinks(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (services.config.localHelpEnabled)
+        SahActionTile(
+          key: const ValueKey('case-local-help'),
+          title: context.tr('Find local help'),
+          icon: Icons.location_on_outlined,
+          onTap: services.coordinator.hasUndurableEdits
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => LocalHelpScreen(services: services),
+                  ),
+                ),
+        ),
+    ],
+  );
+
+  Widget _unavailableSection(
+    BuildContext context, {
+    required String title,
+    required String message,
+    bool help = false,
+  }) => Scaffold(
+    appBar: AppBar(title: Text(context.tr(title))),
+    body: SafeArea(
+      child: SahContent(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            if (help) _helpLinks(context),
+            SahNotice(message: context.tr(message)),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => _selectTab(0),
+              child: Text(context.tr('Return to plan')),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 
   Future<void> _rename() async {
     final c = services.coordinator;
@@ -90,7 +179,10 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: services.coordinator,
+    listenable: Listenable.merge([
+      services.coordinator,
+      if (services.progress != null) services.progress!,
+    ]),
     builder: (context, _) {
       final c = services.coordinator;
       final draft = c.draft;
@@ -133,8 +225,28 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
       void open(Widget screen) => Navigator.of(
         context,
       ).push(MaterialPageRoute<void>(builder: (_) => screen));
+      final progress = services.progress;
+      final savedProgress = progress?.cached[draft.caseId];
+      final today = DateTime.now().toIso8601String().substring(0, 10);
+      final due =
+          savedProgress?.caseRevision == c.snapshot?.revision &&
+              progress?.pending.containsKey(draft.caseId) != true
+          ? savedProgress?.tasks
+                .where(
+                  (t) =>
+                      t.open &&
+                      t.state != 'blocked' &&
+                      !t.needsReview &&
+                      t.dueOn != null &&
+                      t.dueOn!.compareTo(today) <= 0,
+                )
+                .toList()
+          : null;
+      due?.sort((a, b) => a.dueOn!.compareTo(b.dueOn!));
       final next = _nextStep(
         context,
+        taskTitle: due?.firstOrNull?.title,
+        onTasks: () => _selectTab(3),
         answered: answered,
         unsaved: c.snapshot == null || c.hasUnsavedChanges,
         neverSaved: c.snapshot == null,
@@ -142,12 +254,12 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
         toReview: toReview,
         onProfile: () => open(ProfileEditorScreen(services: services)),
         onSave: () => _run(context, c.save),
-        onAssessment: () => open(LiveAssessmentScreen(services: services)),
-        onPrograms: () => open(LiveProgramsScreen(services: services)),
+        onAssessment: () => _selectTab(1),
+        onPrograms: () => _selectTab(2),
       );
-      return Scaffold(
+      final overview = Scaffold(
         appBar: AppBar(
-          title: Text(planTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: Text(context.tr('Plan')),
           actions: [
             if (services.config.permissionSharingEnabled)
               IconButton(
@@ -336,22 +448,9 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                       child: Text(context.tr('Check saved state')),
                     ),
                 ],
-                if (services.config.localHelpEnabled)
-                  SahActionTile(
-                    key: const ValueKey('case-local-help'),
-                    title: context.tr('Find local help'),
-                    subtitle: context.tr(
-                      'Official referrals, saved contacts and follow-ups',
-                    ),
-                    icon: Icons.support_agent,
-                    onTap: c.busy || c.hasUndurableEdits
-                        ? null
-                        : () => open(LocalHelpScreen(services: services)),
-                  ),
-                SahSectionHeading(title: context.tr('Your plan')),
+                SahSectionHeading(title: context.tr('Plan details')),
                 SahActionTile(
                   key: const ValueKey('case-profile'),
-                  overline: context.tr('Step 1 · Resident'),
                   title: context.tr('Resident details'),
                   subtitle: answered == 0
                       ? null
@@ -370,115 +469,110 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                       ? null
                       : () => open(ProfileEditorScreen(services: services)),
                 ),
-                if (services.config.homeSafetyEnabled)
-                  SahActionTile(
-                    key: const ValueKey('case-room-scans'),
-                    title: context.tr('Room scans'),
-                    icon: Icons.view_in_ar,
-                    onTap: c.busy || c.snapshot == null
-                        ? null
-                        : () => open(
-                            HomeSafetyScreen(
-                              services: services,
-                              scansFirst: true,
-                            ),
-                          ),
-                  ),
-                if (services.config.homeSafetyEnabled)
-                  SahActionTile(
-                    key: const ValueKey('case-rooms-checklist'),
-                    title: context.tr('Rooms and checklist'),
-                    subtitle: context.tr(
-                      'Name each room and review home safety questions. Photos are optional.',
-                    ),
-                    icon: Icons.checklist_rounded,
-                    onTap: c.busy || c.snapshot == null
-                        ? null
-                        : () => open(HomeSafetyScreen(services: services)),
-                  ),
                 SahActionTile(
-                  key: const ValueKey('case-assessment'),
-                  overline: context.tr('Step 2 · Rooms and concerns'),
-                  title: context.tr('Home assessment'),
-                  subtitle: c.snapshot == null
-                      ? context.tr('Save online first.')
-                      : context.tr(
-                          'Choose a room or area. Record what is difficult with a scan, photos or notes.',
-                        ),
-                  status: c.snapshot == null
-                      ? context.tr('Cannot start yet')
-                      : saved.isEmpty
-                      ? context.tr('No findings saved online yet')
-                      : toReview == 0
-                      ? context.tr('{count} saved online · none to review', {
-                          'count': saved.length,
-                        })
-                      : context.tr(
-                          '{count} saved online · {review} to review',
-                          {'count': saved.length, 'review': toReview},
-                        ),
-                  statusIcon: c.snapshot == null
-                      ? Icons.lock_outline_rounded
-                      : saved.isEmpty
-                      ? Icons.radio_button_unchecked_rounded
-                      : Icons.cloud_done_outlined,
-                  icon: Icons.home_outlined,
-                  onTap: c.busy
-                      ? null
-                      : () async {
-                          if (c.snapshot == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  context.tr(
-                                    'Save this case online once to start the assessment. After that it also works offline.',
-                                  ),
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-                          open(LiveAssessmentScreen(services: services));
-                        },
-                ),
-                if (services.config.trackingEnabled)
-                  SahActionTile(
-                    key: const ValueKey('case-next-steps'),
-                    title: context.tr('My next steps'),
-                    subtitle: context.tr(
-                      'Program progress, tasks, and device reminders',
-                    ),
-                    icon: Icons.checklist_rounded,
-                    onTap: programsBlocked
-                        ? null
-                        : () => open(
-                            ProgramProgressScreen(
-                              services: services,
-                              tasksFirst: true,
-                            ),
-                          ),
-                  ),
-                SahActionTile(
-                  key: const ValueKey('case-programs'),
-                  overline: context.tr('Step 3 · Improvements and assistance'),
-                  title: context.tr('Possible assistance and drafts'),
-                  subtitle: programsBlocked
-                      ? context.tr('Save online first.')
-                      : null,
-                  status: programsBlocked
-                      ? context.tr('Cannot start yet')
-                      : context.tr('Ready to check'),
-                  statusIcon: programsBlocked
-                      ? Icons.lock_outline_rounded
-                      : Icons.arrow_forward_rounded,
-                  icon: Icons.article_outlined,
-                  onTap: programsBlocked
-                      ? null
-                      : () => open(LiveProgramsScreen(services: services)),
+                  key: const ValueKey('case-assistant'),
+                  title: context.tr('Ask about this plan'),
+                  subtitle: context.tr('AI coming later'),
+                  icon: Icons.chat_bubble_outline_rounded,
+                  onTap: _assistant,
                 ),
               ],
             ),
           ),
+        ),
+      );
+      final section = switch (_tab) {
+        1 when c.snapshot != null && services.config.homeSafetyEnabled =>
+          HomeSafetyScreen(
+            key: _roomsKey,
+            catalog: widget.homeSafetyCatalog,
+            services: services,
+            workspaceMode: true,
+            initialRoomId: _roomId,
+          ),
+        1 when c.snapshot != null => Scaffold(
+          appBar: AppBar(title: Text(context.tr('Rooms'))),
+          body: SafeArea(
+            child: SahContent(
+              child: ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  SahActionTile(
+                    title: context.tr('Home assessment'),
+                    icon: Icons.home_outlined,
+                    onTap: () => open(LiveAssessmentScreen(services: services)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        1 => _unavailableSection(
+          context,
+          title: 'Rooms',
+          message:
+              'Sync this plan once to start. Saved rooms can then be edited offline.',
+        ),
+        2 when !programsBlocked => LiveProgramsScreen(
+          services: services,
+          workspaceMode: true,
+          header: _helpLinks(context),
+        ),
+        2 => _unavailableSection(
+          context,
+          title: 'Help',
+          message:
+              'Sync your plan before checking assistance. Local contacts are still available.',
+          help: true,
+        ),
+        3 when !programsBlocked && services.config.trackingEnabled =>
+          ProgramProgressScreen(
+            key: _tasksKey,
+            services: services,
+            tasksFirst: true,
+            workspaceMode: true,
+          ),
+        3 => _unavailableSection(
+          context,
+          title: 'Tasks',
+          message: services.config.trackingEnabled
+              ? 'Sync your plan before updating tasks.'
+              : 'Tasks are not available yet.',
+        ),
+        _ => overview,
+      };
+      return Scaffold(
+        extendBody: true,
+        body: SafeArea(top: false, left: false, right: false, child: section),
+        bottomNavigationBar: SahFloatingNavBar(
+          selectedIndex: _tab,
+          onDestinationSelected: _selectTab,
+          destinations: [
+            NavigationDestination(
+              key: const ValueKey('plan-tab-plan'),
+              icon: const Icon(Icons.home_outlined),
+              selectedIcon: const Icon(Icons.home),
+              label: context.tr('Plan'),
+            ),
+            NavigationDestination(
+              key: const ValueKey('plan-tab-rooms'),
+              icon: const Icon(Icons.grid_view_outlined),
+              selectedIcon: const Icon(Icons.grid_view_rounded),
+              label: context.tr('Rooms'),
+            ),
+            NavigationDestination(
+              key: const ValueKey('plan-tab-help'),
+              icon: const Icon(Icons.support_agent_outlined),
+              selectedIcon: const Icon(Icons.support_agent),
+              label: context.tr('Help'),
+            ),
+            NavigationDestination(
+              key: const ValueKey('plan-tab-tasks'),
+              icon: const Icon(Icons.checklist_outlined),
+              selectedIcon: const Icon(Icons.checklist),
+              label: context.tr('Tasks'),
+            ),
+          ],
         ),
       );
     },
@@ -487,6 +581,8 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
 
 Widget _nextStep(
   BuildContext context, {
+  String? taskTitle,
+  required VoidCallback onTasks,
   required int answered,
   required bool unsaved,
   required bool neverSaved,
@@ -524,16 +620,24 @@ Widget _nextStep(
         label: Text(context.tr('Retry sync')),
       ),
     ),
-    _ when savedFindings == 0 => (
-      context.tr('Assess the home'),
-      context.tr(
-        'Describe where getting around is difficult. Scan the bathroom or add notes and photos from any area.',
+    _ when taskTitle != null => (
+      context.tr('Review your next task'),
+      taskTitle,
+      FilledButton.icon(
+        key: const ValueKey('case-next-task'),
+        onPressed: onTasks,
+        icon: const Icon(Icons.checklist_rounded),
+        label: Text(context.tr('Open tasks')),
       ),
+    ),
+    _ when savedFindings == 0 => (
+      context.tr('Start with a room'),
+      context.tr('Choose a room, then scan or answer a few questions.'),
       FilledButton.icon(
         key: const ValueKey('case-next-assessment'),
         onPressed: onAssessment,
         icon: const Icon(Icons.home_outlined),
-        label: Text(context.tr('Open assessment')),
+        label: Text(context.tr('Open rooms')),
       ),
     ),
     _ when toReview > 0 => (
@@ -549,7 +653,7 @@ Widget _nextStep(
         key: const ValueKey('case-next-assessment'),
         onPressed: onAssessment,
         icon: const Icon(Icons.rate_review_outlined),
-        label: Text(context.tr('Open assessment')),
+        label: Text(context.tr('Open rooms')),
       ),
     ),
     _ => (
