@@ -14,6 +14,8 @@ final class BathroomScanPlatform {
     channel.setMethodCallHandler { call, result in
       switch call.method {
       case "capabilities": result(capabilities())
+      case "homeCapabilities": result(["supported": homeSupported()])
+      case "startHome": startHome(call.arguments, result: result)
       case "start": start(call.arguments, result: result)
       case "cancel":
         guard let scanID = requestID(call.arguments) else {
@@ -37,6 +39,50 @@ final class BathroomScanPlatform {
         worldTracking: ARWorldTrackingConfiguration.isSupported,
         authorization: AVCaptureDevice.authorizationStatus(for: .video))
     #endif
+  }
+
+  static func homeSupported() -> Bool {
+    guard #available(iOS 17.0, *) else { return false }
+    return capabilities()["supported"] as? Bool == true && RoomCaptureSession.isSupported
+  }
+
+  private static func startHome(_ arguments: Any?, result: @escaping FlutterResult) {
+    guard let input = HomeScanInput.parse(arguments) else {
+      result(failure("scan_failed", "The scan request is invalid.")); return
+    }
+    guard request == nil else {
+      result(failure("scan_busy", "Another bathroom scan is already open.")); return
+    }
+    guard #available(iOS 17.0, *), homeSupported() else {
+      result(failure("scan_unavailable", "Connected capture requires a supported LiDAR iPhone.")); return
+    }
+    let pending = BathroomScanRequest(scanID: input.id) { value in request = nil; result(value) }
+    request = pending
+    pending.begin(authorization: AVCaptureDevice.authorizationStatus(for: .video),
+      requestPermission: { callback in AVCaptureDevice.requestAccess(for: .video) { granted in
+        DispatchQueue.main.async { callback(granted) }
+      } }, present: { [weak pending] in
+        guard let pending else { return }
+        if let problem = BathroomScanReadiness.failure(applicationState: UIApplication.shared.applicationState,
+          authorization: AVCaptureDevice.authorizationStatus(for: .video), thermalState: ProcessInfo.processInfo.thermalState) {
+          pending.complete(problem); return
+        }
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+          .first(where: { $0.activationState == .foregroundActive }),
+          var presenter = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else {
+          pending.complete(failure("scan_interrupted", "Return to the app and start the scan again.")); return
+        }
+        while let shown = presenter.presentedViewController { presenter = shown }
+        guard presenter.viewIfLoaded?.window != nil, !presenter.isBeingDismissed, !presenter.isBeingPresented else {
+          pending.complete(failure("scan_unavailable", "Close the current screen and try scanning again.")); return
+        }
+        let controller = HomeRoomCaptureController(input: input) { [weak pending] value in pending?.complete(value) }
+        pending.stopCapture = { [weak controller] done in
+          guard let controller else { done(); return }; controller.stopAndDismiss(completion: done)
+        }
+        controller.modalPresentationStyle = .fullScreen; controller.isModalInPresentation = true
+        presenter.present(controller, animated: true)
+      })
   }
 
   private static func requestID(_ arguments: Any?, allowLanguage: Bool = false) -> String? {
@@ -541,7 +587,7 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
       fail("scan_failed", "The room model could not be prepared. Please try again."); return
     }
     do {
-      let payload = try geometry(processedResult)
+      let payload = try Self.geometry(processedResult, scanID: scanID)
       complete(payload)
     } catch BathroomScanGeometry.Invalid.empty {
       fail("scan_failed", "No usable room geometry was found. Scan the walls and fixtures again.")
@@ -552,7 +598,16 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
     }
   }
 
-  private func geometry(_ room: CapturedRoom) throws -> [String: Any] {
+  static func geometry(_ room: CapturedRoom, scanID: String) throws -> [String: Any] {
+    var floors: [CapturedRoom.Surface] = []
+    if #available(iOS 17.0, *) { floors = room.floors }
+    return try geometry(walls: room.walls, doors: room.doors, openings: room.openings,
+      windows: room.windows, floors: floors, objects: room.objects, scanID: scanID)
+  }
+
+  static func geometry(walls: [CapturedRoom.Surface], doors: [CapturedRoom.Surface],
+    openings: [CapturedRoom.Surface], windows: [CapturedRoom.Surface], floors: [CapturedRoom.Surface],
+    objects: [CapturedRoom.Object], scanID: String) throws -> [String: Any] {
     var elements: [[String: Any]] = []
     var warnings = Set<String>()
     var truncated = false
@@ -584,12 +639,12 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
           transform: surface.transform, confidence: surface.confidence)
       }
     }
-    surfaces(room.walls, kind: "wall")
-    surfaces(room.doors, kind: "door")
-    surfaces(room.openings, kind: "opening")
-    surfaces(room.windows, kind: "window")
-    if #available(iOS 17.0, *) { surfaces(room.floors, kind: "floor") }
-    for object in room.objects {
+    surfaces(walls, kind: "wall")
+    surfaces(doors, kind: "door")
+    surfaces(openings, kind: "opening")
+    surfaces(windows, kind: "window")
+    surfaces(floors, kind: "floor")
+    for object in objects {
       let kind: String
       let native: String
       switch object.category {
@@ -647,11 +702,286 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
   }
 }
 
+struct HomeScanInput {
+  let id: String
+  let language: String
+  let rooms: [(token: String, name: String)]
+  static func parse(_ value: Any?) -> HomeScanInput? {
+    guard let args = value as? [String: Any], Set(args.keys) == ["scanId", "languageCode", "rooms"],
+      let id = args["scanId"] as? String, BathroomScanGeometry.validScanID(id),
+      let language = args["languageCode"] as? String,
+      ["en", "es", "zh-Hans", "zh-Hant", "vi", "fil"].contains(language),
+      let raw = args["rooms"] as? [[String: Any]], (2...8).contains(raw.count) else { return nil }
+    var rooms: [(token: String, name: String)] = []
+    var tokens = Set<String>()
+    for room in raw {
+      guard Set(room.keys) == ["token", "name"], let token = room["token"] as? String,
+        BathroomScanGeometry.validScanID(token), tokens.insert(token.lowercased()).inserted,
+        let name = room["name"] as? String, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        name.utf16.count <= 80, !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
+      rooms.append((token: token, name: name))
+    }
+    return HomeScanInput(id: id, language: language, rooms: rooms)
+  }
+}
+
+@available(iOS 17.0, *)
+@objc(SAHHomeRoomDelegate)
+private final class HomeRoomDelegate: NSObject, RoomCaptureViewDelegate, @unchecked Sendable {
+  let lifecycle = BathroomScanLifecycle()
+  let index: Int
+  private let accepted: @MainActor (Int, CapturedRoom?, Bool) -> Void
+  init(index: Int, accepted: @escaping @MainActor (Int, CapturedRoom?, Bool) -> Void) {
+    self.index = index; self.accepted = accepted
+  }
+  required init?(coder: NSCoder) { fatalError("Storyboard construction is not supported") }
+  func encode(with coder: NSCoder) { }
+  nonisolated func captureView(shouldPresent data: CapturedRoomData, error: Error?) -> Bool {
+    switch lifecycle.claimProcessing(succeeded: error == nil) {
+    case .allow: return true
+    case .ignore: return false
+    case .failed, .unexpectedStop:
+      Task { @MainActor [weak self] in guard let self else { return }; accepted(index, nil, false) }
+      return false
+    }
+  }
+  nonisolated func captureView(didPresent result: CapturedRoom, error: Error?) {
+    let succeeded = error == nil
+    Task { @MainActor [weak self] in
+      guard let self, lifecycle.mayAcceptResult else { return }
+      accepted(index, result, succeeded)
+    }
+  }
+}
+
+@available(iOS 17.0, *)
+@MainActor
+private final class HomeRoomCaptureController: UIViewController, BathroomNativeScanController {
+  private let input: HomeScanInput
+  private let completion: FlutterResult
+  private let captureView = RoomCaptureView(frame: .zero)
+  private let status = UILabel()
+  private let finishButton = UIButton(type: .system)
+  private var layout: BathroomScanCaptureLayout?
+  private var delegateLease: HomeRoomDelegate?
+  private var rooms: [CapturedRoom] = []
+  private var index = 0
+  private var betweenRooms = false, done = false, started = false, merging = false
+  private var deadline: Timer?, totalDeadline: Timer?
+  private var observers: [NSObjectProtocol] = []
+  private var mergeTask: Task<Void, Never>?
+  private let idleTimer = BathroomScanIdleTimerLease(read: { UIApplication.shared.isIdleTimerDisabled },
+    write: { UIApplication.shared.isIdleTimerDisabled = $0 })
+  init(input: HomeScanInput, completion: @escaping FlutterResult) {
+    self.input = input; self.completion = completion
+    super.init(nibName: nil, bundle: nil)
+  }
+  required init?(coder: NSCoder) { fatalError("Storyboard construction is not supported") }
+  private func text(_ value: String) -> String { BathroomScanText.text(value, language: input.language) }
+  override func viewDidLoad() {
+    super.viewDidLoad(); view.backgroundColor = .systemBackground
+    captureView.isModelEnabled = false
+    let cancel = UIButton(type: .system)
+    cancel.addTarget(self, action: #selector(cancelScan), for: .touchUpInside)
+    finishButton.addTarget(self, action: #selector(advance), for: .touchUpInside)
+    let layout = BathroomScanCaptureLayout(camera: captureView, status: status,
+      cancelButton: cancel, finishButton: finishButton, language: input.language)
+    self.layout = layout; layout.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(layout)
+    NSLayoutConstraint.activate([
+      layout.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+      layout.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+      layout.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+      layout.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+    ])
+    for name in [UIApplication.willResignActiveNotification, UIApplication.didEnterBackgroundNotification] {
+      observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        Task { @MainActor [weak self] in self?.fail("scan_interrupted") }
+      })
+    }
+    observers.append(NotificationCenter.default.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification,
+      object: nil, queue: .main) { [weak self] _ in Task { @MainActor [weak self] in
+        if ProcessInfo.processInfo.thermalState == .serious || ProcessInfo.processInfo.thermalState == .critical {
+          self?.fail("scan_interrupted")
+        }
+      } })
+  }
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    guard !started, !done else { return }; started = true
+    idleTimer.acquire()
+    let timer = Timer(timeInterval: 900, repeats: false) { [weak self] _ in
+      Task { @MainActor [weak self] in self?.fail("scan_limit") }
+    }
+    totalDeadline = timer; RunLoop.main.add(timer, forMode: .common)
+    startRoom()
+  }
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated); if !done { fail("scan_interrupted") }
+  }
+  override func didReceiveMemoryWarning() { super.didReceiveMemoryWarning(); fail("scan_interrupted") }
+  private func limit(_ seconds: TimeInterval) {
+    deadline?.invalidate()
+    let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
+      Task { @MainActor [weak self] in self?.fail("scan_limit") }
+    }
+    deadline = timer; RunLoop.main.add(timer, forMode: .common)
+  }
+  private func startRoom() {
+    guard !done, index < input.rooms.count else { return }
+    if let problem = BathroomScanReadiness.failure(applicationState: UIApplication.shared.applicationState,
+      authorization: AVCaptureDevice.authorizationStatus(for: .video), thermalState: ProcessInfo.processInfo.thermalState) {
+      complete(problem); return
+    }
+    let lease = HomeRoomDelegate(index: index) { [weak self] index, room, succeeded in
+      self?.accept(index: index, room: room, succeeded: succeeded)
+    }
+    delegateLease = lease; captureView.delegate = lease
+    guard lease.lifecycle.start() else { fail("scan_failed"); return }
+    betweenRooms = false; finishButton.isEnabled = true
+    finishButton.setTitle(text("Finish this room"), for: .normal)
+    layout?.heading.text = "\(index + 1) / \(input.rooms.count) · " + input.rooms[index].name
+    status.text = text("Scan only the named room. Keep the phone tracking while moving between rooms. Stay on one level and a safe, clear path.")
+    UIAccessibility.post(notification: .announcement, argument: layout?.heading.text)
+    var configuration = RoomCaptureSession.Configuration(); configuration.isCoachingEnabled = true
+    captureView.captureSession.run(configuration: configuration)
+    limit(180)
+  }
+  @objc private func advance() {
+    guard !done, !merging else { return }
+    if betweenRooms { startRoom(); return }
+    guard let frame = captureView.captureSession.arSession.currentFrame,
+      case .normal = frame.camera.trackingState else {
+      status.text = text("Tracking is limited. Hold the phone steady in a well-lit area before finishing."); return
+    }
+    guard delegateLease?.lifecycle.requestProcessing() == true else { return }
+    finishButton.isEnabled = false
+    status.text = text("Preparing this room. Keep the phone tracking.")
+    limit(30)
+    captureView.captureSession.stop(pauseARSession: false)
+  }
+  private func accept(index callbackIndex: Int, room: CapturedRoom?, succeeded: Bool) {
+    guard !done, !betweenRooms, !merging, callbackIndex == index else { return }
+    guard succeeded, let room, delegateLease?.lifecycle.mayAcceptResult == true,
+      !rooms.contains(where: { $0.identifier == room.identifier }) else { fail("scan_failed"); return }
+    do { _ = try BathroomRoomCaptureController.geometry(room, scanID: input.rooms[index].token) }
+    catch { fail("scan_failed"); return }
+    delegateLease?.lifecycle.finish(); rooms.append(room)
+    if rooms.count == input.rooms.count { merge(); return }
+    index += 1; betweenRooms = true
+    layout?.heading.text = "\(index + 1) / \(input.rooms.count) · " + input.rooms[index].name
+    status.text = text("Keep the camera tracking. Move safely to the next named room, then start it. Cancelling retains your earlier saved models.")
+    finishButton.setTitle(text("Start next room"), for: .normal); finishButton.isEnabled = true
+    UIAccessibility.post(notification: .announcement, argument: status.text)
+    limit(120)
+  }
+  private func merge() {
+    merging = true; finishButton.isEnabled = false
+    captureView.captureSession.arSession.pause()
+    status.text = text("Joining rooms. Review their positions before saving.")
+    limit(45)
+    let captured = rooms
+    mergeTask = Task { @MainActor [weak self] in
+      do {
+        let structure = try await StructureBuilder(options: [.beautifyObjects]).capturedStructure(from: captured)
+        guard let self, !done, !Task.isCancelled else { return }
+        let merged = try BathroomRoomCaptureController.geometry(walls: structure.walls, doors: structure.doors,
+          openings: structure.openings, windows: structure.windows, floors: structure.floors,
+          objects: structure.objects, scanID: input.id)
+        let output: [[String: Any]] = try captured.enumerated().map { i, room in
+          ["token": input.rooms[i].token,
+            "scene": try BathroomRoomCaptureController.geometry(room, scanID: input.rooms[i].token)]
+        }
+        let payload: [String: Any] = ["version": 1, "sessionId": input.id, "rooms": output, "merged": merged]
+        guard try JSONSerialization.data(withJSONObject: payload).count <= 6 * 1024 * 1024 else {
+          fail("scan_limit"); return
+        }
+        complete(payload)
+      } catch { self?.fail("scan_failed") }
+    }
+  }
+  @objc private func cancelScan() { fail("scan_cancelled") }
+  private func fail(_ code: String) {
+    complete(BathroomScanPlatform.failure(code, "Connected capture could not finish. Your saved models are retained."))
+  }
+  private func complete(_ value: Any?) {
+    guard !done else { return }; done = true; stop(); completion(value)
+  }
+  private func stop() {
+    done = true; delegateLease?.lifecycle.finish(); captureView.delegate = nil
+    captureView.captureSession.stop(pauseARSession: true); captureView.captureSession.arSession.pause()
+    deadline?.invalidate(); totalDeadline?.invalidate(); deadline = nil; totalDeadline = nil
+    mergeTask?.cancel(); mergeTask = nil
+    observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
+    idleTimer.release(); rooms.removeAll()
+  }
+  func stopAndDismiss(completion: @escaping () -> Void) {
+    stop(); if presentingViewController != nil { dismiss(animated: false, completion: completion) }
+    else { completion() }
+  }
+}
+
 enum BathroomScanText {
   static func text(_ english: String, language: String) -> String {
     messages[english]?[language] ?? english
   }
   private static let messages: [String: [String: String]] = [
+    "Finish this room": [
+      "es": "Terminar esta habitación",
+      "zh-Hans": "完成此房间",
+      "zh-Hant": "完成此房間",
+      "vi": "Hoàn tất phòng này",
+      "fil": "Tapusin ang kuwartong ito",
+    ],
+    "Start next room": [
+      "es": "Iniciar siguiente habitación",
+      "zh-Hans": "开始下一个房间",
+      "zh-Hant": "開始下一個房間",
+      "vi": "Bắt đầu phòng tiếp theo",
+      "fil": "Simulan ang susunod na kuwarto",
+    ],
+    "Scan only the named room. Keep the phone tracking while moving between rooms. Stay on one level and a safe, clear path.": [
+      "es": "Escanee solo la habitación indicada. Mantenga el seguimiento al moverse. Permanezca en el mismo nivel y en un camino seguro y despejado.",
+      "zh-Hans": "仅扫描指定房间。在房间之间移动时保持手机跟踪。请保持在同一楼层和安全畅通的路线上。",
+      "zh-Hant": "僅掃描指定房間。在房間之間移動時保持手機追蹤。請保持在同一樓層和安全暢通的路線上。",
+      "vi": "Chỉ quét phòng được đặt tên. Giữ điện thoại theo dõi khi di chuyển giữa các phòng. Ở cùng một tầng và đi trên lối an toàn, thông thoáng.",
+      "fil": "I-scan lamang ang pinangalanang kuwarto. Panatilihin ang tracking habang lumilipat. Manatili sa iisang palapag at sa ligtas, maluwag na daan.",
+    ],
+    "Tracking is limited. Hold the phone steady in a well-lit area before finishing.": [
+      "es": "El seguimiento es limitado. Mantenga el teléfono estable en un lugar iluminado antes de terminar.",
+      "zh-Hans": "跟踪受限。完成前请在光线充足的区域稳住手机。",
+      "zh-Hant": "追蹤受限。完成前請在光線充足的區域穩住手機。",
+      "vi": "Theo dõi bị hạn chế. Giữ điện thoại ổn định tại nơi đủ sáng trước khi hoàn tất.",
+      "fil": "Limitado ang tracking. Hawakan nang matatag ang telepono sa maliwanag na lugar bago tapusin.",
+    ],
+    "Preparing this room. Keep the phone tracking.": [
+      "es": "Preparando la habitación. Mantenga el seguimiento.",
+      "zh-Hans": "正在处理此房间。请保持手机跟踪。",
+      "zh-Hant": "正在處理此房間。請保持手機追蹤。",
+      "vi": "Đang xử lý phòng này. Giữ điện thoại theo dõi.",
+      "fil": "Inihahanda ang kuwartong ito. Panatilihin ang tracking.",
+    ],
+    "Keep the camera tracking. Move safely to the next named room, then start it. Cancelling retains your earlier saved models.": [
+      "es": "Mantenga el seguimiento. Pase con cuidado a la siguiente habitación indicada y luego iníciela. Al cancelar se conservan los modelos anteriores.",
+      "zh-Hans": "保持相机跟踪。安全移动到下一个指定房间，然后开始。取消会保留之前保存的模型。",
+      "zh-Hant": "保持相機追蹤。安全移動到下一個指定房間，然後開始。取消會保留之前儲存的模型。",
+      "vi": "Giữ camera theo dõi. Di chuyển an toàn đến phòng tiếp theo rồi bắt đầu. Hủy sẽ giữ lại các mô hình đã lưu trước đó.",
+      "fil": "Panatilihin ang camera tracking. Ligtas na lumipat sa susunod na pinangalanang kuwarto, saka simulan ito. Pinapanatili ng pagkansela ang dating naka-save na mga modelo.",
+    ],
+    "Joining rooms. Review their positions before saving.": [
+      "es": "Uniendo habitaciones. Revise las posiciones antes de guardar.",
+      "zh-Hans": "正在连接房间。保存前请检查位置。",
+      "zh-Hant": "正在連接房間。儲存前請檢查位置。",
+      "vi": "Đang nối các phòng. Xem xét vị trí trước khi lưu.",
+      "fil": "Ikinokonekta ang mga kuwarto. Suriin ang mga posisyon bago mag-save.",
+    ],
+    "Geometry stays private on this device. Backgrounding cancels the entire connected capture. Stay on one level; review room positions before saving.": [
+      "es": "La geometría permanece privada en este dispositivo. Salir de la app cancela toda la captura conectada. Permanezca en un nivel y revise las posiciones antes de guardar.",
+      "zh-Hans": "几何数据私密保存在此设备上。离开应用将取消整个连续扫描。请保持在同一楼层，保存前检查房间位置。",
+      "zh-Hant": "幾何資料私密儲存在此裝置上。離開 App 將取消整個連續掃描。請保持在同一樓層，儲存前檢查房間位置。",
+      "vi": "Dữ liệu hình học được giữ riêng trên thiết bị này. Rời ứng dụng sẽ hủy toàn bộ phiên quét nối phòng. Ở cùng một tầng và xem xét vị trí trước khi lưu.",
+      "fil": "Pribado ang geometry sa device na ito. Makakansela ang buong konektadong scan kapag umalis sa app. Manatili sa iisang palapag at suriin ang posisyon bago mag-save.",
+    ],
     "Scan this room": [
       "es": "Escanee esta habitación",
       "zh-Hans": "扫描此房间",

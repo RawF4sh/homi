@@ -436,4 +436,45 @@ final class BathroomScanPlatformTests: XCTestCase {
       add(attachment)
     }
   }
+  func testHomeCaptureAcceptsOnlyBoundedOpaqueRoomTokensAndDisplayNames() {
+    let request: [String: Any] = ["scanId": scanID, "languageCode": "es", "rooms": [
+      ["token": secondID, "name": "Upstairs bathroom"],
+      ["token": "7af23fb0-2734-4fc6-b49b-72a619a65ac1", "name": "Kitchen"]]]
+    let parsed = HomeScanInput.parse(request)
+    XCTAssertEqual(parsed?.rooms.count, 2)
+    XCTAssertEqual(parsed?.language, "es")
+    XCTAssertEqual(parsed?.rooms.first?.name, "Upstairs bathroom")
+    var extra = request; extra["caseId"] = scanID
+    XCTAssertNil(HomeScanInput.parse(extra))
+    var tooMany = request
+    tooMany["rooms"] = Array(repeating: ["token": secondID, "name": "Room"], count: 9)
+    XCTAssertNil(HomeScanInput.parse(tooMany))
+    var duplicate = request
+    duplicate["rooms"] = [["token": secondID, "name": "One"], ["token": secondID.uppercased(), "name": "Two"]]
+    XCTAssertNil(HomeScanInput.parse(duplicate))
+    var badName = request
+    badName["rooms"] = [["token": secondID, "name": "Bad\nroom"],
+      ["token": "7af23fb0-2734-4fc6-b49b-72a619a65ac1", "name": "Other"]]
+    XCTAssertNil(HomeScanInput.parse(badName))
+  }
+
+  func testHomeCaptureRejectsMalformedRequestsBeforeCameraAuthorization() {
+    for raw: Any in [NSNull(), "invalid", ["scanId": scanID],
+      ["scanId": scanID, "languageCode": "en", "rooms": []]] {
+      XCTAssertNil(HomeScanInput.parse(raw))
+    }
+    #if targetEnvironment(simulator)
+      XCTAssertFalse(BathroomScanPlatform.homeSupported())
+    #endif
+  }
+
+  func testHomeCaptureCoachingHasBundledTranslations() {
+    for language in ["es", "zh-Hans", "zh-Hant", "vi", "fil"] {
+      for phrase in ["Finish this room", "Start next room", "Preparing this room. Keep the phone tracking.",
+        "Joining rooms. Review their positions before saving."] {
+        XCTAssertNotEqual(BathroomScanText.text(phrase, language: language), phrase)
+      }
+    }
+  }
+
 }
