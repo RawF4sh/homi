@@ -555,4 +555,113 @@ void main() {
     );
     expect(() => controller.drafts.clear(), throwsUnsupportedError);
   });
+
+  group('measurement history', () {
+    test('corrections and clearing keep the earlier values locally', () {
+      var now = DateTime.utc(2026, 10, 18, 9);
+      final c = AssessmentController(
+        ids: SequentialIdFactory(),
+        clock: () => now,
+      );
+      final String id = c.startFinding(AssessmentArea.entrance);
+      c.setMeasurement(
+        id,
+        'thresholdHeight',
+        _input('2', LengthUnit.centimetre),
+      );
+      c.confirmMeasurement(id, 'thresholdHeight');
+      now = now.add(const Duration(minutes: 1));
+      c.setMeasurement(id, 'thresholdHeight', _input('25'));
+      now = now.add(const Duration(minutes: 1));
+      c.clearMeasurement(id, 'thresholdHeight');
+
+      final List<MeasurementChange> history = c.measurementHistoryOf(
+        id,
+        'thresholdHeight',
+      );
+      expect(history.map((h) => h.kind), [
+        MeasurementChangeKind.corrected,
+        MeasurementChangeKind.cleared,
+      ]);
+      expect(history.first.previous.input.originalText, '2');
+      expect(history.first.previous.input.unit, LengthUnit.centimetre);
+      expect(history.first.previous.confirmed, isTrue);
+      expect(history.first.at, DateTime.utc(2026, 10, 18, 9, 1));
+      expect(history.last.previous.input.millimetres, 25);
+      expect(c.toFinding(id), isNull);
+    });
+
+    test('re-entering the same value adds no history', () {
+      final String id = entranceFinding();
+      controller
+        ..setMeasurement(id, 'clearOpening', _input('800'))
+        ..setMeasurement(id, 'clearOpening', _input('800'));
+      expect(controller.measurementHistoryOf(id, 'clearOpening'), isEmpty);
+    });
+
+    test('history never appears in v1 JSON', () {
+      final String id = entranceFinding();
+      controller
+        ..setMeasurement(id, 'clearOpening', _input('811'))
+        ..setMeasurement(id, 'clearOpening', _input('800'));
+      expect(
+        jsonEncode(controller.toFinding(id)!.toJson()),
+        isNot(contains('811')),
+      );
+    });
+
+    test('history is dropped with its finding and on clear', () {
+      final String a = entranceFinding();
+      final String b = entranceFinding();
+      controller
+        ..setMeasurement(a, 'clearOpening', _input('811'))
+        ..setMeasurement(a, 'clearOpening', _input('800'))
+        ..setMeasurement(b, 'clearOpening', _input('811'))
+        ..setMeasurement(b, 'clearOpening', _input('800'));
+      controller.removeFinding(a);
+      expect(controller.measurementHistoryOf(a, 'clearOpening'), isEmpty);
+      expect(controller.measurementHistoryOf(b, 'clearOpening'), hasLength(1));
+      controller.clear();
+      expect(controller.measurementHistoryOf(b, 'clearOpening'), isEmpty);
+    });
+  });
+
+  group('removed findings', () {
+    test('are remembered until clear', () {
+      final String a = entranceFinding();
+      entranceFinding();
+      controller.removeFinding(a);
+      expect(controller.removedFindingIds, {a});
+      expect(controller.removeFinding('unknown'), isNull);
+      expect(controller.removedFindingIds, {a});
+      controller.clear();
+      expect(controller.removedFindingIds, isEmpty);
+    });
+  });
+
+  group('notifications', () {
+    test('every change notifies listeners; no-ops do not', () {
+      var count = 0;
+      controller.addListener(() => count++);
+
+      final String id = controller.startFinding(AssessmentArea.entrance);
+      expect(count, 1);
+      controller.setObservation(id, 'I notice a step');
+      expect(count, 2);
+      controller.setObservation(id, 'I notice a step');
+      expect(count, 2);
+      controller.addEvidence(id, version: 's1');
+      controller.setMeasurement(id, 'thresholdHeight', _input('20'));
+      controller.confirmMeasurement(id, 'thresholdHeight');
+      expect(count, 5);
+      controller.confirm(id);
+      expect(count, 6);
+      controller.restore(id);
+      expect(count, 6);
+      controller.dismiss(id);
+      controller.removeFinding(id);
+      controller.clear();
+      expect(count, 9);
+    });
+  });
 }

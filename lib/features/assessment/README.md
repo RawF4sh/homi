@@ -1,80 +1,104 @@
 # Home assessment module (Person 2)
 
-Pure Dart: no widgets, no plugins, no new dependencies. The controller builds
-strict v1 `Finding` and `Measurement` objects from
-`lib/shared/models/contracts.dart`. Nothing in this module saves anything or
-changes a case revision.
+Guided photos, manual measurements, observations, resident review, box
+annotations, save/upload and export photo choice. Built against fakes; real
+camera, login and app navigation are not wired in yet (see "Still needed").
 
-## What is here
+Nothing here decides eligibility, safety, compliance or medical need.
+Confirmation means only that the resident checked the observation and its
+evidence.
+
+## Try it
+
+```
+flutter run -t lib/features/assessment/dev/main_assessment_demo.dart
+```
+
+Development demo only: a fictional camera that draws a generated scene (or
+simulates cancel, permission denied, no camera and HEIC), and an in-memory
+stand-in server that does **not** sanitize images or keep anything.
+
+## Layout
 
 | Path | Purpose |
 |---|---|
-| `application/assessment_controller.dart` | Builds and edits findings; outputs strict v1 `Finding`s |
+| `application/assessment_controller.dart` | Findings, measurements, review; outputs strict v1 `Finding`s; local measurement history |
+| `application/assessment_flow.dart` | Guided route state: area → prompt → camera → preview → details → review |
+| `application/assessment_sync.dart` | Save findings to the case, upload/replace/delete photos, uncertainty recovery |
+| `application/case_evidence_gateway.dart` | Interface over the shared case/evidence clients, plus the real adapter |
+| `application/export_review.dart` | Look at sanitized photos and choose up to six for the draft |
+| `application/local_evidence_index.dart` | Which staged image holds each evidence ID's bytes |
 | `application/fictional_scenarios.dart` | One fictional bathroom and one entrance scenario |
-| `domain/ids/id_factory.dart` | ID factory interface (Person 1 owns the real one) |
-| `domain/measurement/length_unit.dart` | mm, cm, in with exact integer factors |
-| `domain/measurement/measurement_input.dart` | Locale-aware parser and the module-local record of what was typed |
-| `domain/measurement/measurement_fields.dart` | Proposed measurement vocabulary, definitions, zero-review rule |
-| `domain/image/image_limits.dart` | Server ingestion limits |
-| `domain/image/image_validator.dart` | Signature check, HEIF detection, header dimensions, limits |
-| `domain/capture/capture_adapter.dart` | Camera abstraction and sealed results |
-| `domain/capture/staging_store.dart` | Staging interface and in-memory store |
-| `domain/capture/photo_capture_coordinator.dart` | Capture, validate, stage, retake, permission handling |
-| `domain/review/finding_review_state.dart` | Typed v1 review states (see below) |
-| `domain/review/review_snapshot.dart` | Canonical record of what the resident confirmed |
-| `domain/review/finding_review_tracker.dart` | Review transitions and local history |
-| `domain/export/export_selection_draft.dart` | Six-image, confirmed-only, reviewed-revision selection; maps to shared `EvidenceSelection` |
+| `presentation/assessment_flow_screen.dart` | **Proposed entry point** for Person 1's navigation |
+| `presentation/annotation_editor_screen.dart` | One box per photo, with button alternatives to dragging |
+| `presentation/export_review_screen.dart` | Photo choice for the draft PDF |
+| `presentation/save_status_card.dart` | Plain statement of what is and is not saved |
+| `presentation/assessment_copy.dart` | All resident-facing wording, in one place for review |
+| `domain/annotation/box_annotation.dart` | **Proposed** module-local annotation record and image/view mapping |
+| `domain/capture/`, `domain/image/` | Camera abstraction, staging, coordinator, image checks |
+| `domain/measurement/` | Units, parser, proposed vocabulary and definitions |
+| `domain/review/` | Review states, snapshots, transitions and history |
+| `domain/export/export_selection_draft.dart` | Six-image, confirmed-only, reviewed-revision selection |
+| `domain/ids/id_factory.dart` | ID factory interface |
+| `dev/` | Development-only demo, fictional camera and in-memory server |
 
-Tests are in `test/features/assessment/` with fakes in `fakes/` and a
-case-schema helper in `support/`. All image bytes in tests are synthetic
-headers; there are no real photos.
+Tests are in `test/features/assessment/`. All images in tests are synthetic
+headers or generated drawings.
 
-## How it connects to the shared models
+## Key behaviour
 
-- **Review state.** The shared `Finding.reviewState` is a validated string with
-  no enum, so `FindingReviewState` stays in this module. A test checks its
-  wire values against `contracts/v1/case.schema.json`.
-- **Findings.** `AssessmentController.toFinding` builds JSON and passes it
-  through `Finding.fromJson`, so the output is always a strict v1 object. A
-  finding with no observation yet returns null (v1 requires one).
-- **Room.** `AssessmentArea.bathroom` and `.entrance` map to the v1 `room`
-  values of the same name. `other` is not used yet.
-- **Measurements.** Wire values are millimetres; whole values are written as
-  integers. The typed text, unit and precision stay in `MeasurementInput`.
-  A measurement that was not taken is absent, never zero.
-- **Review snapshots.** `ReviewSnapshot.fromFinding` takes a shared `Finding`
-  plus the evidence version the resident saw for each image.
-- **Export selection.** `SelectedEvidence.toEvidenceSelection` and
-  `ExportSelectionDraft.toEvidenceSelections` produce shared
-  `EvidenceSelection` entries with `reviewedForExport: true`. Evidence
-  revisions are `int`, as `ExportCandidate` assumed.
+- **Stable IDs** come only from the injected `IdFactory`; reused or invalid IDs
+  are refused, including after removal.
+- **Strict v1 output.** `toFinding` passes through `Finding.fromJson`. Review
+  history, typed measurement text, staging keys and annotations never appear
+  in v1 JSON.
+- **Measurements.** Empty means unknown (absent). A recorded 0 is kept and
+  questioned where implausible. A changed value starts unconfirmed; earlier
+  values are kept locally. An estimate stays an estimate after confirmation.
+- **Review.** Any change to the observation, a photo or a measurement value
+  withdraws confirmation. Dismissed findings must be restored first.
+- **Capture.** Cancel, denial, permanent denial (no relaunch until the
+  resident says the setting changed), no camera and unusable photos are
+  explained; continuing without a photo is always possible. Retake never
+  loses typed text.
+- **Annotations** are stored in orientation-corrected image pixels. Only PNGs
+  can be marked locally, because a phone JPEG may carry a rotation flag that
+  the server applies later. Replacing a photo makes its boxes stale. Boxes
+  are not in the PDF.
+- **Saving** deletes removed server photos first, then saves the case, then
+  uploads. It never retries automatically. After an uncertain result, all
+  writes are blocked until `recover()` reloads the case and catalog; an
+  upload that did succeed is recognised and not sent again. Staged originals
+  are discarded only after a confirmed upload.
+- **Export choice** needs the resident to look at each sanitized photo at its
+  current revision; only confirmed findings' photos; at most six.
 
-## Status
+## Still needed
 
-189 tests pass in `test/features/assessment/` on Flutter 3.41.5, and
-`bash tool/verify_project.sh flutter` passes. Native camera behaviour, phone
-builds and widgets are not built or tested yet.
+From **Person 1**:
+- Mount `AssessmentFlowScreen`, `SaveStatusCard` and `ExportReviewScreen` in
+  the app's navigation; own the `AssessmentFlow`, `AssessmentSync` and
+  `ExportReview` lifetimes.
+- Construct `CaseEvidenceApiClient` and `DraftExportApiClient` and pass
+  `ApiCaseEvidenceGateway` in; supply the saved case and adopt
+  `onCaseSaved` results into shared state.
+- On sign-out or case switch: `controller.clear()`, `sync.reset(...)`,
+  `exportReview.clear()`, `annotations.clear()`, and discard staging.
+- The real `IdFactory` (`newUuidV4()` fits), camera package, and the
+  persistent encrypted staging/backup/deletion policy.
+- Agree storage for review history, measurement history and annotations.
+- Resuming a saved case's findings into the controller for editing is not
+  built yet.
 
-## Decisions needed from teammates
+From **Persons 1 and 3**: the measurement `type` vocabulary
+(`clearOpening`, `thresholdHeight`, `curbHeight` are proposed), and whether
+annotation overlays should ever be rendered in exports.
 
-- **Measurement vocabulary** (Persons 1 and 3): the proposed `type` strings
-  are `clearOpening`, `thresholdHeight` and `curbHeight`. The controller
-  rejects any other type until this is agreed.
-- **Room mapping** (Person 1): confirm the direct `AssessmentArea` to
-  `Finding.room` mapping above.
-- **ID factory** (Person 1): the real `IdFactory`. `newUuidV4()` in
-  `lib/shared/models/case_draft.dart` would satisfy the shared ID rules.
-- **Save order** (Person 1): how controller output becomes part of the saved
-  case before evidence upload, which requires the finding link to exist.
-- **Staging** (Person 1): persistent encrypted storage, backup and deletion
-  policy. Until then, `InMemoryStagingStore` loses everything when the app
-  closes and the UI must not call it saved.
-- **Review history storage** (Person 1): `ReviewEvent` and `MeasurementInput`
-  are module-local and must never be added to v1 JSON.
-- **Camera package** (Person 1): choose and verify on both platforms,
-  including what format an iPhone returns.
+Not yet verified: native camera behaviour, physical iPhone/Android runs,
+`ApiCaseEvidenceGateway` against the real backend, and how the screens look
+on a device (no simulator was available when this was written).
 
-## Running
+## Running checks
 
 ```
 dart format lib/features/assessment test/features/assessment
@@ -83,7 +107,5 @@ flutter test test/features/assessment
 bash tool/verify_project.sh flutter
 ```
 
-Use the team's Flutter release (3.41.5). A newer SDK rewrites `pubspec.lock`
-and `analysis_options.yaml`.
-
-Changes are left unstaged and uncommitted. A human reviews, stages and commits.
+Use the team's Flutter release (3.41.5). Changes are left unstaged and
+uncommitted; a human reviews, stages and commits.
