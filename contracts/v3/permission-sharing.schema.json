@@ -970,6 +970,256 @@
           }
         }
       }
+    },
+    "create-email-invitation-request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "caseId",
+        "expectedCaseRevision",
+        "invitationId",
+        "recipientEmail",
+        "role",
+        "scope",
+        "expiresAt"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "3"
+        },
+        "caseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
+        },
+        "expectedCaseRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "invitationId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "role": {
+          "enum": [
+            "viewer",
+            "helper"
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/ShareScope"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recipientEmail": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 254,
+          "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$"
+        }
+      },
+      "if": {
+        "properties": {
+          "role": {
+            "const": "viewer"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "properties": {
+              "allowHelperNotes": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "create-email-invitation-response": {
+      "$ref": "#/$defs/create-invitation-response"
+    },
+    "list-email-sharing-request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "caseId"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "3"
+        },
+        "caseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
+        }
+      }
+    },
+    "OwnerEmailShare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "membershipId",
+        "caseId",
+        "grantorId",
+        "recipientId",
+        "role",
+        "scope",
+        "permissionRevision",
+        "expiresAt",
+        "invitationExpiresAt",
+        "state",
+        "projection",
+        "notes",
+        "audit",
+        "invitedEmail"
+      ],
+      "properties": {
+        "membershipId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "caseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
+        },
+        "grantorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
+        },
+        "recipientId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "role": {
+          "enum": [
+            "viewer",
+            "helper"
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/ShareScope"
+        },
+        "permissionRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "invitationExpiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\.\\d{3}Z$"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "active",
+            "revoked",
+            "expired"
+          ]
+        },
+        "projection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SharedCaseProjection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/SharedNote"
+          }
+        },
+        "audit": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/AccessAuditEvent"
+          }
+        },
+        "invitedEmail": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 254,
+              "pattern": "^[a-z0-9._%+-]+@[a-z0-9-]+(?:\\.[a-z0-9-]+)+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "list-email-sharing-response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "shares",
+        "availableProgramIds"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "3"
+        },
+        "shares": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/OwnerEmailShare"
+          }
+        },
+        "availableProgramIds": {
+          "type": "array",
+          "maxItems": 36,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
+          }
+        }
+      }
     }
   },
   "description": "Raw profile, photos, intake, forms, PDFs, exports, measurements and unselected programs are excluded. Viewer never grants helper notes. Relationship confers no professional authority."

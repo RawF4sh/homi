@@ -10,8 +10,8 @@ controls questions or decisions.
   v1 case plus the separately revisioned room/checklist record. Requires the
   current authenticated case owner and returns `Cache-Control: no-store`.
 - `POST /v3/save-home-safety`: expected case and checklist revisions, a retained
-  mutation ID, and one operation. Supports adding/renaming room instances,
-  answering questions, explicitly reviewing a concern, or assigning an existing
+  mutation ID, and one operation. Supports adding, renaming, archiving, restoring
+  and permanently deleting room instances, answering questions, explicitly reviewing a concern, or assigning an existing
   finding to a room. Requests are bounded by the normal 16 KiB HTTP limit.
 - Room IDs and finding IDs are independent of names, locales and question order.
   `bathroom` and `entrance` retain their existing v1 mappings; other room types
@@ -55,6 +55,28 @@ Hosted routes are default-off unless `homeSafetyEnabled` is passed to the
 durable server; the executable uses `SAFEATHOME_HOME_SAFETY_ENABLED=true`.
 The explicitly fictional local server enables them for development tests.
 No migration runs automatically on startup.
+
+## Room lifecycle
+
+Rooms optionally carry `archived: true`; active room JSON retains its exact earlier
+shape. `archive_room` and `restore_room` retain scans, findings and task state.
+`delete_room` requires an archived room and `expectedModelRevision`, and removes
+the current room, answers, assignment links and account model atomically. Existing
+findings, photos, tasks and reminders remain; findings need explicit reassignment.
+Retired room IDs cannot be reused. Local model cleanup follows acknowledgement,
+including after restart, and clears connected models containing the deleted room.
+This is not an audit-history or backup erasure. See
+[room lifecycle semantics](../../docs/room-lifecycle.md) for compatibility and recovery.
+
+## Simple helper invitations
+
+`permission-sharing.schema.json` adds `create-email-invitation` (recipient's sign-in
+email replaces account ID) and owner-only `list-email-sharing` (adds nullable
+`invitedEmail`). Legacy list shapes stay exact. Existing review/accept contracts
+remain unchanged; redemption requires the invited provider-verified email and an
+explicit acceptance. See `fixtures/email-invitation.json` and
+[implementation, flags and device checks](../../docs/simple-helper-invitations.md).
+Migration 013 and the default-off `SAH_SIMPLE_INVITATIONS_ENABLED` flag are required.
 
 ## Detailed helper sharing
 
