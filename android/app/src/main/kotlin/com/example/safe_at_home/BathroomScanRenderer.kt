@@ -20,14 +20,16 @@ import javax.microedition.khronos.opengles.GL10
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
-class BathroomScanRenderer(
+internal class BathroomScanRenderer(
     private val session: Session,
-    val geometry: BathroomScanGeometry,
+    private val singleGeometry: BathroomScanGeometry,
     private val depthSupported: Boolean,
     private val rotation: () -> Int,
     private val onProgress: (Int, Int, Boolean) -> Unit,
     private val onFailure: () -> Unit,
+    private val home: HomeScanCollector? = null,
 ) : GLSurfaceView.Renderer {
+    val geometry: BathroomScanGeometry get() = home?.geometry ?: singleGeometry
     private var texture = 0
     private var textureAssigned = false
     private var backgroundProgram = 0
@@ -41,6 +43,7 @@ class BathroomScanRenderer(
     private var lastFrameTimestamp = -1L
     private var lastDepthTimestamp = -1L
     private val planeIds = linkedMapOf<Plane, String>()
+    private val homePlaneIds = linkedMapOf<Plane, String>()
     private val quad = direct(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
     private val textureCoordinates = direct(FloatArray(8))
     private val projection = FloatArray(16)
@@ -98,16 +101,17 @@ class BathroomScanRenderer(
                 displayDirty = false
             }
             val frame = session.update()
+            home?.frame(frame)
             if (frame.timestamp != 0L) drawBackground(frame)
             val tracking = frame.camera.trackingState == TrackingState.TRACKING
             val now = SystemClock.elapsedRealtime()
             if (now - lastSampleTime >= 250) {
                 lastSampleTime = now
-                if (tracking && frame.timestamp != lastFrameTimestamp) {
+                if (tracking && frame.timestamp != lastFrameTimestamp && (home == null || home.collecting)) {
                     lastFrameTimestamp = frame.timestamp
-                    samplePlanes()
+                    samplePlanes(frame)
                     val sampledDepth = depthSupported && sampleDepth(frame)
-                    if (sampledDepth) capturedDepth = true else sampleFeatures(frame)
+                    if (sampledDepth) { capturedDepth = true; home?.markDepth() } else sampleFeatures(frame)
                     rebuildGeometryBuffers()
                 } else if (!tracking && lastFrameTimestamp >= 0) {
                     geometry.markTrackingLimited()
@@ -115,13 +119,16 @@ class BathroomScanRenderer(
                 onProgress(geometry.elementCount, geometry.pointCount, tracking)
             }
             if (tracking) drawGeometry(frame)
+            home?.finishFrame(frame)
         } catch (_: Exception) { failOnce() }
     }
 
-    private fun samplePlanes() {
+    private fun samplePlanes(frame: Frame) {
         val obsolete = planeIds.keys.filter { it.subsumedBy != null || it.trackingState == TrackingState.STOPPED }
         for (plane in obsolete) planeIds.remove(plane)?.let { geometry.removePlane(it) }
-        for (plane in session.getAllTrackables(Plane::class.java)) {
+        val candidates = if (home == null) session.getAllTrackables(Plane::class.java)
+            else (frame.getUpdatedTrackables(Plane::class.java) + planeIds.keys).distinct()
+        for (plane in candidates) {
             if (plane.trackingState != TrackingState.TRACKING || plane.subsumedBy != null) continue
             var id = planeIds[plane]
             if (id == null) {
@@ -129,11 +136,15 @@ class BathroomScanRenderer(
                     geometry.markCountLimit()
                     continue
                 }
-                id = UUID.randomUUID().toString()
+                if (home != null && plane !in homePlaneIds && homePlaneIds.size >= 2048) {
+                    geometry.markCountLimit(); continue
+                }
+                id = if (home == null) UUID.randomUUID().toString()
+                    else homePlaneIds.getOrPut(plane) { UUID.randomUUID().toString() }
                 planeIds[plane] = id
             }
             val transform = FloatArray(16)
-            plane.centerPose.toMatrix(transform, 0)
+            (home?.localPose(plane.centerPose) ?: plane.centerPose).toMatrix(transform, 0)
             val category = when (plane.type) {
                 Plane.Type.HORIZONTAL_UPWARD_FACING -> "horizontal_upward"
                 Plane.Type.HORIZONTAL_DOWNWARD_FACING -> "horizontal_downward"
@@ -182,7 +193,7 @@ class BathroomScanRenderer(
                                 depthPlane.pixelStride, x, y, 2,
                             ) ?: run { geometry.markOmitted(); return accepted }
                             val point = BathroomScanGeometry.unprojectDepth(x, y, millimeters, fx, fy, cx, cy, transform) ?: continue
-                            accepted = geometry.addPoint(point[0], point[1], point[2], certainty) || accepted
+                            accepted = addPoint(point, certainty) || accepted
                         }
                     }
                 }
@@ -199,10 +210,22 @@ class BathroomScanRenderer(
             val stride = ceil(count / 600.0).toInt().coerceAtLeast(1)
             for (index in 0 until count step stride) {
                 val offset = index * 4
-                geometry.addPoint(points.get(offset), points.get(offset + 1), points.get(offset + 2), points.get(offset + 3))
+                addPoint(floatArrayOf(points.get(offset), points.get(offset + 1), points.get(offset + 2)), points.get(offset + 3))
             }
         }
     }
+
+    private fun addPoint(world: FloatArray, confidence: Float): Boolean {
+        val p = home?.localPoint(world) ?: world
+        return geometry.addPoint(p[0], p[1], p[2], confidence)
+    }
+    fun requestHomeFinish(callback: (HomeScanCollector.Step) -> Unit) { home!!.requestFinish(callback) }
+    fun startNextRoom() {
+        home!!.startNext(); planeIds.clear()
+        capturedDepth = false; lastFrameTimestamp = -1; lastSampleTime = 0
+        rebuildGeometryBuffers()
+    }
+    fun closeHome() { home?.close(); homePlaneIds.clear(); planeIds.clear() }
 
     private fun rebuildGeometryBuffers() {
         pointVertices.clear()
@@ -254,6 +277,12 @@ class BathroomScanRenderer(
         frame.camera.getProjectionMatrix(projection, 0, 0.1f, 60f)
         frame.camera.getViewMatrix(view, 0)
         Matrix.multiplyMM(viewProjection, 0, projection, 0, view, 0)
+        home?.localToWorld?.let { pose ->
+            val transform = FloatArray(16); pose.toMatrix(transform, 0)
+            val combined = FloatArray(16)
+            Matrix.multiplyMM(combined, 0, viewProjection, 0, transform, 0)
+            combined.copyInto(viewProjection)
+        }
         GLES20.glUseProgram(geometryProgram)
         GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(geometryProgram, "viewProjection"), 1, false, viewProjection, 0)
         val position = GLES20.glGetAttribLocation(geometryProgram, "position")

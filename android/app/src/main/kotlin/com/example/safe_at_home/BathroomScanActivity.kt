@@ -47,6 +47,13 @@ class BathroomScanActivity : ComponentActivity() {
     private var reviewButton: Button? = null
     private var scanId: String = ""
     private var languageCode: String = "en"
+    private var home: HomeScanRequest? = null
+    private var homeBetweenRooms = false
+    private var homeFinishing = false
+    private var homeRoomIndex = 0
+    private var heading: TextView? = null
+    private var phaseStartedAt = 0L
+    private val phaseTimeout = Runnable { fail("scan_limit") }
     private var startRequested = false
     private var checkingAvailability = false
     private var availabilityConfirmed = false
@@ -54,7 +61,7 @@ class BathroomScanActivity : ComponentActivity() {
     private var installRequested = false
     private var resumed = false
     private var active = false
-    private var completed = false
+    @Volatile private var completed = false
     private var startedAt = 0L
     private var depthSupported = false
     private var ownsSessionSlot = false
@@ -66,6 +73,14 @@ class BathroomScanActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         scanId = intent.getStringExtra(BathroomScanPlatform.EXTRA_SCAN_ID) ?: ""
         languageCode = intent.getStringExtra(BathroomScanPlatform.EXTRA_LANGUAGE) ?: "en"
+        if (intent.getBooleanExtra(BathroomScanPlatform.EXTRA_HOME, false)) {
+            val tokens = intent.getStringArrayListExtra(BathroomScanPlatform.EXTRA_ROOM_TOKENS)
+            val names = intent.getStringArrayListExtra(BathroomScanPlatform.EXTRA_ROOM_NAMES)
+            if (tokens == null || names == null || tokens.size != names.size) { fail("scan_failed"); return }
+            home = HomeScanRequest.parse(mapOf("scanId" to scanId, "languageCode" to languageCode,
+                "rooms" to tokens.indices.map { mapOf("token" to tokens[it], "name" to names[it]) }))
+            if (home == null) { fail("scan_failed"); return }
+        }
         if (!BathroomScanGeometry.isScanId(scanId) || savedInstanceState != null) {
             fail("scan_interrupted")
             return
@@ -78,10 +93,13 @@ class BathroomScanActivity : ComponentActivity() {
 
     private fun showNotice() {
         val column = column()
-        column.addView(text("Scan this room", 26f))
+        column.addView(text(if (home == null) "Scan this room" else "Room scan", 26f))
         column.addView(text("Move slowly from a safe position. Keep the camera facing walls, floor and fixtures. Do not walk backward or step over obstacles while looking at the screen.", 18f))
         column.addView(text("This captures an approximate arrangement of surfaces and points. Android does not automatically identify toilets, sinks or doors. You will review the model and identify what it shows.", 18f))
-        column.addView(text("Safe at Home does not save or upload raw camera frames. The reviewed geometry stays in your encrypted case on this device. Backgrounding or exceeding three minutes cancels this scan.", 16f))
+        column.addView(text(if (home == null)
+            "Safe at Home does not save or upload raw camera frames. The reviewed geometry stays in your encrypted case on this device. Backgrounding or exceeding three minutes cancels this scan."
+            else "Geometry stays private on this device. Backgrounding cancels the entire connected capture. Stay on one level; review room positions before saving.", 16f))
+        if (home != null) column.addView(text("Scan only the named room. Keep the phone tracking while moving between rooms. Stay on one level and a safe, clear path.", 18f))
         val notice = text("This application runs on Google Play Services for AR (ARCore), which is provided by Google and governed by the Google Privacy Policy.", 16f)
         val linked = SpannableString(notice.text)
         val playLabel = "Google Play Services for AR"
@@ -170,7 +188,8 @@ class BathroomScanActivity : ComponentActivity() {
             if (!observeDevicePressure()) return
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             showCamera(created)
-            handler.postDelayed(timeout, MAX_CAPTURE_MS)
+            handler.postDelayed(timeout, if (home == null) MAX_CAPTURE_MS else 900_000L)
+            if (home != null) setPhaseLimit(MAX_CAPTURE_MS)
         } catch (_: SecurityException) {
             fail("scan_permission_denied")
         } catch (_: UnavailableException) {
@@ -190,7 +209,8 @@ class BathroomScanActivity : ComponentActivity() {
             onProgress = { planes, points, tracking ->
                 handler.post {
                     if (!completed && active) {
-                        val secondsLeft = ((MAX_CAPTURE_MS - (SystemClock.elapsedRealtime() - startedAt)) / 1000).coerceAtLeast(0)
+                        if (homeBetweenRooms || homeFinishing) return@post
+                        val secondsLeft = ((MAX_CAPTURE_MS - (SystemClock.elapsedRealtime() - if (home == null) startedAt else phaseStartedAt)) / 1000).coerceAtLeast(0)
                         status?.text = if (tracking) {
                             scanText("{surfaces} surfaces · {points} sampled points · {seconds}s remaining. Move slowly. Missing areas stay unknown.",
                                 mapOf("surfaces" to planes.toString(), "points" to points.toString(), "seconds" to secondsLeft.toString()))
@@ -198,11 +218,12 @@ class BathroomScanActivity : ComponentActivity() {
                             scanText("Finding position. Move slowly in good light and avoid blank or reflective surfaces. {seconds}s remaining.",
                                 mapOf("seconds" to secondsLeft.toString()))
                         }
-                        reviewButton?.isEnabled = planes > 0 || points >= 20
+                        reviewButton?.isEnabled = (home == null || tracking) && (planes > 0 || points >= 20)
                     }
                 }
             },
             onFailure = { handler.post { fail("scan_failed") } },
+            home = home?.let { HomeScanCollector(created, it) },
         )
         renderer = scanRenderer
         val cameraView = GLSurfaceView(this).apply {
@@ -215,10 +236,11 @@ class BathroomScanActivity : ComponentActivity() {
         surface = cameraView
         column.addView(cameraView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         val controls = column()
-        controls.addView(text("Room scan", 24f))
+        heading = text("Room scan", 24f).also { controls.addView(it) }
+        updateHomeHeading()
         status = text("Finding position. Move slowly while facing the room.", 16f)
         controls.addView(status)
-        reviewButton = button("Finish and review 3D scan") { finishScan() }.apply { isEnabled = false }
+        reviewButton = button(if (home == null) "Finish and review 3D scan" else "Finish this room") { finishScan() }.apply { isEnabled = false }
         controls.addView(reviewButton)
         controls.addView(button("Cancel scan") { fail("scan_cancelled") })
         val controlsScroll = ScrollView(this).apply { addView(controls) }
@@ -230,6 +252,7 @@ class BathroomScanActivity : ComponentActivity() {
 
     private fun finishScan() {
         if (completed || !active) return
+        if (home != null) { advanceHome(); return }
         if (SystemClock.elapsedRealtime() - startedAt >= MAX_CAPTURE_MS) {
             fail("scan_limit")
             return
@@ -256,6 +279,57 @@ class BathroomScanActivity : ComponentActivity() {
         }
     }
 
+    private fun updateHomeHeading() {
+        val request = home ?: return
+        heading?.text = "${homeRoomIndex + 1} / ${request.rooms.size} · ${request.rooms[homeRoomIndex].name}"
+    }
+    private fun setPhaseLimit(milliseconds: Long) {
+        handler.removeCallbacks(phaseTimeout)
+        phaseStartedAt = SystemClock.elapsedRealtime()
+        handler.postDelayed(phaseTimeout, milliseconds)
+    }
+    private fun advanceHome() {
+        val scanRenderer = renderer ?: return
+        reviewButton?.isEnabled = false
+        if (homeBetweenRooms) {
+            homeBetweenRooms = false
+            surface?.queueEvent { if (!completed) scanRenderer.startNextRoom() }
+            reviewButton?.text = scanText("Finish this room")
+            setPhaseLimit(MAX_CAPTURE_MS)
+            updateHomeHeading()
+            return
+        }
+        if (homeFinishing) return
+        homeFinishing = true
+        surface?.queueEvent {
+            if (!completed) scanRenderer.requestHomeFinish { step ->
+                handler.post {
+                    if (!completed) {
+                        homeFinishing = false
+                        if (step.retry) {
+                            status?.text = scanText("Tracking is limited. Hold the phone steady in a well-lit area before finishing.")
+                            reviewButton?.isEnabled = true
+                        } else if (step.payload != null) {
+                            completed = true
+                            stopCapture()
+                            setResult(RESULT_OK, Intent().putExtra(BathroomScanPlatform.EXTRA_SCAN_ID, scanId)
+                                .putExtra(BathroomScanPlatform.EXTRA_SCENE, step.payload))
+                            finish()
+                        } else {
+                            homeBetweenRooms = true
+                            homeRoomIndex = step.finishedRooms
+                            updateHomeHeading()
+                            status?.text = scanText("Keep the camera tracking. Move safely to the next named room, then start it. Cancelling retains your earlier saved models.")
+                            reviewButton?.text = scanText("Start next room")
+                            reviewButton?.isEnabled = true
+                            setPhaseLimit(120_000L)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private fun fail(code: String) {
         if (completed) return
         completed = true
@@ -270,6 +344,7 @@ class BathroomScanActivity : ComponentActivity() {
 
     private fun stopCapture() {
         handler.removeCallbacks(timeout)
+        handler.removeCallbacks(phaseTimeout)
         if (Build.VERSION.SDK_INT >= 29) {
             thermalListener?.let {
                 try { getSystemService(PowerManager::class.java)?.removeThermalStatusListener(it) } catch (_: Exception) { }
@@ -318,6 +393,7 @@ class BathroomScanActivity : ComponentActivity() {
         completed = true
         availability.close()
         stopCapture()
+        try { renderer?.closeHome() } catch (_: Exception) {   }
         renderer = null
         surface = null
         handler.removeCallbacksAndMessages(null)

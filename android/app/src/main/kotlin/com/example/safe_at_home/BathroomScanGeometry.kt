@@ -87,6 +87,38 @@ class BathroomScanGeometry(val scanId: String) {
     fun planeSamples(): List<PlaneSample> = planes.values.toList()
     fun pointSamples(): List<List<Double>> = points.values.toList()
 
+    fun capPointSamples(maximum: Int) {
+        require(maximum in 20..MAX_POINTS)
+        if (points.size <= maximum) return
+        val selected = evenlySpaced(points.entries.map { it.key to it.value }, maximum)
+        points.clear()
+        selected.forEach { (key, value) -> points[key] = value }
+        markCountLimit()
+    }
+
+    fun absorb(other: BathroomScanGeometry, localToTarget: FloatArray) {
+        require(isRigidTransform(localToTarget))
+        warnings.addAll(other.warnings)
+        if (other.truncated) truncated = true
+        for (plane in other.planeSamples()) {
+            val a = localToTarget.map { it.toDouble() }
+            val b = plane.transform
+            val matrix = FloatArray(16) { index ->
+                val row = index % 4; val column = index / 4
+                (0..3).sumOf { k -> a[k * 4 + row] * b[column * 4 + k] }.toFloat()
+            }
+            addPlane(plane.id, plane.category, plane.dimensions[0].toFloat(), plane.dimensions[2].toFloat(), matrix)
+        }
+        for (p in other.pointSamples()) {
+            val point = FloatArray(3) { row ->
+                (localToTarget[row] * p[0] + localToTarget[4 + row] * p[1] +
+                    localToTarget[8 + row] * p[2] + localToTarget[12 + row]).toFloat()
+            }
+            if (!addPoint(point[0], point[1], point[2], p[3].toFloat()) &&
+                point.any { !it.isFinite() || abs(it) > 50 }) markOmitted()
+        }
+    }
+
     fun scene(capturedAt: String, depthSupported: Boolean): Map<String, Any> {
         val finalWarnings = warnings.toMutableSet()
         finalWarnings.add(if (depthSupported) "depth_partial" else "depth_unavailable")
@@ -106,14 +138,20 @@ class BathroomScanGeometry(val scanId: String) {
         )
     }
 
+    fun encodeSceneWithinLimit(capturedAt: String, depthSupported: Boolean,
+        encode: (Map<String, Any>) -> String): String? =
+        encodeSceneWithinLimit(capturedAt, depthSupported, MAX_JSON_BYTES, encode)
+
     fun encodeSceneWithinLimit(
         capturedAt: String,
         depthSupported: Boolean,
+        maximumBytes: Int,
         encode: (Map<String, Any>) -> String,
     ): String? {
+        require(maximumBytes in 4096..MAX_JSON_BYTES)
         val full = scene(capturedAt, depthSupported)
         val original = encode(full)
-        if (original.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES) return original
+        if (original.toByteArray(Charsets.UTF_8).size <= maximumBytes) return original
 
         val allElements = planes.values.map { it.toMap() }
         val allPoints = pointSamples()
@@ -125,17 +163,17 @@ class BathroomScanGeometry(val scanId: String) {
             "warnings" to omittedWarnings,
         ))
         var elementCount = allElements.size
-        if (candidate(elementCount, 0).toByteArray(Charsets.UTF_8).size > MAX_JSON_BYTES) {
+        if (candidate(elementCount, 0).toByteArray(Charsets.UTF_8).size > maximumBytes) {
             elementCount = largestFittingCount(allElements.size) {
-                candidate(it, 0).toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES
+                candidate(it, 0).toByteArray(Charsets.UTF_8).size <= maximumBytes
             }
         }
         val pointCount = largestFittingCount(allPoints.size) {
-            candidate(elementCount, it).toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES
+            candidate(elementCount, it).toByteArray(Charsets.UTF_8).size <= maximumBytes
         }
         if (elementCount == 0 && pointCount < 20) return null
         return candidate(elementCount, pointCount).takeIf {
-            it.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES
+            it.toByteArray(Charsets.UTF_8).size <= maximumBytes
         }
     }
 

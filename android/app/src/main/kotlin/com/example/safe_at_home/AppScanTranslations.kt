@@ -3,6 +3,62 @@ package com.example.safe_at_home
 internal object AppScanTranslations {
     fun text(english: String, language: String): String = messages[english]?.get(language) ?: english
     private val messages = mapOf(
+        "Finish this room" to mapOf(
+            "es" to "Terminar esta habitación",
+            "zh-Hans" to "完成此房间",
+            "zh-Hant" to "完成此房間",
+            "vi" to "Hoàn tất phòng này",
+            "fil" to "Tapusin ang kuwartong ito",
+        ),
+        "Start next room" to mapOf(
+            "es" to "Iniciar siguiente habitación",
+            "zh-Hans" to "开始下一个房间",
+            "zh-Hant" to "開始下一個房間",
+            "vi" to "Bắt đầu phòng tiếp theo",
+            "fil" to "Simulan ang susunod na kuwarto",
+        ),
+        "Scan only the named room. Keep the phone tracking while moving between rooms. Stay on one level and a safe, clear path." to mapOf(
+            "es" to "Escanee solo la habitación indicada. Mantenga el seguimiento al moverse. Permanezca en el mismo nivel y en un camino seguro y despejado.",
+            "zh-Hans" to "仅扫描指定房间。在房间之间移动时保持手机跟踪。请保持在同一楼层和安全畅通的路线上。",
+            "zh-Hant" to "僅掃描指定房間。在房間之間移動時保持手機追蹤。請保持在同一樓層和安全暢通的路線上。",
+            "vi" to "Chỉ quét phòng được đặt tên. Giữ điện thoại theo dõi khi di chuyển giữa các phòng. Ở cùng một tầng và đi trên lối an toàn, thông thoáng.",
+            "fil" to "I-scan lamang ang pinangalanang kuwarto. Panatilihin ang tracking habang lumilipat. Manatili sa iisang palapag at sa ligtas, maluwag na daan.",
+        ),
+        "Tracking is limited. Hold the phone steady in a well-lit area before finishing." to mapOf(
+            "es" to "El seguimiento es limitado. Mantenga el teléfono estable en un lugar iluminado antes de terminar.",
+            "zh-Hans" to "跟踪受限。完成前请在光线充足的区域稳住手机。",
+            "zh-Hant" to "追蹤受限。完成前請在光線充足的區域穩住手機。",
+            "vi" to "Theo dõi bị hạn chế. Giữ điện thoại ổn định tại nơi đủ sáng trước khi hoàn tất.",
+            "fil" to "Limitado ang tracking. Hawakan nang matatag ang telepono sa maliwanag na lugar bago tapusin.",
+        ),
+        "Preparing this room. Keep the phone tracking." to mapOf(
+            "es" to "Preparando la habitación. Mantenga el seguimiento.",
+            "zh-Hans" to "正在处理此房间。请保持手机跟踪。",
+            "zh-Hant" to "正在處理此房間。請保持手機追蹤。",
+            "vi" to "Đang xử lý phòng này. Giữ điện thoại theo dõi.",
+            "fil" to "Inihahanda ang kuwartong ito. Panatilihin ang tracking.",
+        ),
+        "Keep the camera tracking. Move safely to the next named room, then start it. Cancelling retains your earlier saved models." to mapOf(
+            "es" to "Mantenga el seguimiento. Pase con cuidado a la siguiente habitación indicada y luego iníciela. Al cancelar se conservan los modelos anteriores.",
+            "zh-Hans" to "保持相机跟踪。安全移动到下一个指定房间，然后开始。取消会保留之前保存的模型。",
+            "zh-Hant" to "保持相機追蹤。安全移動到下一個指定房間，然後開始。取消會保留之前儲存的模型。",
+            "vi" to "Giữ camera theo dõi. Di chuyển an toàn đến phòng tiếp theo rồi bắt đầu. Hủy sẽ giữ lại các mô hình đã lưu trước đó.",
+            "fil" to "Panatilihin ang camera tracking. Ligtas na lumipat sa susunod na pinangalanang kuwarto, saka simulan ito. Pinapanatili ng pagkansela ang dating naka-save na mga modelo.",
+        ),
+        "Joining rooms. Review their positions before saving." to mapOf(
+            "es" to "Uniendo habitaciones. Revise las posiciones antes de guardar.",
+            "zh-Hans" to "正在连接房间。保存前请检查位置。",
+            "zh-Hant" to "正在連接房間。儲存前請檢查位置。",
+            "vi" to "Đang nối các phòng. Xem xét vị trí trước khi lưu.",
+            "fil" to "Ikinokonekta ang mga kuwarto. Suriin ang mga posisyon bago mag-save.",
+        ),
+        "Geometry stays private on this device. Backgrounding cancels the entire connected capture. Stay on one level; review room positions before saving." to mapOf(
+            "es" to "La geometría permanece privada en este dispositivo. Salir de la app cancela toda la captura conectada. Permanezca en un nivel y revise las posiciones antes de guardar.",
+            "zh-Hans" to "几何数据私密保存在此设备上。离开应用将取消整个连续扫描。请保持在同一楼层，保存前检查房间位置。",
+            "zh-Hant" to "幾何資料私密儲存在此裝置上。離開 App 將取消整個連續掃描。請保持在同一樓層，儲存前檢查房間位置。",
+            "vi" to "Dữ liệu hình học được giữ riêng trên thiết bị này. Rời ứng dụng sẽ hủy toàn bộ phiên quét nối phòng. Ở cùng một tầng và xem xét vị trí trước khi lưu.",
+            "fil" to "Pribado ang geometry sa device na ito. Makakansela ang buong konektadong scan kapag umalis sa app. Manatili sa iisang palapag at suriin ang posisyon bago mag-save.",
+        ),
         "Scan this room" to mapOf(
             "es" to "Escanee esta habitación",
             "zh-Hans" to "扫描此房间",
