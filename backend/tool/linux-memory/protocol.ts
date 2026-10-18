@@ -17,19 +17,29 @@ export const API_ORIGIN = 'http://api:8788';
 export const AUTH = { projectUrl: 'https://synthetic-memory.invalid', publishableKey: 'sb_publishable_synthetic_linux_memory' };
 export const baseRequest = { schemaVersion: '1' as const, caseId: CASE_ID, expectedCaseRevision: 1 };
 
-export type SessionMode = 'boundary' | 'long';
+export type SessionMode = 'boundary' | 'long' | 'soak';
 export type LinuxWorkloadMode = SessionMode;
 export const LONG_SESSION_ITERATIONS = 12;
 export const LONG_SESSION_INTERVAL_MS = 10_000;
+export const SOAK_SESSION_ITERATIONS = 61;
+export const SOAK_SESSION_INTERVAL_MS = 60_000;
+export const SOAK_PDF_GENERATION_ITERATIONS = 10;
+export const SOAK_CLIENT_DEADLINE_MS = 75 * 60_000;
+export const SOAK_PROFILE_DEADLINE_MS = 3 * 60 * 60_000;
+export function sessionConfiguration(mode: Exclude<SessionMode, 'boundary'>) {
+  if (mode !== 'long' && mode !== 'soak') throw new Error('Unknown paced session mode.');
+  return mode === 'soak' ? { iterations: SOAK_SESSION_ITERATIONS, intervalMs: SOAK_SESSION_INTERVAL_MS }
+    : { iterations: LONG_SESSION_ITERATIONS, intervalMs: LONG_SESSION_INTERVAL_MS };
+}
 export const LONG_SESSION_SCENARIOS = ['upload-repeat-16mp', 'pdf-repeat-16mp'] as const;
 export function parseWorkloadMode(value = 'boundary'): LinuxWorkloadMode {
-  if (value !== 'boundary' && value !== 'long') throw new Error('Unknown synthetic workload mode.');
+  if (value !== 'boundary' && value !== 'long' && value !== 'soak') throw new Error('Unknown synthetic workload mode.');
   return value;
 }
 export function assertWorkloadMode(scenario: Scenario, mode: LinuxWorkloadMode): void {
   parseScenario(scenario); parseWorkloadMode(mode);
-  if (mode === 'long' && !LONG_SESSION_SCENARIOS.some(item => item === scenario)) {
-    throw new Error('Long sessions require a repeat scenario.');
+  if (mode !== 'boundary' && !LONG_SESSION_SCENARIOS.some(item => item === scenario)) {
+    throw new Error('Paced sessions require a repeat scenario.');
   }
 }
 

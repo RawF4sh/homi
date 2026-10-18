@@ -4,7 +4,7 @@ import { MEMORY_SCENARIOS, PROFILE_NODE_VERSION, PROFILE_SERVICE_BYTES, PROFILE_
 export interface LinuxMemoryScenarioInput {
   scenario: MemoryScenario;
   architecture: 'amd64' | 'arm64';
-  expectedMode?: 'boundary' | 'long';
+  expectedMode?: 'boundary' | 'long' | 'soak';
   ready: unknown;
   memory: unknown;
   checkpoints?: unknown;
@@ -33,7 +33,7 @@ export interface LinuxMemoryRetentionTrend {
 interface ApiContainerOutcome { running: boolean | null; exitCode: number | null; oomKilled: boolean | null }
 export interface LinuxMemoryScenarioResult {
   schemaVersion: '1'; scenario: MemoryScenario; architecture: 'amd64' | 'arm64';
-  mode: 'boundary' | 'long';
+  mode: 'boundary' | 'long' | 'soak';
   status: 'passed' | 'failed'; failures: string[];
   thresholds: { headroomTargetBytes: number; serviceReferenceBytes: number };
   runtime: { node: string; platform: 'linux'; arch: 'x64' | 'arm64'; uid: number; execArgv: string[];
@@ -61,8 +61,15 @@ const UPLOAD_ASSERTIONS = ['httpCaseCreated', 'fixtureInputBounds', 'fixturePixe
 const REJECTION_ASSERTIONS = ['httpCaseCreated', 'pixelLimitRejected', 'inputByteLimitRejected', 'aggregateLimitRejected', 'noPartialUpload'];
 const LONG_ASSERTIONS = ['pacingRespected', 'completeSession', 'noRateLimitResponses'];
 const LONG_PDF_ASSERTIONS = ['artifactFreshEachIteration', 'retryBytesStable'];
+const SOAK_PDF_ASSERTIONS = ['generationRotationVerified', 'priorGenerationInvalidated'];
+type WorkloadMode = LinuxMemoryScenarioResult['mode'];
 const LONG_ITERATIONS = 12;
 const LONG_INTERVAL_MS = 10_000;
+const SOAK_ITERATIONS = 61;
+const SOAK_INTERVAL_MS = 60_000;
+const SOAK_GENERATION_INTERVAL = 10;
+const sessionIterations = (mode: WorkloadMode) => mode === 'soak' ? SOAK_ITERATIONS : LONG_ITERATIONS;
+const sessionIntervalMs = (mode: WorkloadMode) => mode === 'soak' ? SOAK_INTERVAL_MS : LONG_INTERVAL_MS;
 const REPEAT_SCENARIOS = ['pdf-repeat-16mp', 'upload-repeat-16mp'];
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -146,10 +153,11 @@ function containerOutcome(value: unknown): ApiContainerOutcome {
     oomKilled: typeof state.OOMKilled === 'boolean' ? state.OOMKilled : null };
 }
 
-function parseWorkload(value: unknown, scenario: MemoryScenario, mode: 'boundary' | 'long'): LinuxMemoryScenarioResult['workload'] {
-  const iterations = mode === 'long' ? LONG_ITERATIONS : REPEAT_SCENARIOS.includes(scenario) ? 3 : 1;
+function parseWorkload(value: unknown, scenario: MemoryScenario, mode: WorkloadMode): LinuxMemoryScenarioResult['workload'] {
+  const sessionMode = mode !== 'boundary';
+  const iterations = sessionMode ? sessionIterations(mode) : REPEAT_SCENARIOS.includes(scenario) ? 3 : 1;
   const fields = ['schemaVersion', 'kind', 'scenario', 'status', 'iterations', 'workload', 'assertions', 'iterationElapsedMs'];
-  if (mode === 'long') fields.push('mode', 'iterationStartElapsedMs', 'elapsedMs', 'renderRequests', 'newGenerationRequests', 'retryGenerationRequests');
+  if (sessionMode) fields.push('mode', 'iterationStartElapsedMs', 'elapsedMs', 'renderRequests', 'newGenerationRequests', 'retryGenerationRequests');
   if (!exact(value, fields)
     || value.schemaVersion !== '1' || value.kind !== 'workload' || value.scenario !== scenario
     || !['passed', 'failed'].includes(String(value.status)) || value.iterations !== iterations
@@ -168,16 +176,18 @@ function parseWorkload(value: unknown, scenario: MemoryScenario, mode: 'boundary
   if (scenario.startsWith('upload-') && !integer(sizes.inputBytes,
     (scenario === 'upload-near8mb-jpeg' ? 7.5 : 6) * MIB, 8 * MIB)) return null;
   let session: NonNullable<LinuxMemoryScenarioResult['workload']>['session'] = null;
-  if (mode === 'long') {
+  if (sessionMode) {
+    const intervalMs = sessionIntervalMs(mode);
     const starts = value.iterationStartElapsedMs, durations = value.iterationElapsedMs;
-    if (value.mode !== 'long' || !Array.isArray(starts) || starts.length !== LONG_ITERATIONS
-      || !starts.every(item => integer(item)) || !integer(value.elapsedMs, LONG_INTERVAL_MS * (LONG_ITERATIONS - 1))
-      || starts.some((item, index) => index > 0 && (item - starts[index - 1] < LONG_INTERVAL_MS
+    if (value.mode !== mode || !Array.isArray(starts) || starts.length !== iterations
+      || !starts.every(item => integer(item)) || !integer(value.elapsedMs, intervalMs * (iterations - 1))
+      || starts.some((item, index) => index > 0 && (item - starts[index - 1] < intervalMs
         || item < starts[index - 1] + durations[index - 1]))
       || value.elapsedMs < starts.at(-1)! + durations.at(-1)!) return null;
     const isPdf = scenario.startsWith('pdf-');
-    if (value.renderRequests !== (isPdf ? LONG_ITERATIONS : 0) || value.newGenerationRequests !== (isPdf ? 1 : 0)
-      || value.retryGenerationRequests !== (isPdf ? LONG_ITERATIONS - 1 : 0)) return null;
+    const generations = mode === 'soak' ? Math.ceil(iterations / SOAK_GENERATION_INTERVAL) : 1;
+    if (value.renderRequests !== (isPdf ? iterations : 0) || value.newGenerationRequests !== (isPdf ? generations : 0)
+      || value.retryGenerationRequests !== (isPdf ? iterations - generations : 0)) return null;
     session = { iterationStartElapsedMs: [...starts], elapsedMs: value.elapsedMs,
       renderRequests: Number(value.renderRequests), newGenerationRequests: Number(value.newGenerationRequests),
       retryGenerationRequests: Number(value.retryGenerationRequests) };
@@ -187,13 +197,14 @@ function parseWorkload(value: unknown, scenario: MemoryScenario, mode: 'boundary
     assertions: { ...value.assertions } as Record<string, boolean>, session };
 }
 
-function parseCheckpoints(value: unknown, mode: 'boundary' | 'long'): { valid: boolean; checkpoints: LinuxMemoryCheckpoint[] } {
+function parseCheckpoints(value: unknown, mode: WorkloadMode): { valid: boolean; checkpoints: LinuxMemoryCheckpoint[] } {
   if (mode === 'boundary') return { valid: value === undefined || (Array.isArray(value) && value.length === 0), checkpoints: [] };
   if (!Array.isArray(value)) return { valid: false, checkpoints: [] };
-  let valid = value.length === LONG_ITERATIONS;
+  const iterations = sessionIterations(mode);
+  let valid = value.length === iterations;
   const checkpoints: LinuxMemoryCheckpoint[] = [];
-  for (const [index, candidate] of value.slice(0, LONG_ITERATIONS).entries()) {
-    if (!exact(candidate, ['iteration', 'elapsedMs', 'memory']) || !integer(candidate.iteration, 1, LONG_ITERATIONS)
+  for (const [index, candidate] of value.slice(0, iterations).entries()) {
+    if (!exact(candidate, ['iteration', 'elapsedMs', 'memory']) || !integer(candidate.iteration, 1, iterations)
       || !integer(candidate.elapsedMs, 1)) { valid = false; continue; }
     const memory = parseMemory(candidate.memory);
     if (!memory) { valid = false; continue; }
@@ -230,7 +241,7 @@ export function evaluateLinuxMemoryScenario(input: LinuxMemoryScenarioInput): Li
     runtime: null, baseline: null, memory: null, checkpoints: [], retentionTrend: null, cgroupEventsDelta: null, workload: null,
     api: { beforeStop: containerOutcome(input.beforeStopInspect), afterStop: containerOutcome(input.afterStopInspect) } };
   if (!MEMORY_SCENARIOS.includes(input.scenario) || !['amd64', 'arm64'].includes(input.architecture)
-    || !['boundary', 'long'].includes(mode) || (mode === 'long' && !REPEAT_SCENARIOS.includes(input.scenario))) {
+    || !['boundary', 'long', 'soak'].includes(mode) || (mode !== 'boundary' && !REPEAT_SCENARIOS.includes(input.scenario))) {
     fail('scenario_configuration_invalid'); return result;
   }
   if (exact(input.ready, ['schemaVersion', 'kind', 'runtime', 'baseline']) && input.ready.schemaVersion === '1' && input.ready.kind === 'ready') {
@@ -266,7 +277,7 @@ export function evaluateLinuxMemoryScenario(input: LinuxMemoryScenarioInput): Li
     const a = result.baseline, b = result.memory;
     if (!failures.includes('memory_counters_regressed')) result.cgroupEventsDelta = Object.fromEntries(Object.entries(b.cgroup.events).map(([key, count]) => [key, count - (a.cgroup.events[key] ?? 0)]));
   }
-  if (mode === 'long' && parsedCheckpoints.valid && !failures.includes('memory_counters_regressed')) {
+  if (mode !== 'boundary' && parsedCheckpoints.valid && !failures.includes('memory_counters_regressed')) {
     result.retentionTrend = retentionTrend(result.checkpoints);
   }
   if (!validContainerConfiguration(input.beforeStopInspect) || !validContainerConfiguration(input.afterStopInspect)) fail('container_configuration_invalid');
@@ -279,17 +290,18 @@ export function evaluateLinuxMemoryScenario(input: LinuxMemoryScenarioInput): Li
   result.workload = parseWorkload(input.workload, input.scenario, mode);
   if (!result.workload) fail('workload_invalid');
   else {
-    if (mode === 'long' && result.workload.session && parsedCheckpoints.valid) {
+    if (mode !== 'boundary' && result.workload.session && parsedCheckpoints.valid) {
       const session = result.workload.session;
       if (result.checkpoints.some((checkpoint, index) => checkpoint.elapsedMs < session.iterationStartElapsedMs[index]
         + result.workload!.iterationElapsedMs[index] - 1 || checkpoint.elapsedMs > session.elapsedMs
-        || (index + 1 < LONG_ITERATIONS && checkpoint.elapsedMs > session.iterationStartElapsedMs[index + 1]))) {
+        || (index + 1 < result.workload!.iterations && checkpoint.elapsedMs > session.iterationStartElapsedMs[index + 1]))) {
         fail('checkpoint_timing_invalid'); result.retentionTrend = null;
       }
     }
     const required = [...COMMON_ASSERTIONS, ...(input.scenario.startsWith('pdf-') ? PDF_ASSERTIONS
       : input.scenario.startsWith('upload-') ? UPLOAD_ASSERTIONS : REJECTION_ASSERTIONS),
-    ...(mode === 'long' ? LONG_ASSERTIONS : []), ...(mode === 'long' && input.scenario.startsWith('pdf-') ? LONG_PDF_ASSERTIONS : [])];
+    ...(mode !== 'boundary' ? LONG_ASSERTIONS : []), ...(mode !== 'boundary' && input.scenario.startsWith('pdf-') ? LONG_PDF_ASSERTIONS : []),
+    ...(mode === 'soak' && input.scenario.startsWith('pdf-') ? SOAK_PDF_ASSERTIONS : [])];
     if (!exact(result.workload.assertions, required)) fail('workload_assertions_incomplete');
     if (!record(input.workload) || input.workload.status !== 'passed'
       || Object.values(result.workload.assertions).some(flag => flag !== true)) fail('workload_failed');

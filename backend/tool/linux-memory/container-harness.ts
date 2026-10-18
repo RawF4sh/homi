@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SCENARIOS, type Scenario } from '../memory/workload.ts';
 import { evaluateLinuxMemoryScenario, type LinuxMemoryScenarioInput } from './report.ts';
-import { LONG_SESSION_ITERATIONS, type SessionMode } from './protocol.ts';
+import { sessionConfiguration, SOAK_CLIENT_DEADLINE_MS, SOAK_PROFILE_DEADLINE_MS, type SessionMode } from './protocol.ts';
 
 const BACKEND = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const FIXTURES = '/lab/sah-memory-fixtures';
@@ -36,14 +36,15 @@ export function parseLinuxOptions(args: string[]): LinuxOptions {
   const selected = values['--scenario'] ?? 'all';
   if (selected !== 'all' && !SCENARIOS.includes(selected as Scenario)) throw new Error('Unknown scenario.');
   const mode = values['--mode'] ?? 'boundary';
-  if (mode !== 'boundary' && mode !== 'long') throw new Error('Unknown session mode.');
+  if (mode !== 'boundary' && mode !== 'long' && mode !== 'soak') throw new Error('Unknown session mode.');
+  if (mode === 'soak' && values['--emulation'] !== 'none') throw new Error('Soak requires a native local Linux engine.');
   const imageSource = values['--image-source'] ?? 'registry';
   if (imageSource !== 'registry' && imageSource !== 'cache') throw new Error('Unknown image source.');
   const repeated: Scenario[] = ['upload-repeat-16mp', 'pdf-repeat-16mp'];
-  if (mode === 'long' && selected !== 'all' && !repeated.includes(selected as Scenario)) throw new Error('Long sessions require a repeated upload or PDF scenario.');
+  if (mode !== 'boundary' && selected !== 'all' && !repeated.includes(selected as Scenario)) throw new Error('Paced sessions require a repeated upload or PDF scenario.');
   return { socket, output, architecture: values['--architecture'] as LinuxOptions['architecture'],
     emulation: values['--emulation'] as LinuxOptions['emulation'], mode, imageSource,
-    scenarios: selected === 'all' ? mode === 'long' ? repeated : [...SCENARIOS] : [selected as Scenario],
+    scenarios: selected === 'all' ? mode !== 'boundary' ? repeated : [...SCENARIOS] : [selected as Scenario],
     docker: values['--docker'] ?? 'docker', openssl: values['--openssl'] ?? 'openssl' };
 }
 export interface CommandResult { code: number | null; stdout: string; stderr: string; timedOut: boolean }
@@ -87,18 +88,30 @@ function allJsonLines(output: string, kind: string): unknown[] {
     try { return JSON.parse(line); } catch { return undefined; }
   }).filter(value => value?.kind === kind);
 }
-export function parseCheckpointProgress(line: string, scenario: Scenario, expectedIteration: number): { iteration: number; elapsedMs: number } | undefined {
+export function parseCheckpointProgress(line: string, scenario: Scenario, expectedIteration: number,
+  mode: Exclude<SessionMode, 'boundary'> = 'long'): { iteration: number; elapsedMs: number } | undefined {
   if (!line.startsWith('{')) return;
   const value = JSON.parse(line);
   if (value.kind !== 'workload-progress') return;
   const keys = ['schemaVersion', 'kind', 'scenario', 'mode', 'iteration', 'plannedIterations', 'iterationElapsedMs', 'elapsedMs'];
   if (Object.keys(value).length !== keys.length || !keys.every(key => Object.hasOwn(value, key))
-    || value.schemaVersion !== '1' || value.scenario !== scenario || value.mode !== 'long'
-    || value.plannedIterations !== LONG_SESSION_ITERATIONS || value.iteration !== expectedIteration
-    || expectedIteration < 1 || expectedIteration > LONG_SESSION_ITERATIONS
+    || value.schemaVersion !== '1' || value.scenario !== scenario || value.mode !== mode
+    || value.plannedIterations !== sessionConfiguration(mode).iterations || value.iteration !== expectedIteration
+    || expectedIteration < 1 || expectedIteration > sessionConfiguration(mode).iterations
     || !Number.isSafeInteger(value.elapsedMs) || value.elapsedMs < 1
     || !Number.isSafeInteger(value.iterationElapsedMs) || value.iterationElapsedMs < 1) throw new Error('Invalid session checkpoint progress.');
   return { iteration: value.iteration, elapsedMs: value.elapsedMs };
+}
+export async function createProgressWriter(output: string) {
+  const path = `${output}.progress.json`;
+  await writeFile(path, '', { flag: 'wx', mode: 0o600 });
+  return async (value: unknown) => {
+    const temporary = `${path}.${randomBytes(6).toString('hex')}.tmp`;
+    try {
+      await writeFile(temporary, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+      await rename(temporary, path);
+    } finally { await rm(temporary, { force: true }); }
+  };
 }
 const delay = (ms: number) => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
 
@@ -152,6 +165,11 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
   const resources: { kind: 'container' | 'volume' | 'network' | 'image'; name: string }[] = [];
   const abort = new AbortController();
   const cancel = () => abort.abort();
+  let deadlineExceeded = false;
+  const deadline = options.mode === 'soak' ? setTimeout(() => {
+    deadlineExceeded = true; abort.abort();
+  }, SOAK_PROFILE_DEADLINE_MS) : undefined;
+  deadline?.unref();
   process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
   const report: Record<string, unknown> = { schemaVersion: '1', kind: 'linux-memory-profile', status: 'failed',
     startedAt: new Date().toISOString(), architecture: options.architecture, emulation: options.emulation, mode: options.mode,
@@ -160,6 +178,16 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
     cases: [], cleanup: { status: 'pending' }, boundaries: ['synthetic auth transport', 'internal HTTP, verified database TLS',
       'API cgroup excludes PostgreSQL/client/fixture generation',
       'no production API or Supabase/Railway requests; hosted runner usage may apply'] };
+  let writeProgress: Awaited<ReturnType<typeof createProgressWriter>> | undefined;
+  let active: { scenario: Scenario; checkpoints: { iteration: number; elapsedMs: number; memory: unknown }[] } | null = null;
+  const progress = async (status: 'running' | 'passed' | 'failed', phase: 'setup' | 'scenario' | 'cleanup' | 'finished') => {
+    await writeProgress?.({ schemaVersion: '1', kind: 'linux-memory-progress', status, phase, pid: process.pid,
+      startedAt: report.startedAt, updatedAt: new Date().toISOString(), mode: options.mode, architecture: options.architecture,
+      plannedScenarios: options.scenarios.length,
+      plannedIterations: options.mode === 'boundary' ? null : sessionConfiguration(options.mode).iterations,
+      deadlineAt: options.mode === 'soak' ? new Date(Date.parse(String(report.startedAt)) + SOAK_PROFILE_DEADLINE_MS).toISOString() : null,
+      completedCases: report.cases, active, cleanup: report.cleanup });
+  };
   const checked = async (args: string[], timeout = 120_000) => {
     if (abort.signal.aborted) throw new Error('Linux profile interrupted; cleaning up owned resources.');
     const result = await runCommand(options.docker, args, env, timeout, abort.signal);
@@ -187,7 +215,8 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
       '--mount', `type=volume,src=${volume},dst=/lab${suffix === 'prepare' ? '' : ',readonly'}`,
       '--tmpfs', '/tmp:rw,noexec,nosuid,size=16777216', image, ...command]);
     let remaining = '', observed: Promise<void> = Promise.resolve(), observationError: unknown;
-    const result = await runCommand(options.docker, ['start', '--attach', name], env, 600_000, abort.signal, onLine ? chunk => {
+    const result = await runCommand(options.docker, ['start', '--attach', name], env,
+      options.mode === 'soak' && suffix.startsWith('client-') ? SOAK_CLIENT_DEADLINE_MS : 600_000, abort.signal, onLine ? chunk => {
       remaining += chunk;
       const lines = remaining.split('\n'); remaining = lines.pop()!;
       for (const line of lines) observed = observed.then(async () => {
@@ -203,6 +232,8 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
   };
   let success = false;
   try {
+    if (options.mode === 'soak') writeProgress = await createProgressWriter(options.output);
+    await progress('running', 'setup');
     const info = JSON.parse(await checked(['info', '--format', '{{json .}}']));
     const expected = options.architecture === 'amd64' ? ['x86_64', 'amd64'] : ['aarch64', 'arm64'];
     if (info.OSType !== 'linux' || !expected.includes(info.Architecture) || info.CgroupVersion !== '2') throw new Error('Matching Linux architecture and cgroup v2 required.');
@@ -300,20 +331,22 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
         return snapshot;
       };
       const checkpoints: { iteration: number; elapsedMs: number; memory: unknown }[] = [];
+      active = { scenario, checkpoints }; await progress('running', 'scenario');
       const onProgress = async (line: string) => {
-        const progress = parseCheckpointProgress(line, scenario, checkpoints.length + 1);
-        if (!progress) return;
+        const checkpoint = parseCheckpointProgress(line, scenario, checkpoints.length + 1, options.mode as 'long' | 'soak');
+        if (!checkpoint) return;
         const memory = await checkpointMemory();
-        checkpoints.push({ ...progress, memory });
-        console.log(`Checkpoint ${progress.iteration}/${LONG_SESSION_ITERATIONS}: ${scenario}.`);
+        checkpoints.push({ ...checkpoint, memory });
+        await progress('running', 'scenario');
+        console.log(`Checkpoint ${checkpoint.iteration}/${sessionConfiguration(options.mode as 'long' | 'soak').iterations}: ${scenario}.`);
         await checked(['kill', '--signal', 'SIGUSR2', `${id}-client-${index}`]);
       };
       let client: CommandResult | undefined;
       const observationFailures: string[] = [];
       try {
         client = await toolContainer(`client-${index}`, network, volume, labImage,
-          ['node', 'tool/linux-memory/workload.ts', scenario, FIXTURES, ...(options.mode === 'long' ? ['long'] : [])],
-          '1000:1000', options.mode === 'long' ? onProgress : undefined);
+        ['node', 'tool/linux-memory/workload.ts', scenario, FIXTURES, ...(options.mode !== 'boundary' ? [options.mode] : [])],
+        '1000:1000', options.mode !== 'boundary' ? onProgress : undefined);
       } catch { observationFailures.push('client_observation_failed'); }
       try {
         const apiLogs = await runCommand(options.docker, ['logs', api], env, 30_000, abort.signal);
@@ -326,15 +359,21 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
         stop: async () => { await checked(['stop', '--time', '30', api]); } });
       if (observationFailures.length) { result.failures.push(...observationFailures); result.status = 'failed'; }
       (report.cases as unknown[]).push(result);
+      active = null; await progress('running', 'scenario');
       console.log(JSON.stringify(result));
       await checked(['rm', '--force', db, api]); await checked(['volume', 'rm', data]);
     }
     success = (report.cases as { status: string }[]).length === options.scenarios.length
       && (report.cases as { status: string }[]).every(value => value.status === 'passed');
   } catch (error) {
-    report.error = error instanceof Error ? error.message : 'Linux profile failed.';
+    report.error = deadlineExceeded ? 'Soak work deadline exceeded; cleaning up owned resources.'
+      : error instanceof Error ? error.message : 'Linux profile failed.';
     console.error(report.error);
   } finally {
+    if (deadline) clearTimeout(deadline);
+    await progress('running', 'cleanup').catch(() => {
+      success = false; report.error = 'Cleanup progress persistence failed.';
+    });
     const failed: string[] = [];
     for (const resource of [...resources].reverse()) {
       const result = await runCommand(options.docker,
@@ -342,24 +381,31 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
           : [resource.kind, 'rm', resource.name], env, 60_000).catch(() => undefined);
       if (!result || result.timedOut || (result.code !== 0 && !/No such (container|volume|network|image)/i.test(result.stderr))) failed.push(resource.name);
     }
-    report.cleanup = { status: failed.length ? 'failed' : 'passed', remainingOwnedResources: failed };
-    report.finishedAt = new Date().toISOString(); report.status = success && !failed.length ? 'passed' : 'failed';
+    let temporaryFilesRemoved = true;
+    const deletions = await Promise.allSettled(['tls', 'runtime-context', 'lab-context']
+      .map(name => rm(join(temporary, name), { recursive: true, force: true })));
+    if (deletions.some(result => result.status === 'rejected')) temporaryFilesRemoved = false;
+    if (success && !failed.length && temporaryFilesRemoved) {
+      try { await rm(temporary, { recursive: true, force: true }); }
+      catch { temporaryFilesRemoved = false; }
+    }
+    report.cleanup = { status: failed.length || !temporaryFilesRemoved ? 'failed' : 'passed',
+      remainingOwnedResources: failed, temporaryFilesRemoved };
+    report.finishedAt = new Date().toISOString();
+    report.status = success && !failed.length && temporaryFilesRemoved ? 'passed' : 'failed';
     if (report.status !== 'passed') report.diagnosticDirectory = basename(temporary);
     try {
-      await reportHandle.writeFile(JSON.stringify(report, null, 2) + '\n');
+      await reportHandle.writeFile(JSON.stringify(report, null, 2) + '\n'); await reportHandle.close();
+      await progress(report.status as 'passed' | 'failed', 'finished');
+    } catch {
+      report.status = 'failed'; report.error = 'Final profile report persistence failed.';
+      await reportHandle.close().catch(() => {});
+      await Promise.allSettled([
+        writeFile(options.output, JSON.stringify(report, null, 2) + '\n', { flag: 'w', mode: 0o600 }),
+        progress('failed', 'finished'),
+      ]);
     } finally {
-      try { await reportHandle.close(); }
-      finally {
-        try {
-          const deletions = await Promise.allSettled(['tls', 'runtime-context', 'lab-context']
-            .map(name => rm(join(temporary, name), { recursive: true, force: true })));
-          const rejected = deletions.find(result => result.status === 'rejected');
-          if (rejected?.status === 'rejected') throw rejected.reason;
-          if (report.status === 'passed') await rm(temporary, { recursive: true, force: true });
-        } finally {
-          process.off('SIGINT', cancel); process.off('SIGTERM', cancel);
-        }
-      }
+      process.off('SIGINT', cancel); process.off('SIGTERM', cancel);
     }
   }
   return report.status === 'passed';

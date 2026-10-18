@@ -11,17 +11,17 @@ import { readFixture } from '../memory/fixture.ts';
 import type { Scenario, WorkloadMetrics } from '../memory/workload.ts';
 import { AGGREGATE_CASE_ID, API_ORIGIN, CASE_ID, OTHER_TOKEN, TOKEN, baseRequest, parseScenario,
   scenarioFixture, syntheticDiagnostic, syntheticDraft, assertWorkloadMode, parseWorkloadMode,
-  LONG_SESSION_INTERVAL_MS, LONG_SESSION_ITERATIONS, type LinuxWorkloadMode } from './protocol.ts';
+  sessionConfiguration, SOAK_PDF_GENERATION_ITERATIONS, type LinuxWorkloadMode } from './protocol.ts';
 
 export interface LinuxWorkloadReport {
   schemaVersion: '1'; kind: 'workload'; scenario: Scenario; status: 'passed' | 'failed'; iterations: number;
   workload: WorkloadMetrics; assertions: Record<string, boolean>; iterationElapsedMs: number[];
-  mode?: 'long'; iterationStartElapsedMs?: number[]; elapsedMs?: number;
+  mode?: 'long' | 'soak'; iterationStartElapsedMs?: number[]; elapsedMs?: number;
   renderRequests?: number; newGenerationRequests?: number; retryGenerationRequests?: number;
 }
 export interface LinuxWorkloadProgress {
-  schemaVersion: '1'; kind: 'workload-progress'; scenario: Scenario; mode: 'long';
-  iteration: number; plannedIterations: 12; iterationElapsedMs: number; elapsedMs: number;
+  schemaVersion: '1'; kind: 'workload-progress'; scenario: Scenario; mode: 'long' | 'soak';
+  iteration: number; plannedIterations: number; iterationElapsedMs: number; elapsedMs: number;
 }
 export interface LinuxWorkloadOptions {
   mode?: LinuxWorkloadMode; signal?: AbortSignal;
@@ -31,13 +31,16 @@ export interface LinuxWorkloadOptions {
 }
 
 export async function runPacedLongSession(operation: (index: number, started: number) => Promise<void>, options: LinuxWorkloadOptions = {}) {
+  const mode = options.mode ?? 'long';
+  if (mode === 'boundary') throw new Error('Paced session mode required.');
+  const config = sessionConfiguration(mode);
   const now = options.now ?? (() => Math.floor(performance.now()));
   const wait = options.wait ?? ((milliseconds, signal) => sleep(milliseconds, undefined, { signal }));
   const initial = now();
   const starts: number[] = [], durations: number[] = [];
-  for (let index = 0; index < LONG_SESSION_ITERATIONS; index++) {
+  for (let index = 0; index < config.iterations; index++) {
     options.signal?.throwIfAborted();
-    const earliest = index === 0 ? initial : initial + starts[index - 1] + LONG_SESSION_INTERVAL_MS;
+    const earliest = index === 0 ? initial : initial + starts[index - 1] + config.intervalMs;
     const delay = earliest - now();
     if (delay > 0) await wait(delay, options.signal);
     options.signal?.throwIfAborted();
@@ -111,11 +114,13 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
   options: LinuxWorkloadOptions = {}): Promise<LinuxWorkloadReport> {
   const mode = parseWorkloadMode(options.mode);
   assertWorkloadMode(scenario, mode);
-  const long = mode === 'long', now = options.now ?? (() => Math.floor(performance.now())), sessionStarted = now();
-  const iterations = long ? LONG_SESSION_ITERATIONS : scenario === 'pdf-repeat-16mp' || scenario === 'upload-repeat-16mp' ? 3 : 1;
+  const long = mode !== 'boundary', now = options.now ?? (() => Math.floor(performance.now())), sessionStarted = now();
+  const config = long ? sessionConfiguration(mode) : null;
+  const iterations = config ? config.iterations : scenario === 'pdf-repeat-16mp' || scenario === 'upload-repeat-16mp' ? 3 : 1;
+  let caseRevision = 1;
   const report: LinuxWorkloadReport = { schemaVersion: '1', kind: 'workload', scenario, status: 'failed', iterations,
     workload: { inputBytes: 0, selectedEvidenceBytes: 0, selectedEvidencePixels: 0 }, assertions: {}, iterationElapsedMs: [],
-    ...(long ? { mode: 'long', iterationStartElapsedMs: [], elapsedMs: 0, renderRequests: 0, newGenerationRequests: 0, retryGenerationRequests: 0 } : {}) };
+    ...(mode !== 'boundary' ? { mode, iterationStartElapsedMs: [], elapsedMs: 0, renderRequests: 0, newGenerationRequests: 0, retryGenerationRequests: 0 } : {}) };
   const check = (name: string, value: boolean) => { report.assertions[name] = (report.assertions[name] ?? true) && value; };
   const post = async (route: string, body: unknown, token = TOKEN) => {
     const timeout = AbortSignal.timeout(120_000);
@@ -135,14 +140,14 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
       report.iterationElapsedMs.push(elapsed);
       if (long) {
         if (!Object.values(report.assertions).every(Boolean)) throw new Error('Synthetic iteration assertions failed.');
-        await options.onProgress?.({ schemaVersion: '1', kind: 'workload-progress', scenario, mode: 'long',
-          iteration: index + 1, plannedIterations: 12, iterationElapsedMs: elapsed, elapsedMs: now() - sessionStarted });
+        await options.onProgress?.({ schemaVersion: '1', kind: 'workload-progress', scenario, mode: mode as 'long' | 'soak',
+          iteration: index + 1, plannedIterations: iterations, iterationElapsedMs: elapsed, elapsedMs: now() - sessionStarted });
       }
     };
     if (long) {
-      await runPacedLongSession(iteration, { ...options, now });
-      check('pacingRespected', report.iterationStartElapsedMs!.every((start, index, all) => index === 0 || start - all[index - 1] >= LONG_SESSION_INTERVAL_MS));
-      check('completeSession', report.iterationElapsedMs.length === LONG_SESSION_ITERATIONS);
+      await runPacedLongSession(iteration, { ...options, mode, now });
+      check('pacingRespected', report.iterationStartElapsedMs!.every((start, index, all) => index === 0 || start - all[index - 1] >= config!.intervalMs));
+      check('completeSession', report.iterationElapsedMs.length === iterations);
     } else for (let index = 0; index < iterations; index++) await iteration(index);
   };
   const json = async <T>(route: string, body: unknown, token = TOKEN, expectedStatus = 200): Promise<T> => {
@@ -161,7 +166,7 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
   };
   const ordinaryRead = async () => {
     const value = await json<CaseSnapshot>('read-case', { schemaVersion: '1', caseId: CASE_ID });
-    check('ordinaryReadAccepted', value.caseId === CASE_ID && value.revision === 1);
+    check('ordinaryReadAccepted', value.caseId === CASE_ID && value.revision === caseRevision);
   };
   try {
     options.signal?.throwIfAborted();
@@ -187,11 +192,30 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
         selectedEvidence: Array.from({ length: count }, (_, index) => ({ evidenceId: `synthetic-photo-${index + 1}`,
           expectedEvidenceRevision: 1, reviewedForExport: true })) };
       let artifactId: string | undefined, artifactDigest: string | undefined;
+      const generations = new Set<string>();
       await runIterations(async index => {
+        const newGeneration = index === 0 || (mode === 'soak' && index % SOAK_PDF_GENERATION_ITERATIONS === 0);
+        let priorArtifact: string | undefined;
+        if (newGeneration && index > 0) {
+          priorArtifact = artifactId;
+          const saved = await json<CaseSnapshot>('save-case', { ...syntheticDraft(count), expectedCaseRevision: caseRevision });
+          check('generationRotationVerified', saved.caseId === CASE_ID && saved.revision === caseRevision + 1);
+          caseRevision++;
+          check('priorGenerationInvalidated', await failure('download-draft-export',
+            { ...baseRequest, expectedCaseRevision: caseRevision - 1, artifactId: priorArtifact }, 409, 'CASE_REVISION_MISMATCH'));
+          body.expectedCaseRevision = caseRevision;
+          body.generationKey = `synthetic-soak-generation-${Math.floor(index / SOAK_PDF_GENERATION_ITERATIONS)}`;
+          artifactId = undefined; artifactDigest = undefined;
+        }
         if (long) {
-          report.renderRequests!++; if (index === 0) report.newGenerationRequests!++; else report.retryGenerationRequests!++;
+          report.renderRequests!++; if (newGeneration) report.newGenerationRequests!++; else report.retryGenerationRequests!++;
         }
         const [artifact] = await Promise.all([json<ExportArtifactMetadata>('create-draft-export', body), ordinaryRead()]);
+        if (mode === 'soak' && newGeneration) {
+          check('generationRotationVerified', !generations.has(artifact.artifactId) && artifact.artifactId !== priorArtifact
+            && artifact.caseRevision === caseRevision);
+          generations.add(artifact.artifactId);
+        }
         check('draftOnly', artifact.status === 'draft' && artifact.warnings.includes('INCOMPLETE_DRAFT')
           && artifact.warnings.includes('NOT_SUBMITTED') && artifact.warnings.includes('POLICY_CURRENTNESS_UNKNOWN'));
         check('exactPagesAndSelection', artifact.pageCount === 5 + count && artifact.selectedEvidence.length === count);
@@ -203,7 +227,7 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
         check('boundToExactEvidence', artifact.selectedEvidence.every((selected, selectedIndex) =>
           selected.evidenceId === `synthetic-photo-${selectedIndex + 1}` && selected.evidenceRevision === 1 && selected.sha256 === fixture.metadata.sha256));
         artifactId = artifact.artifactId; artifactDigest = artifact.sha256;
-        const response = await post('download-draft-export', { ...baseRequest, artifactId });
+        const response = await post('download-draft-export', { ...baseRequest, expectedCaseRevision: caseRevision, artifactId });
         check('privateNoStore', privateResponse(response));
         check('downloadAccepted', response.status === 200 && response.headers.get('content-type') === 'application/pdf');
         const downloaded = await digestResponse(response, 32 * 1024 * 1024);
@@ -211,7 +235,7 @@ export async function runLinuxWorkload(scenario: Scenario, directory: string, tr
         check('downloadDigestMatches', downloaded.bytes === artifact.byteLength && downloaded.sha256 === artifact.sha256);
         if (long) check('artifactFreshEachIteration', artifactIsFresh(artifact, Date.now()));
       });
-      check('crossOwnerArtifactDenied', await failure('download-draft-export', { ...baseRequest, artifactId }, 404, 'ARTIFACT_NOT_FOUND', OTHER_TOKEN));
+      check('crossOwnerArtifactDenied', await failure('download-draft-export', { ...baseRequest, expectedCaseRevision: caseRevision, artifactId }, 404, 'ARTIFACT_NOT_FOUND', OTHER_TOKEN));
     } else if (scenario.startsWith('upload-')) {
       const { name } = scenarioFixture(scenario);
       const fixture = await readFixture(directory, name), fullPixels = name === 'full16mp.jpg';
@@ -276,7 +300,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     let acknowledger: ReturnType<typeof createProgressAcknowledger> | undefined;
     Promise.resolve().then(() => {
       const mode = parseWorkloadMode(process.argv[4]);
-      if (mode === 'long') acknowledger = createProgressAcknowledger(progress => console.log(JSON.stringify(progress)));
+      if (mode !== 'boundary') acknowledger = createProgressAcknowledger(progress => console.log(JSON.stringify(progress)));
       return runLinuxWorkload(parseScenario(process.argv[2]), process.argv[3], fetch, { mode,
         ...(acknowledger ? { onProgress: acknowledger.report } : {}) });
     }).then(report => {
