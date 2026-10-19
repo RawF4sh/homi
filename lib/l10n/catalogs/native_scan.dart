@@ -1,4 +1,9 @@
+import 'whole_home.dart';
+import 'android_features.dart';
+
 const nativeScanTranslations = <String, Map<String, String>>{
+  ...wholeHomeNativeTranslations,
+  ...androidFeatureNativeTranslations,
   "Scan this room": {
     "es": "Escanee esta habitación",
     "zh-Hans": "扫描此房间",

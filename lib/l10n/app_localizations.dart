@@ -4,7 +4,10 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_language.dart';
 import 'catalogs/common.dart';
+import 'catalogs/account_access.dart';
+import 'catalogs/invitations.dart';
 import 'catalogs/assistant.dart';
+import 'catalogs/android_features.dart';
 import 'catalogs/plan_workspace.dart';
 import 'catalogs/sharing.dart';
 import 'catalogs/sensitive_sharing.dart';
@@ -19,6 +22,9 @@ import 'catalogs/lifecycle.dart';
 import 'catalogs/native_scan.dart';
 import 'catalogs/scan_sync.dart';
 import 'catalogs/room_scans.dart';
+import 'catalogs/whole_home.dart';
+import 'catalogs/home_model_sync.dart';
+import 'catalogs/room_lifecycle.dart';
 import 'catalogs/programs.dart';
 import 'catalogs/redesign.dart';
 import 'catalogs/scan.dart';
@@ -39,10 +45,13 @@ class AppLocalizations {
     GlobalCupertinoLocalizations.delegate,
   ];
   static const catalogs = [
+    accountAccessTranslations,
     assistantTranslations,
+    androidFeatureTranslations,
     planWorkspaceTranslations,
     scanSyncTranslations,
     sharingTranslations,
+    invitationTranslations,
     sensitiveSharingTranslations,
     trackingTranslations,
     localHelpTranslations,
@@ -58,6 +67,9 @@ class AppLocalizations {
     lifecycleTranslations,
     nativeScanTranslations,
     roomScanTranslations,
+    wholeHomeTranslations,
+    homeModelSyncTranslations,
+    roomLifecycleTranslations,
     commonTranslations,
   ];
   static final Map<String, Map<String, String>> translations = {

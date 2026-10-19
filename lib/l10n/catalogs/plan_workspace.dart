@@ -76,13 +76,6 @@ const planWorkspaceTranslations = <String, Map<String, String>>{
     "vi": "Quay lại kế hoạch",
     "fil": "Bumalik sa plano",
   },
-  "AI coming later": {
-    "es": "IA próximamente",
-    "zh-Hans": "AI功能尚未推出",
-    "zh-Hant": "AI功能尚未推出",
-    "vi": "AI sẽ được bổ sung sau",
-    "fil": "Idaragdag pa ang AI",
-  },
   "Ask about this plan": {
     "es": "Preguntar sobre este plan",
     "zh-Hans": "询问此计划",
@@ -215,16 +208,6 @@ const planWorkspaceTranslations = <String, Map<String, String>>{
     "vi": "Hỗ trợ bước tiếp theo",
     "fil": "Tulong sa susunod mong hakbang",
   },
-  "AI chat is not connected. These shortcuts open the app; they do not send your plan to an AI service.": {
-    "es":
-        "El chat con IA no está conectado. Estos accesos abren la app; no envían su plan a un servicio de IA.",
-    "zh-Hans": "AI聊天尚未接入。这些快捷入口会打开应用页面，不会将您的计划发送给AI服务。",
-    "zh-Hant": "AI聊天尚未接入。這些快捷入口會開啟應用程式頁面，不會將您的計畫傳送給AI服務。",
-    "vi":
-        "Trò chuyện AI chưa được kết nối. Các lối tắt này mở ứng dụng, không gửi kế hoạch đến dịch vụ AI.",
-    "fil":
-        "Hindi pa konektado ang AI chat. Binubuksan ng mga shortcut na ito ang app; hindi nila ipinapadala ang plano mo sa serbisyo ng AI.",
-  },
   "What should I do next?": {
     "es": "¿Qué hago ahora?",
     "zh-Hans": "我下一步该做什么？",
@@ -245,22 +228,5 @@ const planWorkspaceTranslations = <String, Map<String, String>>{
     "zh-Hant": "我在哪裡可以找到援助？",
     "vi": "Tôi có thể tìm hỗ trợ ở đâu?",
     "fil": "Saan ako makakahanap ng tulong?",
-  },
-  "About the future assistant": {
-    "es": "Sobre el futuro asistente",
-    "zh-Hans": "关于未来的助手",
-    "zh-Hant": "關於未來的助理",
-    "vi": "Về trợ lý trong tương lai",
-    "fil": "Tungkol sa katulong na idaragdag",
-  },
-  "Planned: explain confirmed findings, help with app steps, and point to reviewed program sources. It will not decide eligibility or submit applications for you.": {
-    "es":
-        "Previsto: explicar observaciones confirmadas, guiar los pasos de la app e indicar fuentes revisadas de los programas. No decidirá su elegibilidad ni enviará solicitudes por usted.",
-    "zh-Hans": "计划功能：解释已确认的问题、指导应用操作并提供已审核的项目来源。助手不会判定资格或代您提交申请。",
-    "zh-Hant": "規劃功能：解釋已確認的問題、指導應用程式操作並提供已審核的計畫來源。助理不會判定資格或代您提交申請。",
-    "vi":
-        "Dự kiến: giải thích các vấn đề đã xác nhận, hướng dẫn sử dụng ứng dụng và dẫn đến nguồn chương trình đã được xem xét. Trợ lý sẽ không quyết định điều kiện hoặc nộp đơn thay bạn.",
-    "fil":
-        "Plano: ipaliwanag ang mga kumpirmadong natuklasan, gabayan ang paggamit ng app, at ituro ang nasuring mga sanggunian ng programa. Hindi ito magpapasya ng pagiging kwalipikado o magsusumite ng aplikasyon para sa iyo.",
   },
 };

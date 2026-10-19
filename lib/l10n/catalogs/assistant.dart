@@ -1,4 +1,53 @@
 const assistantTranslations = <String, Map<String, String>>{
+  "Chat options": {
+    "es": "Opciones del chat",
+    "zh-Hans": "聊天选项",
+    "zh-Hant": "聊天選項",
+    "vi": "Tùy chọn trò chuyện",
+    "fil": "Mga opsyon sa chat",
+  },
+  "Changing this starts a new chat.": {
+    "es": "Cambiar esto inicia un chat nuevo.",
+    "zh-Hans": "更改此选项将开始新对话。",
+    "zh-Hant": "變更此選項將開始新對話。",
+    "vi": "Thay đổi mục này sẽ bắt đầu cuộc trò chuyện mới.",
+    "fil": "Magsisimula ng bagong chat kapag binago ito.",
+  },
+  "How can I help?": {
+    "es": "¿En qué puedo ayudarle?",
+    "zh-Hans": "有什么可以帮您？",
+    "zh-Hant": "有什麼可以幫您？",
+    "vi": "Tôi có thể giúp gì?",
+    "fil": "Paano ako makakatulong?",
+  },
+  "Chat stays on this phone and isn’t saved.": {
+    "es": "El chat permanece en este teléfono y no se guarda.",
+    "zh-Hans": "聊天保留在此手机上，不会保存。",
+    "zh-Hant": "聊天保留在此手機上，不會儲存。",
+    "vi": "Trò chuyện ở trên điện thoại này và không được lưu.",
+    "fil": "Nananatili sa teleponong ito ang chat at hindi sine-save.",
+  },
+  "How do I prepare a draft?": {
+    "es": "¿Cómo preparo un borrador?",
+    "zh-Hans": "如何准备申请草稿？",
+    "zh-Hant": "如何準備申請草稿？",
+    "vi": "Làm thế nào để chuẩn bị bản nháp?",
+    "fil": "Paano ako maghahanda ng draft?",
+  },
+  "Message the assistant…": {
+    "es": "Escriba al asistente…",
+    "zh-Hans": "给助手发消息…",
+    "zh-Hant": "傳送訊息給助手…",
+    "vi": "Nhắn tin cho trợ lý…",
+    "fil": "Mag-message sa assistant…",
+  },
+  "Latest message": {
+    "es": "Último mensaje",
+    "zh-Hans": "最新消息",
+    "zh-Hant": "最新訊息",
+    "vi": "Tin nhắn mới nhất",
+    "fil": "Pinakabagong mensahe",
+  },
   "Check again": {
     "es": "Volver a comprobar",
     "zh-Hans": "重新检查",
@@ -59,12 +108,12 @@ const assistantTranslations = <String, Map<String, String>>{
   "Apple’s on-device model is not ready. Check Apple Intelligence in Settings, then try again.": {
     "es":
         "El modelo de Apple aún no está listo. Revise Apple Intelligence en Ajustes y vuelva a intentarlo.",
-    "zh-Hans": "Apple 的设备端模型尚未就绪。请在设置中检查 Apple Intelligence，然后重试。",
-    "zh-Hant": "Apple 的裝置端模型尚未就緒。請在設定中檢查 Apple Intelligence，然後重試。",
+    "zh-Hans": "此手机的设备端模型尚未就绪。请在设置中检查 Apple Intelligence，然后重试。",
+    "zh-Hant": "此手機的裝置端模型尚未就緒。請在設定中檢查 Apple Intelligence，然後重試。",
     "vi":
         "Mô hình trên thiết bị của Apple chưa sẵn sàng. Kiểm tra Apple Intelligence trong Cài đặt rồi thử lại.",
     "fil":
-        "Hindi pa handa ang modelo ng Apple sa device. Tingnan ang Apple Intelligence sa Settings, at subukan muli.",
+        "Hindi pa handa ang modelo sa teleponong ito. Tingnan ang Apple Intelligence sa Settings, at subukan muli.",
   },
   "Apple’s model does not support the selected app language on this phone. You can keep using the help tools below.": {
     "es":
@@ -124,12 +173,12 @@ const assistantTranslations = <String, Map<String, String>>{
     "vi": "Trợ lý AI",
     "fil": "AI assistant",
   },
-  "Thinking on your iPhone…": {
-    "es": "Procesando en su iPhone…",
-    "zh-Hans": "正在您的 iPhone 上思考…",
-    "zh-Hant": "正在您的 iPhone 上思考…",
-    "vi": "Đang xử lý trên iPhone…",
-    "fil": "Nag-iisip sa iyong iPhone…",
+  "Thinking on your phone…": {
+    "es": "Procesando en su teléfono…",
+    "zh-Hans": "正在您的手机上思考…",
+    "zh-Hant": "正在您的手機上思考…",
+    "vi": "Đang xử lý trên điện thoại…",
+    "fil": "Nag-iisip sa iyong telepono…",
   },
   "Stop response": {
     "es": "Detener respuesta",
@@ -236,17 +285,17 @@ const assistantTranslations = <String, Map<String, String>>{
     "fil":
         "Hindi makumpleto ang sagot. Suriin ang availability at subukan muli.",
   },
-  "Replies use Apple’s on-device model. Nothing is sent to an AI server. Chat clears when you leave this screen, switch plans, or leave the app. Only the last two exchanges are used for follow-up questions. The assistant cannot change your plan, decide eligibility, or submit an application.": {
+  "Replies use this phone’s on-device model. Chat text and replies are not sent to an AI server. Chat clears when you leave this screen, switch plans, or leave the app. Only the last two exchanges are used for follow-up questions. The assistant cannot change your plan, decide eligibility, or submit an application.": {
     "es":
-        "Las respuestas usan el modelo de Apple en el dispositivo. No se envía nada a un servidor de IA. El chat se borra al salir de esta pantalla, cambiar de plan o salir de la app. Solo se usan los dos últimos intercambios para dar continuidad. El asistente no puede cambiar su plan, decidir la elegibilidad ni enviar una solicitud.",
+        "Las respuestas usan el modelo de este teléfono. El texto y las respuestas del chat no se envían a un servidor de IA. El chat se borra al salir de esta pantalla, cambiar de plan o salir de la app. Solo se usan los dos últimos intercambios para dar continuidad. El asistente no puede cambiar su plan, decidir la elegibilidad ni enviar una solicitud.",
     "zh-Hans":
-        "回答由 Apple 的设备端模型生成，不会发送到 AI 服务器。离开此页面、切换计划或离开应用时，对话会清空。后续提问仅使用最近两轮对话。助手不能修改计划、判定资格或提交申请。",
+        "回答由 此手机的设备端模型生成，不会发送到 AI 服务器。离开此页面、切换计划或离开应用时，对话会清空。后续提问仅使用最近两轮对话。助手不能修改计划、判定资格或提交申请。",
     "zh-Hant":
-        "回答由 Apple 的裝置端模型產生，不會傳送到 AI 伺服器。離開此頁面、切換計畫或離開 App 時，對話會清除。後續提問僅使用最近兩輪對話。助理不能修改計畫、判定資格或提交申請。",
+        "回答由 此手機的裝置端模型產生，不會傳送到 AI 伺服器。離開此頁面、切換計畫或離開 App 時，對話會清除。後續提問僅使用最近兩輪對話。助理不能修改計畫、判定資格或提交申請。",
     "vi":
-        "Câu trả lời dùng mô hình Apple trên thiết bị. Không có nội dung gửi tới máy chủ AI. Trò chuyện bị xóa khi bạn rời màn hình, đổi kế hoạch hoặc rời ứng dụng. Chỉ hai lượt gần nhất được dùng cho câu hỏi tiếp theo. Trợ lý không thể đổi kế hoạch, quyết định điều kiện hưởng trợ giúp hay nộp hồ sơ.",
+        "Câu trả lời dùng mô hình trên điện thoại này. Không có nội dung gửi tới máy chủ AI. Trò chuyện bị xóa khi bạn rời màn hình, đổi kế hoạch hoặc rời ứng dụng. Chỉ hai lượt gần nhất được dùng cho câu hỏi tiếp theo. Trợ lý không thể đổi kế hoạch, quyết định điều kiện hưởng trợ giúp hay nộp hồ sơ.",
     "fil":
-        "Gumagamit ang mga sagot ng modelo ng Apple sa device. Walang ipinapadala sa AI server. Nabubura ang chat kapag umalis sa screen, lumipat ng plano, o umalis sa app. Huling dalawang palitan lang ang gamit sa mga kasunod na tanong. Hindi mababago ng assistant ang plano, mapagpapasyahan ang pagiging kwalipikado, o maipapasa ang aplikasyon.",
+        "Gumagamit ang mga sagot ng modelo sa teleponong ito. Walang ipinapadala sa AI server. Nabubura ang chat kapag umalis sa screen, lumipat ng plano, o umalis sa app. Huling dalawang palitan lang ang gamit sa mga kasunod na tanong. Hindi mababago ng assistant ang plano, mapagpapasyahan ang pagiging kwalipikado, o maipapasa ang aplikasyon.",
   },
   "App steps are included automatically. Confirmed finding excerpts are optional and may contain notes you entered. Photos, scans, measurements, resident details, and documents are not included.": {
     "es":
