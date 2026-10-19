@@ -191,7 +191,8 @@ test('Phase 5: one durable HTTP journey connects rooms, two programs, referral i
   await applyMigrations(targetAdmin);
   await restoreDatabaseBackup(targetAdmin, archive, archiveOrigin);
   await targetAdmin.query(`CREATE ROLE phase5_restore ${roleSql}`);
-  const restoredPool = target.pool('phase5_restore'), restored = new PostgresCaseRepository(restoredPool);
+  const restoredPool = targetAdmin, restored = new PostgresCaseRepository(restoredPool);
+  await assert.rejects(target.pool('phase5_restore').query('SELECT * FROM safeathome_private.cases'));
   const restoredSafety = await restored.readHomeSafetyForUser(OWNER, caseId);
   assert.equal(restoredSafety.status, 'found');
   if (restoredSafety.status !== 'found') throw Error('Missing restored fictional case');
