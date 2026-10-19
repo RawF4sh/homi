@@ -382,3 +382,145 @@ test('monotonic checkpoint counters and final snapshot are required across the f
   const input = longInput(); input.memory.cgroup.peakBytes--;
   assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('memory_counters_regressed'));
 });
+
+function soakInput(scenario: 'pdf-repeat-16mp' | 'upload-repeat-16mp' = 'pdf-repeat-16mp') {
+  const input = longInput(scenario), pdf = scenario.startsWith('pdf-');
+  const iterations = 61;
+  return { ...input, expectedMode: 'soak' as const,
+    checkpoints: Array.from({ length: iterations }, (_, index) => ({ iteration: index + 1,
+      elapsedMs: index * 60_000 + 125, memory: snapshot() })),
+    workload: { ...input.workload, mode: 'soak', iterations,
+      iterationElapsedMs: Array<number>(iterations).fill(125),
+      iterationStartElapsedMs: Array.from({ length: iterations }, (_, index) => index * 60_000),
+      elapsedMs: 3_600_126, renderRequests: pdf ? 61 : 0,
+      newGenerationRequests: pdf ? 7 : 0, retryGenerationRequests: pdf ? 54 : 0,
+      assertions: { ...input.workload.assertions,
+        ...(pdf ? { generationRotationVerified: true, priorGenerationInvalidated: true } : {}) } as Record<string, boolean> } };
+}
+
+test('soak requires 61 complete paced iterations over at least one hour for each repeat workload', () => {
+  for (const scenario of ['pdf-repeat-16mp', 'upload-repeat-16mp'] as const) {
+    const input = soakInput(scenario), report = evaluateLinuxMemoryScenario(input), pdf = scenario.startsWith('pdf-');
+    assert.equal(report.status, 'passed', report.failures.join(','));
+    assert.equal(report.mode, 'soak'); assert.equal(report.checkpoints.length, 61);
+    assert.deepEqual(report.workload?.session, {
+      iterationStartElapsedMs: input.workload.iterationStartElapsedMs,
+      elapsedMs: 3_600_126, renderRequests: pdf ? 61 : 0,
+      newGenerationRequests: pdf ? 7 : 0, retryGenerationRequests: pdf ? 54 : 0,
+    });
+    assert.equal(report.retentionTrend?.interpretation, 'descriptive_samples_not_proof_of_no_leaks');
+    assert.equal(report.retentionTrend?.sampleCount, 61);
+    assert.deepEqual(report.retentionTrend?.earlyIterations, [1, 2, 3]);
+    assert.deepEqual(report.retentionTrend?.lateIterations, [59, 60, 61]);
+    assert.equal(report.retentionTrend?.lastCheckpointElapsedMs, 3_600_125);
+  }
+});
+
+test('soak trends compare complete early and late samples without turning rising memory into a no-leak claim', () => {
+  const input = soakInput();
+  input.checkpoints.forEach(({ memory }, index) => {
+    memory.rssBytes += index * 100_000;
+    memory.cgroup.currentBytes += index * 200_000;
+  });
+  input.memory = structuredClone(input.checkpoints.at(-1)!.memory);
+  const result = evaluateLinuxMemoryScenario(input);
+  assert.equal(result.status, 'passed', result.failures.join(','));
+  assert.equal(result.retentionTrend?.rssMeanDeltaBytes, 5_800_000);
+  assert.equal(result.retentionTrend?.cgroupCurrentMeanDeltaBytes, 11_600_000);
+  assert.equal(result.retentionTrend?.maxRssGrowthBytes, 0);
+  assert.equal(result.retentionTrend?.interpretation, 'descriptive_samples_not_proof_of_no_leaks');
+  input.checkpoints[60].memory.rssBytes = 1;
+  input.workload.iterationStartElapsedMs[60] = 1;
+  assert.equal(result.checkpoints[60].memory.rssBytes, 210_800_000);
+  assert.equal(result.workload?.session?.iterationStartElapsedMs[60], 3_600_000);
+});
+
+const soakWorkloadFailures: [string, (input: ReturnType<typeof soakInput>) => void][] = [
+  ['only 60 iterations', input => { input.workload.iterations = 60; }],
+  ['only 60 durations', input => { input.workload.iterationElapsedMs.pop(); }],
+  ['only 60 starts', input => { input.workload.iterationStartElapsedMs.pop(); }],
+  ['extra starts', input => { input.workload.iterationStartElapsedMs.push(3_660_000); }],
+  ['zero duration', input => { input.workload.iterationElapsedMs[60] = 0; }],
+  ['nonfinite start', input => { input.workload.iterationStartElapsedMs[60] = NaN; }],
+  ['late pacing violation', input => { input.workload.iterationStartElapsedMs[60]--; }],
+  ['late overlapping requests', input => { input.workload.iterationElapsedMs[59] = 60_001; }],
+  ['less than one hour', input => { input.workload.elapsedMs = 3_599_999; }],
+  ['final operation omitted from elapsed', input => { input.workload.elapsedMs = 3_600_124; }],
+  ['missing final render', input => { input.workload.renderRequests = 60; }],
+  ['single generation reused for an hour', input => { input.workload.newGenerationRequests = 1; input.workload.retryGenerationRequests = 60; }],
+  ['final rotation skipped', input => { input.workload.newGenerationRequests = 6; input.workload.retryGenerationRequests = 55; }],
+  ['every request a new generation', input => { input.workload.newGenerationRequests = 61; input.workload.retryGenerationRequests = 0; }],
+  ['wrong retry count', input => { input.workload.retryGenerationRequests = 53; }],
+  ['long-mode report substituted', input => { input.workload.mode = 'long'; }],
+];
+for (const [name, change] of soakWorkloadFailures) test(`soak report fails closed for ${name}`, () => {
+  const input = soakInput(); change(input);
+  const report = evaluateLinuxMemoryScenario(input);
+  assert.equal(report.status, 'failed');
+  assert.ok(report.failures.includes('workload_invalid'), report.failures.join(','));
+});
+
+test('soak cannot substitute for long or boundary modes or run on a nonrepeat scenario', () => {
+  const input = soakInput();
+  for (const expectedMode of ['boundary', 'long'] as const) {
+    assert.ok(evaluateLinuxMemoryScenario({ ...input, expectedMode }).failures.includes('workload_invalid'));
+  }
+  assert.ok(evaluateLinuxMemoryScenario({ ...longInput(), expectedMode: 'soak' }).failures.includes('workload_invalid'));
+  assert.deepEqual(evaluateLinuxMemoryScenario({ ...input, scenario: 'pdf-solid-16mp' }).failures, ['scenario_configuration_invalid']);
+  const upload = soakInput('upload-repeat-16mp'); upload.workload.renderRequests = 61;
+  assert.ok(evaluateLinuxMemoryScenario(upload).failures.includes('workload_invalid'));
+});
+
+test('soak freshness, stable retries, new generations and prior artifact invalidation are all mandatory', () => {
+  for (const assertion of ['artifactFreshEachIteration', 'retryBytesStable', 'generationRotationVerified',
+    'priorGenerationInvalidated', 'pacingRespected', 'completeSession', 'noRateLimitResponses']) {
+    const input = soakInput(); delete input.workload.assertions[assertion];
+    assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('workload_assertions_incomplete'), assertion);
+    input.workload.assertions[assertion] = false;
+    assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('workload_failed'), assertion);
+  }
+  const upload = soakInput('upload-repeat-16mp');
+  upload.workload.assertions.priorGenerationInvalidated = true;
+  assert.ok(evaluateLinuxMemoryScenario(upload).failures.includes('workload_assertions_incomplete'));
+});
+
+test('soak preserves partial evidence but cannot pass with missing, malformed or mismatched late checkpoints', () => {
+  const changes: ((input: ReturnType<typeof soakInput>) => unknown)[] = [
+    () => undefined,
+    input => input.checkpoints.slice(0, 60),
+    input => [...input.checkpoints, { ...input.checkpoints[60], iteration: 62 }],
+    input => input.checkpoints.map((item, index) => index === 60 ? input.checkpoints[59] : item),
+    input => input.checkpoints.map((item, index) => index === 60 ? { ...item, memory: {} } : item),
+  ];
+  for (const change of changes) {
+    const input = soakInput();
+    const result = evaluateLinuxMemoryScenario({ ...input, checkpoints: change(input) });
+    assert.equal(result.status, 'failed'); assert.equal(result.retentionTrend, null);
+    assert.ok(result.failures.includes('iteration_checkpoints_invalid'));
+  }
+  for (const [index, elapsedMs] of [[60, 3_600_123], [60, 3_600_127], [59, 3_600_001]]) {
+    const input = soakInput(); input.checkpoints[index].elapsedMs = elapsedMs;
+    const result = evaluateLinuxMemoryScenario(input);
+    assert.equal(result.status, 'failed'); assert.equal(result.retentionTrend, null);
+    assert.ok(result.failures.includes('checkpoint_timing_invalid'));
+  }
+  const partial = soakInput(); partial.checkpoints.pop(); partial.clientExitCode = 1;
+  const result = evaluateLinuxMemoryScenario(partial);
+  assert.equal(result.checkpoints.length, 60); assert.equal(result.status, 'failed');
+});
+
+test('soak applies memory, runtime and cleanup checks to the final iteration without a long-mode cutoff', () => {
+  const changes: [string, (input: ReturnType<typeof soakInput>) => void][] = [
+    ['rss_headroom_target_exceeded', input => { input.checkpoints[60].memory.maxRssKiB = 400_000; input.checkpoints[60].memory.maxRssBytes = 409_600_000; }],
+    ['cgroup_headroom_target_exceeded', input => { input.checkpoints[60].memory.cgroup.peakBytes = 401_000_000; }],
+    ['oom_detected', input => { input.checkpoints[60].memory.cgroup.events.oom = 1; }],
+    ['cgroup_hard_limit_pressure_detected', input => { input.checkpoints[60].memory.cgroup.events.max = 1; }],
+    ['runtime_invalid', input => { input.ready.runtime.sharpConcurrency = 2; }],
+    ['api_exit_failed', input => { input.afterStopInspect.State.ExitCode = 137; }],
+  ];
+  for (const [failure, change] of changes) {
+    const input = soakInput(); change(input);
+    const result = evaluateLinuxMemoryScenario(input);
+    assert.equal(result.status, 'failed'); assert.ok(result.failures.includes(failure), result.failures.join(','));
+  }
+});

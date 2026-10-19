@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
-import { assertWorkloadMode, LONG_SESSION_INTERVAL_MS, LONG_SESSION_ITERATIONS, parseWorkloadMode } from '../tool/linux-memory/protocol.ts';
+import { assertWorkloadMode, LONG_SESSION_INTERVAL_MS, LONG_SESSION_ITERATIONS, parseWorkloadMode,
+  sessionConfiguration, SOAK_SESSION_ITERATIONS, SOAK_SESSION_INTERVAL_MS, SOAK_PDF_GENERATION_ITERATIONS,
+  SOAK_CLIENT_DEADLINE_MS, SOAK_PROFILE_DEADLINE_MS } from '../tool/linux-memory/protocol.ts';
 import { artifactIsFresh, createProgressAcknowledger, runLinuxWorkload, runPacedLongSession,
   type LinuxWorkloadProgress } from '../tool/linux-memory/workload.ts';
 
@@ -26,6 +28,31 @@ test('twelve paced operations respect heavy-request refill without shortening sl
   assert.ok(starts.every((start, index) => index === 0 || start - starts[index - 1] >= 10_000));
   assert.equal(starts[3] - starts[2], 14_000);
   assert.equal(result.elapsedMs, 116_000); assert.ok(waits.every(value => value === 8_000));
+});
+
+test('soak is fixed to sixty-one native-session operations spanning at least an hour', async () => {
+  assert.equal(parseWorkloadMode('soak'), 'soak');
+  assert.equal(SOAK_SESSION_ITERATIONS, 61); assert.equal(SOAK_SESSION_INTERVAL_MS, 60_000);
+  assert.equal(SOAK_PDF_GENERATION_ITERATIONS, 10);
+  assert.equal(SOAK_CLIENT_DEADLINE_MS, 75 * 60_000); assert.equal(SOAK_PROFILE_DEADLINE_MS, 3 * 60 * 60_000);
+  assert.deepEqual(sessionConfiguration('soak'), { iterations: 61, intervalMs: 60_000 });
+  for (const scenario of ['pdf-repeat-16mp', 'upload-repeat-16mp'] as const) assertWorkloadMode(scenario, 'soak');
+  assert.throws(() => assertWorkloadMode('pdf-near24mb', 'soak'));
+  let clock = 0, calls = 0; const waits: number[] = [];
+  const result = await runPacedLongSession(async () => { calls++; clock += 5000; }, {
+    mode: 'soak', now: () => clock, wait: async milliseconds => { waits.push(milliseconds); clock += milliseconds; },
+  });
+  assert.equal(calls, 61); assert.equal(waits.length, 60); assert.ok(waits.every(ms => ms === 55_000));
+  assert.equal(result.starts.at(-1), 3_600_000); assert.equal(result.elapsedMs, 3_605_000);
+  assert.ok(result.starts.every((start, index) => index === 0 || start - result.starts[index - 1] >= 60_000));
+});
+
+test('a soak failure at the renewal boundary stops further requests instead of completing invented work', async () => {
+  let clock = 0, calls = 0;
+  await assert.rejects(runPacedLongSession(async index => {
+    calls++; clock += 50; if (index === 10) throw new Error('generation renewal failed');
+  }, { mode: 'soak', now: () => clock, wait: async milliseconds => { clock += milliseconds; } }), /renewal failed/);
+  assert.equal(calls, 11); assert.equal(clock, 600_050);
 });
 
 test('a failed repeated operation stops the session immediately without fabricating later iterations', async () => {
@@ -116,4 +143,15 @@ test('an aborted long workload reports failure, no completed iterations and no p
   assert.deepEqual(report.iterationElapsedMs, []); assert.deepEqual(report.iterationStartElapsedMs, []);
   assert.equal(report.renderRequests, 0); assert.equal(report.assertions.workerCompleted, false);
   assert.equal(Object.keys(report).some(key => /plateau|stableMemory|leakFree/i.test(key)), false);
+});
+
+test('an aborted soak preserves its planned count without reporting fabricated renders or a completed hour', async t => {
+  t.mock.method(console, 'error', () => {});
+  const controller = new AbortController(); controller.abort();
+  const report = await runLinuxWorkload('pdf-repeat-16mp', '/not-read', async () => {
+    throw new Error('aborted workload must not send HTTP');
+  }, { mode: 'soak', signal: controller.signal });
+  assert.equal(report.status, 'failed'); assert.equal(report.mode, 'soak'); assert.equal(report.iterations, 61);
+  assert.deepEqual(report.iterationStartElapsedMs, []); assert.equal(report.renderRequests, 0);
+  assert.equal(report.assertions.completeSession, undefined); assert.equal(report.assertions.workerCompleted, false);
 });

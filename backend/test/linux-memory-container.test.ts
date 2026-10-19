@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolve } from 'node:path';
-import { apiContainerArgs, finalizeMeasuredScenario, localDockerEnvironment, parseCheckpointProgress, parseLinuxOptions, runCommand } from '../tool/linux-memory/container-harness.ts';
+import { mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { randomBytes } from 'node:crypto';
+import { apiContainerArgs, createProgressWriter, finalizeMeasuredScenario, localDockerEnvironment, parseCheckpointProgress,
+  parseLinuxOptions, profileLinux, runCommand } from '../tool/linux-memory/container-harness.ts';
 
 const output = resolve('local-artifacts/linux-test.json');
 const args = ['--socket', '/tmp/owned-docker.sock', '--architecture', 'amd64', '--emulation', 'qemu-system', '--output', output];
@@ -20,6 +24,10 @@ test('Linux profile requires explicit local engine and architecture; report cann
   assert.throws(() => parseLinuxOptions([...args, '--mode', 'forever']));
   assert.equal(parseLinuxOptions([...args, '--image-source', 'cache']).imageSource, 'cache');
   assert.throws(() => parseLinuxOptions([...args, '--image-source', 'anywhere']));
+  const native = args.map(value => value === 'qemu-system' ? 'none' : value);
+  assert.deepEqual(parseLinuxOptions([...native, '--mode', 'soak']).scenarios, ['upload-repeat-16mp', 'pdf-repeat-16mp']);
+  assert.throws(() => parseLinuxOptions([...args, '--mode', 'soak']), /native local Linux/);
+  assert.throws(() => parseLinuxOptions([...native, '--mode', 'soak', '--scenario', 'pdf-near24mb']));
 });
 test('checkpoint events must match the next operation and cannot hide skipped or extra iterations', () => {
   const progress = { schemaVersion: '1', kind: 'workload-progress', scenario: 'upload-repeat-16mp', mode: 'long',
@@ -32,6 +40,55 @@ test('checkpoint events must match the next operation and cannot hide skipped or
     assert.throws(() => parse(invalid));
   }
   assert.throws(() => parse({ ...progress, iteration: 13 }, 13));
+  const soak = { ...progress, mode: 'soak', plannedIterations: 61, iteration: 61, elapsedMs: 3_606_000 };
+  assert.deepEqual(parseCheckpointProgress(JSON.stringify(soak), 'upload-repeat-16mp', 61, 'soak'),
+    { iteration: 61, elapsedMs: 3_606_000 });
+  for (const invalid of [{ ...soak, plannedIterations: 12 }, { ...soak, mode: 'long' }, { ...soak, iteration: 62 }]) {
+    assert.throws(() => parseCheckpointProgress(JSON.stringify(invalid), 'upload-repeat-16mp', invalid.iteration, 'soak'));
+  }
+});
+
+test('running progress uses private atomic snapshots and refuses stale files and initial symlinks', async () => {
+  const directory = await mkdtemp('/tmp/sah-soak-status-test-'), output = `${directory}/report.json`;
+  try {
+    const write = await createProgressWriter(output);
+    await write({ status: 'running', iteration: 1 });
+    assert.deepEqual(JSON.parse(await readFile(`${output}.progress.json`, 'utf8')), { status: 'running', iteration: 1 });
+    await write({ status: 'failed', iteration: 17 });
+    assert.deepEqual(JSON.parse(await readFile(`${output}.progress.json`, 'utf8')), { status: 'failed', iteration: 17 });
+    assert.equal((await stat(`${output}.progress.json`)).mode & 0o777, 0o600);
+    await assert.rejects(createProgressWriter(output), { code: 'EEXIST' });
+    const target = `${directory}/target`; await writeFile(target, 'untouched');
+    await symlink(target, `${directory}/link.json.progress.json`);
+    await assert.rejects(createProgressWriter(`${directory}/link.json`), { code: 'EEXIST' });
+    assert.equal(await readFile(target, 'utf8'), 'untouched');
+    assert.equal((await readdir(directory)).some(name => name.endsWith('.tmp')), false);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('a stale soak sidecar fails before Docker and still closes the report and removes signal listeners', async t => {
+  t.mock.method(console, 'error', () => {});
+  const socketDirectory = await mkdtemp('/tmp/sah-soak-socket-');
+  const socket = `${socketDirectory}/docker.sock`, server = createServer();
+  const output = resolve(`local-artifacts/soak-collision-test-${randomBytes(6).toString('hex')}.json`);
+  const before = { SIGINT: process.listeners('SIGINT'), SIGTERM: process.listeners('SIGTERM') };
+  let diagnostics: string | undefined;
+  try {
+    await new Promise<void>(resolve => server.listen(socket, resolve));
+    await writeFile(`${output}.progress.json`, 'previous run', { flag: 'wx', mode: 0o600 });
+    assert.equal(await profileLinux(parseLinuxOptions(['--socket', socket, '--architecture', 'arm64', '--emulation', 'none',
+      '--output', output, '--mode', 'soak', '--docker', '/not-an-executable'])), false);
+    const report = JSON.parse(await readFile(output, 'utf8')); diagnostics = report.diagnosticDirectory;
+    assert.equal(report.status, 'failed'); assert.match(report.error, /EEXIST/);
+    assert.equal(report.cleanup.status, 'passed'); assert.equal(report.cleanup.temporaryFilesRemoved, true);
+    assert.deepEqual(report.cases, []); assert.equal(await readFile(`${output}.progress.json`, 'utf8'), 'previous run');
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) assert.deepEqual(process.listeners(signal), before[signal]);
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    await rm(socketDirectory, { recursive: true, force: true });
+    await Promise.all([rm(output, { force: true }), rm(`${output}.progress.json`, { force: true }),
+      ...(diagnostics ? [rm(resolve('local-artifacts', diagnostics), { recursive: true, force: true })] : [])]);
+  }
 });
 test('Docker subprocesses receive isolated local engine configuration without inherited credentials', () => {
   const env = localDockerEnvironment('/tmp/a.sock', '/tmp/private-config');

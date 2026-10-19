@@ -10,7 +10,7 @@ const nativeHost = { platform: 'linux', arch: 'x64', machine: 'x86_64' };
 test('native command defaults to both modes and rejects architecture, endpoint, emulation and extra argument overrides', () => {
   assert.equal(parseNativeMemoryMode([]), 'all');
   for (const mode of ['boundary', 'long', 'all'] as const) assert.equal(parseNativeMemoryMode(['--mode', mode]), mode);
-  for (const args of [['--mode'], ['--mode', 'unknown'], ['--mode', 'all', '--mode', 'long'],
+  for (const args of [['--mode'], ['--mode', 'unknown'], ['--mode', 'soak'], ['--mode', 'all', '--mode', 'long'],
     ['--emulation', 'qemu-system'], ['--architecture', 'arm64'], ['--socket', '/tmp/remote.sock'],
     ['--origin', 'https://production.example'], ['--output', '/tmp/public.json'], ['--mode', 'long; echo unsafe']]) {
     assert.throws(() => parseNativeMemoryMode(args));
