@@ -26,7 +26,7 @@ export function reportLines(state: HomeSafetyState, catalog: EvidenceCatalog, at
     const active = roomLinks.filter(l => { const f = state.case.findings.find(f => f.id === l.findingId); const a = doc.answers.find(a => a.roomId === room.id && a.questionId === l.questionId);
       return f && !(f.reviewState === 'dismissed' && (l.questionId === null || l.answerRevision === a?.revision)); });
     const possible = questions.filter(q => doc.answers.some(a => a.roomId === room.id && a.questionId === q.id && a.value === q.concernWhen) && !roomLinks.some(l => l.questionId === q.id && state.case.findings.some(f => f.id === l.findingId))).length;
-    lines.push('', `ROOM: ${room.name ?? room.type} [${room.id}]`, `Area type: ${room.type}`, `Questions answered: ${doc.answers.filter(a => a.roomId === room.id && a.value !== 'unanswered').length} of ${questions.length}`,
+    lines.push('', `ROOM: ${room.name ?? room.type} [${room.id}]`, `Area type: ${room.type}; room status: ${room.archived ? 'archived - retained record; findings and tasks remain active' : 'active'}`, `Questions answered: ${doc.answers.filter(a => a.roomId === room.id && a.value !== 'unanswered').length} of ${questions.length}`,
       `Concerns addressed (resident reported): ${active.filter(l => safetyConcernAddressed(state,l)).length} of ${active.length + possible}`);
     if (questions.length === 0) lines.push('No sourced checklist questions for this area. No safety conclusion is made.');
     for (const q of questions) {

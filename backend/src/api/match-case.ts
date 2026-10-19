@@ -14,6 +14,7 @@ export interface MatchCaseInput {
 
 export interface AuthenticatedUser {
   userId: string;
+  verifiedEmail?: string;
 }
 
 export interface MatchCaseRepository {

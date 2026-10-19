@@ -1,12 +1,14 @@
+import { decodeHomeRecord, MAX_HOME_MODEL_BYTES, homeRoomsValid } from '../assessment/home-model.ts';
 import { decodeScanRecord, MAX_SCAN_MODEL_BYTES } from '../assessment/scan-model.ts';
 import { parseCollaborationRecord, validateCollaborationScopeRecord } from '../sharing/collaboration.ts';
 import { validateSensitiveScope } from '../sharing/sensitive.ts';
+import { invitationEmail, invitationEmailHash } from '../auth/invitation-email.ts';
+import { lockRecoveryControl } from './recovery-control.ts';
 import { parseScope, parseSharedProjection, uuid, instant as sharingInstant } from '../sharing/contracts.ts';
 import { parseSavedProgramIntake } from '../programs/intake.ts';
 import { parseAssessmentMetadata, parseAssessmentRecord } from '../assessment/metadata.ts';
 import { parseAnnotations, annotationsBound } from '../assessment/annotations.ts';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import type { Pool, PoolClient } from 'pg';
 import { parseCaseDraft } from '../cases/validation.ts';
 import { parseProgressRecord } from '../tracking/progress.ts';
@@ -17,7 +19,7 @@ import { parseStoredExportArtifactMetadata as parseExportArtifactMetadata } from
 import { parseSavedFormAnswers } from '../forms/form-answers.ts';
 import { instantMicros } from '../packets.ts';
 import { parseRequestHistory } from '../requests/tracking.ts';
-import { assertMigrationsCurrent } from './migrate.ts';
+import { assertMigrationsCurrent, migrationManifest } from './migrate.ts';
 import type { CaseSnapshot } from '../types.ts';
 
 export const MAX_DATABASE_BACKUP_BYTES = 128 * 1024 * 1024;
@@ -46,7 +48,7 @@ const TABLES = {
   closed_accounts: { columns: { owner_hash: 'text', closed_at: 'time', receipt_hash: 'text', receipt_expires_at: 'time', auth_deleted_at: 'time' }, key: ['owner_hash'] },
   account_deletion_previews: { columns: { owner_hash: 'text', token_hash: 'text', fingerprint: 'text', expires_at: 'time' }, key: ['owner_hash'] },
   auth_deletion_jobs: { columns: { job_id: 'text', owner_hash: 'text', raw_user_id: 'text', completed_at: 'time', next_attempt_at: 'time', lease_token: 'text', lease_until: 'time' }, key: ['job_id'] },
-  case_shares: { columns: { membership_id:'text', case_id:'text', owner_id:'text', recipient_id:'text', creation_key:'text', invitation_hash:'text', invitation_expires_at:'time', expires_at:'time', accepted:'boolean', revoked:'boolean', permission_revision:'integer', definition:'json', projection:'json', notes:'json', audit:'json', collaboration_scope:'json' }, key:['membership_id'] },
+  case_shares: { columns: { membership_id:'text', case_id:'text', owner_id:'text', recipient_id:'text', creation_key:'text', invitation_hash:'text', invitation_expires_at:'time', expires_at:'time', accepted:'boolean', revoked:'boolean', permission_revision:'integer', definition:'json', projection:'json', notes:'json', audit:'json', collaboration_scope:'json', invited_email:'text', recipient_email_hash:'text' }, key:['membership_id'] },
   share_sensitive: { columns: { membership_id:'text', case_id:'text', owner_id:'text', record:'json' }, key:['membership_id'] },
   request_history: { columns: { case_id: 'text', program_id: 'text', request_revision: 'integer', record: 'json' }, key: ['case_id', 'program_id'] },
 } as const satisfies Record<string, Table>;
@@ -98,10 +100,7 @@ function bytes(value: unknown, maximum: number): Buffer {
   return result;
 }
 async function manifest(): Promise<ManifestEntry[]> {
-  return Promise.all([
-    ['001', '001_private_repository.sql'], ['002', '002_retention_deletion.sql'], ['003', '003_request_tracking.sql'], ['004','004_assessment_annotations.sql'], ['005','005_program_intake.sql'], ['006', '006_plan_names.sql'], ['007', '007_home_safety.sql'],  ['008', '008_program_progress.sql'], ['009', '009_permission_sharing.sql'], ['010', '010_shared_collaboration.sql'], ['011', '011_scan_model_sync.sql'], ['012', '012_sensitive_sharing.sql'],
-  ].map(async ([version, filename]) => ({ version,
-    checksum: createHash('sha256').update(await readFile(new URL(`../../migrations/${filename}`, import.meta.url))).digest('hex') })));
+  return migrationManifest();
 }
 function matchesManifest(value: unknown, expected: ManifestEntry[]): boolean {
   return Array.isArray(value) && value.length === expected.length && value.every((entry, index) =>
@@ -111,7 +110,7 @@ function counts(tables: Archive['tables']): RowCounts {
   return Object.fromEntries(NAMES.map(name => [name, tables[name].length])) as RowCounts;
 }
 
-async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): Promise<Archive> {
+export async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): Promise<Archive> {
   check(Buffer.isBuffer(plaintext) && plaintext.length > 0 && plaintext.length <= MAX_DATABASE_BACKUP_BYTES);
   const raw: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plaintext));
   origin(expectedProjectOrigin);
@@ -126,7 +125,8 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
   const legacyCollaboration = legacySharing || matchesManifest(raw.migrations, expected.slice(0,9));
   const legacyModels = legacyCollaboration || matchesManifest(raw.migrations,expected.slice(0,10));
   const legacySensitive = legacyModels || matchesManifest(raw.migrations,expected.slice(0,11));
-  check(legacySensitive || matchesManifest(raw.migrations, expected));
+  const legacyEmail = legacySensitive || matchesManifest(raw.migrations,expected.slice(0,12));
+  check(legacyEmail || matchesManifest(raw.migrations, expected.slice(0,13)) || matchesManifest(raw.migrations, expected.slice(0,14)) || matchesManifest(raw.migrations, expected));
   check(exact(raw.tables, NAMES.filter(name => !(legacySharing && name === 'case_shares') && !(legacyModels && name === 'case_scan_models') && !(legacySensitive && name === 'share_sensitive'))));
   if (legacySensitive) (raw.tables as Record<string, unknown>).share_sensitive = [];
   if (legacyModels) (raw.tables as Record<string, unknown>).case_scan_models = [];
@@ -137,7 +137,8 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
     check(Array.isArray(rows) && rows.length <= MAX_DATABASE_BACKUP_ROWS_PER_TABLE);
     for (const row of rows) {
       const keys = Object.keys(table.columns);
-      check(exact(row, name === 'cases' ? keys.filter(key => !(legacyPlanNames && key === 'plan_name') && !(legacyHomeSafety && key === 'home_safety') && !(legacyProgress && key === 'progress') && !(legacyCollaboration && key === 'collaboration')) : name === 'case_shares' && legacyCollaboration ? keys.filter(key=>key!=='collaboration_scope') : keys));
+      check(exact(row, name === 'cases' ? keys.filter(key => !(legacyPlanNames && key === 'plan_name') && !(legacyHomeSafety && key === 'home_safety') && !(legacyProgress && key === 'progress') && !(legacyCollaboration && key === 'collaboration')) : name === 'case_shares' ? keys.filter(key=>!(legacyCollaboration && key==='collaboration_scope') && !(legacyEmail && ['recipient_email_hash','invited_email'].includes(key))) : keys));
+      if (legacyEmail && name === 'case_shares') {row.recipient_email_hash=null;row.invited_email=null;}
       if (legacyHomeSafety && name === 'cases') row.home_safety = null;
       if (legacyProgress && name === 'cases') row.progress = null;
       if (legacyCollaboration && name === 'cases') row.collaboration = null;
@@ -185,6 +186,9 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
     check(typeof row.accepted === 'boolean' && typeof row.revoked === 'boolean');
     check(row.invitation_hash === null || /^[a-f0-9]{64}$/.test(String(row.invitation_hash)));
     check(!row.accepted || row.invitation_hash === null);
+    check(row.recipient_email_hash === null || HASH.test(String(row.recipient_email_hash)) && !row.accepted && !row.revoked);
+    check(row.invited_email===null || invitationEmail(row.invited_email)===row.invited_email && !row.revoked);
+    if(row.recipient_email_hash!==null)check(typeof row.invited_email==='string' && invitationEmailHash(row.invited_email)===row.recipient_email_hash);
     check(object(row.definition) && ['viewer','helper'].includes(String(row.definition.role)));
     const scope = parseScope(row.definition.scope);
     validateCollaborationScopeRecord(row.collaboration_scope);
@@ -318,15 +322,21 @@ async function parseArchive(plaintext: Buffer, expectedProjectOrigin: string): P
     const count = (programCounts.get(history.caseId) ?? 0) + 1; check(count <= 4); programCounts.set(history.caseId, count);
   }
   for(const row of tables.case_scan_models) {
-    const record=decodeScanRecord(bytes(row.record,MAX_SCAN_MODEL_BYTES)),parent=cases.get(String(row.case_id));
-    check(parent && record.caseId===row.case_id && row.room_key===(record.roomId===null?'legacy':`room:${record.roomId}`));
-    const room=record.roomId===null?null:parseHomeSafetyRecord(parent.home_safety).document.rooms.find(r=>r.id===record.roomId);
-    if(record.roomId!==null)check(room && (record.reviewJson===null || JSON.parse(record.reviewJson).roomType===room.type));
-    check(tables.case_scan_models.filter(r=>r.case_id===row.case_id).length<=33);
+    const parent=cases.get(String(row.case_id));check(parent);
+    if(row.room_key==='home') {
+      const record=decodeHomeRecord(bytes(row.record,MAX_HOME_MODEL_BYTES));
+      check(record.caseId===row.case_id && homeRoomsValid(record.bundleJson,record.caseId,parent.home_safety===null?[]:parseHomeSafetyRecord(parent.home_safety).document.rooms,true));
+    } else {
+      const record=decodeScanRecord(bytes(row.record,MAX_SCAN_MODEL_BYTES));
+      check(record.caseId===row.case_id && row.room_key===(record.roomId===null?'legacy':`room:${record.roomId}`));
+      const room=record.roomId===null?null:parseHomeSafetyRecord(parent.home_safety).document.rooms.find(r=>r.id===record.roomId);
+      if(record.roomId!==null)check(room && (record.reviewJson===null || JSON.parse(record.reviewJson).roomType===room.type));
+    }
+    check(tables.case_scan_models.filter(r=>r.case_id===row.case_id).length<=34);
   }
   const quota = tables.repository_quota[0];
   check(integer(quota.case_count, 0, 64) === tables.cases.length && integer(quota.asset_count, 0, 64) === tables.evidence.length
-    && integer(quota.artifact_count, 0, 16) === activeExports && integer(quota.stored_bytes, 0, 67108864) === evidenceBytes + exportBytes + tables.case_scan_models.reduce((n,row)=>n+bytes(row.record,MAX_SCAN_MODEL_BYTES).byteLength,0));
+    && integer(quota.artifact_count, 0, 16) === activeExports && integer(quota.stored_bytes, 0, 67108864) === evidenceBytes + exportBytes + tables.case_scan_models.reduce((n,row)=>n+bytes(row.record,row.room_key==='home'?MAX_HOME_MODEL_BYTES:MAX_SCAN_MODEL_BYTES).byteLength,0));
   return raw as unknown as Archive;
 }
 
@@ -346,6 +356,9 @@ async function assertOperatorSchema(client: PoolClient): Promise<void> {
       AND pg_has_role(current_user,c.relowner,'USAGE')
       AND pg_get_expr(p.polqual,p.polrelid)='true' AND pg_get_expr(p.polwithcheck,p.polrelid)='true') AS full_policy,
     EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid=c.oid AND NOT p.polpermissive
+      AND NOT (p.polname='recovery_access' AND p.polcmd='*' AND p.polroles=ARRAY[0::oid]
+        AND pg_get_expr(p.polqual,p.polrelid)='safeathome_recovery.operator_or_open()'
+        AND pg_get_expr(p.polwithcheck,p.polrelid)='safeathome_recovery.operator_or_open()')
       AND (0=ANY(p.polroles) OR EXISTS (SELECT 1 FROM unnest(p.polroles) role_id WHERE role_id<>0 AND pg_has_role(current_user,role_id,'USAGE')))) AS restrictive
     FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='safeathome_private' AND c.relkind NOT IN ('i','I') ORDER BY c.relname`);
@@ -407,6 +420,8 @@ export async function restoreDatabaseBackup(pool: Pool, plaintext: Buffer, expec
     const archive = await parseArchive(plaintext, expectedProjectOrigin);
     return await transaction(pool, true, async client => {
       await assertOperatorSchema(client);
+      const control=await lockRecoveryControl(client);
+      check(['open','quarantine'].includes(control.state));
       await client.query(`LOCK TABLE ${NAMES.map(name => `${S}.${name}`).join(',')} IN ACCESS EXCLUSIVE MODE`);
       for (const name of NAMES) {
         signal?.throwIfAborted();
@@ -415,6 +430,8 @@ export async function restoreDatabaseBackup(pool: Pool, plaintext: Buffer, expec
           && ['case_count', 'asset_count', 'artifact_count', 'stored_bytes'].every(key => rows[0][key] === '0'));
         else check(rows.length === 0);
       }
+      await client.query("UPDATE safeathome_recovery.control SET state='quarantine',staged=NULL,checkpoint_hash=NULL WHERE singleton");
+      await client.query('REVOKE USAGE ON SCHEMA safeathome_private FROM safeathome_app');
       for (const name of NAMES) {
         if (name === 'repository_quota') continue;
         const columns: Record<string, ColumnType> = TABLES[name].columns;

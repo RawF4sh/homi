@@ -40,6 +40,9 @@ export async function assertCompleteOperatorVisibility(client: PoolClient): Prom
       AND pg_has_role(current_user,c.relowner,'USAGE')
       AND pg_get_expr(p.polqual,p.polrelid)='true' AND pg_get_expr(p.polwithcheck,p.polrelid)='true') AS full_policy,
     EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid=c.oid AND NOT p.polpermissive
+      AND NOT (p.polname='recovery_access' AND p.polcmd='*' AND p.polroles=ARRAY[0::oid]
+        AND pg_get_expr(p.polqual,p.polrelid)='safeathome_recovery.operator_or_open()'
+        AND pg_get_expr(p.polwithcheck,p.polrelid)='safeathome_recovery.operator_or_open()')
       AND p.polcmd IN ('*','r')
       AND (0=ANY(p.polroles) OR EXISTS (SELECT 1 FROM unnest(p.polroles) role_id
         WHERE role_id<>0 AND pg_has_role(current_user,role_id,'USAGE')))) AS restrictive

@@ -1,3 +1,4 @@
+import type { HomeModelRepository } from './home-model.ts';
 import { ROOM_TYPES, type RoomInstance } from './home-safety.ts';
 import { createHash } from 'node:crypto';
 import { canonicalJson, evidenceIdentifier, evidenceInstant } from '../evidence/validation.ts';
@@ -97,7 +98,7 @@ export interface ScanModelRecord { schemaVersion:'3'; caseId:string; roomId:stri
 export interface ScanModelState { schemaVersion:'3'; caseId:string; roomId:string|null; caseRevision:number; modelRevision:number; reviewJson:string|null; reviewSha256:string|null; updatedAt:string|null; updatedBy:string|null; acknowledgedMutationId:string|null }
 export type ScanFailure={status:'not_found'|'conflict'|'model_conflict'|'mutation_conflict'|'limit'};
 export type ScanResult={status:'found';state:ScanModelState}|ScanFailure;
-export interface ScanModelRepository {
+export interface ScanModelRepository extends HomeModelRepository {
  readScanModelForUser(userId:string,caseId:string,roomId:string|null):Promise<ScanResult>;
  saveScanModelForUser(userId:string,input:ScanSave,at:string):Promise<ScanResult>;
 }
@@ -144,5 +145,5 @@ export const scanModelKey = (roomId:string|null) => roomId===null?'legacy':`room
 export function scanRoomValid(roomId:string|null,reviewJson:string|null,rooms:RoomInstance[]):boolean {
  if(roomId===null)return true;
  const room=rooms.find(r=>r.id===roomId);
- return room!==undefined && (reviewJson===null || JSON.parse(reviewJson).roomType===room.type);
+ return room!==undefined && (reviewJson===null || !room.archived && JSON.parse(reviewJson).roomType===room.type);
 }

@@ -1,3 +1,4 @@
+import { changeHomeModel, decodeHomeRecord, parseHomeRequest, homeState, homeRoomsValid, purgeHomeRoom, type HomeSave, type HomeResult, type HomeRecord } from '../assessment/home-model.ts';
 import { changeScanModel, decodeScanRecord, parseScanRequest, scanState, scanModelKey, scanRoomValid, type ScanSave, type ScanResult, type ScanModelRecord } from '../assessment/scan-model.ts';
 import { changeProgress, emptyProgress, parseProgressRecord, parseProgressRequest, type ProgressContext, type ProgressRecord, type ProgressResult, type ProgressSave } from '../tracking/progress.ts';
 import { assessmentForSafetyReview, changeHomeSafety, emptyHomeSafety, homeSafetyState, parseHomeSafetyRecord, parseHomeSafetyRequest, type HomeSafetySave, type HomeSafetyResult } from '../assessment/home-safety.ts';
@@ -217,7 +218,7 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       if(result.status==='changed') {
         const safety=(await tx.client.query(`SELECT home_safety FROM ${S}.cases WHERE case_id=$1`,[input.caseId])).rows[0].home_safety;
         if(!scanRoomValid(input.roomId,input.reviewJson,safety===null?[]:parseHomeSafetyRecord(safety).document.rooms))return {status:'not_found'};
-        const count=Number((await tx.client.query(`SELECT count(*) AS count FROM ${S}.case_scan_models WHERE case_id=$1`,[input.caseId])).rows[0].count);
+        const count=Number((await tx.client.query(`SELECT count(*) AS count FROM ${S}.case_scan_models WHERE case_id=$1 AND room_key<>'home'`,[input.caseId])).rows[0].count);
         if(!old && count>=33)return {status:'limit'};
         const bytes=Buffer.from(JSON.stringify(result.record)),delta=bytes.byteLength-(old?.byteLength??0);
         if(tx.quota!.bytes+delta>CAPACITY_LIMITS.binaryBytes)return {status:'limit'};
@@ -226,6 +227,31 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
         await this.quotaDelta(tx,0,0,0,delta);
       }
       return {status:'found',state:scanState(input.caseId,input.roomId,entry.snapshot.revision,result.record,input.mutationId)};
+    });
+  }
+  async readHomeModelForUser(userId:string,caseId:string):Promise<HomeResult> {
+    return this.transaction(userId,false,async tx=>{
+      const entry=await this.caseRow(tx,userId,caseId);if(!entry)return {status:'not_found'};
+      const row=(await tx.client.query(`SELECT record FROM ${S}.case_scan_models WHERE case_id=$1 AND room_key='home'`,[caseId])).rows[0];
+      return {status:'found',state:homeState(caseId,entry.snapshot.revision,row?decodeHomeRecord(row.record):null)};
+    });
+  }
+  async saveHomeModelForUser(userId:string,raw:HomeSave,at:string):Promise<HomeResult> {
+    const input=parseHomeRequest(raw,true) as HomeSave;
+    return this.transaction(userId,true,async tx=>{
+      const entry=await this.caseRow(tx,userId,input.caseId,true);if(!entry)return {status:'not_found'};
+      const old=(await tx.client.query(`SELECT record FROM ${S}.case_scan_models WHERE case_id=$1 AND room_key='home'`,[input.caseId])).rows[0]?.record as Buffer|undefined;
+      const result=changeHomeModel(old?decodeHomeRecord(old):null,input,userId,entry.snapshot.revision,await this.clock(tx,at));
+      if(!('record' in result))return result;
+      if(result.status==='changed') {
+        const safety=(await tx.client.query(`SELECT home_safety FROM ${S}.cases WHERE case_id=$1`,[input.caseId])).rows[0].home_safety;
+        if(!homeRoomsValid(input.bundleJson,input.caseId,safety===null?[]:parseHomeSafetyRecord(safety).document.rooms))return {status:'conflict'};
+        const bytes=Buffer.from(JSON.stringify(result.record)),delta=bytes.byteLength-(old?.byteLength??0);
+        if(tx.quota!.bytes+delta>CAPACITY_LIMITS.binaryBytes)return {status:'limit'};
+        await tx.client.query(`INSERT INTO ${S}.case_scan_models(case_id,room_key,record) VALUES($1,'home',$2) ON CONFLICT(case_id,room_key) DO UPDATE SET record=EXCLUDED.record`,[input.caseId,bytes]);
+        await this.quotaDelta(tx,0,0,0,delta);
+      }
+      return {status:'found',state:homeState(input.caseId,entry.snapshot.revision,result.record,input.mutationId)};
     });
   }
   private async progressContext(tx: Tx, userId: string, caseId: string, lock = false): Promise<ProgressContext | null> {
@@ -269,6 +295,21 @@ export class PostgresCaseRepository implements MatchCaseRepository, PacketCaseRe
       const result = changeHomeSafety(entry.snapshot, prior, input, userId, await this.clock(tx, at), catalog);
       if (result.status === 'retry') return { status: 'found', state: homeSafetyState(entry.snapshot, prior, input.mutationId, entry.catalogRevision) };
       if (result.status !== 'changed') return result;
+      if (input.operation.type === 'delete_room') {
+        const model = (await tx.client.query(`SELECT record FROM ${S}.case_scan_models WHERE case_id=$1 AND room_key=$2`, [input.caseId, scanModelKey(input.operation.roomId)])).rows[0]?.record as Buffer | undefined;
+        if ((model ? decodeScanRecord(model).revision : 0) !== input.operation.expectedModelRevision) return { status: 'safety_conflict' };
+        await tx.client.query(`DELETE FROM ${S}.case_scan_models WHERE case_id=$1 AND room_key=$2`, [input.caseId, scanModelKey(input.operation.roomId)]);
+        if (model) await this.quotaDelta(tx, 0, 0, 0, -model.byteLength);
+        const home=(await tx.client.query(`SELECT record FROM ${S}.case_scan_models WHERE case_id=$1 AND room_key='home'`,[input.caseId])).rows[0]?.record as Buffer|undefined;
+        if(home) {
+          const record=decodeHomeRecord(home),purged=purgeHomeRoom(record,input.operation.roomId,userId,await this.clock(tx,at));
+          if(purged!==record) {
+            const bytes=Buffer.from(JSON.stringify(purged));
+            await tx.client.query(`UPDATE ${S}.case_scan_models SET record=$2 WHERE case_id=$1 AND room_key='home'`,[input.caseId,bytes]);
+            await this.quotaDelta(tx,0,0,0,bytes.byteLength-home.byteLength);
+          }
+        }
+      }
       let preserved: AssessmentRecord | null = null;
       if (result.changesCase) {
         const old = (await tx.client.query(`SELECT record FROM ${S}.assessment_metadata WHERE case_id=$1`, [input.caseId])).rows[0];

@@ -1,4 +1,5 @@
 import { COLLABORATION_ROUTES, executeCollaboration, type CollaborationRoute } from './collaboration.ts';
+import { invitationEmailHash } from '../auth/invitation-email.ts';
 import { executeSensitive, type SensitiveRoute, type SensitiveRequest } from './sensitive.ts';
 import type { ProgramDefinition } from '../types.ts';
 import { parseProgressRecord, emptyProgress, programReports } from '../tracking/progress.ts';
@@ -39,14 +40,21 @@ export class PostgresSharingRepository implements SharingRepository {
     } catch (error) { try { await client.query('ROLLBACK'); } catch { broken = true; } throw error; }
     finally { client.release(broken); }
   }
-  async execute(userId: string, route: SharingRoute, raw: SharingRequest, tokenHash?: string): Promise<SharingResult> {
+  async execute(userId: string, route: SharingRoute, raw: SharingRequest, tokenHash?: string, verifiedEmail?: string): Promise<SharingResult> {
     const input = parseSharingRequest(route, raw);
-    if (['create-invitation','review-invitation','accept-invitation'].includes(route)) check(typeof tokenHash === 'string' && /^[0-9a-f]{64}$/.test(tokenHash));
+    if (['create-invitation','create-email-invitation','review-invitation','accept-invitation'].includes(route)) check(typeof tokenHash === 'string' && /^[0-9a-f]{64}$/.test(tokenHash));
+    const emailInvite = route === 'create-email-invitation';
+    if (emailInvite) input.recipientId = input.invitationId;
     const ruleVersions = Object.fromEntries((await this.registry()).map(p=>[p.programId,p.ruleVersion]));
     return this.transaction(userId, async (client, now) => {
       if((COLLABORATION_ROUTES as readonly string[]).includes(route)) return executeCollaboration(client,route as CollaborationRoute,input,ruleVersions);
       if (['review-invitation','accept-invitation','list-shared-cases','read-shared-case','add-shared-note'].includes(route)) {
-        const result = (await client.query(`SELECT ${S}.shared_operation($1,$2::jsonb) AS result`, [route, JSON.stringify({ ...input, code: undefined, tokenHash })])).rows[0].result;
+        const args = JSON.stringify({ ...input, code: undefined, tokenHash });
+        let result = (await client.query(`SELECT ${S}.shared_operation($1,$2::jsonb) AS result`, [route, args])).rows[0].result;
+        if (result.status === 'not_found' && verifiedEmail && ['review-invitation','accept-invitation'].includes(route)) {
+          result = (await client.query(`SELECT ${S}.email_invitation_operation($1,$2::jsonb,$3) AS result`,
+            [route, args, invitationEmailHash(verifiedEmail)])).rows[0].result;
+        }
         if (result.status !== 'ok') return { status: result.status };
         if (route === 'list-shared-cases') return { status: 'ok', data: { memberships: result.rows.map((r: QueryResultRow) => membership(r, Date.parse(now))) } };
         const row = result.row, grant = membership(row, Date.parse(now));
@@ -59,9 +67,11 @@ export class PostgresSharingRepository implements SharingRepository {
       const legacy = (await client.query(`SELECT record FROM ${S}.request_history WHERE case_id=$1`, [input.caseId])).rows.map(r => parseRequestHistory(r.record));
       const progress = ownerCase.progress === null ? emptyProgress(input.caseId!) : parseProgressRecord(ownerCase.progress);
       const programIds = [...new Set([...progress.programs.map(p => p.programId), ...legacy.map(h => h.programId)])];
-      if (route === 'list-sharing') {
+      if (route === 'list-sharing' || route === 'list-email-sharing') {
         const rows = (await client.query(`SELECT * FROM ${S}.case_shares WHERE case_id=$1 AND owner_id=$2 ORDER BY membership_id`, [input.caseId, userId])).rows;
-        return { status: 'ok', data: { availableProgramIds: programIds, shares: rows.map(row => ({ ...membership(row, Date.parse(now)), projection: row.projection, notes: row.notes.events, audit: row.audit.events })) } };
+        return { status: 'ok', data: { availableProgramIds: programIds, shares: rows.map(row => ({ ...membership(row, Date.parse(now)), projection: row.projection, notes: row.notes.events, audit: row.audit.events,
+          ...(route==='list-email-sharing'?{invitedEmail:row.invited_email}:{}),
+        })) } };
       }
       const row = input.invitationId ? (await client.query(`SELECT * FROM ${S}.case_shares WHERE membership_id=$1 AND case_id=$2 AND owner_id=$3 FOR UPDATE`, [input.invitationId, input.caseId, userId])).rows[0] : null;
       if (route === 'revoke-sharing') {
@@ -78,16 +88,16 @@ export class PostgresSharingRepository implements SharingRepository {
       if (!scope.programIds.every(id => programIds.includes(id))) return { status: 'invalid_request' };
       let projection; try { projection = projectCase(ownerCase.snapshot as CaseSnapshot, scope, histories, now); } catch { return { status: 'invalid_request' }; }
       if (route === 'preview-sharing') return { status: 'ok', data: { projection } };
-      if (route === 'create-invitation') {
+      if (route === 'create-invitation' || emailInvite) {
         if (input.recipientId === userId) return { status: 'invalid_request' };
         const key = hash(canonicalJson(input));
         if (row) return row.creation_key === key ? { status: 'ok', data: { created: false, membership: membership(row, Date.parse(now)) } } : { status: 'conflict' };
         const count = (await client.query(`SELECT count(*) AS n FROM ${S}.case_shares WHERE case_id=$1`, [input.caseId])).rows[0];
         if (Number(count.n) >= 16) return { status: 'quota_exceeded' };
         if (!(await client.query(`SELECT ${S}.share_recipient_has_capacity($1) AS capacity`, [input.recipientId])).rows[0].capacity) return {status:'quota_exceeded'};
-        const inserted = (await client.query(`INSERT INTO ${S}.case_shares(membership_id,case_id,owner_id,recipient_id,creation_key,invitation_hash,invitation_expires_at,expires_at,definition,projection,audit)
-          VALUES($1,$2,$3,$4,$5,$6,LEAST(clock_timestamp()+interval '7 days',COALESCE($7::timestamptz,'infinity'::timestamptz)),$7,$8::jsonb,$9::jsonb,${S}.share_audit('{"events":[]}', 'invited')) RETURNING *`,
-        [input.invitationId, input.caseId, userId, input.recipientId, key, tokenHash, input.expiresAt, JSON.stringify({ role: input.role, scope }), JSON.stringify(projection)])).rows[0];
+        const inserted = (await client.query(`INSERT INTO ${S}.case_shares(membership_id,case_id,owner_id,recipient_id,creation_key,invitation_hash,invitation_expires_at,expires_at,definition,projection,audit,recipient_email_hash,invited_email)
+          VALUES($1,$2,$3,$4,$5,$6,LEAST(clock_timestamp()+interval '7 days',COALESCE($7::timestamptz,'infinity'::timestamptz)),$7,$8::jsonb,$9::jsonb,${S}.share_audit('{"events":[]}', 'invited'),$10,$11) RETURNING *`,
+        [input.invitationId, input.caseId, userId, input.recipientId, key, tokenHash, input.expiresAt, JSON.stringify({ role: input.role, scope }), JSON.stringify(projection), emailInvite ? invitationEmailHash(input.recipientEmail!) : null, emailInvite?input.recipientEmail:null])).rows[0];
         return { status: 'ok', data: { created: true, membership: membership(inserted, Date.parse(now)) } };
       }
       if (route === 'change-sharing') {

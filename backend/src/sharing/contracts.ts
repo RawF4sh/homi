@@ -1,4 +1,5 @@
 import { check, object, uuid, instant } from './validation.ts';
+import { invitationEmail } from '../auth/invitation-email.ts';
 import { SENSITIVE_ROUTES, parseSensitiveRequest, type SensitiveRoute, type SensitiveRequest } from './sensitive.ts';
 export { check, object, uuid, instant } from './validation.ts';
 import { COLLABORATION_ROUTES, parseCollaborationRequest, type CollaborationRequest, type CollaborationRoute } from './collaboration.ts';
@@ -6,7 +7,7 @@ import { evidenceIdentifier, evidenceRevision } from '../evidence/validation.ts'
 import type { CaseSnapshot } from '../types.ts';
 
 
-export const SHARING_ROUTES = ['preview-sharing', 'create-invitation', 'list-sharing', 'change-sharing', 'revoke-sharing',
+export const SHARING_ROUTES = ['preview-sharing', 'create-invitation', 'create-email-invitation', 'list-email-sharing', 'list-sharing', 'change-sharing', 'revoke-sharing',
   'review-invitation', 'accept-invitation', 'list-shared-cases', 'read-shared-case', 'add-shared-note', ...COLLABORATION_ROUTES, ...SENSITIVE_ROUTES] as const;
 export type SharingRoute = typeof SHARING_ROUTES[number];
 export interface ShareScope { findingIds: string[]; programIds: string[]; allowHelperNotes: boolean }
@@ -26,10 +27,10 @@ export interface CaseMembership {
 export interface OwnerShare extends CaseMembership { projection: SharedCaseProjection | null; notes: SharedNote[]; audit: AccessAuditEvent[] }
 export interface SharedView { membership: CaseMembership; projection: SharedCaseProjection; notes: SharedNote[] }
 export type SharingRequest = CollaborationRequest & { schemaVersion: '3'; caseId?: string; expectedCaseRevision?: number; invitationId?: string;
-  recipientId?: string; role?: 'viewer' | 'helper'; scope?: ShareScope; expiresAt?: string | null;
+  recipientId?: string; recipientEmail?: string; role?: 'viewer' | 'helper'; scope?: ShareScope; expiresAt?: string | null;
   expectedPermissionRevision?: number; code?: string; membershipId?: string; mutationId?: string; note?: string };
 export interface SharingRepository {
-  execute(userId: string, route: SharingRoute, request: SharingRequest, tokenHash?: string): Promise<SharingResult>;
+  execute(userId: string, route: SharingRoute, request: SharingRequest, tokenHash?: string, verifiedEmail?: string): Promise<SharingResult>;
   sensitive?(userId: string, route: SensitiveRoute, request: SensitiveRequest): Promise<SharingResult>;
 }
 export type SharingResult = { status: 'ok'; data: Record<string, unknown> } | { status: 'not_found' | 'conflict' | 'quota_exceeded' | 'invalid_request' };
@@ -44,6 +45,8 @@ export function parseScope(value: unknown): ShareScope {
 const keys: Record<Exclude<SharingRoute,CollaborationRoute | SensitiveRoute>, string[]> = {
   'preview-sharing': ['caseId', 'expectedCaseRevision', 'scope'],
   'create-invitation': ['caseId', 'expectedCaseRevision', 'invitationId', 'recipientId', 'role', 'scope', 'expiresAt'],
+  'create-email-invitation': ['caseId', 'expectedCaseRevision', 'invitationId', 'recipientEmail', 'role', 'scope', 'expiresAt'],
+  'list-email-sharing': ['caseId'],
   'list-sharing': ['caseId'], 'change-sharing': ['caseId', 'expectedCaseRevision', 'invitationId', 'expectedPermissionRevision', 'role', 'scope', 'expiresAt'],
   'revoke-sharing': ['caseId', 'invitationId', 'expectedPermissionRevision'],
   'review-invitation': ['code'], 'accept-invitation': ['code', 'expectedPermissionRevision'], 'list-shared-cases': [],
@@ -58,10 +61,13 @@ export function parseSharingRequest(route: SharingRoute, value: unknown): Sharin
   for (const key of ['invitationId', 'recipientId', 'membershipId', 'mutationId']) if (key in value) check(uuid(value[key]));
   for (const key of ['expectedCaseRevision', 'expectedPermissionRevision']) if (key in value) check(evidenceRevision(value[key]));
   if ('scope' in value) { const scope = parseScope(value.scope); if ('role' in value) check(value.role === 'viewer' || value.role === 'helper'); check(value.role !== 'viewer' || !scope.allowHelperNotes); }
+  if ('recipientEmail' in value) check(invitationEmail(value.recipientEmail));
   if ('expiresAt' in value) check(value.expiresAt === null || instant(value.expiresAt));
   if ('code' in value) check(typeof value.code === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value.code));
   if ('note' in value) check(typeof value.note === 'string' && value.note.trim() === value.note && value.note.length > 0 && value.note.length <= 500 && !/[\u0000-\u001f\u007f-\u009f]/.test(value.note));
-  return structuredClone(value) as unknown as SharingRequest;
+  const parsed=structuredClone(value) as unknown as SharingRequest;
+  if ('recipientEmail' in value) parsed.recipientEmail=invitationEmail(value.recipientEmail)!;
+  return parsed;
 }
 export function projectCase(snapshot: CaseSnapshot, scope: ShareScope, histories: { programId: string; events: { status: string; occurredOn: string }[] }[], at: string): SharedCaseProjection {
   parseScope(scope); check(scope.findingIds.every(id => snapshot.findings.some(f => f.id === id)));

@@ -1,4 +1,5 @@
 import type { AuthenticatedUser } from '../api/match-case.ts';
+import { invitationEmail } from './invitation-email.ts';
 
 export interface SupabaseAuthConfig {
   projectUrl: string;
@@ -41,7 +42,7 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function userFromResponse(value: unknown, requireConfirmedIdentity: boolean): AuthenticatedUser | null {
+function userFromResponse(value: unknown, requireConfirmedIdentity: boolean, includeVerifiedEmail: boolean): AuthenticatedUser | null {
   if (!record(value) || typeof value.id !== 'string'
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.id)
     || value.id.length !== 36 || typeof value.role !== 'string') {
@@ -50,13 +51,16 @@ function userFromResponse(value: unknown, requireConfirmedIdentity: boolean): Au
   if (value.role !== 'authenticated') return null;
   if (requireConfirmedIdentity && (value.is_anonymous === true || ![value.email_confirmed_at, value.phone_confirmed_at].some(
     at => typeof at === 'string' && at.length > 0 && Number.isFinite(Date.parse(at))))) return null;
-  return Object.freeze({ userId: value.id });
+  const email = includeVerifiedEmail && value.is_anonymous !== true && typeof value.email_confirmed_at === 'string'
+    && Number.isFinite(Date.parse(value.email_confirmed_at)) ? invitationEmail(value.email) : null;
+  return Object.freeze({ userId: value.id, ...(email ? { verifiedEmail: email } : {}) });
 }
 
 export function createSupabaseAuthenticator(
   config: SupabaseAuthConfig,
   fetchImpl: typeof fetch = globalThis.fetch,
   requireConfirmedIdentity = false,
+  includeVerifiedEmail = false,
 ): (token: string) => Promise<AuthenticatedUser | null> {
   const { endpoint, publishableKey, timeoutMs } = configuration(config);
   if (typeof fetchImpl !== 'function') throw new TypeError('Invalid authentication transport.');
@@ -123,7 +127,7 @@ export function createSupabaseAuthenticator(
         size += chunk.value.byteLength;
       }
       const decoded: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size)));
-      return userFromResponse(decoded, requireConfirmedIdentity);
+      return userFromResponse(decoded, requireConfirmedIdentity, includeVerifiedEmail);
     };
 
     try {

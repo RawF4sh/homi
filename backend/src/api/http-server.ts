@@ -1,7 +1,10 @@
+import { MAX_HOME_MODEL_BYTES } from '../assessment/home-model.ts';
 import { handleScanModel, type ScanModelDependencies, type ScanModelRoute } from './scan-model.ts';
 import { MAX_SCAN_MODEL_BYTES } from '../assessment/scan-model.ts';
 import { SHARING_ROUTES, type SharingRoute } from '../sharing/contracts.ts';
 import { handleSharing, type SharingDependencies } from './sharing.ts';
+import { invitationLanding } from '../sharing/invitation-landing.ts';
+import { invitationEmail } from '../auth/invitation-email.ts';
 import { handleProgress, type ProgressDependencies, type ProgressRoute } from './progress.ts';
 import { handleHomeSafety, type HomeSafetyDependencies, type HomeSafetyRoute } from './home-safety.ts';
 import { handlePlanName, type PlanNameDependencies, type PlanNameRoute } from './plan-name.ts';
@@ -33,6 +36,7 @@ interface UploadAdmission { active: boolean }
 type AuthenticationStopped = { status: 'aborted' } | { status: 'unavailable' };
 
 export interface HttpServerOptions {
+  repositoryAvailable?: () => Promise<boolean>;
   hosted?: boolean;
   assessmentDependencies?: AssessmentDependencies;
   programIntakeDependencies?: ProgramIntakeDependencies;
@@ -47,13 +51,13 @@ export interface HttpServerOptions {
   requestTrackingDependencies?: RequestTrackingDependencies;
 }
 
-const ACCOUNT_HEAVY_ROUTES = new Set(['/v3/read-scan-model', '/v3/save-scan-model', '/v1/upload-evidence', '/v1/download-evidence',
+const ACCOUNT_HEAVY_ROUTES = new Set(['/v3/read-scan-model', '/v3/save-scan-model', '/v3/read-home-model', '/v3/save-home-model', '/v1/upload-evidence', '/v1/download-evidence',
   '/v3/preview-sensitive-photo', '/v3/read-sensitive-photo', '/v3/preview-sensitive-report', '/v3/read-sensitive-report',
   '/v1/create-draft-export', '/v1/download-draft-export', '/v2/create-draft-export', '/v2/download-draft-export']);
 
 interface RequestAccountGate { acquire(userId: string): boolean; receipt(): boolean }
 
-const HEAVY_ROUTES = new Set(['/v3/read-scan-model', '/v3/save-scan-model', '/v1/upload-evidence', '/v1/download-evidence',
+const HEAVY_ROUTES = new Set(['/v3/read-scan-model', '/v3/save-scan-model', '/v3/read-home-model', '/v3/save-home-model', '/v1/upload-evidence', '/v1/download-evidence',
   '/v3/preview-sensitive-photo', '/v3/read-sensitive-photo', '/v3/preview-sensitive-report', '/v3/read-sensitive-report',
   '/v1/create-draft-export', '/v1/download-draft-export', '/v2/create-draft-export', '/v2/download-draft-export', '/v1/delete-case', '/v1/confirm-account-deletion']);
 
@@ -96,16 +100,20 @@ function fail(response: ServerResponse, status: number, code: ApiErrorCode | 'NO
   sendJson(response, status, { schemaVersion: '1', error: { code, message } }, headers);
 }
 
-async function captureAuthentication(authenticate: (token: string) => Promise<AuthenticatedUser | null>, token: string) {
+async function captureAuthentication(authenticate: (token: string) => Promise<AuthenticatedUser | null>, token: string, allowVerifiedEmail = false) {
   let outcome: { user: AuthenticatedUser | null } | { error: unknown };
   let userId: string | null = null;
   let malformed = false;
   try {
     const user = await authenticate(token);
+    const hasEmail = user !== null && typeof user === 'object' && Object.hasOwn(user, 'verifiedEmail');
     if (user !== null && typeof user === 'object' && !Array.isArray(user)
-      && Object.keys(user).length === 1 && Object.hasOwn(user, 'userId') && evidenceIdentifier(user.userId)) {
+      && Object.keys(user).length === (hasEmail ? 2 : 1)
+      && (!hasEmail || (allowVerifiedEmail && typeof user.verifiedEmail === 'string'
+        && invitationEmail(user.verifiedEmail) === user.verifiedEmail))
+      && Object.hasOwn(user, 'userId') && evidenceIdentifier(user.userId)) {
       userId = user.userId;
-      outcome = { user: Object.freeze({ userId }) };
+      outcome = { user: Object.freeze({ userId, ...(hasEmail ? { verifiedEmail: user.verifiedEmail } : {}) }) };
     } else { malformed = user !== null; outcome = { user }; }
   } catch (error) { outcome = { error }; }
   return { userId, malformed, authenticate: async (requestedToken: string) => {
@@ -199,8 +207,15 @@ export function createMatchingServer(
         return work;
       },
     } : options.scanModelDependencies;
-    void route(request, response, dependencies, uploadAdmission, packetDependencies, formAnswerDependencies,
-      exportDependencies, caseWriteDependencies, trackedEvidenceDependencies, options.lifecycleDependencies, options.caseListDependencies, options.requestTrackingDependencies, accountGate, options.assessmentDependencies, options.programIntakeDependencies, options.planNameDependencies, options.homeSafetyDependencies, options.sharingDependencies, options.progressDependencies, trackedScanModelDependencies).catch(() => {
+    const dispatch=async()=>{
+      if(options.repositoryAvailable){
+        let available=false;try{available=await options.repositoryAvailable();}catch{}
+        if(!available){fail(response,503,'SERVICE_UNAVAILABLE','The service is unavailable for maintenance.',{'Retry-After':'60'});request.resume();return;}
+      }
+      await route(request, response, dependencies, uploadAdmission, packetDependencies, formAnswerDependencies,
+        exportDependencies, caseWriteDependencies, trackedEvidenceDependencies, options.lifecycleDependencies, options.caseListDependencies, options.requestTrackingDependencies, accountGate, options.assessmentDependencies, options.programIntakeDependencies, options.planNameDependencies, options.homeSafetyDependencies, options.sharingDependencies, options.progressDependencies, trackedScanModelDependencies);
+    };
+    void dispatch().catch(() => {
       if (response.headersSent) response.destroy();
       else fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.');
     }).finally(async () => {
@@ -239,8 +254,9 @@ async function route(
   progressDependencies?: ProgressDependencies,
   scanModelDependencies?: ScanModelDependencies,
 ) {
-  const scanModelRoute = scanModelDependencies ? (['read-scan-model','save-scan-model'] as ScanModelRoute[]).find(r=>request.url===`/v3/${r}`) : undefined;
-  const scanSave = scanModelRoute==='save-scan-model';
+  if (sharingDependencies?.simpleInvitationsEnabled === true && invitationLanding(request,response)) return;
+  const scanModelRoute = scanModelDependencies ? (['read-scan-model','save-scan-model','read-home-model','save-home-model'] as ScanModelRoute[]).find(r=>request.url===`/v3/${r}`) : undefined;
+  const scanSave = scanModelRoute==='save-scan-model' || scanModelRoute==='save-home-model';
   const progressRoute = progressDependencies ? (['read-progress', 'save-progress', 'read-progress-history'] as ProgressRoute[]).find(r => request.url === `/v3/${r}`) : undefined;
   const sharingRoute = sharingDependencies ? SHARING_ROUTES.find(r => request.url === `/v3/${r}`) : undefined;
   const homeSafetyRoute = homeSafetyDependencies ? (['read-home-safety', 'save-home-safety', 'export-home-safety'] as HomeSafetyRoute[]).find(r => request.url === `/v3/${r}`) : undefined;
@@ -382,7 +398,7 @@ async function readAndDispatch(
   scanModelDependencies?: ScanModelDependencies,
 ) {
   const { isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, exportVersion, lifecycleRoute, requestTrackingRoute, assessmentRoute, programIntakeRoute, planNameRoute, homeSafetyRoute, sharingRoute, progressRoute, scanModelRoute } = routes;
-  const limit = scanModelRoute==='save-scan-model' ? MAX_SCAN_MODEL_BYTES : isUpload ? MAX_UPLOAD_REQUEST_BYTES : assessmentRoute==='save-assessment' ? 32*1024 : MAX_REQUEST_BYTES;
+  const limit = scanModelRoute==='save-home-model' ? MAX_HOME_MODEL_BYTES : scanModelRoute==='save-scan-model' ? MAX_SCAN_MODEL_BYTES : isUpload ? MAX_UPLOAD_REQUEST_BYTES : assessmentRoute==='save-assessment' ? 32*1024 : MAX_REQUEST_BYTES;
   if (request.headers['content-length'] && Number(request.headers['content-length']) > limit) {
     fail(response, 413, 'PAYLOAD_TOO_LARGE', 'The request is too large.', { Connection: 'close' });
     request.resume();
@@ -401,7 +417,7 @@ async function readAndDispatch(
     return;
   }
   if (response.destroyed || response.writableEnded) return;
-  if (accountGate && !isUpload && scanModelRoute!=='save-scan-model') {
+  if (accountGate && !isUpload && scanModelRoute!=='save-scan-model' && scanModelRoute!=='save-home-model') {
     if (lifecycleRoute === 'account-deletion-status') {
       if (!accountGate.receipt()) return;
     } else {
@@ -413,7 +429,7 @@ async function readAndDispatch(
       const recent = lifecycleRoute === 'prepare-account-deletion' || lifecycleRoute === 'confirm-account-deletion';
       const authenticate = recent ? lifecycleDependencies!.authenticateForDeletion.bind(lifecycleDependencies)
         : selected.authenticate.bind(selected);
-      const outcome = await captureAuthentication(authenticate, token);
+      const outcome = await captureAuthentication(authenticate, token, sharingRoute !== undefined);
       if (response.destroyed || response.writableEnded) return;
       if (outcome.malformed) { fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.'); return; }
       if (outcome.userId !== null && !accountGate.acquire(outcome.userId)) return;

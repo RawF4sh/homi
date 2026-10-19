@@ -14,7 +14,7 @@ export interface SafetyQuestion { id: string; section: string; rooms: typeof ROO
 export const STEADI_CATALOG = JSON.parse(readFileSync(new URL('./steadi-catalog.json', import.meta.url), 'utf8')) as {
   version: string; sourceUrl: string; sourceTitle: string; reviewedOn: string; questions: SafetyQuestion[];
 };
-export interface RoomInstance { id: string; type: typeof ROOM_TYPES[number]; name: string | null }
+export interface RoomInstance { id: string; type: typeof ROOM_TYPES[number]; name: string | null; archived?: true }
 export interface SafetyAnswer { roomId: string; questionId: string; value: typeof ANSWERS[number]; revision: number }
 export interface FindingRoom { findingId: string; roomId: string; questionId: string | null; answerRevision: number | null }
 export interface SafetyDocument { catalogVersion: string; rooms: RoomInstance[]; answers: SafetyAnswer[]; findingRooms: FindingRoom[] }
@@ -22,6 +22,9 @@ export interface SafetyEvent { mutationId: string; requestHash: string; revision
 export interface HomeSafetyRecord { schemaVersion: '3'; caseId: string; revision: number; document: SafetyDocument; history: SafetyEvent[] }
 export interface HomeSafetyState { schemaVersion: '3'; case: CaseSnapshot; safety: HomeSafetyRecord; acknowledgedMutationId: string | null; evidenceCatalogRevision?: number }
 export type SafetyOperation = { type: 'add_room'; room: RoomInstance }
+  | { type: 'archive_room'; roomId: string }
+  | { type: 'restore_room'; roomId: string }
+  | { type: 'delete_room'; roomId: string; expectedModelRevision: number }
   | { type: 'rename_room'; roomId: string; name: string | null }
   | { type: 'answer'; roomId: string; questionId: string; value: SafetyAnswer['value'] }
   | { type: 'assign_finding'; roomId: string; findingId: string }
@@ -43,15 +46,17 @@ export function validRoomName(value: unknown): value is string | null {
     && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069\ud800-\udfff]/u.test(value);
 }
 function parseRoom(value: unknown): RoomInstance {
-  check(exact(value, ['id', 'type', 'name']) && id(value.id) && ROOM_TYPES.includes(value.type) && validRoomName(value.name));
+  check(exact(value, ['id', 'type', 'name', ...(Object.hasOwn(value ?? {}, 'archived') ? ['archived'] : [])]) && (!Object.hasOwn(value, 'archived') || value.archived === true) && id(value.id) && ROOM_TYPES.includes(value.type) && validRoomName(value.name));
   return structuredClone(value) as RoomInstance;
 }
 export function parseSafetyOperation(value: unknown): SafetyOperation {
   check(value !== null && typeof value === 'object');
   const op = value as Record<string, any>;
-  if (op.type === 'add_room') { check(exact(op, ['type', 'room'])); return { type: 'add_room', room: parseRoom(op.room) }; }
+  if (op.type === 'add_room') { check(exact(op, ['type', 'room'])); const room = parseRoom(op.room); check(!room.archived); return { type: 'add_room', room }; }
   check(id(op.roomId));
-  if (op.type === 'rename_room') check(exact(op, ['type', 'roomId', 'name']) && validRoomName(op.name));
+  if (op.type === 'archive_room' || op.type === 'restore_room') check(exact(op, ['type', 'roomId']));
+  else if (op.type === 'delete_room') check(exact(op, ['type', 'roomId', 'expectedModelRevision']) && revision(op.expectedModelRevision, true));
+  else if (op.type === 'rename_room') check(exact(op, ['type', 'roomId', 'name']) && validRoomName(op.name));
   else if (op.type === 'assign_finding') check(exact(op, ['type', 'roomId', 'findingId']) && id(op.findingId));
   else if (op.type === 'annotate_answer') {
     check(exact(op, ['type','roomId','questionId','answerRevision','note','expectedCatalogRevision','evidence'])
@@ -168,11 +173,23 @@ export function changeHomeSafety(snapshot: CaseSnapshot, prior: HomeSafetyRecord
   const doc = structuredClone(prior.document), op = input.operation;
   let nextSnapshot = structuredClone(snapshot), changesCase = false;
   if (op.type === 'add_room') {
-    if (doc.rooms.length >= 32 || doc.rooms.some(r => r.id === op.room.id)) return { status: 'invalid_operation' };
+    if (doc.rooms.length >= 32 || doc.rooms.some(r => r.id === op.room.id) || prior.history.some(e => e.operation.type === 'add_room' && e.operation.room.id === op.room.id)) return { status: 'invalid_operation' };
     doc.rooms.push(op.room);
   } else {
     const room = doc.rooms.find(r => r.id === op.roomId); if (!room) return { status: 'invalid_operation' };
-    if (op.type === 'rename_room') room.name = op.name;
+    if (op.type === 'archive_room') {
+      if (room.archived) return { status: 'invalid_operation' };
+      room.archived = true;
+    } else if (op.type === 'restore_room') {
+      if (!room.archived) return { status: 'invalid_operation' };
+      delete room.archived;
+    } else if (op.type === 'delete_room') {
+      if (!room.archived) return { status: 'invalid_operation' };
+      doc.rooms = doc.rooms.filter(r => r.id !== room.id);
+      doc.answers = doc.answers.filter(a => a.roomId !== room.id);
+      doc.findingRooms = doc.findingRooms.filter(l => l.roomId !== room.id);
+    } else if (room.archived) return { status: 'invalid_operation' };
+    else if (op.type === 'rename_room') room.name = op.name;
     else if (op.type === 'set_addressed') {
       const link = doc.findingRooms.find(l => l.roomId === room.id && l.findingId === op.findingId);
       const finding = snapshot.findings.find(f => f.id === op.findingId);

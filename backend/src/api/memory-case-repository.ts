@@ -1,3 +1,4 @@
+import { changeHomeModel, decodeHomeRecord, parseHomeRequest, homeState, homeRoomsValid, purgeHomeRoom, type HomeSave, type HomeResult, type HomeRecord } from '../assessment/home-model.ts';
 import { changeScanModel, decodeScanRecord, parseScanRequest, scanState, scanModelKey, scanRoomValid, type ScanSave, type ScanResult, type ScanModelRecord } from '../assessment/scan-model.ts';
 import { changeProgress, emptyProgress, parseProgressRecord, parseProgressRequest, type ProgressContext, type ProgressRecord, type ProgressResult, type ProgressSave } from '../tracking/progress.ts';
 import { assessmentForSafetyReview, changeHomeSafety, emptyHomeSafety, homeSafetyState, parseHomeSafetyRequest, type HomeSafetySave, type HomeSafetyResult } from '../assessment/home-safety.ts';
@@ -131,6 +132,24 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     }
     return {status:'found',state:structuredClone(scanState(input.caseId,input.roomId,entry.snapshot.revision,result.record,input.mutationId))};
   }
+  private readonly homeModels = new Map<string,HomeRecord>();
+  async readHomeModelForUser(userId:string,caseId:string):Promise<HomeResult> {
+    const entry=this.cases.get(caseId);if(!entry || entry.userId!==userId)return {status:'not_found'};
+    return {status:'found',state:structuredClone(homeState(caseId,entry.snapshot.revision,this.homeModels.get(caseId)??null))};
+  }
+  async saveHomeModelForUser(userId:string,raw:HomeSave,at:string):Promise<HomeResult> {
+    const input=parseHomeRequest(raw,true) as HomeSave,entry=this.cases.get(input.caseId);
+    if(!entry || entry.userId!==userId)return {status:'not_found'};
+    const old=this.homeModels.get(input.caseId)??null,result=changeHomeModel(old,input,userId,entry.snapshot.revision,at);
+    if(!('record' in result))return result;
+    if(result.status==='changed') {
+      if(!homeRoomsValid(input.bundleJson,input.caseId,this.homeSafety.get(input.caseId)?.document.rooms??[]))return {status:'conflict'};
+      const size=Buffer.byteLength(JSON.stringify(result.record)),prior=old===null?0:Buffer.byteLength(JSON.stringify(old));
+      if(this.byteCount()-prior+size>this.evidenceLimits.maxBytes)return {status:'limit'};
+      this.homeModels.set(input.caseId,result.record);
+    }
+    return {status:'found',state:structuredClone(homeState(input.caseId,entry.snapshot.revision,result.record,input.mutationId))};
+  }
   private readonly progress = new Map<string, ProgressRecord>();
   async readProgressForUser(userId: string, caseId: string): Promise<ProgressResult> {
     const entry = this.cases.get(caseId); if (!entry || entry.userId !== userId) return { status: 'not_found' };
@@ -159,6 +178,13 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
     const result = changeHomeSafety(entry.snapshot, prior, input, userId, at, catalog);
     if (result.status === 'retry') return { status: 'found', state: homeSafetyState(entry.snapshot, prior, input.mutationId, this.catalogRevisions.get(input.caseId) ?? 0) };
     if (result.status !== 'changed') return result;
+    if (input.operation.type === 'delete_room') {
+      const key = JSON.stringify([input.caseId, scanModelKey(input.operation.roomId)]);
+      if ((this.scanModels.get(key)?.revision ?? 0) !== input.operation.expectedModelRevision) return { status: 'safety_conflict' };
+      this.scanModels.delete(key);
+      const home=this.homeModels.get(input.caseId);
+      if(home)this.homeModels.set(input.caseId,purgeHomeRoom(home,input.operation.roomId,userId,at));
+    }
     const preserved = result.changesCase ? assessmentForSafetyReview({ before: entry.snapshot, next: result.snapshot,
       prior: this.assessments.get(input.caseId) ?? null, request: input, userId, at, catalogRevision: this.catalogRevisions.get(input.caseId) ?? 0 }) : { record: null, limit: false };
     if (preserved.limit) return { status: 'history_limit' };
@@ -669,7 +695,7 @@ export class MemoryCaseRepository implements MatchCaseRepository, PacketCaseRepo
   }
 
   private byteCount(): number {
-    let total = [...this.scanModels.values()].reduce((n,r)=>n+Buffer.byteLength(JSON.stringify(r)),0);
+    let total = [...this.homeModels.values(),...this.scanModels.values()].reduce((n,r)=>n+Buffer.byteLength(JSON.stringify(r)),0);
     for (const rows of this.evidence.values()) for (const row of rows.values()) total += row.asset?.bytes.byteLength ?? 0;
     for (const row of this.exports.values()) total += row.artifact.bytes.byteLength;
     return total;

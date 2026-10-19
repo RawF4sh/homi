@@ -86,10 +86,10 @@ export async function assertRestrictedRuntimeRole(pool: Pool): Promise<void> {
       AND (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication
         OR left(r.rolname, 3) = 'pg_')) AS elevated,
     (EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname IN ('safeathome_private', 'safeathome_migrations')
+      WHERE n.nspname IN ('safeathome_private', 'safeathome_migrations', 'safeathome_recovery')
       AND pg_has_role(current_user, c.relowner, 'member'))
      OR EXISTS (SELECT 1 FROM pg_namespace n
-       WHERE n.nspname IN ('safeathome_private', 'safeathome_migrations')
+       WHERE n.nspname IN ('safeathome_private', 'safeathome_migrations', 'safeathome_recovery')
        AND pg_has_role(current_user, n.nspowner, 'member'))
      OR EXISTS (SELECT 1 FROM pg_database d WHERE d.datname = current_database()
        AND pg_has_role(current_user, d.datdba, 'member'))) AS owns_data`);
