@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 enum AssistantAvailability {
   ready,
   requiresIos26,
+  requiresAndroid26,
+  modelDownloadable,
+  modelDownloading,
   unsupportedDevice,
   disabled,
   modelNotReady,
@@ -30,7 +33,12 @@ abstract interface class AssistantModel {
   Future<void> cancel(String requestId);
 }
 
-class OnDeviceAssistantModel implements AssistantModel {
+abstract interface class DownloadableAssistantModel {
+  Future<void> download(String requestId);
+}
+
+class OnDeviceAssistantModel
+    implements AssistantModel, DownloadableAssistantModel {
   const OnDeviceAssistantModel({
     this.channel = const MethodChannel('safe_at_home/assistant'),
     this.platform,
@@ -38,7 +46,31 @@ class OnDeviceAssistantModel implements AssistantModel {
   final MethodChannel channel;
   final TargetPlatform? platform;
   bool get _supported =>
-      !kIsWeb && (platform ?? defaultTargetPlatform) == TargetPlatform.iOS;
+      !kIsWeb &&
+      {
+        TargetPlatform.iOS,
+        TargetPlatform.android,
+      }.contains(platform ?? defaultTargetPlatform);
+
+  @override
+  Future<void> download(String requestId) async {
+    if (!_supported ||
+        (platform ?? defaultTargetPlatform) != TargetPlatform.android) {
+      throw const AssistantFailure('UNAVAILABLE');
+    }
+    try {
+      await channel
+          .invokeMethod<void>('download', {'requestId': requestId})
+          .timeout(const Duration(seconds: 190));
+    } on TimeoutException {
+      unawaited(cancel(requestId));
+      throw const AssistantFailure('TIMEOUT');
+    } on PlatformException catch (error) {
+      throw AssistantFailure(error.code);
+    } on MissingPluginException {
+      throw const AssistantFailure('UNAVAILABLE');
+    }
+  }
 
   @override
   Future<AssistantAvailability> availability(String locale) async {

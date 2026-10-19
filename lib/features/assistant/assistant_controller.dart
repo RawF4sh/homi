@@ -56,6 +56,36 @@ class AssistantController extends ChangeNotifier {
     _changed();
   }
 
+  Future<void> downloadModel() async {
+    final source = model;
+    if (_disposed ||
+        busy ||
+        checking ||
+        availability != AssistantAvailability.modelDownloadable ||
+        source is! DownloadableAssistantModel) {
+      return;
+    }
+    final epoch = ++_epoch;
+    final id = newUuidV4();
+    _requestId = id;
+    busy = true;
+    errorCode = null;
+    _changed();
+    try {
+      await (source as DownloadableAssistantModel).download(id);
+    } catch (error) {
+      if (!_disposed && epoch == _epoch) {
+        errorCode = error is AssistantFailure ? error.code : 'FAILED';
+      }
+    } finally {
+      if (!_disposed && epoch == _epoch) {
+        _requestId = null;
+        busy = false;
+        await check();
+      }
+    }
+  }
+
   bool refreshContext() {
     final next = contextProvider();
     if (next?.key == context?.key) return false;
