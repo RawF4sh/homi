@@ -5,6 +5,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'local_private_store.dart';
 import 'token_availability.dart';
 
+class AuthEmailCooldownException implements Exception {
+  const AuthEmailCooldownException();
+}
+
+bool isAccountEmail(String value) =>
+    value.trim().length <= 254 &&
+    RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim());
+
 bool acceptsAuthCallback(Uri uri, Uri expected) =>
     uri.scheme == expected.scheme &&
     uri.host == expected.host &&
@@ -247,6 +255,10 @@ abstract class SessionService extends ChangeNotifier {
   bool get recoveryRequired;
   Future<String?> accessToken();
   Future<void> signIn(String email, String password);
+  Future<void> createAccount(String email, String password) =>
+      Future.error(StateError('Public account creation is unavailable.'));
+  Future<void> resendConfirmation(String email) =>
+      Future.error(StateError('Confirmation email is unavailable.'));
   Future<void> reauthenticate(String password);
   Future<void> signOut();
   Future<void> requestRecovery(String email);
@@ -265,6 +277,9 @@ class SupabaseSessionService extends SessionService {
     this.client, {
     required this.callback,
     required this.emailDeliveryEnabled,
+    this.publicSignupEnabled = false,
+    this.registrationClient,
+    this.emailRequestCooldown = const Duration(seconds: 60),
     required this.reauthenticationClient,
     this.persistedSessionStorage,
   }) {
@@ -293,6 +308,12 @@ class SupabaseSessionService extends SessionService {
   final SupabaseClient client;
   final Uri callback;
   final bool emailDeliveryEnabled;
+  final bool publicSignupEnabled;
+
+  final GoTrueClient Function()? registrationClient;
+  final Duration emailRequestCooldown;
+  final _emailClock = Stopwatch()..start();
+  Duration? _lastEmailRequest;
   final GoTrueClient Function() reauthenticationClient;
   final SecureSessionStorage? persistedSessionStorage;
   ({String token, DateTime expires})? _confirmedToken;
@@ -421,6 +442,62 @@ class SupabaseSessionService extends SessionService {
     );
   });
 
+  void _prepareEmailRequest(String email) {
+    if (!emailDeliveryEnabled) {
+      throw StateError('Account email delivery is unavailable.');
+    }
+    if (!isAccountEmail(email)) throw const FormatException();
+    final previous = _lastEmailRequest;
+    if (previous != null &&
+        _emailClock.elapsed - previous < emailRequestCooldown) {
+      throw const AuthEmailCooldownException();
+    }
+    _lastEmailRequest = _emailClock.elapsed;
+  }
+
+  @override
+  Future<void> createAccount(String email, String password) =>
+      authOperation(() async {
+        if (!publicSignupEnabled ||
+            registrationClient == null ||
+            _userId != null) {
+          throw StateError('Public account creation is unavailable.');
+        }
+        if (password.length < 12) throw const FormatException();
+        _prepareEmailRequest(email);
+        final registration = registrationClient!();
+        try {
+          final result = await registration.signUp(
+            email: email.trim(),
+            password: password,
+            emailRedirectTo: callback.toString(),
+          );
+          if (result.session != null) {
+            throw StateError('Email confirmation must be enabled.');
+          }
+        } finally {
+          registration.dispose();
+        }
+      });
+
+  @override
+  Future<void> resendConfirmation(String email) => authOperation(() async {
+    if (!publicSignupEnabled || registrationClient == null || _userId != null) {
+      throw StateError('Public account creation is unavailable.');
+    }
+    _prepareEmailRequest(email);
+    final registration = registrationClient!();
+    try {
+      await registration.resend(
+        type: OtpType.signup,
+        email: email.trim(),
+        emailRedirectTo: callback.toString(),
+      );
+    } finally {
+      registration.dispose();
+    }
+  });
+
   @override
   Future<void> reauthenticate(String password) async {
     await waitForAccountCleanup();
@@ -472,15 +549,14 @@ class SupabaseSessionService extends SessionService {
     _confirmedToken = null;
     _userId = null;
     _recovery = false;
+    _lastEmailRequest = null;
     notifyListeners();
     await client.auth.signOut(scope: SignOutScope.local);
   }
 
   @override
   Future<void> requestRecovery(String email) => authOperation(() async {
-    if (!emailDeliveryEnabled) {
-      throw StateError('Email recovery has not been enabled for this beta.');
-    }
+    _prepareEmailRequest(email);
     await client.auth.resetPasswordForEmail(
       email.trim(),
       redirectTo: callback.toString(),
@@ -493,6 +569,7 @@ class SupabaseSessionService extends SessionService {
     final generation = _epoch;
     return authOperation(() async {
       if (!_recovery ||
+          password.length < 12 ||
           owner == null ||
           _userId != owner ||
           _epoch != generation) {

@@ -1,3 +1,4 @@
+import '../models/home_model_sync.dart';
 import 'dart:async';
 import 'dart:convert';
 import '../models/scan_model_sync.dart';
@@ -80,11 +81,60 @@ class ScanModelApiClient {
     }
   }
 
+  Future<HomeModelState> readHome(
+    String caseId, {
+    required bool Function() isCurrent,
+  }) async {
+    ExportContractValues.id(caseId);
+    final value = await _post(
+      'read-home-model',
+      {'schemaVersion': '3', 'caseId': caseId},
+      guard: () => _current(isCurrent),
+      maxBytes: homeSyncMaxBytes,
+    );
+    try {
+      final state = HomeModelState.fromJson(value, caseId: caseId);
+      if (state.acknowledgedMutationId != null) throw const FormatException();
+      return state;
+    } catch (_) {
+      throw _error('UNEXPECTED_RESPONSE');
+    }
+  }
+
+  Future<HomeModelState> saveHome(
+    Map<String, Object?> request, {
+    required bool Function() isCurrent,
+  }) async {
+    if (utf8.encode(jsonEncode(request)).length > homeSyncMaxBytes) {
+      throw _error('INVALID_REQUEST');
+    }
+    final value = await _post(
+      'save-home-model',
+      request,
+      guard: () => _current(isCurrent),
+      saving: true,
+      maxBytes: homeSyncMaxBytes,
+    );
+    try {
+      final state = HomeModelState.fromJson(
+        value,
+        caseId: request['caseId'] as String,
+      );
+      if (state.acknowledgedMutationId != request['mutationId']) {
+        throw const FormatException();
+      }
+      return state;
+    } catch (_) {
+      throw _error('SCAN_MODEL_SAVE_UNCERTAIN');
+    }
+  }
+
   Future<Object?> _post(
     String route,
     Map<String, Object?> body, {
     required void Function() guard,
     bool saving = false,
+    int maxBytes = scanModelMaxResponseBytes,
   }) async {
     guard();
     final clock = Stopwatch()..start();
@@ -117,13 +167,13 @@ class ScanModelApiClient {
           endpoint: _base.resolve('/v3/$route'),
           bearerToken: token,
           body: utf8.encode(jsonEncode(body)),
-          maxResponseBytes: scanModelMaxResponseBytes,
+          maxResponseBytes: maxBytes,
         ),
       );
       guard();
       final response = await exchange.response.timeout(remaining);
       guard();
-      if (response.body.length > scanModelMaxResponseBytes) {
+      if (response.body.length > maxBytes) {
         throw _error('RESPONSE_TOO_LARGE');
       }
       if (response.statusCode >= 300 && response.statusCode < 400) {

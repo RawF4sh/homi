@@ -215,11 +215,18 @@ class SharedNote {
 }
 
 class OwnerShare {
-  OwnerShare._(this.membership, this.projection, this.notes, this.audit);
+  OwnerShare._(
+    this.membership,
+    this.projection,
+    this.notes,
+    this.audit,
+    this.invitedEmail,
+  );
   final CaseMembership membership;
   final SharedCaseProjection? projection;
   final List<SharedNote> notes;
   final List<Json> audit;
+  final String? invitedEmail;
   factory OwnerShare.fromJson(Object? v) {
     final j = _object(v, {
       'membershipId',
@@ -235,11 +242,22 @@ class OwnerShare {
       'projection',
       'notes',
       'audit',
+      if (v is Map && v.containsKey('invitedEmail')) 'invitedEmail',
     });
+    final email = j['invitedEmail'];
+    if (email != null &&
+        (email is! String ||
+            email.length > 254 ||
+            !RegExp(
+              r'^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$',
+            ).hasMatch(email))) {
+      throw const FormatException();
+    }
     final member = Map<String, Object?>.of(j)
       ..remove('projection')
       ..remove('notes')
       ..remove('audit');
+    member.remove('invitedEmail');
     final audit = _list(j['audit'], 100).map((v) {
       final a = _object(v, {'type', 'actorId', 'at'});
       _id(a['actorId']);
@@ -263,6 +281,7 @@ class OwnerShare {
           : SharedCaseProjection.fromJson(j['projection']),
       _list(j['notes'], 50).map(SharedNote.fromJson).toList(),
       audit,
+      email as String?,
     );
   }
 }
@@ -296,9 +315,14 @@ class SharingResponse {
       'schemaVersion',
       ...switch (route) {
         'preview-sharing' => {'projection'},
-        'list-sharing' => {'shares', 'availableProgramIds'},
+        'list-sharing' ||
+        'list-email-sharing' => {'shares', 'availableProgramIds'},
         'list-shared-cases' => {'memberships'},
-        'create-invitation' => {'membership', 'created', 'invitationCode'},
+        'create-invitation' || 'create-email-invitation' => {
+          'membership',
+          'created',
+          'invitationCode',
+        },
         'read-shared-case' ||
         'add-shared-note' => {'membership', 'projection', 'notes'},
         _ => {'membership'},
@@ -306,7 +330,7 @@ class SharingResponse {
     };
     final j = _object(value, keys);
     if (j['schemaVersion'] != '3') throw const FormatException();
-    if (route == 'create-invitation' &&
+    if ({'create-invitation', 'create-email-invitation'}.contains(route) &&
         (j['created'] is! bool ||
             ((j['created'] == true) != (j['invitationCode'] != null)))) {
       throw const FormatException();
