@@ -25,6 +25,7 @@
     "research:scfhp": "node src/research-scfhp.ts",
     "backup": "node tool/backup.ts",
     "capacity": "node tool/capacity.ts",
+    "operations": "node tool/operations.ts",
     "profile:memory": "node tool/profile-memory.ts",
     "profile:linux-memory": "node tool/profile-linux-memory.ts",
     "profile:native-amd64": "node tool/profile-native-amd64.ts"

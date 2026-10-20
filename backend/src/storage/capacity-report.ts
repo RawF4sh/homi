@@ -30,7 +30,7 @@ function integer(value: unknown): number {
   const result = Number(value); check(Number.isSafeInteger(result)); return result;
 }
 
-async function assertVisibility(client: PoolClient): Promise<void> {
+export async function assertCompleteOperatorVisibility(client: PoolClient): Promise<void> {
   await assertMigrationsCurrent(client);
   const result = await client.query(`SELECT c.relname,c.relkind,c.relrowsecurity,c.relforcerowsecurity,
     has_table_privilege(current_user,c.oid,'SELECT') AS can_select,
@@ -56,7 +56,7 @@ export async function readCapacityReport(pool: Pool): Promise<CapacityReport> {
   try {
     client = await pool.connect();
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    await assertVisibility(client);
+    await assertCompleteOperatorVisibility(client);
     const rows = {} as Record<Table, number>, relationBytes = {} as Record<Table, number>;
     for (const table of TABLES) {
       const result = await client.query(`SELECT count(*)::text AS count,
