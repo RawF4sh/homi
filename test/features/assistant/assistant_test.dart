@@ -7,6 +7,7 @@ import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/assistant/assistant_context.dart';
 import 'package:safe_at_home/features/assistant/assistant_controller.dart';
 import 'package:safe_at_home/features/assistant/assistant_model.dart';
+import 'package:safe_at_home/features/assistant/assistant_message_text.dart';
 import 'package:safe_at_home/features/assistant/plan_assistant_screen.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:safe_at_home/l10n/catalogs/assistant.dart';
@@ -322,11 +323,17 @@ void main() {
         channel: channel,
         platform: TargetPlatform.android,
       );
+      expect(await android.availability('en'), AssistantAvailability.ready);
+      expect(calls.length, 4);
+      const desktop = OnDeviceAssistantModel(
+        channel: channel,
+        platform: TargetPlatform.linux,
+      );
       expect(
-        await android.availability('en'),
+        await desktop.availability('en'),
         AssistantAvailability.unsupportedPlatform,
       );
-      expect(calls.length, 3);
+      expect(calls.length, 4);
     },
   );
 
@@ -440,6 +447,7 @@ void main() {
       await tester.pumpAndSettle();
       final input = find.byKey(const ValueKey('assistant-input'));
       await tester.enterText(input, 'Private question');
+      await tester.pump();
       final send = find.byKey(const ValueKey('assistant-send'));
       await tester.ensureVisible(send);
       await tester.tap(send);
@@ -455,4 +463,205 @@ void main() {
       await tester.pumpAndSettle();
     },
   );
+  test(
+    'generated emphasis remains readable with Chinese text and literal math',
+    () {
+      final text = assistantMessageText(
+        'Open **Rooms** to review 李女士’s 房間.\n* Optional photo\n3 * 4 and unmatched ** stay literal.',
+      );
+      expect(
+        text.toPlainText(),
+        'Open Rooms to review 李女士’s 房間.\n• Optional photo\n3 * 4 and unmatched ** stay literal.',
+      );
+    },
+  );
+
+  testWidgets('model emphasis renders without raw delimiters', (tester) async {
+    final model = FakeModel()..pending = Completer<String>();
+    await tester.pumpWidget(
+      app(PlanAssistantScreen(onSection: (_) {}, model: model)),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('assistant-input')),
+      'Where are my scans?',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    model.pending!.complete('Open **Rooms** to review your scan.');
+    await tester.pumpAndSettle();
+    expect(find.text('Open Rooms to review your scan.'), findsOneWidget);
+    expect(find.text('Open **Rooms** to review your scan.'), findsNothing);
+  });
+
+  testWidgets(
+    'composer stays visible while reading a long chat and keyboard stays usable',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      final model = FakeModel()..pending = Completer<String>();
+      await tester.pumpWidget(
+        app(PlanAssistantScreen(onSection: (_) {}, model: model)),
+      );
+      await tester.pumpAndSettle();
+      final input = find.byKey(const ValueKey('assistant-input'));
+      final before = tester.getRect(input);
+      await tester.enterText(input, 'How do I prepare a draft?');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+      expect(tester.widget<TextField>(input).controller!.text, isEmpty);
+      expect(tester.widget<TextField>(input).focusNode!.hasFocus, isTrue);
+      expect(find.byTooltip('Stop response'), findsOneWidget);
+      model.pending!.complete(
+        List.filled(25, 'Review your plan before preparing a draft.').join(' '),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getRect(input).bottom, closeTo(before.bottom, 1));
+      final messages = find.byKey(const ValueKey('assistant-messages'));
+      await tester.drag(messages, const Offset(0, 500));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(input).bottom, closeTo(before.bottom, 1));
+      expect(
+        find.byKey(const ValueKey('assistant-send')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('stop restores the question and ignores a late reply', (
+    tester,
+  ) async {
+    final model = FakeModel()..pending = Completer<String>();
+    await tester.pumpWidget(
+      app(PlanAssistantScreen(onSection: (_) {}, model: model)),
+    );
+    await tester.pumpAndSettle();
+    final input = find.byKey(const ValueKey('assistant-input'));
+    await tester.enterText(input, 'Where is my draft?');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('assistant-send')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('assistant-stop')));
+    await tester.pumpAndSettle();
+    expect(model.cancelled, hasLength(1));
+    expect(
+      tester.widget<TextField>(input).controller!.text,
+      'Where is my draft?',
+    );
+    model.pending!.complete('Late answer');
+    await tester.pumpAndSettle();
+    expect(find.text('Late answer'), findsNothing);
+  });
+
+  testWidgets('failed send restores the draft for direct retry', (
+    tester,
+  ) async {
+    final model = FakeModel()..failure = const AssistantFailure('TIMEOUT');
+    await tester.pumpWidget(
+      app(PlanAssistantScreen(onSection: (_) {}, model: model)),
+    );
+    await tester.pumpAndSettle();
+    final input = find.byKey(const ValueKey('assistant-input'));
+    await tester.enterText(input, 'Where are my scans?');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('assistant-send')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(input).controller!.text,
+      'Where are my scans?',
+    );
+    expect(
+      find.text(
+        'The response took too long. Your question is still here to retry.',
+      ),
+      findsOneWidget,
+    );
+    model.failure = null;
+    await tester.tap(find.byKey(const ValueKey('assistant-send')));
+    await tester.pumpAndSettle();
+    expect(model.requests, hasLength(2));
+    expect(find.text('Open Rooms to review the saved model.'), findsOneWidget);
+    expect(tester.widget<TextField>(input).controller!.text, isEmpty);
+  });
+
+  testWidgets('chat controls have accessible labels and touch targets', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+
+    await tester.pumpWidget(
+      app(PlanAssistantScreen(onSection: (_) {}, model: FakeModel())),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('assistant-input')),
+      'Next step?',
+    );
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Send question'), findsOneWidget);
+    expect(find.byTooltip('Chat options'), findsOneWidget);
+    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(textContrastGuideline));
+    semantics.dispose();
+  });
+
+  for (final locale in AppLocalizations.supportedLocales) {
+    testWidgets(
+      '$locale options are accessible at large text and clear closes sheet',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 640);
+        tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = 3.2;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+          tester.platformDispatcher.clearTextScaleFactorTestValue();
+        });
+        await tester.pumpWidget(
+          app(
+            PlanAssistantScreen(onSection: (_) {}, model: FakeModel()),
+            locale: locale,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final input = find.byKey(const ValueKey('assistant-input'));
+        await tester.enterText(input, 'Private question');
+        await tester.testTextInput.receiveAction(TextInputAction.send);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('assistant-options')));
+        await tester.pumpAndSettle();
+        final l10n = AppLocalizations(locale);
+        expect(find.text(l10n.text('Chat options')), findsOneWidget);
+        final clear = find.text(l10n.text('Clear conversation'));
+        await tester.scrollUntilVisible(
+          clear,
+          160,
+          scrollable: find
+              .descendant(
+                of: find.byKey(const ValueKey('assistant-options-list')),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await Scrollable.ensureVisible(tester.element(clear), alignment: .5);
+        await tester.pumpAndSettle();
+        await tester.tap(clear);
+        await tester.pumpAndSettle();
+        expect(find.text('Private question'), findsNothing);
+        expect(find.text(l10n.text('Chat options')), findsNothing);
+        expect(
+          find.byKey(const ValueKey('assistant-options-list')),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }
