@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'bathroom_scan_scene.dart';
+import 'whole_home_model.dart';
 
 final class ProjectedScanPoint {
   const ProjectedScanPoint({
@@ -45,6 +46,7 @@ final class ScanProjection {
     double yaw = -.65,
     double pitch = .55,
     double padding = 24,
+    List<PlacedRoomScene>? placedRooms,
   }) {
     if (![width, height, yaw, pitch, padding].every((v) => v.isFinite) ||
         width <= 0 ||
@@ -54,6 +56,20 @@ final class ScanProjection {
         padding < 0) {
       throw ArgumentError('Invalid scan review viewport');
     }
+    if (placedRooms != null &&
+        (placedRooms.isEmpty ||
+            placedRooms.length > 32 ||
+            placedRooms.map((r) => r.roomId).toSet().length !=
+                placedRooms.length ||
+            placedRooms.fold<int>(0, (n, r) => n + r.scene.elements.length) >
+                2048 ||
+            placedRooms.fold<int>(0, (n, r) => n + r.scene.points.length) >
+                8192)) {
+      throw ArgumentError('Invalid connected model viewport');
+    }
+    final sources = placedRooms ?? [PlacedRoomScene('', scene, RoomPose())];
+    String idFor(PlacedRoomScene r, String id) =>
+        placedRooms == null ? id : r.featureId(id);
     final cosYaw = math.cos(yaw), sinYaw = math.sin(yaw);
     final cosPitch = math.cos(pitch), sinPitch = math.sin(pitch);
     ScanVector3 rotate(ScanVector3 p) {
@@ -66,14 +82,29 @@ final class ScanProjection {
       );
     }
 
+    final elements = [
+      for (final r in sources)
+        for (final e in r.scene.elements) (idFor(r, e.id), e, r.pose),
+    ];
     final corners = {
-      for (final e in scene.elements) e.id: e.worldCorners.map(rotate).toList(),
+      for (final (id, e, pose) in elements)
+        id: e.worldCorners.map(pose.apply).map(rotate).toList(),
     };
-    final rawPoints = scene.points.map((p) => rotate(p.position)).toList();
+    final samples = [
+      for (final r in sources)
+        for (final p in r.scene.points)
+          (rotate(r.pose.apply(p.position)), p.confidence),
+    ];
+    final rawPoints = samples.map((p) => p.$1).toList();
+    final distances = [
+      for (final r in sources)
+        for (final m in r.scene.measurements)
+          (rotate(r.pose.apply(m.start)), rotate(r.pose.apply(m.end))),
+    ];
     final all = <ScanVector3>[
       for (final values in corners.values) ...values,
       ...rawPoints,
-      for (final m in scene.measurements) ...[rotate(m.start), rotate(m.end)],
+      for (final m in distances) ...[m.$1, m.$2],
     ];
     var minX = all.first.x, maxX = all.first.x;
     var minY = all.first.y, maxY = all.first.y;
@@ -110,7 +141,7 @@ final class ScanProjection {
       [1, 5, 7, 3],
     ];
     final faces = <ProjectedScanFace>[];
-    for (final element in scene.elements) {
+    for (final (id, element, _) in elements) {
       final indices = element.dimensions.x == 0
           ? [faceIndices[0]]
           : element.dimensions.y == 0
@@ -119,12 +150,10 @@ final class ScanProjection {
           ? [faceIndices[4]]
           : faceIndices;
       for (final index in indices) {
-        final vertices = index
-            .map((i) => toScreen(corners[element.id]![i]))
-            .toList();
+        final vertices = index.map((i) => toScreen(corners[id]![i])).toList();
         faces.add(
           ProjectedScanFace._(
-            elementId: element.id,
+            elementId: id,
             kind: element.kind,
             vertices: List.unmodifiable(vertices),
             depth:
@@ -138,12 +167,11 @@ final class ScanProjection {
     return ScanProjection._(
       faces: List.unmodifiable(faces),
       distances: List.unmodifiable([
-        for (final m in scene.measurements)
-          (toScreen(rotate(m.start)), toScreen(rotate(m.end))),
+        for (final m in distances) (toScreen(m.$1), toScreen(m.$2)),
       ]),
       points: List.unmodifiable([
         for (var i = 0; i < rawPoints.length; i++)
-          toScreen(rawPoints[i], scene.points[i].confidence),
+          toScreen(rawPoints[i], samples[i].$2),
       ]),
     );
   }

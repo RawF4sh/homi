@@ -127,22 +127,40 @@ class HomeSafetyCatalog {
 }
 
 class RoomInstance {
-  RoomInstance({required this.id, required this.type, required this.name}) {
+  RoomInstance({
+    required this.id,
+    required this.type,
+    required this.name,
+    this.archived = false,
+  }) {
     V.id(id);
     roomName(name);
   }
   factory RoomInstance.fromJson(Object? json) {
-    final v = V.object(json, {'id', 'type', 'name'});
+    final v = V.object(json, {
+      'id',
+      'type',
+      'name',
+      if (json is Map && json.containsKey('archived')) 'archived',
+    });
+    if (v.containsKey('archived') && v['archived'] != true) V.invalid();
     return RoomInstance(
       id: V.id(v['id']),
       type: AssessmentLocation.values.byName(v['type'] as String),
       name: roomName(v['name']),
+      archived: v['archived'] == true,
     );
   }
   final String id;
   final AssessmentLocation type;
   final String? name;
-  Map<String, Object?> toJson() => {'id': id, 'type': type.name, 'name': name};
+  final bool archived;
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'type': type.name,
+    'name': name,
+    if (archived) 'archived': true,
+  };
 }
 
 class SafetyAnswer {
@@ -247,6 +265,10 @@ class SafetyDocument {
     return SafetyDocument._(rooms, answers, links);
   }
   final List<RoomInstance> rooms;
+  List<RoomInstance> get activeRooms =>
+      rooms.where((r) => !r.archived).toList(growable: false);
+  List<RoomInstance> get archivedRooms =>
+      rooms.where((r) => r.archived).toList(growable: false);
   final List<SafetyAnswer> answers;
   final List<FindingRoom> findingRooms;
   SafetyAnswer? answer(String room, String question) => answers
@@ -368,6 +390,8 @@ Map<String, Object?> safetyOperation(Object? json, HomeSafetyCatalog catalog) {
   final keys = switch (type) {
     'add_room' => {'type', 'room'},
     'rename_room' => {'type', 'roomId', 'name'},
+    'archive_room' || 'restore_room' => {'type', 'roomId'},
+    'delete_room' => {'type', 'roomId', 'expectedModelRevision'},
     'answer' => {'type', 'roomId', 'questionId', 'value'},
     'annotate_answer' => {
       'type',
@@ -401,9 +425,10 @@ Map<String, Object?> safetyOperation(Object? json, HomeSafetyCatalog catalog) {
   };
   final v = V.object(json, keys);
   if (type == 'add_room') {
-    RoomInstance.fromJson(v['room']);
+    if (RoomInstance.fromJson(v['room']).archived) V.invalid();
   } else {
     V.id(v['roomId']);
+    if (type == 'delete_room') V.integer(v['expectedModelRevision'], min: 0);
     if (type == 'rename_room') {
       roomName(v['name']);
     }
@@ -613,7 +638,20 @@ class HomeSafetyState {
     rooms.add(Map<String, Object?>.from(op['room'] as Map));
   } else {
     final room = rooms.firstWhere((r) => r['id'] == op['roomId']);
-    if (op['type'] == 'rename_room') {
+    if (op['type'] == 'archive_room') {
+      if (room['archived'] == true) V.invalid();
+      room['archived'] = true;
+    } else if (op['type'] == 'restore_room') {
+      if (room['archived'] != true) V.invalid();
+      room.remove('archived');
+    } else if (op['type'] == 'delete_room') {
+      if (room['archived'] != true) V.invalid();
+      rooms.removeWhere((r) => r['id'] == op['roomId']);
+      answers.removeWhere((a) => a['roomId'] == op['roomId']);
+      links.removeWhere((l) => l['roomId'] == op['roomId']);
+    } else if (room['archived'] == true) {
+      V.invalid();
+    } else if (op['type'] == 'rename_room') {
       room['name'] = op['name'];
     } else if (op['type'] == 'set_addressed') {
       final link = document.findingRooms
@@ -739,5 +777,5 @@ Map<String, Object?>? answerAnnotation(
 
 List<RoomInstance> suggestedRooms(SafetyDocument document, String legacyArea) =>
     {'bathroom', 'entrance'}.contains(legacyArea)
-    ? document.rooms.where((r) => r.type.name == legacyArea).toList()
+    ? document.activeRooms.where((r) => r.type.name == legacyArea).toList()
     : const [];
