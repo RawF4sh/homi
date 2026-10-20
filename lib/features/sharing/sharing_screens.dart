@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
+import '../../shared/services/invitation_links.dart';
 import '../../shared/models/collaboration.dart';
 import '../../shared/models/sensitive_sharing.dart';
 import '../../shared/models/evidence.dart';
@@ -120,6 +122,11 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
   @override
   AppServices get services => widget.services;
   final recipient = TextEditingController();
+  bool get emailInvite => services.config.simpleInvitationsEnabled;
+  String get listRoute => emailInvite ? 'list-email-sharing' : 'list-sharing';
+  bool get validRecipient => emailInvite
+      ? normalizeInvitationEmail(recipient.text) != null
+      : recipient.text.trim().isNotEmpty;
   late final String caseId;
   List<OwnerShare> shares = [];
   List<String> programs = [];
@@ -151,11 +158,13 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
     code = null;
     preview = null;
     _reviewed = null;
+    recipient.clear();
+    editing = null;
   }
 
   @override
   Future<void> reload() => run((valid) async {
-    final response = await call('list-sharing', {'caseId': caseId}, valid);
+    final response = await call(listRoute, {'caseId': caseId}, valid);
     if (valid()) {
       setState(() {
         shares = response.shares;
@@ -216,16 +225,22 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
     final fields = {
       ...reviewed,
       'invitationId': edit?.id ?? newUuidV4(),
-      if (edit == null) 'recipientId': recipient.text.trim(),
+      if (edit == null && !emailInvite) 'recipientId': recipient.text.trim(),
+      if (edit == null && emailInvite)
+        'recipientEmail': normalizeInvitationEmail(recipient.text),
       if (edit != null) 'expectedPermissionRevision': edit.revision,
     };
     final response = await call(
-      edit == null ? 'create-invitation' : 'change-sharing',
+      edit == null
+          ? emailInvite
+                ? 'create-email-invitation'
+                : 'create-invitation'
+          : 'change-sharing',
       fields,
       valid,
     );
     if (valid()) {
-      final listed = await call('list-sharing', {'caseId': caseId}, valid);
+      final listed = await call(listRoute, {'caseId': caseId}, valid);
       if (valid()) {
         setState(() {
           shares = listed.shares;
@@ -244,7 +259,7 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
       'invitationId': grant.id,
       'expectedPermissionRevision': grant.revision,
     }, valid);
-    final response = await call('list-sharing', {'caseId': caseId}, valid);
+    final response = await call(listRoute, {'caseId': caseId}, valid);
     if (valid()) {
       setState(() {
         shares = response.shares;
@@ -315,7 +330,13 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SelectableText(share.membership.recipientId),
+                      if (share.invitedEmail != null)
+                        SelectableText(share.invitedEmail!)
+                      else if (emailInvite &&
+                          share.membership.state == 'pending')
+                        Text(context.tr('Waiting for the invited person'))
+                      else
+                        SelectableText(share.membership.recipientId),
                       Text(
                         context.tr(
                           share.membership.role == 'helper'
@@ -426,15 +447,29 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
             TextField(
               controller: recipient,
               enabled: !busy && editing == null,
+              keyboardType: emailInvite
+                  ? TextInputType.emailAddress
+                  : TextInputType.text,
+              autocorrect: false,
+              enableSuggestions: false,
               decoration: InputDecoration(
-                labelText: context.tr('Recipient account ID'),
-                helperText: context.tr(
-                  'Ask the recipient for the account ID shown in Shared with me.',
+                labelText: context.tr(
+                  emailInvite && editing == null
+                      ? 'Recipient’s sign-in email'
+                      : 'Recipient account ID',
                 ),
+                helperText: context.tr(
+                  emailInvite && editing == null
+                      ? 'Use the email they sign in with. Nothing is sent automatically.'
+                      : 'Ask the recipient for the account ID shown in Shared with me.',
+                ),
+                helperMaxLines: 6,
               ),
               onChanged: (_) => setState(_changed),
             ),
             DropdownButtonFormField<bool>(
+              isExpanded: true,
+              itemHeight: null,
               key: ValueKey('sharing-role-$helper'),
               initialValue: helper,
               decoration: InputDecoration(labelText: context.tr('Permission')),
@@ -505,6 +540,8 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
               ),
             ),
             DropdownButtonFormField<int>(
+              isExpanded: true,
+              itemHeight: null,
               key: ValueKey('sharing-expiry-$days'),
               initialValue: days ?? 0,
               decoration: InputDecoration(
@@ -537,8 +574,7 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
             if (preview != null) ...[
               ProjectionContent(projection: preview!),
               FilledButton(
-                onPressed:
-                    busy || (editing == null && recipient.text.trim().isEmpty)
+                onPressed: busy || (editing == null && !validRecipient)
                     ? null
                     : _save,
                 child: Text(
@@ -553,10 +589,39 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
             if (code != null) ...[
               Text(
                 context.tr(
-                  'Share this code manually. Creating it has not sent a message. It expires within seven days and can be used once by the selected account.',
+                  emailInvite
+                      ? 'Send this link only to the person you invited. They must sign in with that verified email. The invitation expires within seven days and can be used once.'
+                      : 'Share this code manually. Creating it has not sent a message. It expires within seven days and can be used once by the selected account.',
                 ),
               ),
               SelectableText(code!, key: const ValueKey('invitation-code')),
+              if (emailInvite) ...[
+                SelectableText(
+                  invitationLink(services.config.apiOrigin, code!).toString(),
+                  key: const ValueKey('invitation-link'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(
+                      ClipboardData(
+                        text: invitationLink(
+                          services.config.apiOrigin,
+                          code!,
+                        ).toString(),
+                      ),
+                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(context.tr('Invitation link copied.')),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.copy),
+                  label: Text(context.tr('Copy invitation link')),
+                ),
+              ],
             ],
           ],
         ),
@@ -566,8 +631,13 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
 }
 
 class SharedWithMeScreen extends StatefulWidget {
-  const SharedWithMeScreen({super.key, required this.services});
+  const SharedWithMeScreen({
+    super.key,
+    required this.services,
+    this.initialInvitationCode,
+  });
   final AppServices services;
+  final String? initialInvitationCode;
   @override
   State<SharedWithMeScreen> createState() => _SharedListState();
 }
@@ -581,6 +651,7 @@ class _SharedListState extends _OnlineState<SharedWithMeScreen> {
   @override
   void initState() {
     super.initState();
+    code.text = widget.initialInvitationCode ?? '';
     unawaited(reload());
   }
 
@@ -608,6 +679,12 @@ class _SharedListState extends _OnlineState<SharedWithMeScreen> {
     }
   });
   Future<void> _review() => run((valid) async {
+    final parsed = readInvitationCode(code.text, services.config.apiOrigin);
+    if (parsed == null) {
+      setState(() => error = 'Paste a valid invitation code or link.');
+      return;
+    }
+    code.text = parsed;
     final result = await call('review-invitation', {
       'code': code.text.trim(),
     }, valid);
@@ -644,15 +721,27 @@ class _SharedListState extends _OnlineState<SharedWithMeScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           ...status(),
-          Text(context.tr('Your account ID')),
-          SelectableText(services.store.accountId),
+          if (!services.config.simpleInvitationsEnabled) ...[
+            Text(context.tr('Your account ID')),
+            SelectableText(services.store.accountId),
+          ],
+          if (services.config.simpleInvitationsEnabled)
+            Text(
+              context.tr(
+                'Sign in with the verified email the owner invited. Opening a link does not accept it.',
+              ),
+            ),
           TextField(
             controller: code,
             enabled: !busy,
             autocorrect: false,
             enableSuggestions: false,
             decoration: InputDecoration(
-              labelText: context.tr('Invitation code'),
+              labelText: context.tr(
+                services.config.simpleInvitationsEnabled
+                    ? 'Invitation code or link'
+                    : 'Invitation code',
+              ),
             ),
             onChanged: (_) => setState(() => invitation = null),
           ),

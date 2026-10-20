@@ -6,6 +6,7 @@ import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../domain/scan/bathroom_scan_scene.dart';
 import '../domain/scan/scan_projection.dart';
+import '../domain/scan/whole_home_model.dart';
 
 class BathroomModelView extends StatefulWidget {
   const BathroomModelView({
@@ -14,12 +15,16 @@ class BathroomModelView extends StatefulWidget {
     this.selectedId,
     this.selectedLabel,
     required this.onSelect,
+    this.placedRooms,
+    this.homeModel = false,
   });
   final BathroomScanScene scene;
   final String? selectedId;
 
   final String? selectedLabel;
   final ValueChanged<String> onSelect;
+  final List<PlacedRoomScene>? placedRooms;
+  final bool homeModel;
   @override
   State<BathroomModelView> createState() => _BathroomModelViewState();
 }
@@ -85,6 +90,7 @@ class _BathroomModelViewState extends State<BathroomModelView> {
                   height: 300,
                   yaw: yaw,
                   pitch: pitch,
+                  placedRooms: widget.placedRooms,
                 );
                 return Semantics(
                   value: widget.selectedLabel == null
@@ -93,7 +99,9 @@ class _BathroomModelViewState extends State<BathroomModelView> {
                           'label': widget.selectedLabel,
                         }),
                   label: context.tr(
-                    'Partial bathroom model. {features} detected features and {samples} point samples. This model is optional. Use the feature list below to identify an item if needed.',
+                    widget.homeModel
+                        ? 'Partial connected home model. Review room positions in the room list below. Unscanned space remains unknown.'
+                        : 'Partial bathroom model. {features} detected features and {samples} point samples. This model is optional. Use the feature list below to identify an item if needed.',
                     {
                       'features': widget.scene.elements.length,
                       'samples': widget.scene.points.length,
@@ -122,7 +130,11 @@ class _BathroomModelViewState extends State<BathroomModelView> {
                           padding: EdgeInsets.all(16),
                           child: ExcludeSemantics(
                             child: Text(
-                              context.tr('PARTIAL 3D MODEL'),
+                              context.tr(
+                                widget.homeModel
+                                    ? 'CONNECTED HOME MODEL'
+                                    : 'PARTIAL 3D MODEL',
+                              ),
                               style: TextStyle(
                                 color: Color(0xFFD4E8DF),
                                 fontSize: 12,

@@ -6,7 +6,10 @@ import '../../../../shared/models/contracts.dart';
 import '../../../../shared/services/home_safety_api_client.dart';
 import '../../../../shared/services/matching_api_client.dart';
 import '../../domain/home_safety/home_safety.dart';
+import '../../domain/assessment_location.dart';
 import '../live_assessment_session.dart';
+import '../bathroom_scan_session.dart';
+import '../whole_home_session.dart';
 
 class HomeSafetySession extends ChangeNotifier {
   HomeSafetySession({required this.services, required this.catalog}) {
@@ -52,6 +55,8 @@ class HomeSafetySession extends ChangeNotifier {
       services.coordinator.uncertain ||
       services.coordinator.conflict;
   bool get hasPending => _pending.isNotEmpty;
+  bool get pendingRoomDeletion =>
+      _pending.any((r) => r.operation['type'] == 'delete_room');
   Iterable<Map<String, Object?>> get operations => [
     ...baseline.history.map(
       (e) => Map<String, Object?>.from(e['operation'] as Map),
@@ -164,6 +169,7 @@ class HomeSafetySession extends ChangeNotifier {
       }
       V.unique(queue.map((r) => r.id));
       _publish(base, queue);
+      await _cleanDeletedModels(base);
     }
     try {
       final fresh = await api.read(caseId, isCurrent: () => isCurrent);
@@ -203,6 +209,32 @@ class HomeSafetySession extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _cleanDeletedModels(HomeSafetyState state) async {
+    for (final event in state.history) {
+      final op = event['operation'] as Map;
+      if (op['type'] != 'delete_room') continue;
+      final id = op['roomId'] as String;
+      final room = RoomInstance(
+        id: id,
+        type: AssessmentLocation.bathroom,
+        name: null,
+      );
+      final key = BathroomScanSession.storageKey(caseId, room: room);
+      for (final suffix in ['', ':sync', ':upload']) {
+        guard();
+        await services.store.delete('$key$suffix');
+        guard();
+      }
+      await WholeHomeSession.purgeForRoomDeletion(
+        services.store,
+        caseId,
+        id,
+        isCurrent: () => isCurrent,
+      );
+      guard();
+    }
+  }
+
   Future<void> _acceptFresh(
     HomeSafetyState fresh, {
     required bool hasLocal,
@@ -224,6 +256,7 @@ class HomeSafetySession extends ChangeNotifier {
       return;
     }
     _project(fresh, queue);
+    await _cleanDeletedModels(fresh);
     await _persist(fresh, queue);
     guard();
     _publish(fresh, queue);
@@ -254,6 +287,14 @@ class HomeSafetySession extends ChangeNotifier {
         _pending.length >= 100 ||
         baseline.revision + _pending.length >= 500) {
       throw StateError('Review saved checklist first.');
+    }
+    if (operation['type'] == 'add_room' &&
+        baseline.history.any((e) {
+          final op = e['operation'] as Map;
+          return op['type'] == 'add_room' &&
+              (op['room'] as Map)['id'] == (operation['room'] as Map)['id'];
+        })) {
+      throw StateError('Room identifiers cannot be reused.');
     }
     final request = SafetyMutation.fromJson({
       'schemaVersion': '3',
@@ -286,7 +327,7 @@ class HomeSafetySession extends ChangeNotifier {
     guard();
     var added = 0;
     for (final binding in bindings.entries) {
-      if (!document.rooms.any((r) => r.id == binding.value) ||
+      if (!document.activeRooms.any((r) => r.id == binding.value) ||
           !snapshot.findings.any((f) => f.id == binding.key) ||
           document.findingRooms.any((l) => l.findingId == binding.key)) {
         continue;
@@ -344,6 +385,9 @@ class HomeSafetySession extends ChangeNotifier {
 
   Future<void> resolve({required bool keepDevice}) => _run(
     () => services.coordinator.serialize(() async {
+      if (keepDevice && pendingRoomDeletion) {
+        throw StateError('Room deletion requires a fresh confirmation.');
+      }
       final reviewed = conflict;
       if (reviewed == null) {
         throw StateError('Review the saved checklist first.');
@@ -378,6 +422,7 @@ class HomeSafetySession extends ChangeNotifier {
           queue.add(next);
         }
       }
+      await _cleanDeletedModels(fresh);
       await _persist(fresh, queue);
       guard();
       _publish(fresh, queue);

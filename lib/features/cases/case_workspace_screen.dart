@@ -473,7 +473,7 @@ class _CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                 SahActionTile(
                   key: const ValueKey('case-assistant'),
                   title: context.tr('Ask about this plan'),
-                  subtitle: context.tr('AI coming later'),
+                  subtitle: context.tr('Help with your next step'),
                   icon: Icons.chat_bubble_outline_rounded,
                   onTap: _assistant,
                 ),

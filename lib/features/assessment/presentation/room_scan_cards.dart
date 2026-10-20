@@ -20,6 +20,7 @@ class RoomScanCards extends StatefulWidget {
     this.includeLegacy = true,
     this.onContinueQuestions,
     this.questionsLabel,
+    this.onArchive,
   });
   final LocalPrivateStore store;
   final String caseId;
@@ -27,6 +28,7 @@ class RoomScanCards extends StatefulWidget {
   final bool Function() isCurrent;
   final ValueChanged<RoomInstance?> onOpen;
   final ValueChanged<RoomInstance> onChecklist;
+  final ValueChanged<RoomInstance>? onArchive;
   final bool enabled;
   final bool compact, includeLegacy;
   final VoidCallback? onContinueQuestions;
@@ -195,6 +197,15 @@ class _RoomScanCardsState extends State<RoomScanCards> {
                           ),
                         ),
                       ),
+                      if (widget.onArchive != null)
+                        TextButton.icon(
+                          key: ValueKey('archive-room-${room.id}'),
+                          onPressed: enabled
+                              ? () => widget.onArchive!(room)
+                              : null,
+                          icon: const Icon(Icons.archive_outlined),
+                          label: Text(context.tr('Archive room')),
+                        ),
                       TextButton(
                         onPressed: enabled
                             ? () => widget.onChecklist(room)

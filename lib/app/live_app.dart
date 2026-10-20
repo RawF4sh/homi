@@ -1,4 +1,6 @@
 import '../shared/services/sharing_api_client.dart';
+import '../shared/services/invitation_links.dart';
+import '../features/sharing/sharing_screens.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -46,8 +48,10 @@ class LiveAppConfig {
     required this.supabaseUrl,
     required this.publishableKey,
     this.emailDeliveryEnabled = false,
+    this.publicSignupEnabled = false,
     this.permissionSharingEnabled = false,
     this.sensitiveSharingEnabled = false,
+    this.simpleInvitationsEnabled = false,
     this.trackingEnabled = false,
     this.scanSyncEnabled = false,
     this.homeSafetyEnabled = false,
@@ -55,6 +59,11 @@ class LiveAppConfig {
       'SAH_LOCAL_HELP_ENABLED',
     ),
   }) {
+    if (publicSignupEnabled && !emailDeliveryEnabled) {
+      throw const FormatException(
+        'Public signup requires verified account email delivery.',
+      );
+    }
     for (final uri in [apiOrigin, supabaseUrl]) {
       if (uri.scheme != 'https' ||
           uri.host.isEmpty ||
@@ -74,8 +83,10 @@ class LiveAppConfig {
   final Uri apiOrigin, supabaseUrl;
   final String publishableKey;
   final bool emailDeliveryEnabled;
+  final bool publicSignupEnabled;
   final bool permissionSharingEnabled;
   final bool sensitiveSharingEnabled;
+  final bool simpleInvitationsEnabled;
   final bool trackingEnabled;
   final bool scanSyncEnabled;
   final bool homeSafetyEnabled;
@@ -83,6 +94,12 @@ class LiveAppConfig {
   Uri get callback => Uri.parse('safeathome://auth/callback');
   bool acceptsCallback(Uri uri) => acceptsAuthCallback(uri, callback);
   static LiveAppConfig fromEnvironment() => LiveAppConfig(
+    publicSignupEnabled: const bool.fromEnvironment(
+      'SAH_PUBLIC_SIGNUP_ENABLED',
+    ),
+    simpleInvitationsEnabled: const bool.fromEnvironment(
+      'SAH_SIMPLE_INVITATIONS_ENABLED',
+    ),
     apiOrigin: Uri.parse(const String.fromEnvironment('SAH_API_URL')),
     supabaseUrl: Uri.parse(const String.fromEnvironment('SUPABASE_URL')),
     publishableKey: const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY'),
@@ -345,6 +362,13 @@ class LiveAppBootstrap extends StatefulWidget {
 }
 
 class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
+  final _invitationLinks = InvitationLinkInbox();
+  @override
+  void dispose() {
+    _invitationLinks.dispose();
+    super.dispose();
+  }
+
   late final Future<(LiveAppConfig, SessionService)> _ready = _initialize();
   Future<(LiveAppConfig, SessionService)> _initialize() async {
     final config = LiveAppConfig.fromEnvironment();
@@ -367,6 +391,7 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
     await notifications.cancelAll();
     final sessionReady = Completer<SupabaseSessionService>();
     final persistedSessionStorage = SecureSessionStorage(secrets, namespace);
+    final pkceStorage = SecurePkceStorage(secrets, namespace);
     await Supabase.initialize(
       url: config.supabaseUrl.toString(),
       publishableKey: config.publishableKey,
@@ -374,8 +399,12 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
       authOptions: FlutterAuthClientOptions(
         authFlowType: AuthFlowType.pkce,
         localStorage: persistedSessionStorage,
-        pkceAsyncStorage: SecurePkceStorage(secrets, namespace),
+        pkceAsyncStorage: pkceStorage,
         detectSessionInUriPredicate: (uri) {
+          if (config.simpleInvitationsEnabled &&
+              config.permissionSharingEnabled) {
+            _invitationLinks.receive(uri, config.apiOrigin);
+          }
           if (config.acceptsCallback(uri)) {
             unawaited(
               sessionReady.future.then(
@@ -391,6 +420,14 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
       Supabase.instance.client,
       callback: config.callback,
       emailDeliveryEnabled: config.emailDeliveryEnabled,
+      publicSignupEnabled: config.publicSignupEnabled,
+      registrationClient: () => GoTrueClient(
+        url: '${config.supabaseUrl}/auth/v1',
+        headers: {'apikey': config.publishableKey},
+        autoRefreshToken: false,
+        flowType: AuthFlowType.pkce,
+        asyncStorage: pkceStorage,
+      ),
       persistedSessionStorage: persistedSessionStorage,
       reauthenticationClient: () => GoTrueClient(
         url: '${config.supabaseUrl}/auth/v1',
@@ -407,7 +444,11 @@ class _LiveAppBootstrapState extends State<LiveAppBootstrap> {
     future: _ready,
     builder: (context, state) {
       if (state.hasData) {
-        return LiveSessionHost(config: state.data!.$1, session: state.data!.$2);
+        return LiveSessionHost(
+          config: state.data!.$1,
+          session: state.data!.$2,
+          invitationLinks: _invitationLinks,
+        );
       }
       return ListenableBuilder(
         listenable: Listenable.merge([
@@ -438,15 +479,18 @@ class LiveSessionHost extends StatefulWidget {
     required this.config,
     required this.session,
     this.transport,
+    this.invitationLinks,
   });
   final LiveAppConfig config;
   final SessionService session;
   final MatchingTransport? transport;
+  final InvitationLinkInbox? invitationLinks;
   @override
   State<LiveSessionHost> createState() => _LiveSessionHostState();
 }
 
 class _LiveSessionHostState extends State<LiveSessionHost> {
+  bool _invitationOpening = false;
   var _navigator = GlobalKey<NavigatorState>();
   bool _reminderOpening = false;
   String? _owner;
@@ -461,7 +505,58 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
   void initState() {
     super.initState();
     widget.session.addListener(_changed);
+    widget.invitationLinks?.addListener(_invitationChanged);
     _changed();
+  }
+
+  void _invitationChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant LiveSessionHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.invitationLinks != widget.invitationLinks) {
+      oldWidget.invitationLinks?.removeListener(_invitationChanged);
+      widget.invitationLinks?.addListener(_invitationChanged);
+    }
+  }
+
+  void _openInvitation(AppServices services) {
+    if (!widget.config.simpleInvitationsEnabled ||
+        !widget.config.permissionSharingEnabled ||
+        _invitationOpening ||
+        widget.invitationLinks?.value == null) {
+      return;
+    }
+    _invitationOpening = true;
+    final epoch = widget.session.epoch;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted ||
+          widget.session.epoch != epoch ||
+          !services.coordinator.isCurrent) {
+        _invitationOpening = false;
+        return;
+      }
+      final code = widget.invitationLinks?.take();
+      if (code == null) {
+        _invitationOpening = false;
+        return;
+      }
+      try {
+        await _navigator.currentState?.push(
+          MaterialPageRoute<void>(
+            builder: (_) => SharedWithMeScreen(
+              services: services,
+              initialInvitationCode: code,
+            ),
+          ),
+        );
+      } finally {
+        _invitationOpening = false;
+        if (mounted) setState(() {});
+      }
+    });
   }
 
   void _changed() {
@@ -627,6 +722,7 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
   @override
   void dispose() {
     widget.session.removeListener(_changed);
+    widget.invitationLinks?.removeListener(_invitationChanged);
     _openGeneration++;
     if (_opened != null) unawaited(_opened!.store.close());
     _opened?.dispose();
@@ -661,6 +757,7 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
           ? LoginScreen(
               session: widget.session,
               emailDeliveryEnabled: widget.config.emailDeliveryEnabled,
+              publicSignupEnabled: widget.config.publicSignupEnabled,
               deletionStatusScreen: DeletionReceiptScreen(
                 config: widget.config,
               ),
@@ -669,7 +766,8 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
               future: _services,
               builder: (context, state) {
                 if (state.hasData) {
-                  _openReminder();
+                  _openInvitation(state.data!);
+                  if (!_invitationOpening) _openReminder();
                   return CaseHomeScreen(services: state.data!);
                 }
                 if (state.hasError) {

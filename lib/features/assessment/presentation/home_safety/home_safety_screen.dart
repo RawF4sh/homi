@@ -13,6 +13,7 @@ import '../../domain/assessment_location.dart';
 import '../../domain/home_safety/home_safety.dart';
 import '../live_assessment_screen.dart';
 import '../room_scan_cards.dart';
+import '../whole_home_screen.dart';
 import '../../../tracking/program_progress_screen.dart';
 
 class HomeSafetyScreen extends StatefulWidget {
@@ -124,6 +125,201 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
     }
   }
 
+  Future<void> changeRoomArchive(RoomInstance room) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        scrollable: true,
+        title: Text(ctx.tr(room.archived ? 'Restore room?' : 'Archive room?')),
+        content: Text(
+          ctx.tr(
+            room.archived
+                ? 'This returns the room to your active rooms with its saved scans and checklist history. Findings, tasks and reminders keep their current status.'
+                : 'This hides the room from active rooms. Scans, checklist history and findings are retained. Linked tasks and reminders remain active until you change them separately. You can restore the room later.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(ctx.tr('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              ctx.tr(room.archived ? 'Restore room' : 'Archive room'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted || !session!.isCurrent) return;
+    await session!.edit({
+      'type': room.archived ? 'restore_room' : 'archive_room',
+      'roomId': room.id,
+    });
+    await session!.save();
+    if (mounted) {
+      setState(() {
+        selectedRoom = null;
+        scanEpoch++;
+      });
+    }
+  }
+
+  Future<void> deleteRoom(RoomInstance room) async {
+    final s = session!;
+    await s.save();
+    if (s.hasPending || s.conflict != null || !mounted) return;
+    final current = s.document.rooms.where((r) => r.id == room.id).firstOrNull;
+    if (current == null || !current.archived) return;
+    final model = await widget.services.scanModels?.read(
+      s.caseId,
+      room: current,
+      isCurrent: () => mounted && s.isCurrent,
+    );
+    s.guard();
+    if (!mounted) return;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        scrollable: true,
+        title: Text(ctx.tr('Delete room permanently?')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(roomTitle(current)),
+            const SizedBox(height: 12),
+            Text(
+              ctx.tr(
+                'This removes this room, its checklist answers and its 3D models on this phone and in your account. Existing findings, photos, linked tasks and reminders are kept. Findings will need a new room assignment.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              ctx.tr(
+                'Connected models containing this room will also be cleared. Other rooms keep their individual scans.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              ctx.tr(
+                'You cannot restore this room after deletion. Audit history and backups may retain earlier information. Other phones may retain downloaded models until they refresh.',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(ctx.tr('Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(ctx.tr('Delete room and scans')),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted || !s.isCurrent) return;
+    await s.edit({
+      'type': 'delete_room',
+      'roomId': room.id,
+      'expectedModelRevision': model?.modelRevision ?? 0,
+    });
+    await s.save();
+    if (mounted) {
+      setState(() {
+        selectedRoom = null;
+        scanEpoch++;
+      });
+    }
+  }
+
+  Widget archiveAction(RoomInstance room) => TextButton.icon(
+    key: ValueKey('archive-room-${room.id}'),
+    onPressed: editable ? () => run(() => changeRoomArchive(room)) : null,
+    icon: const Icon(Icons.archive_outlined),
+    label: Text(context.tr('Archive room')),
+  );
+
+  List<Widget> archivedRooms(HomeSafetySession s) => [
+    if (s.document.archivedRooms.isNotEmpty)
+      ExpansionTile(
+        key: const ValueKey('archived-rooms'),
+        title: Text(context.tr('Archived rooms')),
+        children: [
+          for (final room in s.document.archivedRooms)
+            ListTile(
+              key: ValueKey('archived-room-${room.id}'),
+              title: Text(roomTitle(room)),
+              subtitle: Text(
+                context.tr(
+                  'Saved scans and history retained. Tasks and reminders remain active.',
+                ),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: enabled ? () => _selectRoom(room.id) : null,
+            ),
+        ],
+      ),
+  ];
+
+  List<Widget> archivedRoom(HomeSafetySession s, RoomInstance room) => [
+    Text(
+      context.tr('Archived room'),
+      style: Theme.of(context).textTheme.titleLarge,
+    ),
+    Text(
+      context.tr(
+        'Saved scans and history retained. Tasks and reminders remain active.',
+      ),
+    ),
+    const SizedBox(height: 16),
+    FilledButton.icon(
+      key: ValueKey('restore-room-${room.id}'),
+      onPressed: editable ? () => run(() => changeRoomArchive(room)) : null,
+      icon: const Icon(Icons.unarchive_outlined),
+      label: Text(context.tr('Restore room')),
+    ),
+    const SizedBox(height: 16),
+    for (final link in s.document.findingRooms.where(
+      (l) => l.roomId == room.id,
+    ))
+      for (final finding in s.snapshot.findings.where(
+        (f) => f.id == link.findingId,
+      ))
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(finding.observation),
+                TextButton(
+                  onPressed: enabled ? () => openFinding(finding.id) : null,
+                  child: Text(context.tr('Review concern and evidence')),
+                ),
+                if (widget.services.config.trackingEnabled)
+                  TextButton(
+                    onPressed: enabled ? () => openTasks(finding.id) : null,
+                    child: Text(context.tr('View or add next steps')),
+                  ),
+              ],
+            ),
+          ),
+        ),
+    const SizedBox(height: 16),
+    TextButton.icon(
+      key: ValueKey('delete-room-${room.id}'),
+      onPressed: editable && !s.caseWriteBlocked
+          ? () => run(() => deleteRoom(room))
+          : null,
+      icon: const Icon(Icons.delete_outline),
+      label: Text(context.tr('Delete room permanently')),
+    ),
+  ];
+
   Future<void> roomDialog([RoomInstance? room]) async {
     final s = session!;
     final previousIds = s.document.rooms.map((r) => r.id).toSet();
@@ -200,7 +396,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
     final suggested = suggestedRooms(s.document, finding.room);
     final rooms = [
       ...suggested,
-      ...s.document.rooms.where(
+      ...s.document.activeRooms.where(
         (r) => !suggested.any((candidate) => candidate.id == r.id),
       ),
     ];
@@ -397,6 +593,29 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
     });
     await ready;
   });
+
+  Future<void> openHomeModel() async {
+    final s = session;
+    if (s == null || !enabled || !s.isCurrent || s.localSaveFailed) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WholeHomeScreen(
+          services: widget.services,
+          rooms: () => s.document.rooms,
+          isCurrent: () => mounted && s.isCurrent,
+          scope: Listenable.merge([s, widget.services.coordinator]),
+        ),
+      ),
+    );
+    if (mounted && s.isCurrent) setState(() => scanEpoch++);
+  }
+
+  Widget homeModelEntry() => OutlinedButton.icon(
+    key: const ValueKey('open-whole-home-model'),
+    onPressed: enabled ? openHomeModel : null,
+    icon: const Icon(Icons.home_work_outlined),
+    label: Text(context.tr('Connected home model')),
+  );
 
   Future<void> openReport() => run(() async {
     final s = session!;
@@ -778,12 +997,19 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
                             ),
                             tone: SahNoticeTone.warning,
                           ),
-                          OutlinedButton(
-                            onPressed: enabled ? () => resolve(true) : null,
-                            child: Text(
-                              context.tr('Keep device changes for review'),
+                          if (s.pendingRoomDeletion)
+                            Text(
+                              context.tr(
+                                'Use the saved checklist, then reopen the archived room to review deletion again.',
+                              ),
+                            )
+                          else
+                            OutlinedButton(
+                              onPressed: enabled ? () => resolve(true) : null,
+                              child: Text(
+                                context.tr('Keep device changes for review'),
+                              ),
                             ),
-                          ),
                           TextButton(
                             onPressed: enabled ? () => resolve(false) : null,
                             child: Text(context.tr('Use saved checklist')),
@@ -816,7 +1042,9 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
                             label: Text(context.tr('Save checklist online')),
                           ),
                         const SizedBox(height: 16),
-                        if (widget.workspaceMode && room != null) ...[
+                        if (room?.archived == true) ...[
+                          ...archivedRoom(s, room!),
+                        ] else if (widget.workspaceMode && room != null) ...[
                           if (_roomSection == 0)
                             ...roomOverview(s, room)
                           else if (_roomSection == 1)
@@ -833,16 +1061,19 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
                             label: Text(context.tr('Add a room')),
                           ),
                           const SizedBox(height: 16),
+                          homeModelEntry(),
                           RoomScanCards(
                             key: ValueKey('room-scans-$scanEpoch'),
                             store: widget.services.store,
                             caseId: s.caseId,
-                            rooms: s.document.rooms,
+                            rooms: s.document.activeRooms,
                             isCurrent: () => mounted && s.isCurrent,
                             enabled: editable,
                             onOpen: openRoomScan,
                             onChecklist: (r) => _selectRoom(r.id),
+                            onArchive: (r) => run(() => changeRoomArchive(r)),
                           ),
+                          ...archivedRooms(s),
                         ] else if (room == null)
                           ...roomList(s)
                         else
@@ -860,6 +1091,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
   );
 
   List<Widget> roomList(HomeSafetySession s) => [
+    homeModelEntry(),
     for (final finding in s.snapshot.findings.where(
       (f) => !s.document.findingRooms.any((l) => l.findingId == f.id),
     ))
@@ -877,7 +1109,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
       icon: const Icon(Icons.add),
       label: Text(context.tr('Add a room')),
     ),
-    if (s.document.rooms.isEmpty)
+    if (s.document.activeRooms.isEmpty)
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
         child: Text(
@@ -898,7 +1130,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
         onChecklist: (r) => _selectRoom(r.id),
         compact: true,
       ),
-    for (final room in s.document.rooms)
+    for (final room in s.document.activeRooms)
       Card(
         child: ListTile(
           key: ValueKey('room-${room.id}'),
@@ -910,6 +1142,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
           onTap: enabled ? () => _selectRoom(room.id) : null,
         ),
       ),
+    ...archivedRooms(s),
   ];
   List<Widget> roomOverview(HomeSafetySession s, RoomInstance room) {
     final questions = s.catalog.forRoom(room);
@@ -963,6 +1196,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
         onTap: enabled ? () => setState(() => _roomSection = 2) : null,
       ),
       const SizedBox(height: 12),
+      archiveAction(room),
       TextButton.icon(
         onPressed: editable ? () => roomDialog(room) : null,
         icon: const Icon(Icons.edit_outlined),
@@ -1135,6 +1369,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
         ),
       ),
     ),
+    archiveAction(room),
     Text(progressText(s, room)),
     Text(
       context.tr(
