@@ -40,6 +40,36 @@ void main() {
         reason:
             'A real reply check requires a downloaded, enabled Apple Intelligence model.',
       );
+      final input = find.byKey(const ValueKey('assistant-input'));
+      if (input.evaluate().isEmpty) {
+        await tester.tap(find.text('Check again'));
+        await tester.pumpAndSettle();
+      }
+      await tester.enterText(input, 'Where do I view my saved room scan?');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+      for (
+        var wait = 0;
+        wait < 65 &&
+            find.byKey(const ValueKey('assistant-stop')).evaluate().isNotEmpty;
+        wait++
+      ) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      final shownReplies = tester
+          .widgetList<SelectableText>(find.byType(SelectableText))
+          .map((widget) => widget.data ?? widget.textSpan?.toPlainText() ?? '')
+          .where((value) => value.contains('Rooms'))
+          .toList();
+      expect(
+        shownReplies,
+        isNotEmpty,
+        reason: 'A real model answer must appear in the conversation.',
+      );
+      expect(tester.widget<TextField>(input).controller!.text, isEmpty);
+      debugPrint('ASSISTANT_FICTIONAL_UI_REPLY: ${shownReplies.last}');
       var generatedReplies = 0;
       for (final example in [
         ('en', 'Where do I view my saved room scan?', '[]'),
@@ -82,6 +112,21 @@ void main() {
             findings: example.$3,
           );
           generatedReplies++;
+          if (example.$2 == 'Where do I view my saved room scan?' ||
+              example.$1 != 'en') {
+            final roomLabel = {
+              'en': 'Rooms',
+              'es': 'Habitaciones',
+              'zh-Hans': '房间',
+              'zh-Hant': '房間',
+            }[example.$1]!;
+            expect(
+              answer,
+              contains(roomLabel),
+              reason: 'Saved scans must lead to the actual Rooms section.',
+            );
+          }
+
           expect(answer.trim(), isNotEmpty);
           expect(answer.runes.length, lessThanOrEqualTo(2400));
           debugPrint('ASSISTANT_FICTIONAL_REPLY ${example.$1}: $answer');
