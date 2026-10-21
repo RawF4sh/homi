@@ -36,24 +36,36 @@ export async function runPacedLongSession(operation: (index: number, started: nu
   const config = sessionConfiguration(mode);
   const now = options.now ?? (() => Math.floor(performance.now()));
   const wait = options.wait ?? ((milliseconds, signal) => sleep(milliseconds, undefined, { signal }));
-  const initial = now();
+  let lastObserved = -1;
+  const clock = () => {
+    const value = now();
+    if (!Number.isSafeInteger(value) || value < 0 || value < lastObserved) throw new Error('Invalid synthetic pacing clock.');
+    lastObserved = value; return value;
+  };
+  options.signal?.throwIfAborted();
+  const initial = clock();
   const starts: number[] = [], durations: number[] = [];
   for (let index = 0; index < config.iterations; index++) {
     options.signal?.throwIfAborted();
     const earliest = index === 0 ? initial : initial + starts[index - 1] + config.intervalMs;
-    const delay = earliest - now();
-    if (delay > 0) await wait(delay, options.signal);
+    if (!Number.isSafeInteger(earliest)) throw new Error('Invalid synthetic pacing clock.');
+    let start = clock(), waits = 0;
+    while (start < earliest) {
+      if (waits++ >= 8) throw new Error('Synthetic pacing timer did not reach its deadline.');
+      options.signal?.throwIfAborted();
+      await wait(earliest - start, options.signal);
+      options.signal?.throwIfAborted();
+      start = clock();
+    }
     options.signal?.throwIfAborted();
-    const start = now();
-    if (!Number.isSafeInteger(start) || start < earliest) throw new Error('Invalid synthetic pacing clock.');
     starts.push(start - initial);
     await operation(index, start);
     options.signal?.throwIfAborted();
-    const end = now();
-    if (!Number.isSafeInteger(end) || end <= start) throw new Error('Invalid synthetic operation clock.');
+    const end = clock();
+    if (end <= start) throw new Error('Invalid synthetic operation clock.');
     durations.push(end - start);
   }
-  return { starts, durations, elapsedMs: now() - initial };
+  return { starts, durations, elapsedMs: clock() - initial };
 }
 
 export function createProgressAcknowledger(publish: (progress: LinuxWorkloadProgress) => void,

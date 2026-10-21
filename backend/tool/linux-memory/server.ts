@@ -28,14 +28,29 @@ export function parseCgroupEvents(value: string): Record<string, number> {
   if (!['low', 'high', 'max', 'oom', 'oom_kill'].every(key => Object.hasOwn(result, key))) throw new Error('Incomplete cgroup events.');
   return result;
 }
-export async function memorySnapshot() {
-  if ((await statfs('/sys/fs/cgroup')).type !== 0x63677270) throw new Error('cgroup v2 required.');
-  const names = ['memory.current', 'memory.peak', 'memory.max', 'memory.swap.max', 'memory.events', 'cpu.max'] as const;
-  const values = await Promise.all(names.map(name => readFile(`/sys/fs/cgroup/${name}`, 'utf8')));
-  const maxRssKiB = process.resourceUsage().maxRSS;
-  return { schemaVersion: '1', kind: 'memory', rssBytes: process.memoryUsage().rss, maxRssKiB, maxRssBytes: maxRssKiB * 1024,
-    cgroup: { version: 2, currentBytes: parseCgroupInteger(values[0]), peakBytes: parseCgroupInteger(values[1]),
-      limitBytes: parseCgroupInteger(values[2]), swapMaxBytes: parseCgroupInteger(values[3]), events: parseCgroupEvents(values[4]), cpuMax: values[5].trim() } };
+type CgroupFile = 'memory.current' | 'memory.peak' | 'memory.max' | 'memory.swap.max' | 'memory.events' | 'cpu.max';
+export interface MemorySnapshotSampler {
+  cgroupV2(): Promise<boolean>;
+  readCgroup(name: CgroupFile): Promise<string>;
+  rssBytes(): number;
+  maxRssKiB(): number;
+}
+export async function memorySnapshot(sampler: MemorySnapshotSampler = {
+  cgroupV2: async () => (await statfs('/sys/fs/cgroup')).type === 0x63677270,
+  readCgroup: name => readFile(`/sys/fs/cgroup/${name}`, 'utf8'),
+  rssBytes: () => process.memoryUsage().rss,
+  maxRssKiB: () => process.resourceUsage().maxRSS,
+}) {
+  if (!await sampler.cgroupV2()) throw new Error('cgroup v2 required.');
+  const currentBytes = parseCgroupInteger(await sampler.readCgroup('memory.current'));
+  const names = ['memory.max', 'memory.swap.max', 'memory.events', 'cpu.max'] as const;
+  const values = await Promise.all(names.map(name => sampler.readCgroup(name)));
+  const cgroup = { version: 2, currentBytes, peakBytes: parseCgroupInteger(await sampler.readCgroup('memory.peak')),
+    limitBytes: parseCgroupInteger(values[0]), swapMaxBytes: parseCgroupInteger(values[1]),
+    events: parseCgroupEvents(values[2]), cpuMax: values[3].trim() };
+  const rssBytes = sampler.rssBytes();
+  const maxRssKiB = sampler.maxRssKiB();
+  return { schemaVersion: '1', kind: 'memory', rssBytes, maxRssKiB, maxRssBytes: maxRssKiB * 1024, cgroup };
 }
 let phase = 'arguments';
 async function main() {

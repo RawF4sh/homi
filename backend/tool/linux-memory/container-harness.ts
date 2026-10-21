@@ -4,7 +4,7 @@ import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } fro
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SCENARIOS, type Scenario } from '../memory/workload.ts';
-import { evaluateLinuxMemoryScenario, type LinuxMemoryScenarioInput } from './report.ts';
+import { assertLinuxMemoryStartup, evaluateLinuxMemoryScenario, type LinuxMemoryScenarioInput } from './report.ts';
 import { sessionConfiguration, SOAK_CLIENT_DEADLINE_MS, SOAK_PROFILE_DEADLINE_MS, type SessionMode } from './protocol.ts';
 
 const BACKEND = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -307,9 +307,10 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
       const seeded = await toolContainer(`seed-${index}`, network, volume, labImage, ['node', 'tool/linux-memory/seed.ts', scenario, FIXTURES]);
       if (seeded.code !== 0) { await writeFile(join(temporary, 'seed-error.txt'), seeded.stderr + seeded.stdout, { mode: 0o600 }); throw new Error('Disposable database setup failed.'); }
       await create('container', api, apiContainerArgs(api, network, volume, labImage, id)); await checked(['start', api]);
-      let ready: unknown;
+      let ready: unknown, startupLogs = '';
       await waitFor('API startup', async () => {
         const logs = await runCommand(options.docker, ['logs', api], env, 30_000, abort.signal);
+        startupLogs = logs.stdout + logs.stderr;
         ready = jsonLines(logs.stdout, 'ready');
         if (!(await inspect(api)).State.Running) {
           await writeFile(join(temporary, 'api-error.txt'), logs.stdout + logs.stderr, { mode: 0o600 });
@@ -317,6 +318,12 @@ export async function profileLinux(options: LinuxOptions): Promise<boolean> {
         }
         return ready !== undefined;
       });
+      await writeFile(join(temporary, `api-${index}-startup-log.txt`), startupLogs, { mode: 0o600 });
+      try { assertLinuxMemoryStartup(ready, options.architecture); }
+      catch (error) {
+        report.startupFailure = { scenario, reason: 'runtime_or_baseline_invalid', workloadStarted: false };
+        throw error;
+      }
       let samples = 0;
       const checkpointMemory = async () => {
         const previousCount = samples;

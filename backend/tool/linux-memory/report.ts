@@ -116,6 +116,19 @@ function parseRuntime(value: unknown, architecture: LinuxMemoryScenarioInput['ar
     uid: value.uid, execArgv: [...PROFILE_WORKER_NODE_ARGS], allocatorArenaMax: 2, sharpConcurrency: 1 };
 }
 
+export function assertLinuxMemoryStartup(ready: unknown, architecture: LinuxMemoryScenarioInput['architecture']): void {
+  if (!exact(ready, ['schemaVersion', 'kind', 'runtime', 'baseline']) || ready.schemaVersion !== '1' || ready.kind !== 'ready'
+    || !['amd64', 'arm64'].includes(architecture) || !parseRuntime(ready.runtime, architecture)) {
+    throw new Error('API startup runtime or baseline is invalid; workload was not started.');
+  }
+  const baseline = parseMemory(ready.baseline);
+  if (!baseline || baseline.maxRssBytes > PROFILE_TARGET_BYTES || baseline.cgroup.peakBytes > PROFILE_TARGET_BYTES
+    || baseline.cgroup.events.max !== 0 || baseline.cgroup.events.oom !== 0 || baseline.cgroup.events.oom_kill !== 0
+    || (baseline.cgroup.events.oom_group_kill ?? 0) !== 0) {
+    throw new Error('API startup runtime or baseline is invalid; workload was not started.');
+  }
+}
+
 function validContainerConfiguration(value: unknown): boolean {
   if (!record(value) || !record(value.HostConfig) || !record(value.Config) || !record(value.NetworkSettings)) return false;
   const host = value.HostConfig;

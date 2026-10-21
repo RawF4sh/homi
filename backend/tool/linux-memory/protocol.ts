@@ -57,6 +57,9 @@ export function syntheticDiagnostic(phase: string, error: unknown) {
     ['Connection terminated unexpectedly', 'connection_terminated_unexpectedly'],
     ['Connection terminated', 'connection_terminated'],
     ['The server does not support SSL connections', 'server_ssl_unsupported'],
+    ['Invalid synthetic pacing clock.', 'pacing_clock_invalid'],
+    ['Synthetic pacing timer did not reach its deadline.', 'pacing_deadline_unreached'],
+    ['Invalid synthetic operation clock.', 'operation_clock_invalid'],
   ]);
   const reason = error instanceof Error ? knownReasons.get(error.message) : undefined;
   console.error(JSON.stringify({ kind: 'synthetic-diagnostic', phase, errorName: name,
