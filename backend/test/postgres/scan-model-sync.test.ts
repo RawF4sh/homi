@@ -57,12 +57,12 @@ test('named-room models and legacy models restore after database restart and pri
  assert.deepEqual(await repo.readScanModelForUser(OWNER,caseId,roomId),expected);
  target=await TestPostgres.start();const targetAdmin=target.pool();await applyMigrations(targetAdmin);await restoreDatabaseBackup(targetAdmin,archive,origin);
  await targetAdmin.query('CREATE ROLE restored_scan LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS IN ROLE safeathome_app');
- const restored=new PostgresCaseRepository(target.pool('restored_scan'));
+ const restored=new PostgresCaseRepository(targetAdmin);
  assert.deepEqual(await restored.readScanModelForUser(OWNER,caseId,roomId),expected);
  const restoredLegacy=await restored.readScanModelForUser(OWNER,caseId,null);if(restoredLegacy.status==='found')assert.equal(restoredLegacy.state.reviewJson,legacy.reviewJson);
  const old=JSON.parse(archive.toString('utf8'));old.migrations=old.migrations.slice(0,10);
  delete old.tables.case_scan_models;delete old.tables.share_sensitive;
- for(const row of old.tables.case_shares)delete row.sensitive_scope;
+ for(const row of old.tables.case_shares){delete row.sensitive_scope;delete row.recipient_email_hash;delete row.invited_email;}
  old.tables.repository_quota[0].stored_bytes='0';
  assert.equal((await validateDatabaseBackup(Buffer.from(JSON.stringify(old)),origin)).sourceRows.case_scan_models,0);
 });

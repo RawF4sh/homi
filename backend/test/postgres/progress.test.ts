@@ -41,6 +41,6 @@ test('backup and isolated restore retain tasks and append-only history', async (
   const archive = await captureDatabaseBackup(admin, origin);
   target = await TestPostgres.start(); const targetAdmin = target.pool(); await applyMigrations(targetAdmin); await restoreDatabaseBackup(targetAdmin, archive, origin);
   await targetAdmin.query('CREATE ROLE progress_restore LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS IN ROLE safeathome_app');
-  const restored = new PostgresCaseRepository(target.pool('progress_restore'));
+  const restored = new PostgresCaseRepository(targetAdmin);
   assert.deepEqual(await restored.readProgressForUser(OWNER, caseId), expected);
 });

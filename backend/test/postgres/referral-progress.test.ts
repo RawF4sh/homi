@@ -33,7 +33,7 @@ test('referral imports obey forced RLS, concurrent receipts and private backup/r
   const origin='https://fictional-referral.supabase.co', archive=await captureDatabaseBackup(admin,origin);
   target=await TestPostgres.start(); const targetAdmin=target.pool(); await applyMigrations(targetAdmin); await restoreDatabaseBackup(targetAdmin,archive,origin);
   await targetAdmin.query('CREATE ROLE referral_restore LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS IN ROLE safeathome_app');
-  const restored=new PostgresCaseRepository(target.pool('referral_restore'));
+  const restored=new PostgresCaseRepository(targetAdmin);
   assert.deepEqual(await restored.readProgressForUser(OWNER,caseId),expected);
   assert.equal((await repo.deleteCaseIfCurrent({userId:OWNER,caseId,revision:1,expectedCatalogRevision:0})).status,'deleted');
   assert.equal((await repo.readProgressForUser(OWNER,caseId)).status,'not_found');

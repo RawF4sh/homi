@@ -85,7 +85,7 @@ test('quarantine restore retains metadata and overlays, revokes annotation revie
  snapshot=(await repo.loadForUser(OWNER,snapshot.caseId))!;const request=await annotation(snapshot);
  assert.equal((await repo.saveAnnotationsForUser(OWNER,request,iso())).status,'found');
  const origin='https://fictional-project.supabase.co';const archive=await captureDatabaseBackup(admin,origin);
- await restoreDatabaseBackup(targetAdmin,archive,origin);const restored=new PostgresCaseRepository(targetRuntime);
+ await restoreDatabaseBackup(targetAdmin,archive,origin);await assert.rejects(new PostgresCaseRepository(targetRuntime).readAssessmentForUser(OWNER,snapshot.caseId));const restored=new PostgresCaseRepository(targetAdmin);
  assert.deepEqual(await restored.readAssessmentForUser(OWNER,snapshot.caseId),await repo.readAssessmentForUser(OWNER,snapshot.caseId));
  const restoredRecord=(await targetAdmin.query('SELECT record FROM safeathome_private.evidence_annotations')).rows[0].record;
  assert.deepEqual(restoredRecord.marks,request.marks);assert.equal(restoredRecord.reviewState,'needs_review');assert.equal(restoredRecord.reviewedBy,null);

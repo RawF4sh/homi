@@ -89,7 +89,7 @@ test('backup and isolated restore retain structured rooms, source versions and a
   target = await TestPostgres.start(); const targetAdmin = target.pool(); await applyMigrations(targetAdmin);
   await restoreDatabaseBackup(targetAdmin, archive, origin);
   await targetAdmin.query('CREATE ROLE safety_restore LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS IN ROLE safeathome_app');
-  const restored = new PostgresCaseRepository(target.pool('safety_restore'));
+  const restored = new PostgresCaseRepository(targetAdmin);
   assert.deepEqual(await restored.readHomeSafetyForUser(OWNER, caseId), { status: 'found', state: expected });
   assert.equal((await restored.readHomeSafetyForUser(OTHER, caseId)).status, 'not_found');
 });
