@@ -28,6 +28,21 @@ test('synthetic setup diagnostics expose finite network and certificate codes on
   }
 });
 
+test('pacing diagnostics identify exact internal failures without leaking arbitrary error text', t => {
+  const diagnostics: unknown[][] = [];
+  t.mock.method(console, 'error', (...args: unknown[]) => { diagnostics.push(args); });
+  for (const [message, reason] of [
+    ['Invalid synthetic pacing clock.', 'pacing_clock_invalid'],
+    ['Synthetic pacing timer did not reach its deadline.', 'pacing_deadline_unreached'],
+    ['Invalid synthetic operation clock.', 'operation_clock_invalid'],
+  ]) {
+    syntheticDiagnostic('http-workload', new Error(message));
+    assert.deepEqual(diagnostics.pop(), [JSON.stringify({ kind: 'synthetic-diagnostic', phase: 'http-workload', errorName: 'Error', reason })]);
+    syntheticDiagnostic('http-workload', new Error(`${message} private-driver-detail`));
+    assert.deepEqual(diagnostics.pop(), [JSON.stringify({ kind: 'synthetic-diagnostic', phase: 'http-workload', errorName: 'Error' })]);
+  }
+});
+
 test('synthetic diagnostics never expose driver messages, causes, stacks or unrecognized codes', t => {
   const diagnostics: unknown[][] = [];
   t.mock.method(console, 'error', (...args: unknown[]) => { diagnostics.push(args); });

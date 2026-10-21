@@ -83,12 +83,61 @@ test('cancellation interrupts pacing and does not issue the next heavy operation
   assert.equal(calls, 1);
 });
 
-test('a waiter that returns early cannot turn an underpaced session into success', async () => {
+test('a one-millisecond early timer wake waits the remainder without shortening long or soak sessions', async () => {
+  for (const mode of ['long', 'soak'] as const) {
+    let clock = 0, calls = 0, early = false;
+    const earlyAfter = mode === 'soak' ? 43 : 5, remainders: number[] = [];
+    const config = sessionConfiguration(mode);
+    const result = await runPacedLongSession(async () => { calls++; clock += 100; }, {
+      mode, now: () => clock, wait: async milliseconds => {
+        if (calls === earlyAfter) remainders.push(milliseconds);
+        if (calls === earlyAfter && !early) { early = true; clock += milliseconds - 1; }
+        else clock += milliseconds;
+      },
+    });
+    assert.equal(calls, config.iterations);
+    assert.deepEqual(remainders, [config.intervalMs - 100, 1]);
+    assert.ok(result.starts.every((start, index) => index === 0 || start - result.starts[index - 1] >= config.intervalMs));
+    assert.equal(result.starts.at(-1), (config.iterations - 1) * config.intervalMs);
+  }
+});
+
+test('repeated nonadvancing or persistently early waiters fail after bounded waits without a next request', async () => {
+  for (const advance of [0, 1]) {
+    let clock = 0, calls = 0, waits = 0;
+    await assert.rejects(runPacedLongSession(async () => { calls++; clock += 10; }, {
+      now: () => clock, wait: async () => { waits++; clock += advance; },
+    }), /pacing timer did not reach its deadline/);
+    assert.equal(calls, 1); assert.equal(waits, 8);
+  }
+});
+
+test('invalid initial, backward and overflowing pacing clocks cannot start further work', async () => {
+  for (const invalid of [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+    let calls = 0;
+    await assert.rejects(runPacedLongSession(async () => { calls++; }, { now: () => invalid }), /pacing clock/);
+    assert.equal(calls, 0);
+  }
   let clock = 0, calls = 0;
   await assert.rejects(runPacedLongSession(async () => { calls++; clock += 10; }, {
-    now: () => clock, wait: async () => { clock++; },
+    now: () => clock, wait: async () => { clock--; },
   }), /pacing clock/);
   assert.equal(calls, 1);
+  clock = Number.MAX_SAFE_INTEGER - 5; calls = 0;
+  await assert.rejects(runPacedLongSession(async () => { calls++; clock++; }, { now: () => clock }), /pacing clock/);
+  assert.equal(calls, 1);
+});
+
+test('cancellation during the remaining one-millisecond wait prevents the next operation', async () => {
+  let clock = 0, calls = 0, waits = 0; const controller = new AbortController();
+  await assert.rejects(runPacedLongSession(async () => { calls++; clock += 100; }, {
+    signal: controller.signal, now: () => clock, wait: async milliseconds => {
+      waits++;
+      if (waits === 1) clock += milliseconds - 1;
+      else { assert.equal(milliseconds, 1); controller.abort(); }
+    },
+  }), { name: 'AbortError' });
+  assert.equal(calls, 1); assert.equal(waits, 2); assert.equal(clock, 9999);
 });
 
 test('progress acknowledgement is registered before publication and excludes stale acknowledgements', async () => {

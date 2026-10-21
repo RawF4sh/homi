@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { evaluateLinuxMemoryScenario, type LinuxMemoryScenarioInput } from '../tool/linux-memory/report.ts';
+import { assertLinuxMemoryStartup, evaluateLinuxMemoryScenario, type LinuxMemoryScenarioInput } from '../tool/linux-memory/report.ts';
 
 function snapshot() {
   return { schemaVersion: '1', kind: 'memory', rssBytes: 204_800_000, maxRssKiB: 250_000, maxRssBytes: 256_000_000,
@@ -49,6 +49,32 @@ test('all nine complete Linux workload reports pass with page-rounded cgroup lim
     assert.equal(result.status, 'passed', `${scenario}: ${result.failures}`);
     assert.deepEqual(result.cgroupEventsDelta, { low: 0, high: 0, max: 0, oom: 0, oom_kill: 0 });
   }
+});
+
+test('startup gate rejects the observed RSS sampling race before workload launch without repairing original evidence', () => {
+  const input = inputFor(); input.architecture = 'arm64'; input.ready.runtime.arch = 'arm64';
+  Object.assign(input.ready.baseline, { rssBytes: 122_220_544, maxRssKiB: 119_228, maxRssBytes: 122_089_472 });
+  const before = JSON.stringify(input.ready); let started = false;
+  assert.throws(() => { assertLinuxMemoryStartup(input.ready, 'arm64'); started = true; }, /workload was not started/);
+  assert.equal(started, false); assert.equal(JSON.stringify(input.ready), before);
+  assert.ok(evaluateLinuxMemoryScenario(input).failures.includes('baseline_memory_invalid'));
+});
+
+test('startup gate shares strict runtime and baseline checks and refuses prior pressure or exceeded headroom', () => {
+  const valid = inputFor(); assert.doesNotThrow(() => assertLinuxMemoryStartup(valid.ready, 'amd64'));
+  for (const mutate of [
+    (input: ReturnType<typeof inputFor>) => { input.ready.baseline.cgroup.currentBytes = input.ready.baseline.cgroup.peakBytes + 1; },
+    (input: ReturnType<typeof inputFor>) => { input.ready.baseline.cgroup.events.oom = 1; },
+    (input: ReturnType<typeof inputFor>) => { input.ready.baseline.cgroup.events.max = 1; },
+    (input: ReturnType<typeof inputFor>) => { input.ready.baseline.cgroup.peakBytes = 400_000_001; },
+    (input: ReturnType<typeof inputFor>) => { input.ready.baseline.maxRssKiB = 400_000; input.ready.baseline.maxRssBytes = 409_600_000; },
+    (input: ReturnType<typeof inputFor>) => { input.ready.runtime.execArgv.push('--expose-gc'); },
+    (input: ReturnType<typeof inputFor>) => { input.ready.runtime.allocatorArenaMax = 8; },
+  ]) {
+    const input = inputFor(); mutate(input); assert.throws(() => assertLinuxMemoryStartup(input.ready, 'amd64'));
+  }
+  assert.throws(() => assertLinuxMemoryStartup(undefined, 'amd64'));
+  assert.throws(() => assertLinuxMemoryStartup(valid.ready, 'arm64'));
 });
 
 test('arm64 must be explicitly requested, and report metrics are detached and contain no Docker secrets or paths', () => {

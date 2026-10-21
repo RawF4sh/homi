@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { createSupabaseAuthenticator } from '../src/auth/supabase-auth.ts';
 import { AUTH, OTHER, OTHER_TOKEN, OWNER, TOKEN, parseScenario, syntheticAuthFetch } from '../tool/linux-memory/protocol.ts';
-import { allocatorArenaMax, parseCgroupEvents, parseCgroupInteger } from '../tool/linux-memory/server.ts';
+import { allocatorArenaMax, memorySnapshot, parseCgroupEvents, parseCgroupInteger, type MemorySnapshotSampler } from '../tool/linux-memory/server.ts';
 import { digestResponse, runLinuxWorkload } from '../tool/linux-memory/workload.ts';
 
 test('container telemetry requires finite byte limits and complete nonduplicated cgroup counters', () => {
@@ -22,6 +22,48 @@ test('allocator telemetry rejects values that do not represent a canonical decim
   for (const value of ['', '0x2', ' 2', '2 ', '2\n', '+2', '02', '2.0', '-2', 'NaN', '9007199254740992']) {
     assert.equal(allocatorArenaMax(value), null);
   }
+});
+
+test('memory sampling observes current values before later high-water marks while sampling itself allocates', async () => {
+  const calls: string[] = []; let cgroupPeak = 80_000_000, processPeak = 122_089_472;
+  const sample = await memorySnapshot({
+    cgroupV2: async () => true,
+    readCgroup: async name => {
+      calls.push(`${name}:start`);
+      if (name === 'memory.current') {
+        await Promise.resolve(); cgroupPeak = 100_000_000; calls.push('memory.current:finished');
+        return '100000000\n';
+      }
+      if (name === 'memory.peak') return `${cgroupPeak}\n`;
+      if (name === 'memory.max') { cgroupPeak = 128_000_000; return '499998720\n'; }
+      if (name === 'memory.swap.max') return '0\n';
+      if (name === 'memory.events') return 'low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n';
+      return '100000 100000\n';
+    },
+    rssBytes: () => { calls.push('rss'); processPeak = 122_220_544; return processPeak; },
+    maxRssKiB: () => { calls.push('maxRSS'); return processPeak / 1024; },
+  });
+  assert.equal(sample.rssBytes, 122_220_544); assert.equal(sample.maxRssBytes, 122_220_544);
+  assert.equal(sample.maxRssKiB, 119_356);
+  assert.equal(sample.cgroup.currentBytes, 100_000_000); assert.equal(sample.cgroup.peakBytes, 128_000_000);
+  assert.ok(calls.indexOf('memory.current:finished') < calls.indexOf('memory.peak:start'));
+  assert.deepEqual(calls.slice(-2), ['rss', 'maxRSS']);
+});
+
+test('sampler does not clamp or replace contradictory measurements and rejects unavailable cgroup v2', async () => {
+  let reads = 0;
+  const sampler: MemorySnapshotSampler = { cgroupV2: async () => true,
+    readCgroup: async name => {
+      reads++;
+      const values = { 'memory.current': '200', 'memory.peak': '100', 'memory.max': '499998720',
+        'memory.swap.max': '0', 'memory.events': 'low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n', 'cpu.max': '100000 100000' };
+      return values[name];
+    }, rssBytes: () => 122_220_544, maxRssKiB: () => 119_228 };
+  const sample = await memorySnapshot(sampler);
+  assert.equal(sample.rssBytes, 122_220_544); assert.equal(sample.maxRssBytes, 122_089_472);
+  assert.equal(sample.cgroup.currentBytes, 200); assert.equal(sample.cgroup.peakBytes, 100);
+  reads = 0; await assert.rejects(memorySnapshot({ ...sampler, cgroupV2: async () => false }), /cgroup v2 required/);
+  assert.equal(reads, 0);
 });
 
 test('synthetic auth transport exercises provider parsing and separates fictional owners', async () => {
