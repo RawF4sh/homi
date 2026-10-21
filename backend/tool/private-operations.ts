@@ -5,6 +5,7 @@ import { assertMigrationsCurrent } from '../src/storage/migrate.ts';
 import { assertBackupSource } from './backup.ts';
 import { completeAccountDeletionsFromEnvironment } from './complete-account-deletions.ts';
 import { readOperationsHealth } from './operations.ts';
+import { repositoryIsOpen, RecoveryError } from '../src/storage/recovery-control.ts';
 
 export async function runPrivateOperations(env:NodeJS.ProcessEnv){
  const captured={...env},config=await databaseConfigurationFromEnvironment(captured,'migration');
@@ -13,6 +14,7 @@ export async function runPrivateOperations(env:NodeJS.ProcessEnv){
  try{
   await assertMigrationsCurrent(pool);const visibility=await pool.connect();
   try{await assertCompleteOperatorVisibility(visibility);}finally{visibility.release();}
+  if(!await repositoryIsOpen(pool))throw new RecoveryError();
   const deletion=await completeAccountDeletionsFromEnvironment(captured,{apply:true,limit:1});
   const operations=await readOperationsHealth(pool);
   return {schemaVersion:'1',mode:'bounded_hourly',deletion,operations,exitCode:deletion.databaseFailure||deletion.failed>0?1:operations.exitCode};
