@@ -23,6 +23,12 @@ class SafetyStore extends MemoryPrivateStore {
     bytes[key] = Uint8List.fromList(value);
   }
 
+  @override
+  Future<void> delete(String key) async {
+    bytes.remove(key);
+    await super.delete(key);
+  }
+
   bool fail = false;
   @override
   Future<void> writeJson(String key, Map<String, Object?> value) {

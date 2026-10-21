@@ -10,6 +10,8 @@ import 'package:safe_at_home/app/live_app.dart';
 import 'package:safe_at_home/features/auth/login_screen.dart';
 import 'package:safe_at_home/features/cases/case_home_screen.dart';
 import 'package:safe_at_home/shared/presentation/startup_error_screen.dart';
+import 'package:safe_at_home/shared/services/invitation_links.dart';
+import 'package:safe_at_home/features/sharing/sharing_screens.dart';
 import '../services/case_evidence_api_client_test.dart' as http;
 import 'case_coordinator_test.dart' show FakeSession, FakeTransport;
 
@@ -152,6 +154,81 @@ void main() {
     await tester.tap(button);
     await tester.pump();
   }
+
+  testWidgets(
+    'invitation link waits for sign-in then opens a prefilled review without automatically redeeming it',
+    (tester) async {
+      session.owner = null;
+      final inbox = InvitationLinkInbox(), code = 'a' * 43;
+      addTearDown(inbox.dispose);
+      inbox.receive(
+        Uri.parse('safeathome://invite#code=$code'),
+        Uri.parse('https://example.org'),
+      );
+      transport = FakeTransport((request) async {
+        if (request.endpoint.path == '/v2/list-cases') {
+          return http.jsonResponse({
+            'schemaVersion': '2',
+            'cases': [],
+            'nextAfterCaseId': null,
+          });
+        }
+        if (request.endpoint.path == '/v3/list-shared-cases') {
+          return http.jsonResponse({'schemaVersion': '3', 'memberships': []});
+        }
+        throw StateError(
+          'Invitation review or acceptance requires a user action.',
+        );
+      });
+      await tester.pumpWidget(
+        LiveSessionHost(
+          config: LiveAppConfig(
+            apiOrigin: Uri.parse('https://example.org'),
+            supabaseUrl: Uri.parse('https://$authHost'),
+            publishableKey: 'fictional',
+            permissionSharingEnabled: true,
+            simpleInvitationsEnabled: true,
+          ),
+          session: session,
+          transport: transport,
+          invitationLinks: inbox,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(inbox.value, code);
+      expect(transport.requests, isEmpty);
+      session.changeOwner('fictional-owner');
+      await _until(
+        tester,
+        () => find.byType(SharedWithMeScreen).evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        code,
+      );
+      expect(find.text('Accept invitation'), findsNothing);
+      expect(inbox.value, isNull);
+      expect(
+        transport.requests.every(
+          (r) => [
+            '/v2/list-cases',
+            '/v3/list-shared-cases',
+          ].contains(r.endpoint.path),
+        ),
+        true,
+      );
+      await session.signOut();
+      await _until(
+        tester,
+        () => find.byType(LoginScreen).evaluate().isNotEmpty,
+      );
+      expect(find.byType(SharedWithMeScreen), findsNothing);
+      expect(inbox.value, isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets('failed unavailable-storage exit survives its cleanup spinner', (
     tester,

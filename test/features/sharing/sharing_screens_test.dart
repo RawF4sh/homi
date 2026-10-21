@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/live_app.dart';
 import 'package:safe_at_home/features/sharing/sharing_screens.dart';
 import 'package:safe_at_home/shared/models/sharing.dart';
 import 'package:safe_at_home/shared/models/case_draft.dart';
 import 'package:safe_at_home/shared/services/matching_api_client.dart';
-import '../../app/case_coordinator_test.dart' show FakeTransport;
+import '../../app/case_coordinator_test.dart' show FakeTransport, FakeSession;
 import '../../app/live_workflows_test.dart' show MemoryPrivateStore, services;
 import '../../services/case_evidence_api_client_test.dart' as http;
 import 'sharing_contract_test.dart' show sharedFixture;
@@ -21,6 +22,23 @@ Map<String, Object?> _view({bool viewer = false}) {
   }
   return {...v, 'membership': member};
 }
+
+AppServices _ownerServices(
+  bool email,
+  MemoryPrivateStore store,
+  FakeTransport transport,
+) => AppServices(
+  config: LiveAppConfig(
+    apiOrigin: Uri.parse('https://example.org'),
+    supabaseUrl: Uri.parse('https://fictional.supabase.co'),
+    publishableKey: 'fictional',
+    permissionSharingEnabled: true,
+    simpleInvitationsEnabled: email,
+  ),
+  session: FakeSession(),
+  store: store,
+  transport: transport,
+);
 
 Future<void> _mount(WidgetTester tester, AppServices app, Widget screen) async {
   addTearDown(() {
@@ -260,135 +278,199 @@ void main() {
       expect(find.text('Shared home safety plan'), findsOneWidget);
     },
   );
-  testWidgets(
-    'owner previews an explicit selection before creating a recipient-bound code',
-    (tester) async {
-      tester.view.physicalSize = const Size(900, 1600);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-      Map<String, Object?>? snapshot, created;
-      Map<String, Object?>? selected;
-      final app = services(
-        MemoryPrivateStore(),
-        FakeTransport((request) async {
-          final body = Map<String, Object?>.from(
-            jsonDecode(utf8.decode(request.body)) as Map,
+  for (final emailInvites in [false, true]) {
+    testWidgets(
+      'owner previews an explicit selection before creating a recipient-bound code (email: $emailInvites)',
+      (tester) async {
+        tester.view.physicalSize = emailInvites
+            ? const Size(340, 1000)
+            : const Size(900, 1600);
+        tester.view.devicePixelRatio = 1;
+        if (emailInvites) {
+          tester.platformDispatcher.textScaleFactorTestValue = 2;
+        }
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+          tester.platformDispatcher.clearTextScaleFactorTestValue();
+        });
+        Map<String, Object?>? snapshot, created;
+        Map<String, Object?>? selected;
+        String? clipboard;
+        if (emailInvites) {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+                if (call.method == 'Clipboard.setData') {
+                  clipboard = (call.arguments as Map)['text'] as String;
+                }
+                return null;
+              });
+          addTearDown(
+            () => TestDefaultBinaryMessengerBinding
+                .instance
+                .defaultBinaryMessenger
+                .setMockMethodCallHandler(SystemChannels.platform, null),
           );
-          switch (request.endpoint.path) {
-            case '/v1/create-case':
-              snapshot = {...body, 'revision': 1};
-              return http.jsonResponse(snapshot);
-            case '/v3/list-sharing':
-              return http.jsonResponse({
-                'schemaVersion': '3',
-                'shares': [],
-                'availableProgramIds': [],
-              });
-            case '/v3/preview-sharing':
-              selected = body;
-              return http.jsonResponse({
-                'schemaVersion': '3',
-                'projection': {
+        }
+        final app = _ownerServices(
+          emailInvites,
+          MemoryPrivateStore(),
+          FakeTransport((request) async {
+            final body = Map<String, Object?>.from(
+              jsonDecode(utf8.decode(request.body)) as Map,
+            );
+            switch (request.endpoint.path) {
+              case '/v1/create-case':
+                snapshot = {...body, 'revision': 1};
+                return http.jsonResponse(snapshot);
+              case '/v3/list-sharing':
+              case '/v3/list-email-sharing':
+                return http.jsonResponse({
                   'schemaVersion': '3',
-                  'caseId': snapshot!['caseId'],
-                  'sourceRevision': 1,
-                  'publishedAt': '2026-10-24T00:00:00.000Z',
-                  'stale': false,
-                  'summary': 'Selected home safety information',
-                  'findings':
-                      ((snapshot!['findings'] as List).cast<Map>().where(
-                            (f) => (body['scope'] as Map)['findingIds']
-                                .contains(f['id']),
-                          ))
-                          .map(
-                            (f) => {
-                              'id': f['id'],
-                              'room': f['room'],
-                              'observation': f['observation'],
-                              'reviewState': f['reviewState'],
-                            },
-                          )
-                          .toList(),
-                  'programs': [],
-                },
-              });
-            case '/v3/create-invitation':
-              created = body;
-              return http.jsonResponse({
-                'schemaVersion': '3',
-                'created': true,
-                'invitationCode': List.filled(43, 'a').join(),
-                'membership': {
-                  'membershipId': body['invitationId'],
-                  'caseId': body['caseId'],
-                  'recipientId': body['recipientId'],
-                  'grantorId': 'fictional-owner',
-                  'role': body['role'],
-                  'scope': body['scope'],
-                  'permissionRevision': 1,
-                  'state': 'pending',
-                  'expiresAt': body['expiresAt'],
-                  'invitationExpiresAt': '2026-10-31T00:00:00.000Z',
-                },
-              });
-            default:
-              throw StateError('Unexpected request');
-          }
-        }),
-      );
-      await app.coordinator.createDraft();
-      await app.coordinator.updateDraft(
-        CaseDraft.fromJson({
-          ...app.coordinator.draft!.toJson(),
-          'findings': [
-            {
-              'id': 'selected',
-              'room': 'bathroom',
-              'observation': 'Selected observation',
-              'reviewState': 'confirmed',
-              'measurements': [],
-              'evidenceIds': [],
-            },
-            {
-              'id': 'excluded',
-              'room': 'entrance',
-              'observation': 'Excluded observation',
-              'reviewState': 'needs_review',
-              'measurements': [],
-              'evidenceIds': [],
-            },
-          ],
-        }),
-      );
-      await app.coordinator.save();
-      await _mount(tester, app, PeopleWithAccessScreen(services: app));
-      expect(find.text('Create invitation code'), findsNothing);
-      await tester.enterText(
-        find.byType(TextField),
-        '22222222-2222-4222-8222-222222222222',
-      );
-      await tester.tap(find.text('Selected observation'));
-      await tester.ensureVisible(find.text('Preview selected information'));
-      await tester.tap(find.text('Preview selected information'));
-      await tester.pumpAndSettle();
-      expect((selected!['scope'] as Map)['findingIds'], ['selected']);
-      expect(created, isNull);
-      await tester.ensureVisible(find.text('Create invitation code'));
-      await tester.tap(find.text('Create invitation code'));
-      await tester.pumpAndSettle();
-      expect(created!['recipientId'], '22222222-2222-4222-8222-222222222222');
-      expect((created!['scope'] as Map)['findingIds'], ['selected']);
-      expect((created!['scope'] as Map)['allowHelperNotes'], false);
-      expect(
-        created!['expiresAt'],
-        matches(RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$')),
-        reason: 'The HTTP contract requires millisecond UTC precision.',
-      );
-      expect(find.byKey(const ValueKey('invitation-code')), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
+                  'shares': [],
+                  'availableProgramIds': [],
+                });
+              case '/v3/preview-sharing':
+                selected = body;
+                return http.jsonResponse({
+                  'schemaVersion': '3',
+                  'projection': {
+                    'schemaVersion': '3',
+                    'caseId': snapshot!['caseId'],
+                    'sourceRevision': 1,
+                    'publishedAt': '2026-10-24T00:00:00.000Z',
+                    'stale': false,
+                    'summary': 'Selected home safety information',
+                    'findings':
+                        ((snapshot!['findings'] as List).cast<Map>().where(
+                              (f) => (body['scope'] as Map)['findingIds']
+                                  .contains(f['id']),
+                            ))
+                            .map(
+                              (f) => {
+                                'id': f['id'],
+                                'room': f['room'],
+                                'observation': f['observation'],
+                                'reviewState': f['reviewState'],
+                              },
+                            )
+                            .toList(),
+                    'programs': [],
+                  },
+                });
+              case '/v3/create-invitation':
+              case '/v3/create-email-invitation':
+                created = body;
+                return http.jsonResponse({
+                  'schemaVersion': '3',
+                  'created': true,
+                  'invitationCode': List.filled(43, 'a').join(),
+                  'membership': {
+                    'membershipId': body['invitationId'],
+                    'caseId': body['caseId'],
+                    'recipientId': body['recipientId'] ?? body['invitationId'],
+                    'grantorId': 'fictional-owner',
+                    'role': body['role'],
+                    'scope': body['scope'],
+                    'permissionRevision': 1,
+                    'state': 'pending',
+                    'expiresAt': body['expiresAt'],
+                    'invitationExpiresAt': '2026-10-31T00:00:00.000Z',
+                  },
+                });
+              default:
+                throw StateError('Unexpected request');
+            }
+          }),
+        );
+        await app.coordinator.createDraft();
+        await app.coordinator.updateDraft(
+          CaseDraft.fromJson({
+            ...app.coordinator.draft!.toJson(),
+            'findings': [
+              {
+                'id': 'selected',
+                'room': 'bathroom',
+                'observation': 'Selected observation',
+                'reviewState': 'confirmed',
+                'measurements': [],
+                'evidenceIds': [],
+              },
+              {
+                'id': 'excluded',
+                'room': 'entrance',
+                'observation': 'Excluded observation',
+                'reviewState': 'needs_review',
+                'measurements': [],
+                'evidenceIds': [],
+              },
+            ],
+          }),
+        );
+        await app.coordinator.save();
+        await _mount(tester, app, PeopleWithAccessScreen(services: app));
+        expect(find.text('Create invitation code'), findsNothing);
+        await tester.scrollUntilVisible(
+          find.byType(TextField),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byType(TextField),
+          emailInvites
+              ? 'helper@fictional.example'
+              : '22222222-2222-4222-8222-222222222222',
+        );
+        await tester.scrollUntilVisible(
+          find.text('Selected observation'),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(find.text('Selected observation'));
+        await tester.scrollUntilVisible(
+          find.text('Preview selected information'),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(find.text('Preview selected information'));
+        await tester.pumpAndSettle();
+        expect((selected!['scope'] as Map)['findingIds'], ['selected']);
+        expect(created, isNull);
+        await tester.scrollUntilVisible(
+          find.text('Create invitation code'),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(find.text('Create invitation code'));
+        await tester.pumpAndSettle();
+        if (emailInvites) {
+          expect(created!['recipientEmail'], 'helper@fictional.example');
+          expect(created!.containsKey('recipientId'), false);
+          await tester.scrollUntilVisible(
+            find.text('Copy invitation link'),
+            250,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.tap(find.text('Copy invitation link'));
+          await tester.pumpAndSettle();
+          expect(clipboard, 'https://example.org/invite#code=${'a' * 43}');
+        } else {
+          expect(
+            created!['recipientId'],
+            '22222222-2222-4222-8222-222222222222',
+          );
+        }
+        expect((created!['scope'] as Map)['findingIds'], ['selected']);
+        expect((created!['scope'] as Map)['allowHelperNotes'], false);
+        expect(
+          created!['expiresAt'],
+          matches(RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$')),
+          reason: 'The HTTP contract requires millisecond UTC precision.',
+        );
+        expect(find.byKey(const ValueKey('invitation-code')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }

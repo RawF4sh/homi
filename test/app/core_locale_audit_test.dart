@@ -170,11 +170,16 @@ void main() {
           'Sign-in could not be completed. Check your account details and connection.',
         );
         expect(find.textContaining('Private provider details'), findsNothing);
+        await reveal(tester, find.byKey(const ValueKey('login-email')));
+        await tester.enterText(
+          find.byKey(const ValueKey('login-email')),
+          'fictional@example.invalid',
+        );
         await _tap(tester, find.text(l10n.text('Forgot password')));
         _translatedText(
           tester,
           l10n,
-          'If this address can receive beta recovery email, a link will arrive shortly.',
+          'If an account can receive email at this address, a password reset link will arrive shortly.',
         );
         expect(session.resetRequests, 1);
         session.recovery = true;

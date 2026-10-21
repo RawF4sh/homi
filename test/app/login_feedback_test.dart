@@ -25,7 +25,7 @@ class ControlledLoginSession extends FakeSession {
 const _signInFailure =
     'Sign-in could not be completed. Check your account details and connection.';
 const _recoveryResult =
-    'If this address can receive beta recovery email, a link will arrive shortly.';
+    'If an account can receive email at this address, a password reset link will arrive shortly.';
 
 Finder _input(String label) => find.byWidgetPredicate(
   (widget) =>
