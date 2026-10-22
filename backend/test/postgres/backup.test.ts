@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { after, before, beforeEach, test } from 'node:test';
 import type { Pool } from 'pg';
 import { TestPostgres } from './harness.ts';
-import { applyMigrations } from '../../src/storage/migrate.ts';
+import { applyMigrations, migrationManifest } from '../../src/storage/migrate.ts';
 import { captureDatabaseBackup, restoreDatabaseBackup, validateDatabaseBackup, DatabaseBackupError } from '../../src/storage/database-backup.ts';
 import { PostgresCaseRepository } from '../../src/storage/postgres-case-repository.ts';
 import { PostgresLifecycleMaintenance } from '../../src/storage/lifecycle-maintenance.ts';
@@ -84,7 +84,8 @@ test('quarantine roundtrip retains current case, PNG, answers, history and tombs
   assert.deepEqual(report.cleared, { matches: 1, packetPayloads: 1, exportPayloads: 1, previews: 1, receiptCapabilities: 1, workerLeases: 1 });
   assert.equal(report.storedBytes, fixture.photo.image.byteLength);
   assert.equal(JSON.stringify(report).includes(fixture.snapshot.caseId), false);
-  const restored = new PostgresCaseRepository(targetRuntime);
+  const restored = new PostgresCaseRepository(targetAdmin);
+  await assert.rejects(new PostgresCaseRepository(targetRuntime).loadForUser(OWNER, fixture.snapshot.caseId));
   assert.deepEqual(await restored.loadForUser(OWNER, fixture.snapshot.caseId), fixture.snapshot);
   assert.equal(await restored.loadForUser(OTHER, fixture.snapshot.caseId), null);
   assert.deepEqual(await restored.loadFormAnswersForUser(OWNER, fixture.snapshot.caseId, FORM_CONTEXT.programId),
@@ -112,7 +113,7 @@ test('quarantine roundtrip retains current case, PNG, answers, history and tombs
 test('empty database is a legitimate complete archive and restore target cannot be reused', async () => {
   const archive = await captureDatabaseBackup(sourceAdmin, ORIGIN);
   assert.equal((await restoreDatabaseBackup(targetAdmin, archive, ORIGIN)).storedBytes, 0);
-  await create(new PostgresCaseRepository(targetRuntime));
+  await create(new PostgresCaseRepository(targetAdmin));
   await assert.rejects(restoreDatabaseBackup(targetAdmin, archive, ORIGIN), DatabaseBackupError);
   assert.equal((await targetAdmin.query('SELECT count(*) AS count FROM safeathome_private.cases')).rows[0].count, '1');
 });
@@ -126,10 +127,10 @@ test('account plan names survive quarantine restore with independent revision an
   await sourceAdmin.query('UPDATE safeathome_private.cases SET plan_name=$2 WHERE case_id=$1', [cleared.caseId, clearedState]);
   const archive = await captureDatabaseBackup(sourceAdmin, ORIGIN);
   const encoded = JSON.parse(archive.toString('utf8'));
-  assert.deepEqual(encoded.migrations.map((entry: { version: string }) => entry.version), ['001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '011', '012']);
+  assert.deepEqual(encoded.migrations, await migrationManifest());
   assert.deepEqual(encoded.tables.cases.find((row: { case_id: string }) => row.case_id === named.caseId).plan_name, state);
   await restoreDatabaseBackup(targetAdmin, archive, ORIGIN);
-  const restored = new PostgresCaseRepository(targetRuntime);
+  const restored = new PostgresCaseRepository(targetAdmin);
   assert.deepEqual(await restored.readPlanNameForUser(OWNER, named.caseId), state);
   assert.equal(await restored.readPlanNameForUser(OTHER, named.caseId), null);
   assert.deepEqual(await restored.readPlanNameForUser(OTHER, cleared.caseId), clearedState);
@@ -157,7 +158,7 @@ test('verified five-migration legacy backup restores into current quarantine wit
   assert.deepEqual(legacy, before);
   assert.deepEqual((await targetAdmin.query('SELECT case_id,owner_id,plan_name FROM safeathome_private.cases')).rows,
     [{ case_id: snapshot.caseId, owner_id: OWNER, plan_name: null }]);
-  assert.deepEqual(await new PostgresCaseRepository(targetRuntime).loadForUser(OWNER, snapshot.caseId), snapshot);
+  assert.deepEqual(await new PostgresCaseRepository(targetAdmin).loadForUser(OWNER, snapshot.caseId), snapshot);
   assert.equal((await targetAdmin.query("SELECT count(*) AS count FROM safeathome_migrations.versions WHERE version='006'")).rows[0].count, '1');
   assert.deepEqual((await sourceAdmin.query('SELECT plan_name FROM safeathome_private.cases')).rows[0].plan_name, name);
 });
@@ -275,7 +276,7 @@ test('capture uses one repeatable snapshot even when a case commits after its fi
   const archive = await captureDatabaseBackup(wrapped, ORIGIN);
   assert.equal(inserted, true); assert.equal((await validateDatabaseBackup(archive, ORIGIN)).sourceRows.cases, 1);
   await restoreDatabaseBackup(targetAdmin, archive, ORIGIN);
-  assert.deepEqual(await new PostgresCaseRepository(targetRuntime).loadForUser(OWNER, first.caseId), first);
+  assert.deepEqual(await new PostgresCaseRepository(targetAdmin).loadForUser(OWNER, first.caseId), first);
   assert.equal((await sourceAdmin.query('SELECT count(*) AS count FROM safeathome_private.cases')).rows[0].count, '2');
 });
 

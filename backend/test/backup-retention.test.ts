@@ -61,7 +61,7 @@ test('actual workflow job conditions isolate backup success from maintenance for
  });
  const selected = (event: string, task: string | undefined, schedule: string | undefined, overrides: Record<string, unknown> = {}) => {
   const context = {
-   vars: { SAFEATHOME_ENABLE_PRIVATE_OPERATIONS: 'true', SAFEATHOME_ACTIONS_BUDGET_ACK: 'included-only' },
+   vars: { SAFEATHOME_ENABLE_PRIVATE_OPERATIONS: 'true', SAFEATHOME_ENABLE_PRIVATE_SCHEDULES:'true', SAFEATHOME_ACTIONS_BUDGET_ACK: 'included-only' },
    github: { event_name: event, event: { repository: { private: true, default_branch: 'main' }, schedule }, ref: 'refs/heads/main' },
    inputs: { task }, format: (pattern: string, value: string) => pattern.replace('{0}', value), ...overrides,
   };
@@ -73,6 +73,11 @@ test('actual workflow job conditions isolate backup success from maintenance for
  assert.deepEqual(selected('workflow_dispatch', 'unknown', undefined), [false, false]);
  assert.deepEqual(selected('schedule', undefined, '17 * * * *'), [true, false]);
  assert.deepEqual(selected('schedule', undefined, '37 3 * * *'), [false, true]);
+ const manualOnly={vars:{SAFEATHOME_ENABLE_PRIVATE_OPERATIONS:'true',SAFEATHOME_ENABLE_PRIVATE_SCHEDULES:'false',SAFEATHOME_ACTIONS_BUDGET_ACK:'included-only'}};
+ assert.deepEqual(selected('workflow_dispatch','backup',undefined,manualOnly),[false,true]);
+ assert.deepEqual(selected('workflow_dispatch','maintenance',undefined,manualOnly),[true,false]);
+ assert.deepEqual(selected('schedule',undefined,'17 * * * *',manualOnly),[false,false]);
+ assert.deepEqual(selected('schedule',undefined,'37 3 * * *',manualOnly),[false,false]);
  assert.deepEqual(selected('schedule', 'backup', '17 * * * *'), [true, false]);
  assert.deepEqual(selected('workflow_dispatch', 'backup', '17 * * * *'), [false, true]);
  assert.deepEqual(selected('push', 'backup', '37 3 * * *'), [false, false]);
