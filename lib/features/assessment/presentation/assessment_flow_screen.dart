@@ -42,7 +42,7 @@ class AssessmentFlowScreen extends StatelessWidget {
                   _Progress(step: step),
                   const SizedBox(height: 16),
                   ...switch (step) {
-                    AssessmentStep.chooseArea => _chooseArea(),
+                    AssessmentStep.chooseArea => _chooseArea(context),
                     AssessmentStep.viewPrompt => _viewPrompt(context),
                     AssessmentStep.preview => _preview(context),
                     AssessmentStep.details => [
@@ -70,19 +70,45 @@ class AssessmentFlowScreen extends StatelessWidget {
     AssessmentStep.review => 'Review',
   };
 
-  List<Widget> _chooseArea() => [
-    for (final AssessmentArea area in AssessmentArea.values)
-      Card(
-        child: ListTile(
-          key: ValueKey('area-${area.name}'),
-          minVerticalPadding: 16,
-          title: Text(AssessmentCopy.areaTitle(area)),
-          subtitle: Text(AssessmentCopy.areaExplanation(area)),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => flow.chooseArea(area),
+  List<Widget> _chooseArea(BuildContext context) {
+    final List<FindingDraft> drafts = flow.controller.drafts;
+    return [
+      for (final AssessmentArea area in AssessmentArea.values)
+        Card(
+          child: ListTile(
+            key: ValueKey('area-${area.name}'),
+            minVerticalPadding: 16,
+            title: Text(AssessmentCopy.areaTitle(area)),
+            subtitle: Text(AssessmentCopy.areaExplanation(area)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => flow.chooseArea(area),
+          ),
         ),
-      ),
-  ];
+      if (drafts.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Text('Your findings', style: Theme.of(context).textTheme.titleMedium),
+        for (final FindingDraft d in drafts)
+          Card(
+            child: ListTile(
+              key: ValueKey('finding-${d.id}'),
+              minVerticalPadding: 12,
+              title: Text(
+                d.observation.trim().isEmpty
+                    ? 'No observation yet'
+                    : d.observation.trim(),
+              ),
+              subtitle: Text(
+                '${AssessmentCopy.areaTitle(d.area)} · '
+                '${AssessmentCopy.reviewState(flow.controller.reviewOf(d.id)!.state)} · '
+                '${d.evidence.length} ${d.evidence.length == 1 ? 'photo' : 'photos'}',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => flow.openFinding(d.id),
+            ),
+          ),
+      ],
+    ];
+  }
 
   List<Widget> _viewPrompt(BuildContext context) {
     final AssessmentArea area = flow.area!;
@@ -233,6 +259,12 @@ class AssessmentFlowScreen extends StatelessWidget {
     final FindingReview review = flow.controller.reviewOf(id)!;
     final FindingReviewState state = review.state;
     final TextTheme text = Theme.of(context).textTheme;
+    final List<String> cleared = [
+      for (final MeasurementFieldSpec spec in proposedMeasurementFields)
+        if (draft.measurementOf(spec.type) == null &&
+            flow.controller.measurementHistoryOf(id, spec.type).isNotEmpty)
+          spec.type,
+    ];
 
     return [
       Semantics(
@@ -262,23 +294,30 @@ class AssessmentFlowScreen extends StatelessWidget {
           children: [
             for (final (int i, e) in draft.evidence.indexed)
               _Photo(
+                key: ValueKey('review-photo-${e.evidenceId}'),
                 flow: flow,
                 evidenceId: e.evidenceId,
                 height: 96,
                 label: 'Photo ${i + 1} of ${draft.evidence.length}',
+                onTap: () => flow.openPhoto(e.evidenceId),
               ),
           ],
         ),
       const SizedBox(height: 12),
       Text('Measurements', style: text.labelLarge),
-      if (draft.measurements.isEmpty)
-        const Text('None recorded.')
-      else
-        for (final RecordedMeasurement m in draft.measurements)
-          _MeasurementSummary(
-            measurement: m,
-            onConfirm: () => flow.controller.confirmMeasurement(id, m.type),
-          ),
+      if (draft.measurements.isEmpty && cleared.isEmpty)
+        const Text('None recorded.'),
+      for (final RecordedMeasurement m in draft.measurements)
+        _MeasurementSummary(
+          measurement: m,
+          history: flow.controller.measurementHistoryOf(id, m.type),
+          onConfirm: () => flow.controller.confirmMeasurement(id, m.type),
+        ),
+      for (final String type in cleared)
+        _ClearedMeasurement(
+          type: type,
+          history: flow.controller.measurementHistoryOf(id, type),
+        ),
       const SizedBox(height: 16),
       const Text(AssessmentCopy.confirmMeaning),
       const SizedBox(height: 8),
@@ -396,16 +435,20 @@ class _NoticeCard extends StatelessWidget {
 
 class _Photo extends StatefulWidget {
   const _Photo({
+    super.key,
     required this.flow,
     required this.evidenceId,
     required this.height,
     required this.label,
+    this.onTap,
   });
 
   final AssessmentFlow flow;
   final String evidenceId;
   final double height;
   final String label;
+
+  final VoidCallback? onTap;
 
   @override
   State<_Photo> createState() => _PhotoState();
@@ -421,30 +464,45 @@ class _PhotoState extends State<_Photo> {
   @override
   Widget build(BuildContext context) {
     final bytes = widget.flow.bytesFor(widget.evidenceId);
+    final bool savedOnly = widget.flow.evidence[widget.evidenceId] == null;
+    final String status = bytes != null
+        ? ''
+        : savedOnly
+        ? 'Saved to your case'
+        : 'Loading photo';
     final Widget fallback = SizedBox(
       height: widget.height,
       width: widget.height * 4 / 3,
       child: Center(
         child: Text(
-          bytes == null ? 'Loading photo' : 'Preview unavailable',
+          bytes == null ? status : 'Preview unavailable',
           textAlign: TextAlign.center,
         ),
       ),
     );
+    final String label = [
+      widget.label,
+      if (status.isNotEmpty) status.toLowerCase(),
+      if (widget.onTap != null) 'open to retake or remove',
+    ].join(', ');
+    final Widget image = bytes == null
+        ? fallback
+        : Image.memory(
+            bytes,
+            height: widget.height,
+            fit: BoxFit.contain,
+            excludeFromSemantics: true,
+            errorBuilder: (_, _, _) => fallback,
+          );
     return Semantics(
       container: true,
       image: true,
-      label: bytes == null ? '${widget.label}, loading' : widget.label,
+      button: widget.onTap != null,
+      label: label,
       excludeSemantics: true,
-      child: bytes == null
-          ? fallback
-          : Image.memory(
-              bytes,
-              height: widget.height,
-              fit: BoxFit.contain,
-              excludeFromSemantics: true,
-              errorBuilder: (_, _, _) => fallback,
-            ),
+      child: widget.onTap == null
+          ? image
+          : InkWell(onTap: widget.onTap, child: image),
     );
   }
 }
@@ -452,19 +510,18 @@ class _PhotoState extends State<_Photo> {
 class _MeasurementSummary extends StatelessWidget {
   const _MeasurementSummary({
     required this.measurement,
+    required this.history,
     required this.onConfirm,
   });
 
   final RecordedMeasurement measurement;
+  final List<MeasurementChange> history;
   final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
     final RecordedMeasurement m = measurement;
     final String label = measurementFieldSpecFor(m.type)?.label ?? m.type;
-    final String entered = m.input.unit == LengthUnit.millimetre
-        ? ''
-        : ' (you entered ${m.input.originalText.trim()} ${m.input.unit.symbol})';
     final String method = m.method == MeasurementMethod.estimated
         ? 'your estimate'
         : 'measured';
@@ -474,14 +531,14 @@ class _MeasurementSummary extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '$label: ${formatMillimetres(m.input.millimetres)} mm$entered',
-            ),
+            Text('$label: ${describeMeasurement(m)}'),
             Text(
               '${method[0].toUpperCase()}${method.substring(1)} · '
               '${m.confirmed ? 'checked by you' : 'not checked yet'}',
             ),
             if (m.promptsZeroReview) const Text(AssessmentCopy.zeroCheck),
+            if (history.isNotEmpty)
+              Text('Earlier: ${describeHistory(history)}'),
             if (!m.confirmed)
               Align(
                 alignment: Alignment.centerLeft,
@@ -490,6 +547,30 @@ class _MeasurementSummary extends StatelessWidget {
                   child: Text('This $label is right'),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ClearedMeasurement extends StatelessWidget {
+  const _ClearedMeasurement({required this.type, required this.history});
+
+  final String type;
+  final List<MeasurementChange> history;
+
+  @override
+  Widget build(BuildContext context) {
+    final String label = measurementFieldSpecFor(type)?.label ?? type;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$label: not recorded now'),
+            Text('Earlier: ${describeHistory(history)}'),
           ],
         ),
       ),
@@ -657,6 +738,19 @@ Future<bool> _confirm(
       ),
     ) ??
     false;
+
+String describeMeasurement(RecordedMeasurement m) {
+  final String entered = m.input.unit == LengthUnit.millimetre
+      ? ''
+      : ' (you entered ${m.input.originalText.trim()} ${m.input.unit.symbol})';
+  final String estimate = m.method == MeasurementMethod.estimated
+      ? ', estimate'
+      : '';
+  return '${formatMillimetres(m.input.millimetres)} mm$entered$estimate';
+}
+
+String describeHistory(List<MeasurementChange> history) =>
+    history.map((h) => describeMeasurement(h.previous)).join(', then ');
 
 String formatMillimetres(double value) {
   if (value == value.truncateToDouble()) return value.toInt().toString();

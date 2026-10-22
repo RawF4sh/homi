@@ -60,7 +60,14 @@ headers or generated drawings.
 - **Capture.** Cancel, denial, permanent denial (no relaunch until the
   resident says the setting changed), no camera and unusable photos are
   explained; continuing without a photo is always possible. Retake never
-  loses typed text.
+  loses typed text, and neither does backgrounding the app, leaving the
+  screen mid-capture or rotating.
+- **Editing earlier findings.** The first step lists findings in progress;
+  opening one loads its text and measurements exactly as typed. Tapping a
+  photo on review opens it for retake or removal, including photos already
+  uploaded. Saving unchanged values keeps their review.
+- **Measurement history** is shown on review ("Earlier: 20 mm (you entered
+  2 cm), then 25 mm"), including measurements cleared since.
 - **Annotations** are stored in orientation-corrected image pixels. Only PNGs
   can be marked locally, because a phone JPEG may carry a rotation flag that
   the server applies later. Replacing a photo makes its boxes stale. Boxes
@@ -87,8 +94,9 @@ From **Person 1**:
 - The real `IdFactory` (`newUuidV4()` fits), camera package, and the
   persistent encrypted staging/backup/deletion policy.
 - Agree storage for review history, measurement history and annotations.
-- Resuming a saved case's findings into the controller for editing is not
-  built yet.
+- Loading findings from a saved case (for example after an app restart)
+  into the controller is not built yet; findings can be reopened only while
+  they are still held in memory.
 
 From **Persons 1 and 3**: the measurement `type` vocabulary
 (`clearOpening`, `thresholdHeight`, `curbHeight` are proposed), and whether

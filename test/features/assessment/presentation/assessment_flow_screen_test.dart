@@ -345,4 +345,110 @@ void main() {
       expect(flow.annotations!.all, hasLength(1));
     });
   });
+
+  group('reopening and history', () {
+    Future<String> finishOne(WidgetTester tester) async {
+      await toPreview(tester, AssessmentArea.entrance);
+      await tapText(tester, 'Continue');
+      await tester.enterText(
+        find.byKey(const ValueKey('observation')),
+        'I notice a raised threshold.',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('measurement-thresholdHeight')),
+        '2',
+      );
+      await tap(
+        tester,
+        find.descendant(
+          of: find.byKey(const ValueKey('unit-thresholdHeight')),
+          matching: find.text('cm'),
+        ),
+      );
+      await tapText(tester, 'Review');
+      await tapText(tester, 'Done, add another finding');
+      return controller.drafts.single.id;
+    }
+
+    testWidgets('the list reopens a finding with its typed values', (
+      tester,
+    ) async {
+      final String id = await finishOne(tester);
+      expect(find.text('Your findings'), findsOneWidget);
+      await tap(tester, find.byKey(ValueKey('finding-$id')));
+      expect(find.text('Needs your review'), findsOneWidget);
+
+      await tapText(tester, 'Edit');
+      final TextField field = tester.widget(
+        find.byKey(const ValueKey('measurement-thresholdHeight')),
+      );
+      expect(field.controller!.text, '2');
+
+      await tap(tester, find.byTooltip('Back'));
+      await tap(tester, find.byTooltip('Back'));
+      expect(find.text('Choose an area'), findsOneWidget);
+    });
+
+    testWidgets('a corrected value shows what it was before', (tester) async {
+      final String id = await finishOne(tester);
+      await tap(tester, find.byKey(ValueKey('finding-$id')));
+      await tapText(tester, 'Edit');
+      await tester.enterText(
+        find.byKey(const ValueKey('measurement-thresholdHeight')),
+        '25',
+      );
+      await tap(
+        tester,
+        find.descendant(
+          of: find.byKey(const ValueKey('unit-thresholdHeight')),
+          matching: find.text('mm'),
+        ),
+      );
+      await tapText(tester, 'Review');
+      expect(find.text('Threshold height: 25 mm'), findsOneWidget);
+      expect(find.text('Earlier: 20 mm (you entered 2 cm)'), findsOneWidget);
+
+      await tapText(tester, 'Edit');
+      await tester.enterText(
+        find.byKey(const ValueKey('measurement-thresholdHeight')),
+        '',
+      );
+      await tapText(tester, 'Review');
+      expect(find.text('Threshold height: not recorded now'), findsOneWidget);
+      expect(
+        find.text('Earlier: 20 mm (you entered 2 cm), then 25 mm'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tapping a photo on review opens it for retake or removal', (
+      tester,
+    ) async {
+      final SemanticsHandle handle = tester.ensureSemantics();
+      final String id = await finishOne(tester);
+      await tap(tester, find.byKey(ValueKey('finding-$id')));
+      final String evidenceId =
+          controller.drafts.single.evidence.single.evidenceId;
+      expect(
+        find.bySemanticsLabel('Photo 1 of 1, open to retake or remove'),
+        findsOneWidget,
+      );
+      await tap(tester, find.byKey(ValueKey('review-photo-$evidenceId')));
+      expect(find.text('Check the photo'), findsOneWidget);
+      expect(find.text('Retake'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('an uploaded photo says it is saved instead of loading', (
+      tester,
+    ) async {
+      final String id = await finishOne(tester);
+      final String evidenceId =
+          controller.drafts.single.evidence.single.evidenceId;
+      await staging.discard(flow.evidence.remove(evidenceId)!.key);
+      await tap(tester, find.byKey(ValueKey('finding-$id')));
+      expect(find.text('Saved to your case'), findsOneWidget);
+      expect(find.text('Loading photo'), findsNothing);
+    });
+  });
 }

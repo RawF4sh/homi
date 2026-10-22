@@ -456,4 +456,162 @@ void main() {
       expect(annotations.all, isEmpty);
     });
   });
+
+  group('reopening a finding', () {
+    Future<String> makeFinding() async {
+      flow.chooseArea(AssessmentArea.entrance);
+      await captureOne();
+      flow.continueFromPreview();
+      flow
+        ..setObservationText('I notice a raised threshold.')
+        ..setMeasurementText('thresholdHeight', '1.5')
+        ..setMeasurementUnit('thresholdHeight', LengthUnit.inch);
+      flow.saveDetails();
+      final String id = flow.findingId!;
+      controller.confirm(id);
+      flow.startAnother();
+      return id;
+    }
+
+    test('loads the observation and measurements as typed', () async {
+      final String id = await makeFinding();
+      flow.openFinding(id);
+      expect(flow.step, AssessmentStep.review);
+      expect(flow.findingId, id);
+      expect(flow.area, AssessmentArea.entrance);
+      expect(flow.observationText, 'I notice a raised threshold.');
+      expect(flow.entryFor('thresholdHeight').text, '1.5');
+      expect(flow.entryFor('thresholdHeight').unit, LengthUnit.inch);
+      expect(flow.entryFor('clearOpening').text, isEmpty);
+    });
+
+    test('saving unchanged details keeps the confirmation', () async {
+      final String id = await makeFinding();
+      flow.openFinding(id);
+      flow.edit();
+      expect(flow.saveDetails(), isTrue);
+      expect(controller.reviewOf(id)!.state, FindingReviewState.confirmed);
+    });
+
+    test('a real edit withdraws the confirmation', () async {
+      final String id = await makeFinding();
+      flow.openFinding(id);
+      flow.edit();
+      flow.setMeasurementText('thresholdHeight', '1.25');
+      flow.saveDetails();
+      expect(controller.reviewOf(id)!.state, FindingReviewState.needsReview);
+      expect(
+        controller.measurementHistoryOf(id, 'thresholdHeight'),
+        hasLength(1),
+      );
+    });
+
+    test('back returns to the list and leaves the finding', () async {
+      final String id = await makeFinding();
+      flow.openFinding(id);
+      flow.back();
+      expect(flow.step, AssessmentStep.chooseArea);
+      expect(flow.findingId, isNull);
+      expect(flow.observationText, isEmpty);
+
+      flow.chooseArea(AssessmentArea.bathroom);
+      await captureOne();
+      expect(flow.findingId, isNot(id));
+      expect(controller.draftOf(id)!.evidence, hasLength(1));
+    });
+
+    test('text typed with another decimal mark is shown in this one', () async {
+      final String id = controller.startFinding(AssessmentArea.entrance);
+      controller.setObservation(id, 'I notice a step.');
+      final LengthParseResult parsed = const MeasurementParser(
+        DecimalSeparator.comma,
+      ).parse('3,5', LengthUnit.centimetre);
+      controller.setMeasurement(
+        id,
+        'thresholdHeight',
+        (parsed as LengthParsed).input,
+      );
+      flow.openFinding(id);
+      expect(flow.entryFor('thresholdHeight').text, '3.5');
+      flow.edit();
+      expect(flow.saveDetails(), isTrue);
+      expect(
+        controller.measurementHistoryOf(id, 'thresholdHeight'),
+        isEmpty,
+        reason: 'same value; only the decimal mark differs',
+      );
+    });
+
+    test('an unknown finding or a busy camera is ignored', () async {
+      flow.openFinding('nope');
+      expect(flow.step, AssessmentStep.chooseArea);
+    });
+  });
+
+  group('opening a photo from review', () {
+    Future<(String, String)> atReview() async {
+      flow.chooseArea(AssessmentArea.entrance);
+      await captureOne();
+      final String evidenceId = flow.previewEvidenceId!;
+      flow.continueFromPreview();
+      flow.setObservationText('I notice a raised threshold.');
+      flow.saveDetails();
+      return (flow.findingId!, evidenceId);
+    }
+
+    test('shows the photo on the preview step', () async {
+      final (_, String evidenceId) = await atReview();
+      flow.openPhoto(evidenceId);
+      expect(flow.step, AssessmentStep.preview);
+      expect(flow.previewEvidenceId, evidenceId);
+      flow.back();
+      expect(flow.step, AssessmentStep.review);
+    });
+
+    test('retake from there replaces the photo and keeps its ID', () async {
+      final (String id, String evidenceId) = await atReview();
+      controller.confirm(id);
+      flow.openPhoto(evidenceId);
+      adapter.enqueue(photo(3000));
+      await flow.openCamera(retake: true);
+      expect(controller.draftOf(id)!.evidence.single.evidenceId, evidenceId);
+      expect(controller.reviewOf(id)!.state, FindingReviewState.needsReview);
+    });
+
+    test(
+      'remove from there returns to review, not the removed photo',
+      () async {
+        final (String id, String evidenceId) = await atReview();
+        flow.openPhoto(evidenceId);
+        await flow.removePreviewPhoto();
+        expect(flow.step, AssessmentStep.review);
+        expect(controller.draftOf(id)!.evidence, isEmpty);
+      },
+    );
+
+    test(
+      'a photo already uploaded (no local copy) can still be retaken',
+      () async {
+        final (String id, String evidenceId) = await atReview();
+        final StagingKey key = flow.evidence.remove(evidenceId)!.key;
+        await staging.discard(key);
+
+        flow.openPhoto(evidenceId);
+        expect(flow.step, AssessmentStep.preview);
+        adapter.enqueue(photo(3000));
+        await flow.openCamera(retake: true);
+        expect(flow.evidence[evidenceId], isNotNull);
+        expect(controller.draftOf(id)!.evidence.single.evidenceId, evidenceId);
+      },
+    );
+
+    test('only works on review and for attached photos', () async {
+      final (_, String evidenceId) = await atReview();
+      flow.openPhoto('evidence-99');
+      expect(flow.step, AssessmentStep.review);
+      flow.edit();
+      flow.openPhoto(evidenceId);
+      expect(flow.step, AssessmentStep.details);
+    });
+  });
 }

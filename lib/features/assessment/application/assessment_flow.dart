@@ -303,15 +303,18 @@ class AssessmentFlow extends ChangeNotifier {
 
     controller.setObservation(id, _observation);
     parsed.forEach((type, input) {
+      final RecordedMeasurement? existing = controller
+          .draftOf(id)
+          ?.measurementOf(type);
+      final MeasurementMethod method = entryFor(type).method;
       if (input == null) {
         controller.clearMeasurement(id, type);
+      } else if (existing != null &&
+          existing.input.millimetres == input.millimetres &&
+          existing.input.unit == input.unit &&
+          existing.method == method) {
       } else {
-        controller.setMeasurement(
-          id,
-          type,
-          input,
-          method: entryFor(type).method,
-        );
+        controller.setMeasurement(id, type, input, method: method);
       }
     });
     _go(AssessmentStep.review);
@@ -332,7 +335,44 @@ class AssessmentFlow extends ChangeNotifier {
     if (!canGoBack || !_popBack()) return;
     _notice = null;
     _errors = const DetailsErrors();
+    if (_step == AssessmentStep.chooseArea && _findingId != null) {
+      _resetForNewFinding();
+    }
     _notify();
+  }
+
+  void openFinding(String findingId) {
+    if (_busy) return;
+    final FindingDraft? draft = controller.draftOf(findingId);
+    if (draft == null) return;
+    _resetForNewFinding();
+    _area = draft.area;
+    _findingId = findingId;
+    _observation = draft.observation;
+    _entries = {
+      for (final RecordedMeasurement m in draft.measurements)
+        m.type: MeasurementEntry(
+          text: m.input.decimalSeparator == decimalSeparator
+              ? m.input.originalText
+              : m.input.originalText.replaceAll(
+                  m.input.decimalSeparator.character,
+                  decimalSeparator.character,
+                ),
+          unit: m.input.unit,
+          method: m.method,
+        ),
+    };
+    _go(AssessmentStep.review);
+  }
+
+  void openPhoto(String evidenceId) {
+    final String? id = _findingId;
+    if (_busy || id == null || _step != AssessmentStep.review) return;
+    if (!_isAttached(evidenceId)) return;
+    _notice = null;
+    _go(AssessmentStep.preview);
+    _previewEvidenceId = evidenceId;
+    _view = CaptureView.overview;
   }
 
   void startAnother() {
@@ -411,12 +451,22 @@ class AssessmentFlow extends ChangeNotifier {
     _notify();
   }
 
+  bool _isAttached(String evidenceId) {
+    final String? id = _findingId;
+    return id != null &&
+        (controller
+                .draftOf(id)
+                ?.evidence
+                .any((e) => e.evidenceId == evidenceId) ??
+            false);
+  }
+
   bool _popBack() {
     while (_backStack.isNotEmpty) {
       final _Place place = _backStack.removeLast();
       final String? photo = place.previewEvidenceId;
       if (place.step == AssessmentStep.preview &&
-          (photo == null || evidence[photo] == null)) {
+          (photo == null || !_isAttached(photo))) {
         continue;
       }
       _step = place.step;
