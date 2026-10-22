@@ -305,7 +305,14 @@ void main() {
     active?.dispose();
     services.dispose();
     services.session.dispose();
-    if (await directory.exists()) await directory.delete(recursive: true);
+    for (var attempt = 0; await directory.exists(); attempt++) {
+      try {
+        await directory.delete(recursive: true);
+      } on FileSystemException {
+        if (attempt >= 20) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
   });
   LiveAssessmentSession make() => active = LiveAssessmentSession(
     services: services,
