@@ -27,10 +27,6 @@ guard let provider = CGDataProvider(data: Data(pixels) as CFData),
 else { fatalError("Could not construct the manufactured source image") }
 
 var output = """
-// Generated with tool/generate_orientation_fixtures.swift using macOS ImageIO.
-// Source: 80x48 manufactured red/green/blue/yellow quadrants. No real photo.
-// All sources include fictional GPS 0,0 and date 2000:01:01. JPEG quality 1.
-// Sample quarter centers after normalization; allow 35 per RGB channel for JPEG.
 import 'dart:convert';
 import 'dart:typed_data';
 

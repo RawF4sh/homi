@@ -1,12 +1,31 @@
-# Safe at Home
+# homi
 
-An iPhone and Android app for reviewing home safety concerns, comparing possible assistance programs and preparing draft applications. Built with Flutter/Dart, native Apple/Android capture, a Node/TypeScript API and Supabase Auth/PostgreSQL.
+**Home Modifications for Independence**
 
-The team beta uses fictional cases. Program matches are not approvals, scans are not professional assessments, and application packets remain drafts.
+We built homi to help people review their homes, identify changes they may need, and find possible help paying for them. It brings room assessments, assistance programs, draft forms, and follow-up tasks into one iPhone and Android app.
+
+## What it does
+
+- Create and name home plans, save them to an account, and resume them across devices.
+- Organize a home into named rooms and record safety concerns with room checklists.
+- Scan rooms in 3D using LiDAR or camera-based capture on supported phones. Photos and manual measurements are available as alternatives.
+- Review model features and findings before adding them to a plan.
+- Find home-repair and accessibility resources by location, and compare the requirements of the programs included in the app.
+- Prepare draft application forms or checklists with reviewed answers and selected photos.
+- Track follow-up tasks, reminders, and application updates, and give helpers access to selected information.
+- Ask the on-device assistant for help with the current plan on compatible phones.
+
+The interface supports English, Spanish, Simplified Chinese, Traditional Chinese, Vietnamese, and Filipino. Available capture and assistant features depend on the phone. Connected features also need the corresponding backend configuration.
+
+Program results are possible assistance options, not funding approvals. Scans are approximate, and application files remain drafts until the resident completes the program's submission process. We use fictional cases for the team beta.
+
+## Built with
+
+Flutter and Dart for the app, Swift for iPhone features, Kotlin for Android features, Node.js and TypeScript for the API, and Supabase Auth with PostgreSQL for accounts and storage.
 
 ## Run locally
 
-Use the team's Flutter 3.41.5 / Dart 3.11.3 toolchain and Node 24.12 or later. Install Xcode for iOS or the Android SDK for Android, then check the device setup with `flutter doctor`.
+The project uses Flutter 3.41.5, Dart 3.11.3, and Node.js 24.12 or later. iPhone builds need Xcode; Android builds need the Android SDK.
 
 ```sh
 flutter pub get
@@ -14,46 +33,20 @@ npm --prefix backend ci --ignore-scripts
 flutter run
 ```
 
-The default build opens bundled fictional examples. To use the connected app, supply an ignored configuration file with `SAH_LIVE_BACKEND`, `SAH_API_URL`, `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`:
+The default build opens fictional examples. To connect the app, create an ignored configuration file containing `SAH_LIVE_BACKEND`, `SAH_API_URL`, `SUPABASE_URL`, and `SUPABASE_PUBLISHABLE_KEY`:
 
 ```sh
 flutter run --dart-define-from-file=backend/local-artifacts/mobile-config.json
 ```
 
-Set `SAH_LIVE_BACKEND` to `true`. The API URL must identify the configured HTTPS backend. Enable optional feature flags only after the corresponding backend setup is complete. Database passwords and elevated keys never belong in a mobile configuration file.
+Set `SAH_LIVE_BACKEND` to `true` and use the configured HTTPS API address. Keep database passwords and elevated credentials out of the app configuration.
 
-For the core feature profile, save the authenticated `/v1/capabilities` response
-in an ignored file and use the checked build wrapper:
-
-```sh
-python3 tool/build_homi_core.py --platform ios --config backend/local-artifacts/mobile-config.json --capabilities backend/local-artifacts/capabilities.json
-```
-
-Use `--platform apk` or `appbundle` for Android. Older services can use
-`--readiness` with an authenticated read-probe report for the same API origin,
-no more than 24 hours old. Missing evidence or a capabilities 404 does not enable
-features. The wrapper validates before building; it does not install or deploy.
-Neither evidence format proves writes, exports or physical-device acceptance.
-Keep private configuration, tokens and raw case responses out of logs.
-
-See [Android setup](docs/android-local-setup.md), [backend setup](backend/README.md) and [account configuration](docs/public-account-access.md) for platform and server details.
-
-## Checks
-
-After resolving dependencies, run:
+## Check the project
 
 ```sh
 bash tool/verify_project.sh all
 ```
 
-This runs the existing Flutter, backend and shared HTTP checks. [Installed-app checks](integration_test/README.md), native builds, physical-device capture and hosted verification are separate.
+This checks Dart formatting, Flutter analysis and tests, backend types and tests, shared contracts, and local HTTP integration. Native builds and physical-device checks are separate.
 
-## Shared references
-
-- [Contracts v1](contracts/v1/README.md), [v2](contracts/v2/README.md) and [v3](contracts/v3/README.md): case data, assessments, drafts, rooms and sharing.
-- [Scanning](docs/bathroom-scanning.md): Apple LiDAR/ARKit and Android ARCore integration.
-- [Program sources](docs/program-verification/): source reviews and unresolved requirements.
-- [Operations and recovery](docs/maintenance-and-recovery.md): maintenance controls, backups and restore limits.
-- [PDF viewer patch](third_party/pdfrx/PATCHES.md), [font license/build notes](backend/assets/fonts/README.md) and [form provenance](backend/assets/forms/README.md): required bundled assets.
-
-Commit source code, tests, migrations, lockfiles and essential technical references. Keep plans, reports, team guides, wireframes, backups and personal tool settings local. Do not commit resident data, credentials or generated private packets. Development stays within the team's $0 out-of-pocket budget.
+The [backend README](backend/README.md), [Android README](android/README.md), and [device-test README](integration_test/README.md) cover their setup and checks.

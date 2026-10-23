@@ -139,7 +139,3 @@ private-packets/
 /tool/build_team_guides.py
 /output/pdf/safe-at-home-app-guide.pdf
 /output/pdf/safe-at-home-continuation-handoff.pdf
-
-!/docs/homi-assistant-evaluation.md
-
-!/docs/ask-homi-recovery.md
