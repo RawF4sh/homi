@@ -4,6 +4,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_language.dart';
 import 'catalogs/common.dart';
+import 'catalogs/homi_core.dart';
+import 'catalogs/settings.dart';
 import 'catalogs/account_access.dart';
 import 'catalogs/invitations.dart';
 import 'catalogs/assistant.dart';
@@ -45,6 +47,8 @@ class AppLocalizations {
     GlobalCupertinoLocalizations.delegate,
   ];
   static const catalogs = [
+    homiCoreTranslations,
+    settingsTranslations,
     accountAccessTranslations,
     assistantTranslations,
     androidFeatureTranslations,

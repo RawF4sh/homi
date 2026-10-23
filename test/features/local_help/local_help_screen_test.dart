@@ -89,7 +89,8 @@ void main() {
       await tester.pumpAndSettle();
       await tap(tester, find.byKey(const ValueKey('case-local-help')));
       expect(find.byType(LocalHelpScreen), findsOneWidget);
-      expect(find.text('Find local help'), findsOneWidget);
+      expect(find.text('Local providers'), findsOneWidget);
+      expect(find.byType(NavigationBar), findsOneWidget);
     },
   );
 

@@ -12,7 +12,10 @@ void main() {
   for (final config in [
     (const Locale('en'), const Size(320, 812)),
     (const Locale('en'), const Size(932, 430)),
-    for (final locale in programLocales) (locale, const Size(320, 812)),
+    for (final locale in AppLocalizations.supportedLocales.where(
+      (locale) => locale.languageCode != 'en',
+    ))
+      (locale, const Size(320, 812)),
   ]) {
     final (locale, size) = config;
     String tr(String text, [Map<String, Object?> args = const {}]) =>
@@ -94,7 +97,7 @@ void main() {
         await tester.pumpAndSettle();
         final scroll = find.byType(Scrollable).first;
         final action = find.byKey(
-          const ValueKey('program-fictional-program-start'),
+          const ValueKey('program-fictional-program-review'),
         );
         await tester.scrollUntilVisible(
           action,
@@ -114,7 +117,7 @@ void main() {
               'unknown': 4,
             }),
           ),
-          findsOneWidget,
+          findsNothing,
         );
         expect(find.text(tr('A known criterion is not met')), findsOneWidget);
         for (final reason in reasons) {
@@ -128,10 +131,18 @@ void main() {
           tester.getTopLeft(action).dy,
           lessThan(tester.getTopLeft(title).dy),
         );
-        await Scrollable.ensureVisible(tester.element(title), alignment: .5);
+        await tester.tap(action);
         await tester.pumpAndSettle();
-        await tester.tap(title);
-        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            tr('{met} met · {notMet} not met · {unknown} need confirmation', {
+              'met': 3,
+              'notMet': 3,
+              'unknown': 4,
+            }),
+          ),
+          findsOneWidget,
+        );
         for (var i = 0; i < 10; i++) {
           final tile = find.byKey(
             ValueKey('program-fictional-program-check-check-$i'),

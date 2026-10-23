@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_language.dart';
 import '../../l10n/app_localizations.dart';
-import '../../shared/presentation/sah_components.dart';
 
 class LanguageSection extends StatelessWidget {
   const LanguageSection({super.key, this.controller});
@@ -16,32 +15,35 @@ class LanguageSection extends StatelessWidget {
       builder: (context, _) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SahSectionHeading(title: context.tr('Language')),
-          Text(
-            context.tr(
-              'Changes apply immediately and stay on this device after sign-out.',
-            ),
-          ),
-          const SizedBox(height: 12),
-          RadioGroup<AppLanguage>(
-            groupValue: languages.value,
+          DropdownButtonFormField<AppLanguage>(
+            key: const ValueKey('language-selection'),
+            initialValue: languages.value,
+            isExpanded: true,
+            isDense: false,
+            itemHeight: null,
+            decoration: InputDecoration(labelText: context.tr('Language')),
             onChanged: (value) {
               if (value != null) languages.choose(value);
             },
-            child: Column(
-              children: [
-                for (final language in AppLanguage.values)
-                  RadioListTile<AppLanguage>(
-                    key: ValueKey('language-${language.code}'),
-                    value: language,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
+            items: [
+              for (final language in AppLanguage.values)
+                DropdownMenuItem<AppLanguage>(
+                  value: language,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
                       language == AppLanguage.system
                           ? context.tr(language.nativeName)
                           : language.nativeName,
                     ),
                   ),
-              ],
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            context.tr(
+              'Changes apply immediately and stay on this device after sign-out.',
             ),
           ),
           if (languages.saveFailed)

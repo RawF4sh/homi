@@ -202,6 +202,7 @@ void main() {
       expect(transport.requests.map((r) => r.endpoint.path), [
         '/v2/list-cases',
         '/v1/create-case',
+        '/v2/list-cases',
         '/v1/create-case',
       ]);
       expect(tester.takeException(), isNull);

@@ -1,4 +1,62 @@
 const trackingTranslations = <String, Map<String, String>>{
+  'Loading tasks and program progress': {
+    'es': 'Cargando tareas y progreso de programas',
+    'zh-Hans': '正在加载任务和项目进度',
+    'zh-Hant': '正在載入任務和計畫進度',
+    'vi': 'Đang tải công việc và tiến độ chương trình',
+    'fil': 'Nilo-load ang mga gawain at progreso ng programa',
+  },
+  'Tasks are unavailable on this service. Try again after the service is updated.': {
+    'es':
+        'Las tareas no están disponibles en este servicio. Inténtelo de nuevo cuando se actualice el servicio.',
+    'zh-Hans': '此服务暂不提供任务功能。请在服务更新后重试。',
+    'zh-Hant': '此服務暫不提供任務功能。請在服務更新後重試。',
+    'vi':
+        'Dịch vụ này chưa có công việc. Hãy thử lại sau khi dịch vụ được cập nhật.',
+    'fil':
+        'Hindi available ang mga gawain sa serbisyong ito. Subukang muli kapag na-update ang serbisyo.',
+  },
+  'Tasks are temporarily unavailable. Try again later.': {
+    'es': 'Las tareas no están disponibles temporalmente. Inténtelo más tarde.',
+    'zh-Hans': '任务暂时不可用。请稍后重试。',
+    'zh-Hant': '任務暫時無法使用。請稍後重試。',
+    'vi': 'Công việc tạm thời không khả dụng. Hãy thử lại sau.',
+    'fil':
+        'Pansamantalang hindi available ang mga gawain. Subukang muli mamaya.',
+  },
+  'Cannot connect to load tasks. Check your connection and try again.': {
+    'es':
+        'No se puede conectar para cargar las tareas. Revise la conexión e inténtelo de nuevo.',
+    'zh-Hans': '无法连接以加载任务。请检查网络连接后重试。',
+    'zh-Hant': '無法連線以載入任務。請檢查網路連線後重試。',
+    'vi': 'Không thể kết nối để tải công việc. Kiểm tra kết nối và thử lại.',
+    'fil':
+        'Hindi makakonekta para i-load ang mga gawain. Suriin ang koneksyon at subukang muli.',
+  },
+  'Cannot connect. Showing the last saved tasks; refresh before making changes.': {
+    'es':
+        'No se puede conectar. Se muestran las últimas tareas guardadas; actualice antes de hacer cambios.',
+    'zh-Hans': '无法连接。正在显示上次保存的任务；更改前请刷新。',
+    'zh-Hant': '無法連線。正在顯示上次儲存的任務；變更前請重新整理。',
+    'vi':
+        'Không thể kết nối. Đang hiển thị công việc đã lưu gần nhất; hãy làm mới trước khi thay đổi.',
+    'fil':
+        'Hindi makakonekta. Ipinapakita ang huling na-save na mga gawain; i-refresh bago baguhin.',
+  },
+  'Saved copy. Refresh before changing tasks.': {
+    'es': 'Copia guardada. Actualice antes de cambiar las tareas.',
+    'zh-Hans': '已保存的副本。更改任务前请刷新。',
+    'zh-Hant': '已儲存的副本。變更任務前請重新整理。',
+    'vi': 'Bản đã lưu. Hãy làm mới trước khi thay đổi công việc.',
+    'fil': 'Na-save na kopya. I-refresh bago baguhin ang mga gawain.',
+  },
+  'Reopen task': {
+    'es': 'Reabrir tarea',
+    'zh-Hans': '重新打开任务',
+    'zh-Hant': '重新開啟任務',
+    'vi': 'Mở lại công việc',
+    'fil': 'Buksan muli ang gawain',
+  },
   "Program progress changed. Refresh and review your pending change.": {
     "es": "El progreso cambió. Actualice y revise su cambio pendiente.",
     "zh-Hans": "项目进度已更改。请刷新并审核待确认更改。",

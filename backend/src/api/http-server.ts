@@ -269,6 +269,7 @@ async function route(
   const isPacketRequest = request.url === '/v1/prepare-packet' && packetDependencies !== undefined;
   const isFormRead = ['/v1/read-form-answers','/v2/read-form-answers'].includes(request.url ?? '') && formAnswerDependencies !== undefined;
   const isFormSave = ['/v1/save-form-answers','/v2/save-form-answers'].includes(request.url ?? '') && formAnswerDependencies !== undefined;
+  const isCapabilities = request.url === '/v1/capabilities';
   const isCaseRead = request.url === '/v1/read-case';
   const isCaseList = request.url === '/v1/list-cases' && caseListDependencies !== undefined;
   const requestTrackingRoute = requestTrackingDependencies === undefined ? undefined
@@ -279,7 +280,7 @@ async function route(
   const isDelete = request.url === '/v1/delete-evidence' && evidenceWriteDependencies !== undefined;
   const lifecycleRoutes: LifecycleRoute[] = ['delete-case', 'prepare-account-deletion', 'confirm-account-deletion', 'account-deletion-status'];
   const lifecycleRoute = lifecycleDependencies === undefined ? undefined : lifecycleRoutes.find(route => request.url === `/v1/${route}`);
-  if (request.url !== '/v1/match-case' && !isPacketRequest && !isFormRead && !isFormSave && !isCaseRead && !exportRoute
+  if (request.url !== '/v1/match-case' && !isCapabilities && !isPacketRequest && !isFormRead && !isFormSave && !isCaseRead && !exportRoute
     && !isCaseCreate && !isCaseSave && !isUpload && !isDelete && !lifecycleRoute && !isCaseList && !requestTrackingRoute && !assessmentRoute && !programIntakeRoute && !planNameRoute && !homeSafetyRoute && !progressRoute && !sharingRoute && !scanModelRoute) {
     fail(response, 404, 'NOT_FOUND', 'This endpoint does not exist.');
     request.resume();
@@ -370,7 +371,7 @@ async function route(
       }};
     }
     await readAndDispatch(request, response, bearer[1], dependencies, {
-      isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, exportVersion, lifecycleRoute, requestTrackingRoute, assessmentRoute, programIntakeRoute, planNameRoute, homeSafetyRoute, sharingRoute, progressRoute, scanModelRoute,
+      isCapabilities, isCaseRead, isCaseList, isCaseCreate, isCaseSave, isFormRead, isFormSave, isPacketRequest, isUpload, isDelete, exportRoute, exportVersion, lifecycleRoute, requestTrackingRoute, assessmentRoute, programIntakeRoute, planNameRoute, homeSafetyRoute, sharingRoute, progressRoute, scanModelRoute,
     }, packetDependencies, formAnswerDependencies, exportDependencies, caseWriteDependencies, evidenceWriteDependencies, lifecycleDependencies, caseListDependencies, requestTrackingDependencies, accountGate, assessmentDependencies, programIntakeDependencies, planNameDependencies, homeSafetyDependencies, sharingDependencies, progressDependencies, scanModelDependencies);
   } finally {
     if (isUpload || scanSave) uploadAdmission.active = false;
@@ -379,7 +380,7 @@ async function route(
 
 async function readAndDispatch(
   request: IncomingMessage, response: ServerResponse, token: string, dependencies: MatchCaseDependencies,
-  routes: { isCaseRead: boolean; isCaseList: boolean; isCaseCreate: boolean; isCaseSave: boolean; isFormRead: boolean; isFormSave: boolean;
+  routes: { isCapabilities: boolean; isCaseRead: boolean; isCaseList: boolean; isCaseCreate: boolean; isCaseSave: boolean; isFormRead: boolean; isFormSave: boolean;
     exportVersion:1|2; isPacketRequest: boolean; isUpload: boolean; isDelete: boolean; exportRoute: ExportRoute | undefined;
     scanModelRoute: ScanModelRoute | undefined; sharingRoute: SharingRoute | undefined; progressRoute: ProgressRoute | undefined; homeSafetyRoute: HomeSafetyRoute | undefined; planNameRoute: PlanNameRoute | undefined; programIntakeRoute:'read-program-intake'|'save-program-intake'|undefined; assessmentRoute: AssessmentRoute | undefined; lifecycleRoute: LifecycleRoute | undefined; requestTrackingRoute: 'read-request-history' | 'append-request-update' | undefined },
   packetDependencies?: PreparePacketDependencies, formAnswerDependencies?: FormAnswerDependencies,
@@ -414,6 +415,28 @@ async function readAndDispatch(
     } else {
       fail(response, 400, 'INVALID_REQUEST', 'Send a valid JSON request.');
     }
+    return;
+  }
+  if (routes.isCapabilities) {
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        Object.keys(body).length !== 1 || (body as Record<string, unknown>).schemaVersion !== '1') {
+      fail(response, 400, 'INVALID_REQUEST', 'Send a versioned capability request.'); return;
+    }
+    const auth = await captureAuthentication(dependencies.authenticate, token);
+    if (auth.malformed) { fail(response, 500, 'INTERNAL_ERROR', 'The request could not be completed.'); return; }
+    let user: AuthenticatedUser | null;
+    try { user = await auth.authenticate(token); }
+    catch { fail(response, 503, 'SERVICE_UNAVAILABLE', 'Availability could not be checked.'); return; }
+    if (!user) { fail(response, 401, 'UNAUTHENTICATED', 'Sign in to check availability.'); return; }
+    if (accountGate && !accountGate.acquire(user.userId)) return;
+    sendJson(response, 200, { schemaVersion: '1', features: {
+      structuredRooms: homeSafetyDependencies !== undefined,
+      tracking: progressDependencies !== undefined,
+      scanSync: scanModelDependencies !== undefined,
+      permissionSharing: sharingDependencies !== undefined,
+      sensitiveSharing: sharingDependencies?.sensitiveEnabled === true,
+      simpleInvitations: sharingDependencies?.simpleInvitationsEnabled === true,
+    } });
     return;
   }
   if (response.destroyed || response.writableEnded) return;

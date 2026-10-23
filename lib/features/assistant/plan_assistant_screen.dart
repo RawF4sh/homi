@@ -8,6 +8,7 @@ import '../../shared/services/case_coordinator.dart';
 import 'assistant_context.dart';
 import 'assistant_controller.dart';
 import 'assistant_model.dart';
+import 'assistant_history.dart';
 import 'assistant_message_text.dart';
 
 class PlanAssistantScreen extends StatefulWidget {
@@ -35,11 +36,15 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
   String _conversationStamp = '';
   bool _showLatest = false;
   String? _locale;
+  String? _scope;
+  String? _inputConversation;
+  bool _settingInput = false, _canPop = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _input.addListener(_draftChanged);
     widget.coordinator?.addListener(_sourceChanged);
     widget.coordinator?.session.addListener(_sourceChanged);
   }
@@ -64,20 +69,58 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     }
   }
 
+  String get _scopeKey {
+    final source = widget.coordinator;
+    return source == null
+        ? 'demo'
+        : '${source.session.epoch}:${source.isCurrent}:${source.draft?.caseId ?? 'app-help'}';
+  }
+
+  void _setInput(String value) {
+    _settingInput = true;
+    _input.text = value;
+    _settingInput = false;
+  }
+
+  void _draftChanged() {
+    if (!_settingInput) _controller?.setDraft(_input.text);
+  }
+
   void _configure() {
     final locale = AppLanguage.forLocale(
       AppLocalizations.of(context).locale,
     ).code;
-    if (locale == _locale) return;
+    if (locale == _locale && _scope == _scopeKey) return;
     _locale = locale;
+    _scope = _scopeKey;
     _controller?.removeListener(_chatChanged);
     _controller?.dispose();
     _draftEpoch++;
-    _input.clear();
+    _setInput('');
+    _inputConversation = null;
+    final source = widget.coordinator;
+    final caseId = source?.draft?.caseId;
+    final accountEpoch = source?.session.epoch;
+    final history = source != null && source.isCurrent
+        ? AssistantHistoryStore(
+            store: source.store,
+            caseId: caseId,
+            participantId: 'owner:${source.store.accountId}',
+            isCurrent: () =>
+                source.isCurrent &&
+                source.session.epoch == accountEpoch &&
+                source.draft?.caseId == caseId,
+          )
+        : null;
     _controller = AssistantController(
+      historyStore: history,
       model: widget.model,
       locale: locale,
       contextProvider: () => widget.coordinator == null
+          ? const AssistantContext(key: 'app-help')
+          : !widget.coordinator!.isCurrent
+          ? null
+          : widget.coordinator!.draft == null
           ? const AssistantContext(key: 'app-help')
           : assistantContextFor(widget.coordinator!),
     );
@@ -86,9 +129,13 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
   }
 
   void _sourceChanged() {
+    if (_scope != _scopeKey) {
+      _configure();
+      return;
+    }
     if (_controller?.refreshContext() == true) {
       _draftEpoch++;
-      _input.clear();
+      _setInput(_controller?.draft ?? '');
     }
   }
 
@@ -98,7 +145,9 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       _sourceChanged();
       unawaited(_controller?.check());
     } else {
-      _clear();
+      _controller?.stop();
+      _focus.unfocus();
+      unawaited(_controller?.persist());
     }
   }
 
@@ -109,6 +158,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     widget.coordinator?.session.removeListener(_sourceChanged);
     _controller?.removeListener(_chatChanged);
     _controller?.dispose();
+    _input.removeListener(_draftChanged);
     _input.dispose();
     _scroll.dispose();
     _focus.dispose();
@@ -117,8 +167,12 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
 
   void _chatChanged() {
     final c = _controller!;
+    if (_inputConversation != c.conversationId && !c.historyLoading) {
+      _inputConversation = c.conversationId;
+      _setInput(c.draft);
+    }
     final stamp =
-        '${c.turns.length}:${c.busy}:${c.errorCode}:${c.turns.lastOrNull?.answer}';
+        '${c.conversationId}:${c.turns.length}:${c.busy}:${c.errorCode}:${c.interruptedQuestion}:${c.turns.lastOrNull?.answer}';
     if (stamp == _conversationStamp) return;
     _conversationStamp = stamp;
     final nearEnd = !_scroll.hasClients || _scroll.position.extentAfter < 100;
@@ -172,11 +226,113 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     if (question != null && _input.text.isEmpty) _input.text = question;
   }
 
-  void _clear() {
+  Future<bool> _saveBeforeLeaving() async {
+    final c = _controller!;
+    if (c.clearing || c.historyLoading || c.clearFailed) return false;
+    c.stop();
+    await c.persist();
+    return mounted &&
+        !c.saveFailed &&
+        !c.historyLoadFailed &&
+        !c.clearing &&
+        !c.historyLoading;
+  }
+
+  Future<void> _close() async {
+    if (!await _saveBeforeLeaving() || !mounted) return;
+    setState(() => _canPop = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (mounted) Navigator.maybePop(context);
+  }
+
+  Future<void> _openSection(int index) async {
+    if (!await _saveBeforeLeaving() || !mounted) return;
+    widget.onSection(index);
+  }
+
+  Future<void> _clearHistory() async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: Text(context.tr('Clear chat history?')),
+        content: Text(
+          context.tr(
+            'This removes all saved chats for this plan and your account on this phone. It does not change your plan.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.tr('Cancel')),
+          ),
+          FilledButton(
+            key: const ValueKey('assistant-confirm-clear'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(context.tr('Clear history')),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
     _draftEpoch++;
-    _controller!.clear();
-    _input.clear();
+    _setInput('');
     _focus.unfocus();
+    await _controller!.clearHistory();
+  }
+
+  Future<void> _history() async {
+    final c = _controller!;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(sheetContext).height * .85,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text(
+              context.tr('Previous conversations'),
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            for (final conversation in c.conversations.reversed)
+              ListTile(
+                key: ValueKey('assistant-history-${conversation.id}'),
+                title: Text(
+                  assistantExcerpt(
+                    conversation.turns.firstOrNull?.question ??
+                        conversation.interruptedQuestion ??
+                        conversation.draft,
+                    70,
+                  ),
+                ),
+                subtitle: Text(
+                  MaterialLocalizations.of(context).formatMediumDate(
+                    DateTime.parse(conversation.updatedAt).toLocal(),
+                  ),
+                ),
+                selected: conversation.id == c.conversationId,
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  _draftEpoch++;
+                  await c.openConversation(conversation.id);
+                  if (mounted) _setInput(c.draft);
+                },
+              ),
+            if (c.conversations.isEmpty)
+              Text(context.tr('No saved chats yet.')),
+            TextButton(
+              onPressed: () => Navigator.pop(sheetContext),
+              child: Text(context.tr('Close')),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _options() async {
@@ -215,11 +371,39 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
               ),
               ListTile(
                 leading: const Icon(Icons.edit_square),
-                title: Text(context.tr('Clear conversation')),
-                onTap: () {
-                  _clear();
-                  Navigator.pop(sheetContext);
-                },
+                title: Text(context.tr('New chat')),
+                onTap:
+                    c.historyLoading ||
+                        c.historyLoadFailed ||
+                        c.clearing ||
+                        c.saveFailed
+                    ? null
+                    : () async {
+                        Navigator.pop(sheetContext);
+                        _draftEpoch++;
+                        await c.newChat();
+                        if (mounted) _setInput(c.draft);
+                      },
+              ),
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: Text(context.tr('Previous conversations')),
+                onTap: c.historyLoading
+                    ? null
+                    : () {
+                        Navigator.pop(sheetContext);
+                        _history();
+                      },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: Text(context.tr('Clear history')),
+                onTap: c.historyLoading || c.clearing
+                    ? null
+                    : () {
+                        Navigator.pop(sheetContext);
+                        _clearHistory();
+                      },
               ),
               if (c.context?.findings.isNotEmpty == true) ...[
                 SwitchListTile.adaptive(
@@ -228,7 +412,14 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                     context.tr('Changing this starts a new chat.'),
                   ),
                   value: c.includeFindings,
-                  onChanged: c.busy ? null : c.useFindings,
+                  onChanged:
+                      c.busy ||
+                          c.historyLoading ||
+                          c.historyLoadFailed ||
+                          c.clearing ||
+                          c.saveFailed
+                      ? null
+                      : c.useFindings,
                 ),
                 if (c.includeFindings)
                   ExpansionTile(
@@ -254,7 +445,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                     padding: const EdgeInsets.all(12),
                     child: Text(
                       context.tr(
-                        'Replies use this phone’s on-device model. Chat text and replies are not sent to a remote model server. Chat clears when you leave this screen, switch plans, or leave the app. Only the last two exchanges are used for follow-up questions. The assistant cannot change your plan, decide eligibility, or submit an application.',
+                        'Replies use this phone’s on-device model. Saved chats are encrypted on this phone for your account and plan. They are not shared or included in exports. Only two recent exchanges from unchanged plan context are used for follow-up questions. The assistant cannot change your plan, decide eligibility, or submit an application.',
                       ),
                     ),
                   ),
@@ -277,6 +468,14 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                   ),
                 ],
               ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  context.tr(
+                    'This phone can save 10 chats with 12 replies each. Saved chats stay available until you clear history.',
+                  ),
+                ),
+              ),
               ExpansionTile(
                 title: Text(context.tr('Open app sections')),
                 children: [
@@ -298,7 +497,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
         icon: Icons.arrow_forward_rounded,
         onTap: () {
           beforeNavigate?.call();
-          widget.onSection(0);
+          _openSection(0);
         },
       ),
       SahActionTile(
@@ -307,7 +506,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
         icon: Icons.view_in_ar,
         onTap: () {
           beforeNavigate?.call();
-          widget.onSection(1);
+          _openSection(1);
         },
       ),
       SahActionTile(
@@ -316,7 +515,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
         icon: Icons.support_agent_outlined,
         onTap: () {
           beforeNavigate?.call();
-          widget.onSection(2);
+          _openSection(2);
         },
       ),
     ],
@@ -350,6 +549,10 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
   };
 
   String _errorText(String code) => switch (code) {
+    'CONVERSATION_LIMIT' =>
+      'This chat is full. Start a new chat or clear history to send more questions.',
+    'HISTORY_LIMIT' =>
+      'Saved chat storage is full. Clear history to start another chat.',
     'REFUSED' =>
       'The model could not answer that request. Try asking about an app step or a confirmed finding.',
     'CONTEXT_LIMIT' || 'QUESTION_LIMIT' =>
@@ -371,6 +574,53 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
       children: [
+        if (c.historyLoading || c.clearing) const LinearProgressIndicator(),
+        if (c.conversationFull)
+          SahNotice(
+            message: context.tr(
+              'This chat is full. Start a new chat or clear history to send more questions.',
+            ),
+          ),
+        if (c.historyLoadFailed || c.saveFailed) ...[
+          SahNotice(
+            tone: SahNoticeTone.error,
+            message: context.tr(
+              c.historyLoadFailed
+                  ? 'Saved chats could not be opened. Retry before starting another chat.'
+                  : c.clearFailed
+                  ? 'Chat history could not be cleared. Retry to finish removing it from this phone.'
+                  : 'Chat could not be saved on this phone. Keep it open and retry.',
+            ),
+          ),
+          TextButton(
+            onPressed: c.clearing ? null : c.retryHistory,
+            child: Text(context.tr('Retry')),
+          ),
+        ],
+        for (var i = 0; i < c.turns.length; i++) ...[
+          _ChatMessage(text: c.turns[i].question, reply: false),
+          if (c.turns[i].answer.isEmpty)
+            Text(
+              context.tr(
+                'This response was not completed. Send the question again when you are ready.',
+              ),
+            )
+          else
+            _ChatMessage(
+              text: c.turns[i].answer,
+              reply: true,
+              announce: i == c.turns.length - 1,
+            ),
+        ],
+
+        if (c.interruptedQuestion != null && !c.busy) ...[
+          _ChatMessage(text: c.interruptedQuestion!, reply: false),
+          Text(
+            context.tr(
+              'This response was not completed. Send the question again when you are ready.',
+            ),
+          ),
+        ],
         if (c.checking) ...[
           const LinearProgressIndicator(),
           const SizedBox(height: 12),
@@ -423,7 +673,11 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    context.tr('Chat stays on this phone and isn’t saved.'),
+                    context.tr(
+                      c.historyStore == null
+                          ? 'Chat stays on this phone and isn’t saved.'
+                          : 'Chats save privately on this phone. You can reopen or clear them in Chat options.',
+                    ),
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 24),
@@ -443,14 +697,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                 ],
               ),
             ),
-          for (var i = 0; i < c.turns.length; i++) ...[
-            _ChatMessage(text: c.turns[i].question, reply: false),
-            _ChatMessage(
-              text: c.turns[i].answer,
-              reply: true,
-              announce: i == c.turns.length - 1,
-            ),
-          ],
           if (c.busy) ...[
             _ChatMessage(text: c.pendingQuestion!, reply: false),
             Semantics(
@@ -498,7 +744,12 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                   key: const ValueKey('assistant-input'),
                   controller: _input,
                   focusNode: _focus,
-                  readOnly: c.busy,
+                  readOnly:
+                      c.busy ||
+                      c.historyLoading ||
+                      c.historyLoadFailed ||
+                      c.clearing ||
+                      c.clearFailed,
                   minLines: 1,
                   maxLines: compact ? 1 : 4,
                   maxLength: 600,
@@ -579,49 +830,60 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     final c = _controller!;
     return ListenableBuilder(
       listenable: c,
-      builder: (context, _) => Scaffold(
-        appBar: AppBar(
-          title: Text(context.tr('Plan assistant')),
-          actions: [
-            if (MediaQuery.viewInsetsOf(context).bottom > 0)
-              IconButton(
-                key: const ValueKey('assistant-hide-keyboard'),
-                tooltip: context.tr('Hide keyboard'),
-                onPressed: _focus.unfocus,
-                icon: const Icon(Icons.keyboard_hide_outlined),
-              ),
-            IconButton(
-              key: const ValueKey('assistant-options'),
-              tooltip: context.tr('Chat options'),
-              onPressed: _options,
-              icon: const Icon(Icons.more_horiz),
+      builder: (context, _) => PopScope(
+        canPop: _canPop,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) _close();
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(context.tr('Plan assistant')),
+            leading: IconButton(
+              tooltip: context.tr('Close'),
+              onPressed: c.clearing || c.historyLoading ? null : _close,
+              icon: const Icon(Icons.close),
             ),
-          ],
-        ),
-        body: SafeArea(
-          child: SahContent(
-            maxWidth: 760,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final compact =
-                    constraints.maxHeight < 360 ||
-                    MediaQuery.textScalerOf(context).scale(17) > 30;
-                return Column(
-                  children: [
-                    Expanded(child: _conversation(c)),
-                    if (_showLatest && !compact)
-                      TextButton.icon(
-                        onPressed: _latest,
-                        icon: const Icon(Icons.arrow_downward, size: 18),
-                        label: Text(context.tr('Latest message')),
-                      ),
-                    if (!c.checking &&
-                        c.availability == AssistantAvailability.ready &&
-                        c.context != null)
-                      _composer(c, compact: compact),
-                  ],
-                );
-              },
+            actions: [
+              if (MediaQuery.viewInsetsOf(context).bottom > 0)
+                IconButton(
+                  key: const ValueKey('assistant-hide-keyboard'),
+                  tooltip: context.tr('Hide keyboard'),
+                  onPressed: _focus.unfocus,
+                  icon: const Icon(Icons.keyboard_hide_outlined),
+                ),
+              IconButton(
+                key: const ValueKey('assistant-options'),
+                tooltip: context.tr('Chat options'),
+                onPressed: _options,
+                icon: const Icon(Icons.more_horiz),
+              ),
+            ],
+          ),
+          body: SafeArea(
+            child: SahContent(
+              maxWidth: 760,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact =
+                      constraints.maxHeight < 360 ||
+                      MediaQuery.textScalerOf(context).scale(17) > 30;
+                  return Column(
+                    children: [
+                      Expanded(child: _conversation(c)),
+                      if (_showLatest && !compact)
+                        TextButton.icon(
+                          onPressed: _latest,
+                          icon: const Icon(Icons.arrow_downward, size: 18),
+                          label: Text(context.tr('Latest message')),
+                        ),
+                      if (!c.checking &&
+                          c.availability == AssistantAvailability.ready &&
+                          c.context != null)
+                        _composer(c, compact: compact),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),

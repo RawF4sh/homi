@@ -1,4 +1,179 @@
 const programsTranslations = <String, Map<String, String>>{
+  "Possible help: home accessibility adaptations.": {
+    "es": "Posible ayuda: adaptaciones de accesibilidad en el hogar.",
+    "zh-Hans": "可能的帮助：居家无障碍改造。",
+    "zh-Hant": "可能的協助：居家無障礙改造。",
+    "vi": "Hỗ trợ có thể có: cải tạo nhà để dễ tiếp cận.",
+    "fil": "Posibleng tulong: mga pagbabago para madaling magamit ang tahanan.",
+  },
+  "Possible help: home modifications.": {
+    "es": "Posible ayuda: modificaciones del hogar.",
+    "zh-Hans": "可能的帮助：房屋改造。",
+    "zh-Hant": "可能的協助：房屋改造。",
+    "vi": "Hỗ trợ có thể có: sửa đổi nhà ở.",
+    "fil": "Posibleng tulong: mga pagbabago sa tahanan.",
+  },
+  "Possible help: home repairs.": {
+    "es": "Posible ayuda: reparaciones del hogar.",
+    "zh-Hans": "可能的帮助：房屋维修。",
+    "zh-Hant": "可能的協助：房屋維修。",
+    "vi": "Hỗ trợ có thể có: sửa chữa nhà ở.",
+    "fil": "Posibleng tulong: pag-aayos ng tahanan.",
+  },
+  "Possible help: review the program’s service scope.": {
+    "es": "Posible ayuda: revise los servicios del programa.",
+    "zh-Hans": "可能的帮助：查看项目的服务范围。",
+    "zh-Hant": "可能的協助：查看計畫的服務範圍。",
+    "vi": "Hỗ trợ có thể có: xem phạm vi dịch vụ của chương trình.",
+    "fil": "Posibleng tulong: suriin ang saklaw ng serbisyo ng programa.",
+  },
+  "Service area: confirm your address with the program.": {
+    "es": "Área de servicio: confirme su dirección con el programa.",
+    "zh-Hans": "服务地区：请向项目方确认您的地址是否在服务范围内。",
+    "zh-Hant": "服務地區：請向計畫方確認您的地址是否在服務範圍內。",
+    "vi": "Khu vực phục vụ: xác nhận địa chỉ của bạn với chương trình.",
+    "fil": "Lugar na sakop: kumpirmahin ang iyong address sa programa.",
+  },
+  "Intake is listed as open. Confirm current availability with the program.": {
+    "es":
+        "La admisión figura como abierta. Confirme la disponibilidad actual con el programa.",
+    "zh-Hans": "资料显示正在受理。请向项目方确认当前是否可申请。",
+    "zh-Hant": "資料顯示正在受理。請向計畫方確認目前是否可申請。",
+    "vi":
+        "Thông tin ghi đang nhận hồ sơ. Xác nhận tình trạng hiện tại với chương trình.",
+    "fil":
+        "Nakalistang bukas ang pagtanggap. Kumpirmahin sa programa kung available pa.",
+  },
+  "Intake is listed as closed. Ask the program about next steps.": {
+    "es":
+        "La admisión figura como cerrada. Consulte al programa sobre los próximos pasos.",
+    "zh-Hans": "资料显示已停止受理。请向项目方询问下一步。",
+    "zh-Hant": "資料顯示已停止受理。請向計畫方詢問下一步。",
+    "vi":
+        "Thông tin ghi đã ngừng nhận hồ sơ. Hỏi chương trình về bước tiếp theo.",
+    "fil":
+        "Nakalistang sarado ang pagtanggap. Itanong sa programa ang mga susunod na hakbang.",
+  },
+  "Current availability is unverified. Confirm it with the program.": {
+    "es":
+        "La disponibilidad actual no está verificada. Confírmela con el programa.",
+    "zh-Hans": "当前是否受理尚未核实。请向项目方确认。",
+    "zh-Hant": "目前是否受理尚未核實。請向計畫方確認。",
+    "vi":
+        "Chưa xác minh tình trạng tiếp nhận hiện tại. Hãy xác nhận với chương trình.",
+    "fil":
+        "Hindi pa beripikado ang kasalukuyang availability. Kumpirmahin ito sa programa.",
+  },
+  "Preparation only. Nothing has been submitted by this app.": {
+    "es": "Solo preparación. Esta aplicación no ha enviado nada.",
+    "zh-Hans": "仅用于准备。本应用未提交任何内容。",
+    "zh-Hant": "僅用於準備。本應用程式未提交任何內容。",
+    "vi": "Chỉ để chuẩn bị. Ứng dụng này chưa gửi bất cứ nội dung nào.",
+    "fil": "Para sa paghahanda lamang. Walang isinumite ang app na ito.",
+  },
+  "Review requirements": {
+    "es": "Revisar requisitos",
+    "zh-Hans": "查看要求",
+    "zh-Hant": "查看要求",
+    "vi": "Xem yêu cầu",
+    "fil": "Suriin ang mga kinakailangan",
+  },
+  "You can answer": {
+    "es": "Usted puede responder",
+    "zh-Hans": "您可以回答",
+    "zh-Hant": "您可以回答",
+    "vi": "Bạn có thể trả lời",
+    "fil": "Maaari mong sagutin",
+  },
+  "Ask the program": {
+    "es": "Consultar al programa",
+    "zh-Hans": "询问项目方",
+    "zh-Hant": "詢問計畫方",
+    "vi": "Hỏi chương trình",
+    "fil": "Itanong sa programa",
+  },
+  "Professional review": {
+    "es": "Revisión profesional",
+    "zh-Hans": "专业人员审核",
+    "zh-Hant": "專業人員審查",
+    "vi": "Đánh giá chuyên môn",
+    "fil": "Pagsusuri ng propesyonal",
+  },
+  "Reviewer not specified": {
+    "es": "No se especificó quién debe revisar",
+    "zh-Hans": "尚未指定审核人",
+    "zh-Hant": "尚未指定審查人",
+    "vi": "Chưa xác định người đánh giá",
+    "fil": "Hindi tinukoy ang tagasuri",
+  },
+  "Answer what you know. Reported answers do not replace required consent or documents.": {
+    "es":
+        "Responda lo que sepa. Las respuestas no sustituyen el consentimiento ni los documentos requeridos.",
+    "zh-Hans": "回答您知道的信息。填报的答案不能代替所需的同意或文件。",
+    "zh-Hant": "回答您知道的資訊。填報的答案不能代替所需的同意或文件。",
+    "vi":
+        "Trả lời những gì bạn biết. Câu trả lời không thay thế sự đồng ý hoặc giấy tờ bắt buộc.",
+    "fil":
+        "Sagutin ang alam mo. Hindi kapalit ng kinakailangang pahintulot o dokumento ang mga sagot.",
+  },
+  "The program must confirm its policy, coverage and current availability.": {
+    "es":
+        "El programa debe confirmar sus normas, cobertura y disponibilidad actual.",
+    "zh-Hans": "项目方必须确认其政策、保障范围和当前受理情况。",
+    "zh-Hant": "計畫方必須確認其政策、保障範圍和目前受理情況。",
+    "vi":
+        "Chương trình phải xác nhận chính sách, phạm vi bảo hiểm và khả năng tiếp nhận hiện tại.",
+    "fil":
+        "Dapat kumpirmahin ng programa ang patakaran, saklaw at kasalukuyang availability nito.",
+  },
+  "A qualified professional must review these items. Home observations do not establish medical necessity.": {
+    "es":
+        "Un profesional cualificado debe revisar estos puntos. Las observaciones del hogar no establecen necesidad médica.",
+    "zh-Hans": "这些项目必须由合格的专业人员审核。居家观察不能证明医疗必要性。",
+    "zh-Hant": "這些項目必須由合格的專業人員審查。居家觀察不能證明醫療必要性。",
+    "vi":
+        "Chuyên gia có đủ chuyên môn phải xem xét các mục này. Quan sát tại nhà không xác lập nhu cầu y tế.",
+    "fil":
+        "Dapat suriin ng kwalipikadong propesyonal ang mga ito. Hindi patunay ng medikal na pangangailangan ang mga obserbasyon sa tahanan.",
+  },
+  "Answer missing questions": {
+    "es": "Responder preguntas pendientes",
+    "zh-Hans": "回答尚未填写的问题",
+    "zh-Hant": "回答尚未填寫的問題",
+    "vi": "Trả lời câu hỏi còn thiếu",
+    "fil": "Sagutin ang mga kulang na tanong",
+  },
+  "Contact program": {
+    "es": "Contactar al programa",
+    "zh-Hans": "联系项目方",
+    "zh-Hant": "聯絡計畫方",
+    "vi": "Liên hệ chương trình",
+    "fil": "Makipag-ugnayan sa programa",
+  },
+  "Contact instructions are not supplied. Use the program sources to confirm the accepted intake route.": {
+    "es":
+        "No se proporcionan instrucciones de contacto. Consulte las fuentes del programa para confirmar cómo presentar la solicitud.",
+    "zh-Hans": "未提供联系方式。请通过项目来源确认认可的申请渠道。",
+    "zh-Hant": "未提供聯絡方式。請透過計畫來源確認認可的申請管道。",
+    "vi":
+        "Chưa cung cấp hướng dẫn liên hệ. Dùng nguồn của chương trình để xác nhận cách tiếp nhận hồ sơ.",
+    "fil":
+        "Walang ibinigay na tagubilin sa pakikipag-ugnayan. Gamitin ang mga sanggunian ng programa upang kumpirmahin ang tamang paraan ng pag-apply.",
+  },
+  "Recorded checks": {
+    "es": "Comprobaciones registradas",
+    "zh-Hans": "已记录的核对结果",
+    "zh-Hant": "已記錄的核對結果",
+    "vi": "Các kiểm tra đã ghi nhận",
+    "fil": "Mga naitalang pagsusuri",
+  },
+  "Review needed: {groups}": {
+    "es": "Revisión pendiente: {groups}",
+    "zh-Hans": "需要审核：{groups}",
+    "zh-Hant": "需要審查：{groups}",
+    "vi": "Cần xem xét: {groups}",
+    "fil": "Kailangang suriin: {groups}",
+  },
   "Possible assistance": {
     "es": "Posible ayuda",
     "zh-Hans": "可能获得的援助",

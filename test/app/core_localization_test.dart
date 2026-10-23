@@ -1,3 +1,4 @@
+import 'homi_navigation_support.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -161,16 +162,17 @@ void main() {
           localized(entry.key, CaseHomeScreen(services: app)),
         );
         await tester.pumpAndSettle();
-        await reveal(tester, find.text(name));
-        expect(find.text(name), findsOneWidget);
-        await tester.tap(find.byKey(const ValueKey('nav-plans')));
+        await reveal(tester, find.byKey(const ValueKey('case-plan-title')));
+        expect(find.text(name), findsWidgets);
+        await openManagePlans(tester);
         await tester.pumpAndSettle();
-        expect(find.text(entry.value), findsOneWidget);
+        await reveal(tester, find.byKey(const ValueKey('plan-search')));
+        expect(find.byKey(const ValueKey('plan-search')), findsOneWidget);
         await reveal(tester, find.byKey(ValueKey('local-case-$id')));
-        expect(find.text(name), findsOneWidget);
+        expect(find.text(name), findsWidgets);
         expect(app.coordinator.draft!.caseId, id);
         expect(tester.takeException(), isNull);
-        await tester.tap(find.byKey(const ValueKey('nav-settings')));
+        await tester.tap(find.byKey(const ValueKey('plan-tab-settings')));
         await tester.pumpAndSettle();
         await reveal(
           tester,

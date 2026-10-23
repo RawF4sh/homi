@@ -39,7 +39,7 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
                     if (id == null) {
                         result.error("scan_failed", "The scan request is invalid.", null)
                     } else if (pending != null) {
-                        result.error("scan_busy", "A bathroom scan is already open.", null)
+                        result.error("scan_busy", "A room scan is already open.", null)
                     } else {
                         pendingId = id
                         pending = result
@@ -50,6 +50,7 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
                         try {
                             val intent = Intent(activity, BathroomScanActivity::class.java).putExtra(EXTRA_SCAN_ID, id)
                                 .putExtra(EXTRA_LANGUAGE, (call.arguments as? Map<*, *>)?.get("languageCode") as? String ?: "en")
+                                .putExtra(EXTRA_ROOM_NAME, RoomScanContext.parse((call.arguments as? Map<*, *>)?.get("room"))?.name)
                             if (home != null) {
                                 intent.putExtra(EXTRA_HOME, true)
                                     .putStringArrayListExtra(EXTRA_ROOM_TOKENS, ArrayList(home.rooms.map { it.token }))
@@ -57,7 +58,7 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
                             }
                             activity.startActivityForResult(intent, requestCode)
                         } catch (_: Exception) {
-                            completeError("scan_unavailable", "Bathroom scanning could not be opened.")
+                            completeError("scan_unavailable", "Room scanning could not be opened.")
                         }
                     }
                 }
@@ -66,7 +67,7 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
                     if (id == null) {
                         result.error("scan_failed", "The scan request is invalid.", null)
                     } else {
-                        if (id == pendingId) finishPendingActivity("scan_cancelled", "Bathroom scan cancelled.")
+                        if (id == pendingId) finishPendingActivity("scan_cancelled", "Room scan cancelled.")
                         result.success(null)
                     }
                 }
@@ -154,6 +155,7 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
         private const val LAST_REQUEST_CODE = 21825
         const val EXTRA_SCAN_ID = "sah.scan.id"
         const val EXTRA_LANGUAGE = "sah.scan.language"
+        const val EXTRA_ROOM_NAME = "sah.scan.room.name"
         const val EXTRA_SCENE = "sah.scan.scene"
         const val EXTRA_HOME = "sah.scan.home"
         const val EXTRA_ROOM_TOKENS = "sah.scan.home.tokens"
@@ -164,7 +166,7 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
             "scan_busy", "scan_failed", "scan_limit",
         )
         fun messageFor(code: String): String = when (code) {
-            "scan_cancelled" -> "Bathroom scan cancelled."
+            "scan_cancelled" -> "Room scan cancelled."
             "scan_interrupted" -> "The scan was interrupted. Please scan again."
             "scan_unavailable" -> "ARCore scanning is unavailable. Photos and manual measurements still work."
             "scan_permission_denied" -> "Camera access is needed to scan. You can use manual measurements instead."
@@ -177,8 +179,26 @@ class BathroomScanPlatform(private val activity: Activity, messenger: BinaryMess
 internal fun bathroomScanRequestId(arguments: Any?, allowLanguage: Boolean = false): String? {
     val values = arguments as? Map<*, *> ?: return null
     if (!values.containsKey("scanId")) return null
-    if (values.size != 1 && !(allowLanguage && values.size == 2 && values.containsKey("languageCode"))) return null
+    val allowed = if (allowLanguage) setOf("scanId", "languageCode", "room") else setOf("scanId")
+    if (!allowed.containsAll(values.keys)) return null
+    if (values.containsKey("room") && RoomScanContext.parse(values["room"]) == null) return null
     if (values.containsKey("languageCode") && (!allowLanguage || values["languageCode"] !in setOf("en", "es", "zh-Hans", "zh-Hant", "vi", "fil"))) return null
     val id = values["scanId"] as? String ?: return null
     return id.takeIf { BathroomScanGeometry.isScanId(it) }
+}
+
+// Display-only context; case/room IDs and arbitrary options are rejected.
+internal data class RoomScanContext(val type: Type, val name: String) {
+    enum class Type { bathroom, entrance, stairs, livingSpaces, bedroom, kitchen }
+    companion object {
+        fun parse(value: Any?): RoomScanContext? {
+            val room = value as? Map<*, *> ?: return null
+            if (room.keys != setOf("type", "name")) return null
+            val type = Type.entries.firstOrNull { it.name == room["type"] } ?: return null
+            val name = room["name"] as? String ?: return null
+            if (name.isEmpty() || name.trim() != name || name.codePointCount(0, name.length) > 80 ||
+                name.any { it.code < 32 || it.code in 127..159 || it.code in 0x2028..0x202e || it.code in 0x2066..0x2069 }) return null
+            return RoomScanContext(type, name)
+        }
+    }
 }

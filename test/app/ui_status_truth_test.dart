@@ -1,3 +1,4 @@
+import 'homi_navigation_support.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -126,7 +127,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('nav-plans')));
+    await openManagePlans(tester);
     await tester.pumpAndSettle();
     await reveal(tester, find.text('No home plans yet'));
     expect(find.text('No home plans yet'), findsOneWidget);

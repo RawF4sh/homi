@@ -1,3 +1,4 @@
+import 'homi_navigation_support.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -92,7 +93,13 @@ Future<void> _mount(WidgetTester tester, AppServices app) async {
 }
 
 Future<void> _tab(WidgetTester tester, String name) async {
-  await tester.tap(find.byKey(ValueKey('nav-$name')));
+  if (name == 'plans') {
+    await openManagePlans(tester);
+  } else {
+    await tester.tap(
+      find.byKey(ValueKey('plan-tab-${name == 'home' ? 'plan' : name}')),
+    );
+  }
   await tester.pumpAndSettle();
 }
 
@@ -122,68 +129,66 @@ void _onlyDiscovery(FakeTransport transport) => expect(
 );
 
 void main() {
-  testWidgets('Home is the entry and changing tabs never creates a plan', (
-    tester,
-  ) async {
-    final store = MemoryPrivateStore();
-    final transport = _transport();
-    final app = services(store, transport);
-    await _mount(tester, app);
-
-    expect(
-      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-      0,
-    );
-    expect(find.text('Start your first home plan'), findsOneWidget);
-    expect(find.byKey(const ValueKey('plan-search')), findsNothing);
-    expect(app.coordinator.draft, isNull);
-    final generation = app.coordinator.generation;
-
-    await _tab(tester, 'plans');
-    expect(find.text('Your home plans'), findsOneWidget);
-    expect(find.byKey(const ValueKey('plan-search')), findsOneWidget);
-    await _tab(tester, 'settings');
-    expect(find.byType(AccountSettingsScreen), findsOneWidget);
-    await _tab(tester, 'home');
-    expect(find.text('Start your first home plan'), findsOneWidget);
-    expect(find.byType(AccountSettingsScreen), findsNothing);
-
-    expect(app.coordinator.generation, generation);
-    expect(app.coordinator.draft, isNull);
-    expect(store.records, isEmpty);
-    _onlyDiscovery(transport);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets(
-    'Continue opens the selected plan without creating or reselecting',
+    'Plan is the entry and all five destinations never create a plan',
     (tester) async {
       final store = MemoryPrivateStore();
-      await _seed(store, _first, 'San José');
       final transport = _transport();
       final app = services(store, transport);
-      await app.coordinator.restoreLocal(_first);
-      final generation = app.coordinator.generation;
-      final retained = jsonEncode(store.records);
       await _mount(tester, app);
 
-      final resume = find.byKey(const ValueKey('home-continue-plan'));
-      await _reveal(tester, resume);
-      await tester.tap(resume);
-      await tester.pumpAndSettle();
-
-      expect(find.byType(CaseWorkspaceScreen), findsOneWidget);
       expect(
-        tester.widget<Text>(find.byKey(const ValueKey('case-plan-title'))).data,
-        'San José home plan',
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        0,
       );
-      expect(app.coordinator.draft!.caseId, _first);
+      expect(find.text('Start your first home plan'), findsOneWidget);
+      expect(find.byKey(const ValueKey('plan-search')), findsNothing);
+      expect(app.coordinator.draft, isNull);
+      final generation = app.coordinator.generation;
+
+      for (final tab in ['rooms', 'help', 'tasks']) {
+        await _tab(tester, tab);
+        expect(app.coordinator.draft, isNull);
+      }
+      await _tab(tester, 'plans');
+      expect(find.byKey(const ValueKey('plan-search')), findsOneWidget);
+      expect(find.byKey(const ValueKey('plan-search')), findsOneWidget);
+      await _tab(tester, 'settings');
+      expect(find.byType(AccountSettingsScreen), findsOneWidget);
+      await _tab(tester, 'home');
+      expect(find.text('Start your first home plan'), findsOneWidget);
+      expect(find.byType(AccountSettingsScreen), findsNothing);
+
       expect(app.coordinator.generation, generation);
-      expect(jsonEncode(store.records), retained);
+      expect(app.coordinator.draft, isNull);
+      expect(store.records, isEmpty);
       _onlyDiscovery(transport);
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('Selected plan opens inline without creating or reselecting', (
+    tester,
+  ) async {
+    final store = MemoryPrivateStore();
+    await _seed(store, _first, 'San José');
+    final transport = _transport();
+    final app = services(store, transport);
+    await app.coordinator.restoreLocal(_first);
+    final generation = app.coordinator.generation;
+    final retained = jsonEncode(store.records);
+    await _mount(tester, app);
+
+    expect(find.byType(CaseWorkspaceScreen), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(NavigationDestination), findsNWidgets(5));
+    expect(find.text('San José home plan'), findsWidgets);
+    expect(app.coordinator.draft!.caseId, _first);
+    expect(app.coordinator.generation, generation);
+    expect(jsonEncode(store.records), retained);
+    _onlyDiscovery(transport);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'Plans searches loaded names and references without changing data',
@@ -319,114 +324,104 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Home, Plans and deletion remain usable at 320px and 3.2x text', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(320, 700);
-    tester.view.devicePixelRatio = 1;
-    tester.platformDispatcher.textScaleFactorTestValue = 3.2;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-      tester.platformDispatcher.clearTextScaleFactorTestValue();
-    });
-    final store = MemoryPrivateStore();
-    await _seed(store, _first, 'San José');
-    final transport = _transport();
-    final app = services(store, transport);
-    final retained = jsonEncode(store.records);
-    await _mount(tester, app);
-    expect(tester.takeException(), isNull);
-    await _reveal(tester, find.byKey(const ValueKey('case-start')));
-    expect(
-      find.byKey(const ValueKey('case-start')).hitTestable(),
-      findsOneWidget,
-    );
-    await _tab(tester, 'plans');
-    final menu = find.byKey(const ValueKey('plan-actions-$_first'));
-    await _reveal(tester, menu);
-    await tester.tap(menu);
-    await tester.pumpAndSettle();
-    final delete = find.text('Delete plan');
-    await tester.ensureVisible(delete);
-    await tester.pumpAndSettle();
-    await tester.tap(delete);
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    final cancel = find.text('Cancel');
-    await tester.ensureVisible(cancel);
-    await tester.pumpAndSettle();
-    expect(cancel.hitTestable(), findsOneWidget);
-    await tester.tap(cancel);
-    await tester.pumpAndSettle();
-    await _tab(tester, 'settings');
-    expect(find.byType(AccountSettingsScreen), findsOneWidget);
-    await _tab(tester, 'home');
-    expect(find.byType(AccountSettingsScreen), findsNothing);
-    expect(jsonEncode(store.records), retained);
-    expect(app.coordinator.draft, isNull);
-    _onlyDiscovery(transport);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('returning from Settings blocks Continue while receipts reload', (
-    tester,
-  ) async {
-    final store = _DelayedKeysStore();
-    await _seed(store, _first, 'San José');
-    final transport = _transport();
-    final app = services(store, transport);
-    await app.coordinator.restoreLocal(_first);
-    final generation = app.coordinator.generation;
-    await _mount(tester, app);
-    await _tab(tester, 'settings');
-
-    await store.writeJson('case-delete.$_first', {'serverDeleted': true});
-    final retained = jsonEncode(store.records);
-    final gate = Completer<List<String>>();
-    store.keysGate = gate;
-    await tester.tap(find.byKey(const ValueKey('nav-home')));
-    await tester.pump();
-    final resume = find.byKey(const ValueKey('home-continue-plan'));
-    expect(tester.widget<FilledButton>(resume).onPressed, isNull);
-    expect(find.byType(CaseWorkspaceScreen), findsNothing);
-
-    store.keysGate = null;
-    gate.complete(store.records.keys.toList());
-    await tester.pumpAndSettle();
-    expect(tester.widget<FilledButton>(resume).onPressed, isNotNull);
-    expect(find.text('Check removal'), findsOneWidget);
-    expect(find.text('Continue this plan'), findsNothing);
-    expect(app.coordinator.draft!.caseId, _first);
-    expect(app.coordinator.generation, generation);
-    expect(jsonEncode(store.records), retained);
-    _onlyDiscovery(transport);
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'Plan management and deletion remain usable at 320px and 3.2x text',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 3.2;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.platformDispatcher.clearTextScaleFactorTestValue();
+      });
+      final store = MemoryPrivateStore();
+      await _seed(store, _first, 'San José');
+      final transport = _transport();
+      final app = services(store, transport);
+      final retained = jsonEncode(store.records);
+      await _mount(tester, app);
+      expect(tester.takeException(), isNull);
+      await _reveal(tester, find.byKey(const ValueKey('case-start')));
+      expect(
+        find.byKey(const ValueKey('case-start')).hitTestable(),
+        findsOneWidget,
+      );
+      await _tab(tester, 'plans');
+      final menu = find.byKey(const ValueKey('plan-actions-$_first'));
+      await _reveal(tester, menu);
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      final delete = find.text('Delete plan');
+      await tester.ensureVisible(delete);
+      await tester.pumpAndSettle();
+      await tester.tap(delete);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final cancel = find.text('Cancel');
+      await tester.ensureVisible(cancel);
+      await tester.pumpAndSettle();
+      expect(cancel.hitTestable(), findsOneWidget);
+      await tester.tap(cancel);
+      await tester.pumpAndSettle();
+      await _tab(tester, 'settings');
+      expect(find.byType(AccountSettingsScreen), findsOneWidget);
+      await _tab(tester, 'home');
+      expect(find.byType(AccountSettingsScreen), findsNothing);
+      expect(jsonEncode(store.records), retained);
+      expect(app.coordinator.draft, isNull);
+      _onlyDiscovery(transport);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
-    'Continue rechecks a receipt added after discovery before opening',
+    'returning from Settings blocks interaction while deletion receipts reload',
     (tester) async {
-      final store = MemoryPrivateStore();
+      final store = _DelayedKeysStore();
       await _seed(store, _first, 'San José');
       final transport = _transport();
       final app = services(store, transport);
       await app.coordinator.restoreLocal(_first);
       final generation = app.coordinator.generation;
       await _mount(tester, app);
-      final resume = find.byKey(const ValueKey('home-continue-plan'));
-      await _reveal(tester, resume);
+      await _tab(tester, 'settings');
 
       await store.writeJson('case-delete.$_first', {'serverDeleted': true});
       final retained = jsonEncode(store.records);
-      expect(find.text('Continue this plan'), findsOneWidget);
-      expect(tester.widget<FilledButton>(resume).onPressed, isNotNull);
-      await tester.tap(resume);
-      await tester.pumpAndSettle();
+      final gate = Completer<List<String>>();
+      store.keysGate = gate;
+      await tester.tap(find.byKey(const ValueKey('plan-tab-plan')));
+      await tester.pump();
+      expect(
+        tester
+            .widget<PopupMenuButton<String>>(
+              find.byKey(const ValueKey('active-plan-selector')),
+            )
+            .enabled,
+        false,
+      );
+      final workspace = find.byType(CaseWorkspaceScreen);
+      expect(
+        find.ancestor(
+          of: workspace,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is IgnorePointer && widget.ignoring,
+          ),
+        ),
+        findsWidgets,
+      );
 
+      store.keysGate = null;
+      gate.complete(store.records.keys.toList());
+      await tester.pumpAndSettle();
       expect(find.byType(CaseWorkspaceScreen), findsNothing);
-      expect(find.text('Check removal'), findsOneWidget);
-      expect(find.text('Continue this plan'), findsNothing);
+      await openManagePlans(tester);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('pending-plan-$_first')),
+        findsOneWidget,
+      );
       expect(app.coordinator.draft!.caseId, _first);
       expect(app.coordinator.generation, generation);
       expect(jsonEncode(store.records), retained);
@@ -434,4 +429,28 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('tab changes recheck a receipt added after discovery', (
+    tester,
+  ) async {
+    final store = MemoryPrivateStore();
+    await _seed(store, _first, 'San José');
+    final transport = _transport();
+    final app = services(store, transport);
+    await app.coordinator.restoreLocal(_first);
+    final generation = app.coordinator.generation;
+    await _mount(tester, app);
+    await store.writeJson('case-delete.$_first', {'serverDeleted': true});
+    final retained = jsonEncode(store.records);
+    await _tab(tester, 'rooms');
+    expect(find.byType(CaseWorkspaceScreen), findsNothing);
+    await openManagePlans(tester);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('pending-plan-$_first')), findsOneWidget);
+    expect(app.coordinator.draft!.caseId, _first);
+    expect(app.coordinator.generation, generation);
+    expect(jsonEncode(store.records), retained);
+    _onlyDiscovery(transport);
+    expect(tester.takeException(), isNull);
+  });
 }

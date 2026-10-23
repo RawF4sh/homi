@@ -1,4 +1,5 @@
 import '../sharing/sharing_screens.dart';
+import '../assistant/plan_assistant_screen.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
@@ -30,14 +31,113 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
   bool _refreshQueued = false;
   int _request = 0, _localRequest = 0;
   int _tab = 0;
+  bool _managing = false;
+  bool _switching = false;
+  bool _openingReminder = false;
+  var _workspaceKey = GlobalKey<CaseWorkspaceScreenState>();
+  String? _workspaceCase;
+  int? _workspaceGeneration;
+  final _settingsKey = GlobalKey<AccountSettingsScreenState>();
+  bool get _canLeave =>
+      !_opening &&
+      !_switching &&
+      !widget.services.coordinator.busy &&
+      !_selectionBlocked &&
+      _workspaceKey.currentState?.canLeave != false &&
+      _settingsKey.currentState?.canLeave != false;
+
+  Future<void> _selectTab(int index) async {
+    if ((index == _tab && !_managing) || !_isCurrent) return;
+    if (!_canLeave) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.tr('Finish saving before changing sections.')),
+        ),
+      );
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    final generation = widget.services.coordinator.generation;
+    setState(() => _switching = true);
+    try {
+      if (await _workspaceKey.currentState?.prepareToLeave() == false) return;
+      await _refreshLocal();
+      if (!_isCurrent ||
+          generation != widget.services.coordinator.generation ||
+          !_removalsReady) {
+        return;
+      }
+      setState(() {
+        _tab = index;
+        _managing = false;
+        _query = '';
+        _searchController.clear();
+      });
+    } finally {
+      if (mounted) setState(() => _switching = false);
+    }
+  }
+
+  void _reminderChanged() {
+    if (!mounted || !widget.services.reminderOpen.value) return;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openReminder());
+  }
+
+  Future<void> _openReminder() async {
+    if (!_isCurrent ||
+        !widget.services.reminderOpen.value ||
+        _openingReminder ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        !_canLeave) {
+      return;
+    }
+    _openingReminder = true;
+    try {
+      await _selectTab(3);
+      if (_isCurrent && _tab == 3 && !_managing) {
+        widget.services.reminderOpen.value = false;
+        setState(() {});
+      }
+    } finally {
+      _openingReminder = false;
+    }
+  }
+
+  void _assistant() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PlanAssistantScreen(
+          coordinator: widget.services.coordinator,
+          onSection: (index) {
+            Navigator.of(context).pop();
+            _selectTab(index);
+          },
+        ),
+      ),
+    );
+  }
+
   String _query = '';
+  final _searchController = TextEditingController();
   Map<String, PlanRemovalStatus> _removals = {};
   bool _removalsReady = false;
   bool _removalsFailed = false;
   bool get _isCurrent => mounted && widget.services.coordinator.isCurrent;
   bool get _selectionBlocked => widget.services.coordinator.hasUndurableEdits;
   void _caseChanged() {
-    if (_isCurrent) setState(_rememberCurrentDetails);
+    if (_isCurrent) {
+      setState(() {
+        final id = widget.services.coordinator.draft?.caseId;
+        if (id != _workspaceCase ||
+            widget.services.coordinator.generation != _workspaceGeneration) {
+          _workspaceCase = id;
+          _workspaceGeneration = widget.services.coordinator.generation;
+          _workspaceKey = GlobalKey<CaseWorkspaceScreenState>();
+        }
+        _rememberCurrentDetails();
+      });
+    }
   }
 
   void _rememberCurrentDetails() {
@@ -58,13 +158,17 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     WidgetsBinding.instance.addObserver(this);
     _rememberCurrentDetails();
     widget.services.coordinator.addListener(_caseChanged);
+    widget.services.reminderOpen.addListener(_reminderChanged);
+    _reminderChanged();
     _load();
   }
 
   @override
   void dispose() {
+    _searchController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     widget.services.coordinator.removeListener(_caseChanged);
+    widget.services.reminderOpen.removeListener(_reminderChanged);
     super.dispose();
   }
 
@@ -183,7 +287,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         _opening ||
         widget.services.coordinator.busy ||
         !_removalsReady ||
-        (changesSelection && _selectionBlocked)) {
+        (changesSelection && !_canLeave)) {
       return;
     }
     setState(() => _opening = true);
@@ -202,13 +306,16 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
           'This plan has a removal to check. Open Plans and choose Check removal.',
         );
       }
+      if (changesSelection &&
+          await _workspaceKey.currentState?.prepareToLeave() == false) {
+        return;
+      }
       await action();
       if (!mounted || !_isCurrent || coordinator.busy) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => CaseWorkspaceScreen(services: widget.services),
-        ),
-      );
+      setState(() {
+        _managing = false;
+        _tab = 0;
+      });
     } catch (error) {
       if (mounted && _isCurrent) await showOperationError(context, error);
     } finally {
@@ -221,6 +328,8 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
 
   Future<void> _remove(String id, {int? revision}) async {
     if (!_isCurrent || _opening || _selectionBlocked || !_removalsReady) return;
+    if (await _workspaceKey.currentState?.prepareToLeave() == false) return;
+    if (!mounted || !_isCurrent) return;
     setState(() => _opening = true);
     try {
       final removed = await showPlanDeletionDialog(
@@ -340,7 +449,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       _isCurrent &&
       !_opening &&
       !widget.services.coordinator.busy &&
-      !_selectionBlocked &&
+      _canLeave &&
       _removalsReady;
 
   bool get _hasPlans =>
@@ -408,149 +517,6 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       ),
     ],
   ];
-
-  List<({String id, CaseSummary? online})> _otherPlans(String? current) => [
-    for (final id in _local)
-      if (id != current &&
-          !_removals.containsKey(id) &&
-          !_cases.any((c) => c.caseId == id))
-        (id: id, online: null),
-    for (final item in _cases)
-      if (item.caseId != current && !_removals.containsKey(item.caseId))
-        (id: item.caseId, online: item),
-  ];
-
-  String _planStatus(String id) {
-    final details = _details[id];
-    if (details == null) return homePlanReference(id, context: context);
-    final concerns = details.draft.findings.length;
-    return [
-      context.tr(details.status),
-      if (concerns > 0)
-        context.tr(
-          concerns == 1 ? '1 concern recorded' : '{count} concerns recorded',
-          {'count': concerns},
-        ),
-    ].join(' · ');
-  }
-
-  List<Widget> _home() {
-    final theme = Theme.of(context);
-    final draft = widget.services.coordinator.draft;
-    final pending = draft != null && _removals.containsKey(draft.caseId);
-    final others = _otherPlans(draft?.caseId);
-    final hasPlans = _hasPlans;
-    final canOpen =
-        _isCurrent &&
-        !_opening &&
-        !widget.services.coordinator.busy &&
-        _removalsReady;
-    return [
-      ..._status(),
-      if (draft != null) ...[
-        Semantics(
-          header: true,
-          child: Text(
-            context.tr('Continue where you left off'),
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _title(draft.caseId),
-          key: const ValueKey('home-current-plan-title'),
-          style: theme.textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          pending
-              ? context.tr('Check the removal of this plan before continuing.')
-              : _planStatus(draft.caseId),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          key: const ValueKey('home-continue-plan'),
-          onPressed: !canOpen
-              ? null
-              : pending
-              ? () => _remove(draft.caseId)
-              : () => _open(
-                  () async {},
-                  changesSelection: false,
-                  targetId: widget.services.coordinator.draft?.caseId,
-                ),
-          icon: Icon(pending ? Icons.sync_problem : Icons.arrow_forward),
-          label: Text(
-            pending
-                ? context.tr('Check removal')
-                : context.tr('Continue this plan'),
-          ),
-        ),
-      ] else if (!hasPlans) ...[
-        Semantics(
-          header: true,
-          child: Text(
-            context.tr('Start your first home plan'),
-            style: theme.textTheme.headlineSmall,
-          ),
-        ),
-        const SizedBox(height: 20),
-        _newPlanButton(),
-      ] else ...[
-        Semantics(
-          header: true,
-          child: Text(
-            context.tr('Choose a plan to continue'),
-            style: theme.textTheme.headlineSmall,
-          ),
-        ),
-        const SizedBox(height: 12),
-      ],
-      if (others.isNotEmpty) ...[
-        SahSectionHeading(
-          title: draft == null
-              ? context.tr('Your plans')
-              : context.tr('Other plans'),
-        ),
-        for (final plan in others.take(3)) _plan(plan.id, online: plan.online),
-        if (others.length > 3 || _removals.isNotEmpty || _cursor != null)
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: TextButton(
-              key: const ValueKey('home-open-plans'),
-              onPressed: () => setState(() => _tab = 1),
-              child: Text(context.tr('See all plans')),
-            ),
-          ),
-      ] else if (draft == null && hasPlans)
-        Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: FilledButton.icon(
-            key: const ValueKey('home-open-plans'),
-            onPressed: () => setState(() => _tab = 1),
-            icon: const Icon(Icons.folder_open_outlined),
-            label: Text(context.tr('Open a saved plan')),
-          ),
-        ),
-      if (draft != null || hasPlans) ...[
-        const SizedBox(height: 16),
-        Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: _newPlanButton(),
-        ),
-      ],
-      const SizedBox(height: 28),
-      SahStatusBadge(
-        label: context.tr('Private team beta · Fictional information only'),
-        icon: Icons.lock_outline_rounded,
-      ),
-    ];
-  }
 
   bool _matches(String id) {
     final query = _query.trim().toLowerCase();
@@ -648,6 +614,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       ..._status(),
       TextField(
         key: const ValueKey('plan-search'),
+        controller: _searchController,
         decoration: InputDecoration(
           label: Text(context.tr('Search loaded plans')),
           hintText: context.tr('Name, city or reference'),
@@ -712,81 +679,223 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     ];
   }
 
-  static const _tabTitles = ['Home', 'Your home plans', 'Settings'];
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    extendBody: true,
-    appBar: _tab == 2
-        ? null
-        : AppBar(
-            title: Text(context.tr(_tabTitles[_tab])),
-            actions: [
-              if (widget.services.config.permissionSharingEnabled)
-                IconButton(
-                  tooltip: context.tr('Shared with me'),
-                  icon: const Icon(Icons.people_outline),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          SharedWithMeScreen(services: widget.services),
-                    ),
+  Widget _planSelector() {
+    final current = widget.services.coordinator.draft?.caseId;
+    final ids = {..._local, ..._cases.map((item) => item.caseId), ?current};
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: PopupMenuButton<String>(
+              key: const ValueKey('active-plan-selector'),
+              tooltip: current == null
+                  ? context.tr('Choose a plan to continue')
+                  : _title(current),
+              enabled: _canChoose,
+              onSelected: (value) {
+                if (value == 'manage') {
+                  setState(() => _managing = true);
+                  return;
+                }
+                if (value == 'new') {
+                  unawaited(_create());
+                  return;
+                }
+                if (value == current) return;
+                final online = _cases
+                    .where((item) => item.caseId == value)
+                    .firstOrNull;
+                unawaited(
+                  _open(
+                    () => online == null
+                        ? widget.services.coordinator.restoreLocal(value)
+                        : widget.services.coordinator.resume(online),
+                    targetId: value,
                   ),
+                );
+              },
+              itemBuilder: (_) => [
+                for (final id in ids)
+                  PopupMenuItem(
+                    value: id,
+                    enabled: !_removals.containsKey(id),
+                    child: Text(_title(id)),
+                  ),
+                PopupMenuItem(
+                  value: 'manage',
+                  child: Text(context.tr('Manage plans')),
                 ),
-            ],
-          ),
-    body: _tab == 2
-        ? AccountSettingsScreen(services: widget.services)
-        : SafeArea(
-            bottom: false,
-            child: SahContent(
-              child: RefreshIndicator(
-                onRefresh: _load,
-                child: ListView(
-                  key: PageStorageKey('root-tab-$_tab'),
-                  padding: EdgeInsets.fromLTRB(
-                    20,
-                    12,
-                    20,
-                    sahFloatingNavClearance(context),
-                  ),
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  children: _tab == 0 ? _home() : _plans(),
+                PopupMenuItem(
+                  value: 'new',
+                  child: Text(context.tr('Start a new plan')),
+                ),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        current == null
+                            ? context.tr('Choose a plan to continue')
+                            : _title(current),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Icon(Icons.expand_more),
+                  ],
                 ),
               ),
             ),
           ),
-    bottomNavigationBar: SahFloatingNavBar(
-      selectedIndex: _tab,
-      onDestinationSelected: (index) {
-        if (index == _tab || _opening || !_isCurrent) return;
-        FocusManager.instance.primaryFocus?.unfocus();
-        setState(() {
-          _tab = index;
-          _query = '';
-        });
-        if (index != 2) unawaited(_refreshLocal());
+          if (widget.services.config.permissionSharingEnabled)
+            IconButton(
+              tooltip: context.tr('Shared with me'),
+              icon: const Icon(Icons.people_outline),
+              onPressed: !_canLeave
+                  ? null
+                  : () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            SharedWithMeScreen(services: widget.services),
+                      ),
+                    ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.services.coordinator;
+    final selected = c.draft != null && !_removals.containsKey(c.draft!.caseId);
+    final management = SahContent(
+      child: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          key: const PageStorageKey('manage-plans'),
+          padding: const EdgeInsets.all(20),
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            if (selected)
+              TextButton.icon(
+                onPressed: () => setState(() => _managing = false),
+                icon: const Icon(Icons.arrow_back),
+                label: Text(context.tr('Return to plan')),
+              ),
+            ..._plans(),
+          ],
+        ),
+      ),
+    );
+    return PopScope(
+      canPop: _tab == 0 && !_managing && _canLeave,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || !_canLeave) return;
+        if (_managing) {
+          setState(() => _managing = false);
+          return;
+        }
+        if (_workspaceKey.currentState?.handleBack() == true) return;
+        if (_tab != 0) unawaited(_selectTab(0));
       },
-      destinations: [
-        NavigationDestination(
-          key: ValueKey('nav-home'),
-          icon: Icon(Icons.home_outlined),
-          selectedIcon: Icon(Icons.home),
-          label: context.tr('Home'),
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            children: [
+              _planSelector(),
+              if (widget.services.reminderOpen.value)
+                TextButton(
+                  onPressed: _openReminder,
+                  child: Text(context.tr('Open tasks')),
+                ),
+              if (_removalsFailed)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: TextButton(
+                    onPressed: _refreshLocal,
+                    child: Text(context.tr('Retry device plans')),
+                  ),
+                ),
+              Expanded(
+                child: selected
+                    ? IndexedStack(
+                        index: _managing ? 1 : 0,
+                        children: [
+                          IgnorePointer(
+                            ignoring: !_removalsReady || _switching || _opening,
+                            child: CaseWorkspaceScreen(
+                              key: _workspaceKey,
+                              services: widget.services,
+                              embedded: true,
+                              destination: _tab,
+                              onDestinationSelected: _selectTab,
+                            ),
+                          ),
+                          management,
+                        ],
+                      )
+                    : _managing
+                    ? management
+                    : _tab == 4
+                    ? AccountSettingsScreen(
+                        key: _settingsKey,
+                        services: widget.services,
+                        embedded: true,
+                      )
+                    : SahContent(
+                        child: ListView(
+                          padding: const EdgeInsets.all(20),
+                          children: [
+                            ..._status(),
+                            SahEmptyState(
+                              title: context.tr(
+                                _hasPlans
+                                    ? 'Choose a plan to continue'
+                                    : 'Start your first home plan',
+                              ),
+                              icon: Icons.cottage_outlined,
+                            ),
+                            _newPlanButton(),
+                            if (_hasPlans)
+                              TextButton(
+                                key: const ValueKey('home-open-plans'),
+                                onPressed: () =>
+                                    setState(() => _managing = true),
+                                child: Text(context.tr('Manage plans')),
+                              ),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
-        NavigationDestination(
-          key: ValueKey('nav-plans'),
-          icon: Icon(Icons.folder_outlined),
-          selectedIcon: Icon(Icons.folder),
-          label: context.tr('Plans'),
-        ),
-        NavigationDestination(
-          key: ValueKey('nav-settings'),
-          icon: Icon(Icons.settings_outlined),
-          selectedIcon: Icon(Icons.settings),
-          label: context.tr('Settings'),
-        ),
-      ],
-    ),
-  );
+        bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
+            ? null
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton.icon(
+                    key: const ValueKey('ask-homi'),
+                    onPressed: _assistant,
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    label: Text(
+                      context.tr('Ask Homi'),
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                  ),
+                  SahFloatingNavBar(
+                    selectedIndex: _tab,
+                    onDestinationSelected: _selectTab,
+                    destinations: homiDestinations(context),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
 }

@@ -1,3 +1,4 @@
+import 'homi_navigation_support.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,10 +55,8 @@ Future<void> _tick(WidgetTester tester) async {
 
 Future<void> _reveal(WidgetTester tester, Finder target) async {
   await _tick(tester);
-  final navigation = find.byType(NavigationBar);
-  if (navigation.evaluate().isNotEmpty &&
-      tester.widget<NavigationBar>(navigation).selectedIndex != 1) {
-    await tester.tap(find.byKey(const ValueKey('nav-plans')));
+  if (find.byKey(const PageStorageKey('manage-plans')).evaluate().isEmpty) {
+    await openManagePlans(tester);
     await _tick(tester);
   }
   final scrollable = find.byType(Scrollable).first;
@@ -70,7 +69,7 @@ Future<void> _reveal(WidgetTester tester, Finder target) async {
     scrollable: scrollable,
     maxScrolls: 60,
   );
-  await tester.ensureVisible(target);
+  await Scrollable.ensureVisible(tester.element(target), alignment: .5);
   await _tick(tester);
 }
 
@@ -213,7 +212,7 @@ void main() {
       await _tick(tester);
       final created = app.coordinator.currentDraft().caseId;
       expect(find.byType(CaseWorkspaceScreen), findsOneWidget);
-      await tester.pageBack();
+      await openManagePlans(tester);
       await _tick(tester);
       await _reveal(tester, find.byKey(ValueKey('local-case-$created')));
       final refresh = tester.widget<RefreshIndicator>(
@@ -326,6 +325,7 @@ void main() {
         .widget<RefreshIndicator>(find.byType(RefreshIndicator))
         .onRefresh();
     await tester.pumpAndSettle();
+    await _reveal(tester, local);
     expect(local, findsOneWidget);
     expect(tester.widget<SahActionTile>(local).onTap, isNull);
     expect(tester.takeException(), isNull);
@@ -348,9 +348,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: CaseHomeScreen(services: app)));
     await _tick(tester);
     store.keyRead = null;
-    await tester
-        .widget<RefreshIndicator>(find.byType(RefreshIndicator))
-        .onRefresh();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await _tick(tester);
     final local = find.byKey(ValueKey('local-case-$id'));
     await _reveal(tester, local);
@@ -382,20 +380,20 @@ void main() {
       );
       await tester.pumpWidget(MaterialApp(home: CaseHomeScreen(services: app)));
       await _tick(tester);
-      await _reveal(tester, find.byKey(const ValueKey('case-start')));
       expect(
         tester
-            .widget<ButtonStyleButton>(find.byKey(const ValueKey('case-start')))
-            .onPressed,
-        isNull,
+            .widget<PopupMenuButton<String>>(
+              find.byKey(const ValueKey('active-plan-selector')),
+            )
+            .enabled,
+        false,
       );
-      final local = find.byKey(ValueKey('local-case-$id'));
-      await _reveal(tester, local);
-      expect(tester.widget<SahActionTile>(local).onTap, isNull);
-      final keep = find.byKey(const ValueKey('continue-undurable-case'));
-      await _reveal(tester, keep);
-      await tester.tap(keep);
+      await tester.tap(find.byKey(const ValueKey('plan-tab-help')));
       await _tick(tester);
+      expect(
+        find.text('Finish saving before changing sections.'),
+        findsOneWidget,
+      );
       expect(find.byType(CaseWorkspaceScreen), findsOneWidget);
       expect(app.coordinator.currentDraft().caseId, id);
       expect(

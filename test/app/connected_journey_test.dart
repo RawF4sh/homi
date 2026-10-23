@@ -313,8 +313,7 @@ void main() {
         find.text('A professional must review medical necessity.'),
         findsOneWidget,
       );
-      await tap('Details', direction: -250);
-      await tap('Prepare a draft', direction: -250);
+      await tap('Prepare a draft');
       await tap('Save and continue');
       expect(revision(), 3);
       await tester.scrollUntilVisible(
@@ -359,7 +358,9 @@ void main() {
       );
       await back();
       expect(find.textContaining('The case changed.'), findsNothing);
-      await tap('Details');
+      if (find.text('Manual request history').evaluate().isEmpty) {
+        await tap('Details');
+      }
       await tap('Manual request history');
       await tester.scrollUntilVisible(
         input('Optional note'),

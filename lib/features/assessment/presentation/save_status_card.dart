@@ -148,6 +148,24 @@ class SaveStatusCard extends StatelessWidget {
             Icons.cloud_done_outlined,
           ),
         };
+        if (sync.phase == SyncPhase.idle &&
+            !sync.hasUnsavedWork &&
+            !undescribedDraftOpen &&
+            photoMarksUnsaved == false) {
+          return Semantics(
+            liveRegion: true,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                message,
+                key: const ValueKey('save-status'),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          );
+        }
         return SahNotice(
           title: title == null ? null : context.tr(title),
           message: message,

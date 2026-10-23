@@ -25,6 +25,8 @@ class AssessmentFlowScreen extends StatelessWidget {
     this.status,
     this.actions = const [],
     this.enabled = true,
+    this.embedded = false,
+    this.expandMeasurements = false,
     this.areaTools,
     this.areaToolsFirst = false,
     this.keptOnDevice = false,
@@ -42,6 +44,8 @@ class AssessmentFlowScreen extends StatelessWidget {
   final Widget? status;
   final List<Widget> actions;
   final bool enabled;
+  final bool embedded;
+  final bool expandMeasurements;
 
   final Widget? areaTools;
   final bool areaToolsFirst;
@@ -58,7 +62,7 @@ class AssessmentFlowScreen extends StatelessWidget {
         builder: (context, _) {
           final AssessmentStep step = flow.step;
           final bool editable = enabled && !flow.isBusy;
-          return Scaffold(
+          return _page(
             bottomNavigationBar: step == AssessmentStep.details
                 ? _primaryAction(
                     context,
@@ -131,43 +135,64 @@ class AssessmentFlowScreen extends StatelessWidget {
                     )
                   : null,
             ),
-            body: SafeArea(
-              child: SingleChildScrollView(
-                key: ValueKey('assessment-scroll-${step.name}'),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ?status,
-                    if (step != AssessmentStep.chooseArea &&
-                        step != AssessmentStep.review) ...[
-                      _Progress(step: step),
-                      const SizedBox(height: 16),
-                    ],
-                    ExcludeFocus(
-                      excluding: !editable,
-                      child: AbsorbPointer(
-                        absorbing: !editable,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: switch (step) {
-                            AssessmentStep.chooseArea => _chooseArea(context),
-                            AssessmentStep.viewPrompt => _viewPrompt(context),
-                            AssessmentStep.preview => _preview(context),
-                            AssessmentStep.details => [
-                              _DetailsStep(
-                                key: ValueKey('details-${flow.findingId}'),
-                                flow: flow,
-                                enabled: editable,
-                              ),
-                            ],
-                            AssessmentStep.review => _review(context),
-                          },
+            body: SingleChildScrollView(
+              key: ValueKey('assessment-scroll-${step.name}'),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (embedded) ...[
+                    if (step != AssessmentStep.chooseArea)
+                      Semantics(
+                        header: true,
+                        child: Text(
+                          context.tr(_title(step)),
+                          style: Theme.of(context).textTheme.headlineSmall,
                         ),
                       ),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        if (flow.canGoBack)
+                          TextButton.icon(
+                            onPressed: editable ? flow.back : null,
+                            icon: const Icon(Icons.arrow_back),
+                            label: Text(context.tr('Back')),
+                          ),
+                        ...actions,
+                      ],
                     ),
                   ],
-                ),
+                  ?status,
+                  if (step != AssessmentStep.chooseArea &&
+                      step != AssessmentStep.review) ...[
+                    _Progress(step: step),
+                    const SizedBox(height: 16),
+                  ],
+                  ExcludeFocus(
+                    excluding: !editable,
+                    child: AbsorbPointer(
+                      absorbing: !editable,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: switch (step) {
+                          AssessmentStep.chooseArea => _chooseArea(context),
+                          AssessmentStep.viewPrompt => _viewPrompt(context),
+                          AssessmentStep.preview => _preview(context),
+                          AssessmentStep.details => [
+                            _DetailsStep(
+                              key: ValueKey('details-${flow.findingId}'),
+                              expandMeasurements: expandMeasurements,
+                              flow: flow,
+                              enabled: editable,
+                            ),
+                          ],
+                          AssessmentStep.review => _review(context),
+                        },
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -175,6 +200,25 @@ class AssessmentFlowScreen extends StatelessWidget {
       ),
     );
   }
+
+  Widget _page({
+    required Widget body,
+    required AppBar appBar,
+    Widget? bottomNavigationBar,
+  }) => embedded
+      ? Column(
+          children: [
+            Expanded(child: body),
+            ?bottomNavigationBar,
+          ],
+        )
+      : Scaffold(
+          appBar: appBar,
+          body: SafeArea(child: body),
+          bottomNavigationBar: bottomNavigationBar == null
+              ? null
+              : SafeArea(child: bottomNavigationBar),
+        );
 
   static String _title(AssessmentStep step) => switch (step) {
     AssessmentStep.chooseArea => 'Choose an area',
@@ -189,8 +233,8 @@ class AssessmentFlowScreen extends StatelessWidget {
     VoidCallback? action,
     String label,
     String key,
-  ) => SafeArea(
-    minimum: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+  ) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
     child: FilledButton(
       key: ValueKey(key),
       onPressed: action,
@@ -931,10 +975,16 @@ class _ClearedMeasurement extends StatelessWidget {
 }
 
 class _DetailsStep extends StatefulWidget {
-  const _DetailsStep({super.key, required this.flow, required this.enabled});
+  const _DetailsStep({
+    super.key,
+    required this.flow,
+    required this.enabled,
+    this.expandMeasurements = false,
+  });
 
   final AssessmentFlow flow;
   final bool enabled;
+  final bool expandMeasurements;
 
   @override
   State<_DetailsStep> createState() => _DetailsStepState();
@@ -1007,9 +1057,11 @@ class _DetailsStepState extends State<_DetailsStep> {
             title: Text(context.tr('Add measurements (optional)')),
 
             tilePadding: EdgeInsets.zero,
-            initiallyExpanded: flow.measurementTypes.any(
-              (type) => flow.entryFor(type).text.isNotEmpty,
-            ),
+            initiallyExpanded:
+                widget.expandMeasurements ||
+                flow.measurementTypes.any(
+                  (type) => flow.entryFor(type).text.isNotEmpty,
+                ),
             children: [
               for (final String type in flow.measurementTypes)
                 _measurementField(context, type),

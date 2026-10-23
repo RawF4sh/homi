@@ -31,16 +31,20 @@ class LiveAssessmentScreen extends StatefulWidget {
     this.scanRoom,
     this.startWithRoomScan = false,
     this.legacyScan = false,
+    this.initialManualPhoto = true,
+    this.embedded = false,
   });
   final String? initialFindingId;
   final RoomInstance? scanRoom;
   final bool startWithRoomScan, legacyScan;
+  final bool initialManualPhoto;
+  final bool embedded;
   final AppServices services;
   @override
-  State<LiveAssessmentScreen> createState() => _LiveAssessmentScreenState();
+  State<LiveAssessmentScreen> createState() => LiveAssessmentScreenState();
 }
 
-class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
+class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     with WidgetsBindingObserver {
   late final LiveAssessmentSession session = LiveAssessmentSession(
     services: widget.services,
@@ -55,6 +59,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       );
   late final Future<void> ready;
   bool busy = false, canPop = false, initialized = false;
+  bool _measurementRequested = false;
   String? notice;
   final saveStatusKey = GlobalKey();
   Uint8List? recoveredPhoto;
@@ -75,7 +80,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       if (widget.scanRoom != null &&
           !widget.startWithRoomScan &&
           findingId == null) {
-        openManualConcern(photo: true);
+        openManualConcern(photo: widget.initialManualPhoto);
       }
       if (widget.startWithRoomScan) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -88,6 +93,37 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       }
     });
   }
+
+  bool get canLeave =>
+      !busy &&
+      (!initialized || (!session.flow.isBusy && !session.localSaveFailed));
+
+  Future<bool> prepareToLeave() async {
+    if (!canLeave) return false;
+    if (!initialized) return true;
+    try {
+      await session.flush();
+    } catch (_) {
+      return false;
+    }
+    return mounted && canLeave;
+  }
+
+  bool handleBack() {
+    if (!canLeave) return true;
+    if (initialized && session.flow.canGoBack) {
+      session.flow.back();
+      return true;
+    }
+    return false;
+  }
+
+  Widget _page({required Widget body, AppBar? appBar}) => widget.embedded
+      ? body
+      : Scaffold(
+          appBar: appBar,
+          body: SafeArea(child: body),
+        );
 
   static final _scanSource = RegExp(
     r' Source: (?:iPhone RoomPlan|Android ARCore|iPhone ARKit camera) partial scan ',
@@ -198,8 +234,12 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
           !identical(route, ModalRoute.of(context))) {
         return;
       }
-      setState(() => canPop = true);
-      Navigator.of(context).pop();
+      if (widget.embedded) {
+        session.flow.startAnother();
+      } else {
+        setState(() => canPop = true);
+        Navigator.of(context).pop();
+      }
     });
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted ||
@@ -226,6 +266,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       });
       return;
     }
+    _measurementRequested = !photo;
     session.flow.chooseLocation(
       widget.scanRoom?.type ?? AssessmentLocation.bathroom,
     );
@@ -321,9 +362,9 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
 
   @override
   Widget build(BuildContext context) => PopScope(
-    canPop: canPop,
+    canPop: widget.embedded || canPop,
     onPopInvokedWithResult: (didPop, result) {
-      if (!didPop) close();
+      if (!widget.embedded && !didPop) close();
     },
     child: FutureBuilder<void>(
       future: ready,
@@ -334,33 +375,32 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
             Navigator.of(context).pop();
           }
 
-          return Scaffold(
+          return _page(
             appBar: AppBar(
               title: Text(context.tr('Home assessment')),
               leading: BackButton(onPressed: leaveUnopenedAssessment),
             ),
-            body: SafeArea(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 680),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          context.tr(
-                            'The saved assessment could not be opened. Your private draft has been kept. Check your connection and open this case again.',
-                          ),
+            body: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 680),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        context.tr(
+                          'The saved assessment could not be opened. Your private draft has been kept. Check your connection and open this case again.',
                         ),
-                        SizedBox(height: 24),
+                      ),
+                      SizedBox(height: 24),
+                      if (!widget.embedded)
                         FilledButton(
                           key: const ValueKey('assessment-error-back'),
                           onPressed: leaveUnopenedAssessment,
                           child: Text(context.tr('Back to case')),
                         ),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
               ),
@@ -368,7 +408,7 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
           );
         }
         if (snapshot.connectionState != ConnectionState.done) {
-          return Scaffold(
+          return _page(
             body: Center(
               child: CircularProgressIndicator(
                 semanticsLabel: context.tr('Opening assessment'),
@@ -385,6 +425,8 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                 ? null
                 : session.photoMarksUnsaved;
             return AssessmentFlowScreen(
+              embedded: widget.embedded,
+              expandMeasurements: _measurementRequested,
               flow: session.flow,
               onContinue: continueToCase,
               scanFindingIds: session.activeScanImports
@@ -406,11 +448,12 @@ class _LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                   tooltip: context.tr('Saved review history'),
                   icon: const Icon(Icons.history),
                 ),
-                IconButton(
-                  onPressed: busy || session.flow.isBusy ? null : close,
-                  tooltip: context.tr('Save on device and close'),
-                  icon: const Icon(Icons.close),
-                ),
+                if (!widget.embedded)
+                  IconButton(
+                    onPressed: busy || session.flow.isBusy ? null : close,
+                    tooltip: context.tr('Save on device and close'),
+                    icon: const Icon(Icons.close),
+                  ),
               ],
               areaToolsFirst: scanAvailability.prefersScan || _hasSavedModel,
               onChooseLocation: chooseLocation,

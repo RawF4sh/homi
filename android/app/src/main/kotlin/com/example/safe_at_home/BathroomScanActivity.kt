@@ -47,6 +47,7 @@ class BathroomScanActivity : ComponentActivity() {
     private var reviewButton: Button? = null
     private var scanId: String = ""
     private var languageCode: String = "en"
+    private var roomName: String? = null
     private var home: HomeScanRequest? = null
     private var homeBetweenRooms = false
     private var homeFinishing = false
@@ -73,6 +74,7 @@ class BathroomScanActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         scanId = intent.getStringExtra(BathroomScanPlatform.EXTRA_SCAN_ID) ?: ""
         languageCode = intent.getStringExtra(BathroomScanPlatform.EXTRA_LANGUAGE) ?: "en"
+        roomName = intent.getStringExtra(BathroomScanPlatform.EXTRA_ROOM_NAME)
         if (intent.getBooleanExtra(BathroomScanPlatform.EXTRA_HOME, false)) {
             val tokens = intent.getStringArrayListExtra(BathroomScanPlatform.EXTRA_ROOM_TOKENS)
             val names = intent.getStringArrayListExtra(BathroomScanPlatform.EXTRA_ROOM_NAMES)
@@ -94,6 +96,7 @@ class BathroomScanActivity : ComponentActivity() {
     private fun showNotice() {
         val column = column()
         column.addView(text(if (home == null) "Scan this room" else "Room scan", 26f))
+        if (home == null) roomName?.let { name -> column.addView(text("", 22f).apply { text = name }) }
         column.addView(text("Move slowly from a safe position. Keep the camera facing walls, floor and fixtures. Do not walk backward or step over obstacles while looking at the screen.", 18f))
         column.addView(text("This captures an approximate arrangement of surfaces and points. Android does not automatically identify toilets, sinks or doors. You will review the model and identify what it shows.", 18f))
         column.addView(text(if (home == null)
@@ -236,7 +239,10 @@ class BathroomScanActivity : ComponentActivity() {
         surface = cameraView
         column.addView(cameraView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         val controls = column()
-        heading = text("Room scan", 24f).also { controls.addView(it) }
+        heading = text("Room scan", 24f).also { title ->
+            if (home == null) roomName?.let { title.text = "${title.text}\n$it" }
+            controls.addView(title)
+        }
         updateHomeHeading()
         status = text("Finding position. Move slowly while facing the room.", 16f)
         controls.addView(status)

@@ -236,7 +236,14 @@ class BathroomScanSession extends ChangeNotifier {
       BathroomScanScene result;
       try {
         attempt.nativeStarted = true;
-        result = await adapter.start(scanId);
+        final captureAdapter = adapter;
+        final captureRoom = room;
+        result = captureRoom != null && captureAdapter is RoomContextScanAdapter
+            ? await (captureAdapter as RoomContextScanAdapter).startForRoom(
+                scanId,
+                captureRoom,
+              )
+            : await captureAdapter.start(scanId);
         guard();
         if (result.scanId != scanId) {
           throw const FormatException(

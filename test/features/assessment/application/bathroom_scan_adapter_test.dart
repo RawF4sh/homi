@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/features/assessment/application/bathroom_scan_adapter.dart';
 import 'package:safe_at_home/l10n/app_language.dart';
+import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
+import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.dart';
 
 import '../domain/scan/scan_test_fixtures.dart';
 
@@ -14,6 +16,61 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+  test(
+    'all indoor room types pass reviewed display context without persisted IDs',
+    () async {
+      final calls = <MethodCall>[];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return scanSceneJson();
+      });
+      for (final type in AssessmentLocation.values.where(
+        (type) => type != AssessmentLocation.outdoorPaths,
+      )) {
+        await adapter.startForRoom(
+          id,
+          RoomInstance(
+            id: 'private-room-id',
+            type: type,
+            name: 'Fictional ${type.name}',
+          ),
+        );
+        final args = Map<Object?, Object?>.from(calls.last.arguments as Map);
+        expect(args['room'], {
+          'type': type.name,
+          'name': 'Fictional ${type.name}',
+        });
+        expect(args.keys, isNot(contains('caseId')));
+        expect(args.toString(), isNot(contains('private-room-id')));
+      }
+      expect(calls, hasLength(6));
+    },
+  );
+
+  test('outdoor and archived rooms cannot open indoor capture', () async {
+    var calls = 0;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls++;
+      return scanSceneJson();
+    });
+    for (final room in [
+      RoomInstance(
+        id: 'outdoors',
+        type: AssessmentLocation.outdoorPaths,
+        name: null,
+      ),
+      RoomInstance(
+        id: 'archived',
+        type: AssessmentLocation.bedroom,
+        name: null,
+        archived: true,
+      ),
+    ]) {
+      expect(() => adapter.startForRoom(id, room), throwsFormatException);
+    }
+    expect(calls, 0);
+  });
 
   test(
     'non-English scan passes only its language and scoped ID; cancel stays ID-only',

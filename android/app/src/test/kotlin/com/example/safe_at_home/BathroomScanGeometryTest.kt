@@ -22,6 +22,24 @@ class BathroomScanGeometryTest {
         assertTrue(notice.contains("Google Play Services for AR"))
         assertTrue(notice.contains("Google Privacy Policy"))
     }
+    @Test fun `room context is bounded display copy and never authorizes outdoor capture`() {
+        for (type in RoomScanContext.Type.entries) {
+            val room = mapOf("type" to type.name, "name" to "Fictional ${type.name}")
+            val request = mapOf("scanId" to scanId, "room" to room, "languageCode" to "en")
+            assertEquals(scanId, bathroomScanRequestId(request, allowLanguage = true))
+            assertNull(bathroomScanRequestId(request))
+            assertEquals(type, RoomScanContext.parse(room)?.type)
+        }
+        for (room in listOf(
+            mapOf("type" to "outdoorPaths", "name" to "Outside"),
+            mapOf("type" to "bedroom", "name" to "Bad\nname"),
+            mapOf("type" to "bedroom", "name" to "x".repeat(81)),
+            mapOf("type" to "bedroom", "name" to "Bedroom", "id" to "private-id"),
+        )) {
+            assertNull(bathroomScanRequestId(mapOf("scanId" to scanId, "room" to room), allowLanguage = true))
+        }
+    }
+
     private fun identity() = floatArrayOf(1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f)
 
     @Test fun `scan identity rejects malformed and non-v4 identifiers`() {

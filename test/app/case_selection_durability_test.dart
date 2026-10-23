@@ -1,3 +1,4 @@
+import 'homi_navigation_support.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
@@ -49,24 +50,20 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('nav-plans')));
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('case-start')),
-        150,
-        scrollable: find.byType(Scrollable).first,
-      );
       expect(
         tester
-            .widget<ButtonStyleButton>(find.byKey(const ValueKey('case-start')))
-            .onPressed,
-        isNull,
+            .widget<PopupMenuButton<String>>(
+              find.byKey(const ValueKey('active-plan-selector')),
+            )
+            .enabled,
+        false,
       );
-      final keep = find.byKey(const ValueKey('continue-undurable-case'));
-      await tester.ensureVisible(keep);
+      await tester.tap(find.byKey(const ValueKey('plan-tab-help')));
       await tester.pumpAndSettle();
-      await tester.tap(keep);
-      await tester.pumpAndSettle();
+      expect(
+        find.text('Finish saving before changing sections.'),
+        findsOneWidget,
+      );
       expect(c.currentDraft().caseId, id);
       expect(c.currentDraft().profile.city, 'Fictional retained correction');
       final retry = find.byKey(const ValueKey('case-retry-device-save'));
@@ -91,7 +88,7 @@ void main() {
         transport.requests.every((r) => r.endpoint.path == '/v2/list-cases'),
         true,
       );
-      await tester.pageBack();
+      await openManagePlans(tester);
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey('case-start')),

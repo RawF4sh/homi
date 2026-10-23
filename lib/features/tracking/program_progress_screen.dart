@@ -5,6 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../../shared/models/case_draft.dart';
 import '../../shared/models/request_tracking.dart';
 import '../../shared/presentation/sah_components.dart';
+import '../../shared/services/matching_api_client.dart';
 import 'progress_models.dart';
 import 'device_reminders.dart';
 import 'reminder_recovery_notice.dart';
@@ -18,12 +19,14 @@ class ProgramProgressScreen extends StatefulWidget {
     required this.services,
     this.tasksFirst = false,
     this.workspaceMode = false,
+    this.embedded = false,
     this.findingId,
     this.referralId,
   });
   final AppServices services;
   final bool tasksFirst;
   final bool workspaceMode;
+  final bool embedded;
   final String? findingId, referralId;
   @override
   State<ProgramProgressScreen> createState() => ProgramProgressScreenState();
@@ -39,6 +42,7 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
   bool _busy = true, _fresh = false;
   bool get canLeave => !_busy;
   String? _error;
+  String? _loadError, _loadFailureCode;
   ProgressService get service => widget.services.progress!;
   ProgressSnapshot? get saved => service.cached[_caseId];
   bool get current =>
@@ -49,6 +53,7 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
   bool get editable =>
       current &&
       _fresh &&
+      service.feedback == null &&
       !_busy &&
       !widget.services.coordinator.hasUnsavedChanges &&
       (widget.findingId == null ||
@@ -60,13 +65,36 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
   @override
   void initState() {
     super.initState();
+    service.addListener(_progressChanged);
     _load();
   }
 
+  void _progressChanged() {
+    if (!current) return;
+    setState(() {
+      if (service.feedback != null) _fresh = false;
+      if (_fresh && saved == null) {
+        _fresh = false;
+        _loadFailureCode = 'CASE_NOT_FOUND';
+        _loadError = MatchingApiException.forCode('CASE_NOT_FOUND').message;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    service.removeListener(_progressChanged);
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    if (!current) return;
     setState(() {
       _busy = true;
+      _fresh = false;
       _error = null;
+      _loadError = null;
+      _loadFailureCode = null;
     });
     try {
       await widget.services.progressReady;
@@ -75,7 +103,8 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
       if (current) _fresh = true;
     } catch (e) {
       if (current) {
-        _error = e is ReminderSettingsException
+        _loadFailureCode = e is MatchingApiException ? e.code : null;
+        _loadError = e is ReminderSettingsException
             ? e.message
             : safeOperationMessage(e);
       }
@@ -353,6 +382,23 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!current) {
+      final stale = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text(
+            context.tr(
+              'The plan changed. Reopen it before editing next steps.',
+            ),
+          ),
+        ),
+      );
+      if (widget.embedded) return stale;
+      return Scaffold(
+        appBar: AppBar(title: Text(context.tr('Tasks'))),
+        body: SafeArea(child: stale),
+      );
+    }
     final state = saved;
     final tasks =
         state?.tasks
@@ -372,513 +418,546 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
           : (a.dueOn ?? '9999').compareTo(b.dueOn ?? '9999');
     });
     final today = DateTime.now().toIso8601String().substring(0, 10);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          context.tr(
-            widget.workspaceMode
-                ? 'Tasks'
-                : _tasks
-                ? 'My next steps'
-                : 'Program progress',
-          ),
+    final appBar = AppBar(
+      title: Text(
+        context.tr(
+          widget.workspaceMode
+              ? 'Tasks'
+              : _tasks
+              ? 'My next steps'
+              : 'Program progress',
         ),
-        actions: [
-          IconButton(
-            onPressed: _busy ? null : _load,
-            icon: const Icon(Icons.refresh),
-            tooltip: context.tr('Refresh'),
-          ),
-        ],
       ),
-      body: SafeArea(
-        child: SahContent(
-          child: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              if (!widget.workspaceMode)
-                Text(
-                  context.tr(
-                    'Manual reports do not verify submission, eligibility, approval, or completed repairs.',
-                  ),
+      actions: [
+        IconButton(
+          onPressed: _busy ? null : _load,
+          icon: const Icon(Icons.refresh),
+          tooltip: context.tr('Refresh'),
+        ),
+      ],
+    );
+    final body = SahContent(
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          if (widget.embedded)
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton.icon(
+                onPressed: _busy ? null : _load,
+                icon: const Icon(Icons.refresh),
+                label: Text(context.tr('Refresh')),
+              ),
+            ),
+          if (!widget.workspaceMode)
+            Text(
+              context.tr(
+                'Manual reports do not verify submission, eligibility, approval, or completed repairs.',
+              ),
+            ),
+          const SizedBox(height: 12),
+          if (widget.findingId != null) ...[
+            Text(context.tr('Next steps for this concern')),
+            Text(
+              widget.services.coordinator
+                      .currentCase()
+                      .findings
+                      .where((f) => f.id == widget.findingId)
+                      .firstOrNull
+                      ?.observation ??
+                  context.tr('Concern not present'),
+            ),
+          ],
+          if (widget.referralId != null)
+            Text(
+              context.tr('Next steps for {organization}', {
+                'organization':
+                    const OfficialReferralDirectory()
+                        .provider(widget.referralId!)
+                        ?.name ??
+                    widget.referralId!,
+              }),
+            ),
+          if (!widget.workspaceMode &&
+              widget.findingId == null &&
+              widget.referralId == null)
+            SegmentedButton<bool>(
+              segments: [
+                ButtonSegment(
+                  value: false,
+                  label: Text(context.tr('Programs')),
                 ),
-              const SizedBox(height: 12),
-              if (widget.findingId != null) ...[
-                Text(context.tr('Next steps for this concern')),
-                Text(
-                  widget.services.coordinator
-                          .currentCase()
-                          .findings
-                          .where((f) => f.id == widget.findingId)
-                          .firstOrNull
-                          ?.observation ??
-                      context.tr('Concern not present'),
-                ),
+                ButtonSegment(value: true, label: Text(context.tr('Tasks'))),
               ],
-              if (widget.referralId != null)
-                Text(
-                  context.tr('Next steps for {organization}', {
-                    'organization':
-                        const OfficialReferralDirectory()
-                            .provider(widget.referralId!)
-                            ?.name ??
-                        widget.referralId!,
-                  }),
-                ),
-              if (!widget.workspaceMode &&
-                  widget.findingId == null &&
-                  widget.referralId == null)
-                SegmentedButton<bool>(
-                  segments: [
-                    ButtonSegment(
-                      value: false,
-                      label: Text(context.tr('Programs')),
+              selected: {_tasks},
+              onSelectionChanged: (s) => setState(() => _tasks = s.first),
+            ),
+          if (_busy) ...[
+            LinearProgressIndicator(
+              semanticsLabel: context.tr('Loading tasks and program progress'),
+            ),
+            if (state == null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(context.tr('Loading tasks and program progress')),
+              ),
+          ],
+          if (_loadError != null) ...[
+            SahActionFeedback(
+              key: const ValueKey('progress-load-feedback'),
+              message: context.tr(switch (_loadFailureCode) {
+                'NOT_FOUND' =>
+                  'Tasks are unavailable on this service. Try again after the service is updated.',
+                'SERVICE_UNAVAILABLE' =>
+                  'Tasks are temporarily unavailable. Try again later.',
+                'NETWORK_ERROR' || 'TIMEOUT' =>
+                  state == null
+                      ? 'Cannot connect to load tasks. Check your connection and try again.'
+                      : 'Cannot connect. Showing the last saved tasks; refresh before making changes.',
+                _ => _loadError!,
+              }),
+            ),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                key: const ValueKey('progress-retry-load'),
+                onPressed: _busy ? null : _load,
+                icon: const Icon(Icons.refresh),
+                label: Text(context.tr('Try again')),
+              ),
+            ),
+          ],
+          if (_error != null) SahActionFeedback(message: context.tr(_error!)),
+          if (!_fresh && state != null && _loadError == null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                context.tr('Saved copy. Refresh before changing tasks.'),
+              ),
+            ),
+          if (state != null &&
+              state.caseRevision !=
+                  widget.services.coordinator.snapshot?.revision)
+            SahNotice(
+              message: context.tr(
+                'The plan changed. Reopen it before editing next steps.',
+              ),
+            ),
+          if (service.feedback != null)
+            SahNotice(message: context.tr(service.feedback!)),
+          if (service.reminders.feedback != null)
+            SahNotice(message: context.tr(service.reminders.feedback!)),
+          if (service.reminders.requiresReset)
+            ReminderRecoveryNotice(
+              enabled: current && !_busy,
+              onReset: () => _run(() async {
+                await service.reminders.reset();
+                if (current) await service.reconcileReminders();
+              }),
+            ),
+          if (service.pending.containsKey(_caseId))
+            _ProgressCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.tr(
+                      'A save is pending. Retry the same change or refresh and review saved state before discarding it.',
                     ),
-                    ButtonSegment(
-                      value: true,
-                      label: Text(context.tr('Tasks')),
-                    ),
-                  ],
-                  selected: {_tasks},
-                  onSelectionChanged: (s) => setState(() => _tasks = s.first),
-                ),
-              if (_busy) const LinearProgressIndicator(),
-              if (_error != null) SahNotice(message: context.tr(_error!)),
-              if (!_fresh && state != null)
-                SahNotice(
-                  message: context.tr(
-                    'Offline copy. Refresh before changing tasks.',
+                  ),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _run(() async {
+                            await service.retry(_caseId);
+                            _fresh = true;
+                          }),
+                    child: Text(context.tr('Retry pending save')),
+                  ),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () async {
+                            final yes = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: Text(ctx.tr('Discard pending change?')),
+                                content: Text(
+                                  ctx.tr(
+                                    'Review saved state first. Discarding this attempt does not undo a change already saved online.',
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: Text(ctx.tr('Cancel')),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: Text(ctx.tr('Discard')),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (yes == true && current) {
+                              await _run(() => service.discard(_caseId));
+                            }
+                          },
+                    child: Text(context.tr('Review and discard pending save')),
+                  ),
+                ],
+              ),
+            ),
+          if (_tasks) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: editable ? () => _edit() : null,
+              icon: const Icon(Icons.add),
+              label: Text(context.tr('Add next step')),
+            ),
+            if (_fresh && state != null && tasks.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  context.tr(
+                    'No next steps yet. Add a task for this plan or a tracked program.',
                   ),
                 ),
-              if (state != null &&
-                  state.caseRevision !=
-                      widget.services.coordinator.snapshot?.revision)
-                SahNotice(
-                  message: context.tr(
-                    'The plan changed. Reopen it before editing next steps.',
-                  ),
-                ),
-              if (service.feedback != null)
-                SahNotice(message: context.tr(service.feedback!)),
-              if (service.reminders.feedback != null)
-                SahNotice(message: context.tr(service.reminders.feedback!)),
-              if (service.reminders.requiresReset)
-                ReminderRecoveryNotice(
-                  enabled: current && !_busy,
-                  onReset: () => _run(() async {
-                    await service.reminders.reset();
-                    if (current) await service.reconcileReminders();
-                  }),
-                ),
-              if (service.pending.containsKey(_caseId))
-                _ProgressCard(
+              ),
+            for (final task in tasks)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _ProgressCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        context.tr(
-                          'A save is pending. Retry the same change or refresh and review saved state before discarding it.',
+                        task.title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(context.tr(taskStateLabel(task.state))),
+                      if (task.referralId != null)
+                        Text(
+                          context.tr('Referral: {organization}', {
+                            'organization':
+                                const OfficialReferralDirectory()
+                                    .provider(task.referralId!)
+                                    ?.name ??
+                                task.referralId!,
+                          }),
                         ),
-                      ),
-                      TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _run(() async {
-                                await service.retry(_caseId);
-                                _fresh = true;
-                              }),
-                        child: Text(context.tr('Retry pending save')),
-                      ),
-                      TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () async {
-                                final yes = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: Text(
-                                      ctx.tr('Discard pending change?'),
-                                    ),
-                                    content: Text(
-                                      ctx.tr(
-                                        'Review saved state first. Discarding this attempt does not undo a change already saved online.',
-                                      ),
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, false),
-                                        child: Text(ctx.tr('Cancel')),
-                                      ),
-                                      FilledButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, true),
-                                        child: Text(ctx.tr('Discard')),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (yes == true && current) {
-                                  await _run(() => service.discard(_caseId));
-                                }
-                              },
-                        child: Text(
-                          context.tr('Review and discard pending save'),
+                      if (task.referral?['imported'] case final Map imported)
+                        ExpansionTile(
+                          title: Text(context.tr('Original local follow-up')),
+                          children: [
+                            Text(
+                              (imported['original'] as Map)['title'] as String,
+                            ),
+                            Text(imported['contactNote'] as String),
+                            if ((imported['original'] as Map)['dueDate'] !=
+                                null)
+                              Text(
+                                context.tr('Original target: {date}', {
+                                  'date':
+                                      (imported['original'] as Map)['dueDate'],
+                                }),
+                              ),
+                            if ((imported['original'] as Map)['completedAt'] !=
+                                null)
+                              Text(
+                                context.tr('Originally completed: {date}', {
+                                  'date':
+                                      (imported['original']
+                                          as Map)['completedAt'],
+                                }),
+                              ),
+                          ],
                         ),
+                      if (task.programId != null)
+                        Text(
+                          state!.programs
+                                  .where((p) => p.id == task.programId)
+                                  .firstOrNull
+                                  ?.name ??
+                              task.programId!,
+                        ),
+                      Text(
+                        context.tr('Responsible person: {person}', {
+                          'person':
+                              task.responsiblePerson ??
+                              context.tr('Unassigned'),
+                        }),
                       ),
+                      if (task.dueOn != null)
+                        Text(
+                          context.tr(
+                            task.open && task.dueOn!.compareTo(today) < 0
+                                ? 'Overdue target: {date}'
+                                : 'Target date: {date}',
+                            {'date': task.dueOn},
+                          ),
+                        ),
+                      if (task.needsReview)
+                        Text(context.tr('Plan changed. Review this task.')),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton(
+                            onPressed: editable
+                                ? () => _edit(task: task)
+                                : null,
+                            child: Text(context.tr('Edit task')),
+                          ),
+                          if (task.open)
+                            TextButton(
+                              onPressed: editable && !task.needsReview
+                                  ? () => _run(
+                                      () => _save({
+                                        'type': 'put_task',
+                                        'expectedTaskRevision': task.revision,
+                                        'task': {
+                                          ...task.toJson(),
+                                          'state': 'completed',
+                                          'revision': task.revision + 1,
+                                        },
+                                      }),
+                                    )
+                                  : null,
+                              child: Text(context.tr('Complete task')),
+                            ),
+                          if (!task.open)
+                            TextButton(
+                              onPressed: editable && !task.needsReview
+                                  ? () => _run(
+                                      () => _save({
+                                        'type': 'put_task',
+                                        'expectedTaskRevision': task.revision,
+                                        'task': {
+                                          ...task.toJson(),
+                                          'state': 'pending',
+                                          'revision': task.revision + 1,
+                                        },
+                                      }),
+                                    )
+                                  : null,
+                              child: Text(context.tr('Reopen task')),
+                            ),
+                          if (task.open)
+                            TextButton(
+                              onPressed: editable
+                                  ? () => _run(() => _remind(task))
+                                  : null,
+                              child: Text(context.tr('Device reminder')),
+                            ),
+                        ],
+                      ),
+                      if (service.reminders
+                              .forTask(_caseId, task.id)
+                              ?.enabled ==
+                          true) ...[
+                        Text(
+                          context.tr('Reminder requested: {time} ({zone})', {
+                            'time':
+                                '${service.reminders.forTask(_caseId, task.id)!.data['date']} ${service.reminders.forTask(_caseId, task.id)!.data['time']}',
+                            'zone': service.reminders
+                                .forTask(_caseId, task.id)!
+                                .zone,
+                          }),
+                        ),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            TextButton(
+                              onPressed: editable
+                                  ? () =>
+                                        _run(() => _remind(task, snooze: true))
+                                  : null,
+                              child: Text(context.tr('Snooze reminder')),
+                            ),
+                            TextButton(
+                              onPressed: editable
+                                  ? () => _run(() async {
+                                      await service.reminders.disable(
+                                        _caseId,
+                                        task.id,
+                                      );
+                                      await service.reconcileReminders();
+                                    })
+                                  : null,
+                              child: Text(context.tr('Disable reminder')),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
-              if (_tasks) ...[
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: editable ? () => _edit() : null,
-                  icon: const Icon(Icons.add),
-                  label: Text(context.tr('Add next step')),
+              ),
+            const SizedBox(height: 16),
+            ExpansionTile(
+              title: Text(context.tr('About tasks and reminders')),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    context.tr(
+                      'Manual reports do not verify submission, eligibility, approval, or completed repairs.',
+                    ),
+                  ),
                 ),
-                if (tasks.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      context.tr(
-                        'No next steps yet. Add a task for this plan or a tracked program.',
-                      ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    context.tr(
+                      'Due dates are personal targets. They are not verified agency deadlines. A responsible person label does not share this plan or assign a signed-in helper.',
                     ),
                   ),
-                for (final task in tasks)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: _ProgressCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            task.title,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          Text(context.tr(taskStateLabel(task.state))),
-                          if (task.referralId != null)
-                            Text(
-                              context.tr('Referral: {organization}', {
-                                'organization':
-                                    const OfficialReferralDirectory()
-                                        .provider(task.referralId!)
-                                        ?.name ??
-                                    task.referralId!,
-                              }),
-                            ),
-                          if (task.referral?['imported']
-                              case final Map imported)
-                            ExpansionTile(
-                              title: Text(
-                                context.tr('Original local follow-up'),
-                              ),
-                              children: [
-                                Text(
-                                  (imported['original'] as Map)['title']
-                                      as String,
-                                ),
-                                Text(imported['contactNote'] as String),
-                                if ((imported['original'] as Map)['dueDate'] !=
-                                    null)
-                                  Text(
-                                    context.tr('Original target: {date}', {
-                                      'date':
-                                          (imported['original']
-                                              as Map)['dueDate'],
-                                    }),
-                                  ),
-                                if ((imported['original']
-                                        as Map)['completedAt'] !=
-                                    null)
-                                  Text(
-                                    context.tr('Originally completed: {date}', {
-                                      'date':
-                                          (imported['original']
-                                              as Map)['completedAt'],
-                                    }),
-                                  ),
-                              ],
-                            ),
-                          if (task.programId != null)
-                            Text(
-                              state!.programs
-                                      .where((p) => p.id == task.programId)
-                                      .firstOrNull
-                                      ?.name ??
-                                  task.programId!,
-                            ),
-                          Text(
-                            context.tr('Responsible person: {person}', {
-                              'person':
-                                  task.responsiblePerson ??
-                                  context.tr('Unassigned'),
-                            }),
-                          ),
-                          if (task.dueOn != null)
-                            Text(
-                              context.tr(
-                                task.open && task.dueOn!.compareTo(today) < 0
-                                    ? 'Overdue target: {date}'
-                                    : 'Target date: {date}',
-                                {'date': task.dueOn},
-                              ),
-                            ),
-                          if (task.needsReview)
-                            Text(context.tr('Plan changed. Review this task.')),
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              TextButton(
-                                onPressed: editable
-                                    ? () => _edit(task: task)
-                                    : null,
-                                child: Text(context.tr('Edit task')),
-                              ),
-                              if (task.open)
-                                TextButton(
-                                  onPressed: editable && !task.needsReview
-                                      ? () => _run(
-                                          () => _save({
-                                            'type': 'put_task',
-                                            'expectedTaskRevision':
-                                                task.revision,
-                                            'task': {
-                                              ...task.toJson(),
-                                              'state': 'completed',
-                                              'revision': task.revision + 1,
-                                            },
-                                          }),
-                                        )
-                                      : null,
-                                  child: Text(context.tr('Complete task')),
-                                ),
-                              if (task.open)
-                                TextButton(
-                                  onPressed: editable
-                                      ? () => _run(() => _remind(task))
-                                      : null,
-                                  child: Text(context.tr('Device reminder')),
-                                ),
-                            ],
-                          ),
-                          if (service.reminders
-                                  .forTask(_caseId, task.id)
-                                  ?.enabled ==
-                              true) ...[
-                            Text(
-                              context.tr('Reminder requested: {time} ({zone})', {
-                                'time':
-                                    '${service.reminders.forTask(_caseId, task.id)!.data['date']} ${service.reminders.forTask(_caseId, task.id)!.data['time']}',
-                                'zone': service.reminders
-                                    .forTask(_caseId, task.id)!
-                                    .zone,
-                              }),
-                            ),
-                            Wrap(
-                              spacing: 8,
-                              children: [
-                                TextButton(
-                                  onPressed: editable
-                                      ? () => _run(
-                                          () => _remind(task, snooze: true),
-                                        )
-                                      : null,
-                                  child: Text(context.tr('Snooze reminder')),
-                                ),
-                                TextButton(
-                                  onPressed: editable
-                                      ? () => _run(() async {
-                                          await service.reminders.disable(
-                                            _caseId,
-                                            task.id,
-                                          );
-                                          await service.reconcileReminders();
-                                        })
-                                      : null,
-                                  child: Text(context.tr('Disable reminder')),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                ExpansionTile(
-                  title: Text(context.tr('About tasks and reminders')),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        context.tr(
-                          'Manual reports do not verify submission, eligibility, approval, or completed repairs.',
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        context.tr(
-                          'Due dates are personal targets. They are not verified agency deadlines. A responsible person label does not share this plan or assign a signed-in helper.',
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        context.tr(
-                          'Reminders are local to this device. Open the app to sync remote changes. Device settings may delay or prevent delivery.',
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
-              ] else ...[
-                if (state == null || state.programs.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      context.tr(
-                        'No tracked programs. Choose Track program under possible assistance.',
-                      ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    context.tr(
+                      'Reminders are local to this device. Open the app to sync remote changes. Device settings may delay or prevent delivery.',
                     ),
                   ),
-                for (final p in state?.programs ?? <TrackedProgram>[])
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: _ProgressCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            p.name,
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          if (p.retired)
-                            Text(
-                              context.tr(
-                                'No longer in the current program registry. History is retained.',
-                              ),
-                            ),
-                          Text(
-                            context.tr(
-                              p.latest == null
-                                  ? 'Not started / no update recorded'
-                                  : requestStatusLabel(
-                                      p.latest!['status'] as String,
-                                    ),
-                            ),
-                          ),
-                          if (p.latest != null)
-                            Text(
-                              context.tr('Reported {date} by {person}', {
-                                'date': p.latest!['recordedAt'],
-                                'person':
-                                    p.latest!['recordedBy'] ??
-                                    context.tr(
-                                      'Legacy report; reporter not recorded',
-                                    ),
-                              }),
-                            ),
-                          Text(
-                            context.tr(
-                              'Unresolved program requirements: {count}',
-                              {'count': p.unresolved},
-                            ),
-                          ),
-                          Text(
-                            context.tr('Open tasks: {count}', {
-                              'count': tasks
-                                  .where((t) => t.programId == p.id && t.open)
-                                  .length,
-                            }),
-                          ),
-                          if (tasks
-                                  .where((t) => t.programId == p.id && t.open)
-                                  .firstOrNull
-                              case final next?)
-                            Text(
-                              context.tr('Next: {task} · {date}', {
-                                'task': next.title,
-                                'date':
-                                    next.dueOn ?? context.tr('No target date'),
-                              }),
-                            ),
-                          if (p.requirements != null) ...[
-                            for (final requirement in p.requirements!)
-                              Text(
-                                '${context.tr(requirement['status'] == 'fail' ? 'Not met' : 'Needs confirmation')}: ${requirement['explanation']}',
-                              ),
-                          ],
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              TextButton(
-                                onPressed: editable
-                                    ? () => _edit(program: p)
-                                    : null,
-                                child: Text(context.tr('Add next step')),
-                              ),
-                              TextButton(
-                                onPressed: editable ? () => _report(p) : null,
-                                child: Text(
-                                  context.tr('Report program status'),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: editable ? () => _history(p) : null,
-                                child: Text(
-                                  context.tr('Manual request history'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (p.proposal != null) ...[
-                            Text(
-                              context.tr(
-                                'Is this old next action still needed?',
-                              ),
-                            ),
-                            Text(p.proposal!['title'] as String),
-                            Wrap(
-                              spacing: 8,
-                              children: [
-                                TextButton(
-                                  onPressed: editable
-                                      ? () => _edit(
-                                          program: p,
-                                          proposal: p.proposal,
-                                        )
-                                      : null,
-                                  child: Text(
-                                    context.tr('Review and add task'),
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: editable
-                                      ? () => _run(
-                                          () => _save({
-                                            'type': 'dismiss_proposal',
-                                            'eventId': p.proposal!['eventId'],
-                                          }),
-                                        )
-                                      : null,
-                                  child: Text(context.tr('No longer needed')),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
+                ),
               ],
-            ],
-          ),
-        ),
+            ),
+          ] else ...[
+            if (_fresh && state != null && state.programs.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  context.tr(
+                    'No tracked programs. Choose Track program under possible assistance.',
+                  ),
+                ),
+              ),
+            for (final p in state?.programs ?? <TrackedProgram>[])
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _ProgressCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p.name,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (p.retired)
+                        Text(
+                          context.tr(
+                            'No longer in the current program registry. History is retained.',
+                          ),
+                        ),
+                      Text(
+                        context.tr(
+                          p.latest == null
+                              ? 'Not started / no update recorded'
+                              : requestStatusLabel(
+                                  p.latest!['status'] as String,
+                                ),
+                        ),
+                      ),
+                      if (p.latest != null)
+                        Text(
+                          context.tr('Reported {date} by {person}', {
+                            'date': p.latest!['recordedAt'],
+                            'person':
+                                p.latest!['recordedBy'] ??
+                                context.tr(
+                                  'Legacy report; reporter not recorded',
+                                ),
+                          }),
+                        ),
+                      Text(
+                        context.tr('Unresolved program requirements: {count}', {
+                          'count': p.unresolved,
+                        }),
+                      ),
+                      Text(
+                        context.tr('Open tasks: {count}', {
+                          'count': tasks
+                              .where((t) => t.programId == p.id && t.open)
+                              .length,
+                        }),
+                      ),
+                      if (tasks
+                              .where((t) => t.programId == p.id && t.open)
+                              .firstOrNull
+                          case final next?)
+                        Text(
+                          context.tr('Next: {task} · {date}', {
+                            'task': next.title,
+                            'date': next.dueOn ?? context.tr('No target date'),
+                          }),
+                        ),
+                      if (p.requirements != null) ...[
+                        for (final requirement in p.requirements!)
+                          Text(
+                            '${context.tr(requirement['status'] == 'fail' ? 'Not met' : 'Needs confirmation')}: ${requirement['explanation']}',
+                          ),
+                      ],
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton(
+                            onPressed: editable
+                                ? () => _edit(program: p)
+                                : null,
+                            child: Text(context.tr('Add next step')),
+                          ),
+                          TextButton(
+                            onPressed: editable ? () => _report(p) : null,
+                            child: Text(context.tr('Report program status')),
+                          ),
+                          TextButton(
+                            onPressed: editable ? () => _history(p) : null,
+                            child: Text(context.tr('Manual request history')),
+                          ),
+                        ],
+                      ),
+                      if (p.proposal != null) ...[
+                        Text(
+                          context.tr('Is this old next action still needed?'),
+                        ),
+                        Text(p.proposal!['title'] as String),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            TextButton(
+                              onPressed: editable
+                                  ? () =>
+                                        _edit(program: p, proposal: p.proposal)
+                                  : null,
+                              child: Text(context.tr('Review and add task')),
+                            ),
+                            TextButton(
+                              onPressed: editable
+                                  ? () => _run(
+                                      () => _save({
+                                        'type': 'dismiss_proposal',
+                                        'eventId': p.proposal!['eventId'],
+                                      }),
+                                    )
+                                  : null,
+                              child: Text(context.tr('No longer needed')),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ],
       ),
+    );
+    if (widget.embedded) return body;
+    return Scaffold(
+      appBar: appBar,
+      body: SafeArea(child: body),
     );
   }
 }

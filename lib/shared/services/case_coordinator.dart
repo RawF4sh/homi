@@ -808,6 +808,7 @@ class CaseCoordinator extends ChangeNotifier {
       return true;
     }
     if (key.startsWith('assessment:$id:')) return true;
+    if (key.startsWith('assistant-history.$id.')) return true;
     return [
       'form',
       'intake',

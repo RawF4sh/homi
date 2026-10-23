@@ -12,6 +12,18 @@ class _MemoryLanguageController extends AppLanguageController {
   Future<void> choose(AppLanguage language) async => value = language;
 }
 
+Future<void> selectLanguage(WidgetTester tester, String label) async {
+  final field = find.byKey(const ValueKey('language-selection'));
+  await tester.ensureVisible(field);
+  await tester.tap(field);
+  await tester.pumpAndSettle();
+  final option = find.text(label).last;
+  await tester.ensureVisible(option);
+  await tester.pumpAndSettle();
+  await tester.tap(option);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   late Directory directory;
   late AppLanguageController controller;
@@ -200,9 +212,7 @@ void main() {
         find.byKey(const ValueKey('retained-name')),
         'Grandma’s Home',
       );
-      await tester.ensureVisible(find.byKey(const ValueKey('language-es')));
-      await tester.tap(find.byKey(const ValueKey('language-es')));
-      await tester.pumpAndSettle();
+      await selectLanguage(tester, 'Español');
       expect(find.text('Idioma'), findsOneWidget);
       expect(text.text, 'Grandma’s Home');
       expect(controller.value, AppLanguage.spanish);
@@ -239,9 +249,7 @@ void main() {
         ),
       ),
     );
-    await tester.ensureVisible(find.byKey(const ValueKey('language-fil')));
-    await tester.tap(find.byKey(const ValueKey('language-fil')));
-    await tester.pumpAndSettle();
+    await selectLanguage(tester, 'Filipino (Tagalog)');
     expect(controller.value, AppLanguage.filipino);
     expect(tester.takeException(), isNull);
   });
@@ -268,8 +276,7 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('choose-language')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('language-es')));
-      await tester.pumpAndSettle();
+      await selectLanguage(tester, 'Español');
       expect(find.text('Idioma'), findsOneWidget);
       final done = AppLocalizations(const Locale('es')).text('Done');
       await tester.tap(find.text(done));

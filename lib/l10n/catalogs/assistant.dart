@@ -300,4 +300,139 @@ const assistantTranslations = <String, Map<String, String>>{
     "fil":
         "Awtomatikong kasama ang mga hakbang sa app. Opsyonal ang sipi ng kumpirmadong obserbasyon at maaaring kasama ang iyong tala. Hindi kasama ang mga larawan, scan, sukat, detalye ng residente, at dokumento.",
   },
+  "New chat": {
+    "es": "Nuevo chat",
+    "zh-Hans": "新聊天",
+    "zh-Hant": "新聊天",
+    "vi": "Cuộc trò chuyện mới",
+    "fil": "Bagong chat",
+  },
+  "Previous conversations": {
+    "es": "Conversaciones anteriores",
+    "zh-Hans": "以往对话",
+    "zh-Hant": "以往對話",
+    "vi": "Cuộc trò chuyện trước",
+    "fil": "Mga nakaraang pag-uusap",
+  },
+  "Clear history": {
+    "es": "Borrar historial",
+    "zh-Hans": "清除历史记录",
+    "zh-Hant": "清除歷史紀錄",
+    "vi": "Xóa lịch sử",
+    "fil": "Burahin ang history",
+  },
+  "Clear chat history?": {
+    "es": "¿Borrar el historial de chat?",
+    "zh-Hans": "清除聊天记录？",
+    "zh-Hant": "清除聊天紀錄？",
+    "vi": "Xóa lịch sử trò chuyện?",
+    "fil": "Burahin ang chat history?",
+  },
+  "This removes all saved chats for this plan and your account on this phone. It does not change your plan.": {
+    "es":
+        "Se eliminarán todos los chats guardados de este plan y su cuenta en este teléfono. No cambia su plan.",
+    "zh-Hans": "这将删除此手机上您账户中此计划的所有聊天记录，不会更改计划。",
+    "zh-Hant": "這將刪除此手機上您帳戶中此計畫的所有聊天紀錄，不會更改計畫。",
+    "vi":
+        "Thao tác này xóa mọi cuộc trò chuyện đã lưu cho kế hoạch và tài khoản của bạn trên điện thoại này. Kế hoạch không thay đổi.",
+    "fil":
+        "Aalisin nito ang lahat ng naka-save na chat para sa planong ito at account mo sa teleponong ito. Hindi nito babaguhin ang plano.",
+  },
+  "No saved chats yet.": {
+    "es": "Aún no hay chats guardados.",
+    "zh-Hans": "尚无已保存的聊天。",
+    "zh-Hant": "尚無已儲存的聊天。",
+    "vi": "Chưa có cuộc trò chuyện nào được lưu.",
+    "fil": "Wala pang naka-save na chat.",
+  },
+  "Chats save privately on this phone. You can reopen or clear them in Chat options.": {
+    "es":
+        "Los chats se guardan de forma privada en este teléfono. Puede abrirlos o borrarlos en Opciones de chat.",
+    "zh-Hans": "聊天会私密地保存在此手机上。您可以在聊天选项中重新打开或清除。",
+    "zh-Hant": "聊天會私密地儲存在此手機上。您可以在聊天選項中重新開啟或清除。",
+    "vi":
+        "Trò chuyện được lưu riêng tư trên điện thoại này. Bạn có thể mở lại hoặc xóa trong Tùy chọn trò chuyện.",
+    "fil":
+        "Pribadong naka-save ang mga chat sa teleponong ito. Maaari mong buksan o burahin ang mga ito sa Mga opsyon sa chat.",
+  },
+  "Saved chats could not be opened. Retry before starting another chat.": {
+    "es":
+        "No se pudieron abrir los chats guardados. Reintente antes de iniciar otro chat.",
+    "zh-Hans": "无法打开已保存的聊天。请重试后再开始新聊天。",
+    "zh-Hant": "無法開啟已儲存的聊天。請重試後再開始新聊天。",
+    "vi":
+        "Không thể mở trò chuyện đã lưu. Hãy thử lại trước khi bắt đầu trò chuyện khác.",
+    "fil":
+        "Hindi mabuksan ang mga naka-save na chat. Subukang muli bago magsimula ng ibang chat.",
+  },
+  "Chat history could not be cleared. Retry to finish removing it from this phone.": {
+    "es":
+        "No se pudo borrar el historial. Reintente para terminar de eliminarlo de este teléfono.",
+    "zh-Hans": "无法清除聊天记录。请重试以完成从此手机中删除。",
+    "zh-Hant": "無法清除聊天紀錄。請重試以完成從此手機中刪除。",
+    "vi":
+        "Không thể xóa lịch sử trò chuyện. Hãy thử lại để hoàn tất việc xóa khỏi điện thoại này.",
+    "fil":
+        "Hindi mabura ang chat history. Subukang muli upang tapusin ang pag-alis nito sa teleponong ito.",
+  },
+  "Chat could not be saved on this phone. Keep it open and retry.": {
+    "es":
+        "No se pudo guardar el chat en este teléfono. Manténgalo abierto y reintente.",
+    "zh-Hans": "无法在此手机上保存聊天。请保持打开并重试。",
+    "zh-Hant": "無法在此手機上儲存聊天。請保持開啟並重試。",
+    "vi":
+        "Không thể lưu trò chuyện trên điện thoại này. Hãy giữ màn hình mở và thử lại.",
+    "fil":
+        "Hindi ma-save ang chat sa teleponong ito. Panatilihin itong bukas at subukang muli.",
+  },
+  "This response was not completed. Send the question again when you are ready.": {
+    "es":
+        "Esta respuesta no se completó. Envíe la pregunta de nuevo cuando esté listo.",
+    "zh-Hans": "此回复未完成。准备好后可重新发送问题。",
+    "zh-Hant": "此回覆未完成。準備好後可重新傳送問題。",
+    "vi": "Phản hồi này chưa hoàn tất. Hãy gửi lại câu hỏi khi bạn sẵn sàng.",
+    "fil":
+        "Hindi natapos ang tugon na ito. Ipadala muli ang tanong kapag handa ka na.",
+  },
+  "Replies use this phone’s on-device model. Saved chats are encrypted on this phone for your account and plan. They are not shared or included in exports. Only two recent exchanges from unchanged plan context are used for follow-up questions. The assistant cannot change your plan, decide eligibility, or submit an application.": {
+    "es":
+        "Las respuestas usan el modelo de este teléfono. Los chats se cifran para su cuenta y plan; no se comparten ni exportan. Solo se usan dos intercambios recientes si el contexto del plan no cambió. El asistente no puede cambiar el plan, decidir elegibilidad ni enviar solicitudes.",
+    "zh-Hans":
+        "回复使用此手机上的模型。聊天会为您的账户和计划加密保存在此手机上，不会共享或包含在导出中。仅在计划信息未改变时使用最近两轮对话回答后续问题。助手不能更改计划、决定资格或提交申请。",
+    "zh-Hant":
+        "回覆使用此手機上的模型。聊天會為您的帳戶和計畫加密儲存在此手機上，不會分享或包含在匯出中。僅在計畫資訊未改變時使用最近兩輪對話回答後續問題。助手不能更改計畫、決定資格或提交申請。",
+    "vi":
+        "Phản hồi dùng mô hình trên điện thoại. Trò chuyện được mã hóa cho tài khoản và kế hoạch của bạn, không chia sẻ hay xuất. Chỉ hai lượt gần nhất được dùng khi thông tin kế hoạch không đổi. Trợ lý không thể sửa kế hoạch, quyết định điều kiện hay nộp đơn.",
+    "fil":
+        "Gamit ng mga tugon ang modelo sa teleponong ito. Naka-encrypt ang mga chat para sa account at plano mo; hindi ibinabahagi o isinasama sa export. Dalawang kamakailang palitan lamang ang ginagamit kung hindi nagbago ang plano. Hindi makakapagbago ng plano, magpapasya ng pagiging kwalipikado, o magsusumite ng aplikasyon ang assistant.",
+  },
+  "This phone can save 10 chats with 12 replies each. Saved chats stay available until you clear history.": {
+    "es":
+        "Este teléfono puede guardar 10 chats con 12 respuestas cada uno. Se conservan hasta que borre el historial.",
+    "zh-Hans": "此手机可保存10个聊天，每个聊天12条回复。聊天会保留至您清除历史记录。",
+    "zh-Hant": "此手機可儲存10個聊天，每個聊天12條回覆。聊天會保留至您清除歷史紀錄。",
+    "vi":
+        "Điện thoại có thể lưu 10 cuộc trò chuyện, mỗi cuộc 12 phản hồi. Nội dung được giữ đến khi bạn xóa lịch sử.",
+    "fil":
+        "Makakapag-save ang teleponong ito ng 10 chat na may tig-12 tugon. Mananatili ang mga ito hanggang burahin mo ang history.",
+  },
+  "Saved chat storage is full. Clear history to start another chat.": {
+    "es":
+        "El almacenamiento de chats está lleno. Borre el historial para iniciar otro chat.",
+    "zh-Hans": "聊天存储空间已满。请清除历史记录以开始新聊天。",
+    "zh-Hant": "聊天儲存空間已滿。請清除歷史紀錄以開始新聊天。",
+    "vi": "Bộ nhớ trò chuyện đã đầy. Xóa lịch sử để bắt đầu trò chuyện khác.",
+    "fil":
+        "Puno na ang imbakan ng chat. Burahin ang history para magsimula ng ibang chat.",
+  },
+  "This chat is full. Start a new chat or clear history to send more questions.": {
+    "es":
+        "Este chat está lleno. Inicie uno nuevo o borre el historial para enviar más preguntas.",
+    "zh-Hans": "此聊天已满。请开始新聊天或清除历史记录以继续提问。",
+    "zh-Hant": "此聊天已滿。請開始新聊天或清除歷史紀錄以繼續提問。",
+    "vi":
+        "Cuộc trò chuyện này đã đầy. Bắt đầu cuộc trò chuyện mới hoặc xóa lịch sử để gửi thêm câu hỏi.",
+    "fil":
+        "Puno na ang chat na ito. Magsimula ng bagong chat o burahin ang history para magpadala pa ng tanong.",
+  },
 };

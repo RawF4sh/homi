@@ -14,7 +14,6 @@ import '../features/tracking/device_reminders.dart';
 import '../features/tracking/progress_service.dart';
 import '../shared/services/progress_api_client.dart';
 import '../shared/services/scan_model_api_client.dart';
-import '../features/tracking/program_progress_screen.dart';
 import 'appearance.dart';
 import 'theme.dart';
 import 'private_content_cover.dart';
@@ -492,7 +491,6 @@ class LiveSessionHost extends StatefulWidget {
 class _LiveSessionHostState extends State<LiveSessionHost> {
   bool _invitationOpening = false;
   var _navigator = GlobalKey<NavigatorState>();
-  bool _reminderOpening = false;
   String? _owner;
   int _ownerEpoch = -1, _openGeneration = 0;
   Future<AppServices>? _services;
@@ -571,7 +569,6 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
     final epoch = widget.session.epoch;
     if (owner != _owner || epoch != _ownerEpoch) {
       _navigator = GlobalKey<NavigatorState>();
-      _reminderOpening = false;
       final departingOwner = _owner;
       _ownerEpoch = epoch;
       _openGeneration++;
@@ -635,40 +632,7 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
       transport: widget.transport,
     );
     _opened = services;
-    services.reminderOpen.addListener(_openReminder);
     return services;
-  }
-
-  void _openReminder() {
-    final services = _opened;
-    if (!mounted ||
-        services == null ||
-        !services.reminderOpen.value ||
-        _reminderOpening ||
-        !services.coordinator.isCurrent) {
-      return;
-    }
-    _reminderOpening = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        if (!mounted ||
-            _opened != services ||
-            !services.coordinator.isCurrent ||
-            _navigator.currentState == null) {
-          return;
-        }
-        services.reminderOpen.value = false;
-        await _navigator.currentState!.push(
-          MaterialPageRoute(
-            builder: (_) => services.coordinator.snapshot == null
-                ? CaseHomeScreen(services: services)
-                : ProgramProgressScreen(services: services, tasksFirst: true),
-          ),
-        );
-      } finally {
-        _reminderOpening = false;
-      }
-    });
   }
 
   Future<void> _leaveUnavailableStorage(
@@ -767,7 +731,6 @@ class _LiveSessionHostState extends State<LiveSessionHost> {
               builder: (context, state) {
                 if (state.hasData) {
                   _openInvitation(state.data!);
-                  if (!_invitationOpening) _openReminder();
                   return CaseHomeScreen(services: state.data!);
                 }
                 if (state.hasError) {

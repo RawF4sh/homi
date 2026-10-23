@@ -365,8 +365,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                             ),
                           ),
                         ),
-                      if (_notice != null && !_feedbackAtAction)
-                        SahNotice(message: context.tr(_notice!)),
+                      if (_notice != null && !_feedbackAtAction) _noticeBody(),
                       if (_uncertain)
                         SahNotice(
                           title: context.tr('Check the last save'),
@@ -550,7 +549,9 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                           onReview: _reviewInvalid,
                           revealRevision: _validationAttempt,
                         ),
-                      if (_feedbackAtAction && _notice != null)
+                      if (_feedbackAtAction && _notice != null && _savedOnline)
+                        _noticeBody(),
+                      if (_feedbackAtAction && _notice != null && !_savedOnline)
                         SahActionFeedback(
                           key: const ValueKey('intake-save-feedback'),
                           message: context.tr(_notice!),
@@ -586,6 +587,18 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
       );
     },
   );
+  bool get _savedOnline =>
+      _notice == 'Answers saved. Program checks update on their own.' ||
+      _notice == 'The submitted answers are confirmed saved.';
+
+  Widget _noticeBody() => _savedOnline
+      ? _IntakeSavedFeedback(
+          key: const ValueKey('intake-save-feedback'),
+          title: context.tr('Saved online'),
+          message: context.tr(_notice!),
+        )
+      : SahNotice(message: context.tr(_notice!));
+
   String _savedLabel(String key) {
     final answers = _response?.saved?.answers.where((a) => a.key == key);
     final value = answers == null || answers.isEmpty
@@ -599,4 +612,56 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
         ? context.tr('No')
         : value.toString();
   }
+}
+
+class _IntakeSavedFeedback extends StatefulWidget {
+  const _IntakeSavedFeedback({
+    super.key,
+    required this.title,
+    required this.message,
+  });
+  final String title, message;
+
+  @override
+  State<_IntakeSavedFeedback> createState() => _IntakeSavedFeedbackState();
+}
+
+class _IntakeSavedFeedbackState extends State<_IntakeSavedFeedback> {
+  final _anchor = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+      final target = _anchor.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          alignment: 0.1,
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(key: _anchor, height: 1),
+        Semantics(
+          liveRegion: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [Text(widget.title), Text(widget.message)],
+          ),
+        ),
+      ],
+    ),
+  );
 }

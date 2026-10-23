@@ -1,3 +1,4 @@
+import 'homi_navigation_support.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -83,7 +84,7 @@ Future<void> _readFullWorkspaceText(WidgetTester tester, Finder finder) async {
 Future<void> _tap(WidgetTester tester, Finder finder) async {
   await tester.pumpAndSettle();
   if (finder.evaluate().isEmpty) await reveal(tester, finder);
-  await tester.ensureVisible(finder);
+  await Scrollable.ensureVisible(tester.element(finder), alignment: .5);
   await tester.pumpAndSettle();
   expect(finder.hitTestable(), findsOneWidget);
   await tester.tap(finder);
@@ -613,8 +614,16 @@ void main() {
           localized(locale, CaseHomeScreen(services: app)),
         );
         await tester.pumpAndSettle();
-        await _tap(tester, find.byKey(const ValueKey('nav-plans')));
-        await reveal(tester, find.text('Resident {name}'));
+        await openManagePlans(tester);
+        await tester.pumpAndSettle();
+        await reveal(tester, find.byKey(ValueKey('local-case-$id')));
+        final status = find.text(
+          l10n.text('Name saved on this device — sync pending'),
+        );
+        if (status.evaluate().isNotEmpty) {
+          await Scrollable.ensureVisible(tester.element(status), alignment: .5);
+          await tester.pumpAndSettle();
+        }
         _translatedText(
           tester,
           l10n,

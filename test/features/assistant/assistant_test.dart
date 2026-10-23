@@ -614,7 +614,7 @@ void main() {
 
   for (final locale in AppLocalizations.supportedLocales) {
     testWidgets(
-      '$locale options are accessible at large text and clear closes sheet',
+      '$locale options are accessible at large text and new chat closes sheet',
       (tester) async {
         tester.view.physicalSize = const Size(320, 640);
         tester.view.devicePixelRatio = 1;
@@ -639,7 +639,7 @@ void main() {
         await tester.pumpAndSettle();
         final l10n = AppLocalizations(locale);
         expect(find.text(l10n.text('Chat options')), findsOneWidget);
-        final clear = find.text(l10n.text('Clear conversation'));
+        final clear = find.text(l10n.text('New chat'));
         await tester.scrollUntilVisible(
           clear,
           160,

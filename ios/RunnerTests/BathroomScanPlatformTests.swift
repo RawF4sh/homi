@@ -12,6 +12,27 @@ final class BathroomScanPlatformTests: XCTestCase {
   private let secondID = "3620d5cd-9507-4fa0-ae3a-826155162191"
   private let identity: [Double] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
+  func testNamedRoomContextIsStrictAndKeepsCancelIDOnly() {
+    for type in ["bathroom", "entrance", "stairs", "livingSpaces", "bedroom", "kitchen"] {
+      let room: [String: Any] = ["type": type, "name": "Fictional " + type]
+      let request: [String: Any] = ["scanId": scanID, "room": room, "languageCode": "es"]
+      XCTAssertEqual(BathroomScanPlatform.requestID(request, allowLanguage: true), scanID)
+      XCTAssertNil(BathroomScanPlatform.requestID(request))
+      XCTAssertEqual(RoomScanContext.parse(room)?.type.rawValue, type)
+    }
+    for room: [String: Any] in [
+      ["type": "outdoorPaths", "name": "Outside"], ["type": "bedroom", "name": "Bad\nname"],
+      ["type": "bedroom", "name": String(repeating: "x", count: 81)],
+      ["type": "bedroom", "name": "Bedroom", "id": "private-id"],
+    ] {
+      XCTAssertNil(BathroomScanPlatform.requestID(["scanId": scanID, "room": room], allowLanguage: true))
+    }
+    let layout = BathroomScanCaptureLayout(camera: UIView(), status: UILabel(), cancelButton: UIButton(),
+      finishButton: UIButton(), language: "es", roomName: "Cocina")
+    XCTAssertTrue(layout.heading.text?.contains("Cocina") == true)
+    XCTAssertFalse(layout.heading.text?.contains("bathroom") == true)
+  }
+
   func testNativeCaptureUsesSelectedLanguageAndKeepsEnglishFallback() {
     let cancel = UIButton(type: .system)
     let finish = UIButton(type: .system)

@@ -202,7 +202,8 @@ void main() {
       expect(find.text('Saved to your case.'), findsOneWidget);
       expect(notice().tone, isNot(SahNoticeTone.success));
       await tester.pumpWidget(card(false));
-      expect(notice().tone, SahNoticeTone.success);
+      expect(find.text('Saved to your case.'), findsOneWidget);
+      expect(find.byType(SahNotice), findsNothing);
     });
 
     testWidgets('an uncertain save offers only a check', (tester) async {

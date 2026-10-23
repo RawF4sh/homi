@@ -215,7 +215,9 @@ class SahFeaturePanel extends StatelessWidget {
     required this.description,
     this.action,
     this.illustration,
+    this.neutral = false,
   });
+  final bool neutral;
   final String? eyebrow;
   final String title, description;
   final Widget? action, illustration;
@@ -226,8 +228,8 @@ class SahFeaturePanel extends StatelessWidget {
     final scheme = theme.colorScheme;
     final enlarged = MediaQuery.textScalerOf(context).scale(14) > 20;
     final dark = theme.brightness == Brightness.dark;
-    final panel = dark ? scheme.surfaceContainer : scheme.primary;
-    final onPanel = dark ? scheme.onSurface : scheme.onPrimary;
+    final panel = dark || neutral ? scheme.surfaceContainer : scheme.primary;
+    final onPanel = dark || neutral ? scheme.onSurface : scheme.onPrimary;
     return Container(
       padding: EdgeInsets.all(enlarged ? 16 : 24),
       decoration: BoxDecoration(

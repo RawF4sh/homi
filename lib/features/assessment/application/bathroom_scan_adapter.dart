@@ -1,5 +1,8 @@
 import 'package:flutter/services.dart';
 import '../../../l10n/app_language.dart';
+import '../../../l10n/app_localizations.dart';
+import '../domain/assessment_location.dart';
+import '../domain/home_safety/home_safety.dart';
 
 import '../../../shared/models/case_draft.dart';
 import '../domain/scan/bathroom_scan_scene.dart';
@@ -56,7 +59,13 @@ abstract interface class BathroomScanAdapter {
   Future<void> cancel(String scanId);
 }
 
-class NativeBathroomScanAdapter implements BathroomScanAdapter {
+/// Optional room-aware capture; existing adapters retain their ID-only contract.
+abstract interface class RoomContextScanAdapter {
+  Future<BathroomScanScene> startForRoom(String scanId, RoomInstance room);
+}
+
+class NativeBathroomScanAdapter
+    implements BathroomScanAdapter, RoomContextScanAdapter {
   const NativeBathroomScanAdapter({
     this.channel = const MethodChannel('safe_at_home/bathroom_scan'),
   });
@@ -78,13 +87,30 @@ class NativeBathroomScanAdapter implements BathroomScanAdapter {
   }
 
   @override
-  Future<BathroomScanScene> start(String scanId) async {
+  Future<BathroomScanScene> start(String scanId) => _start(scanId);
+
+  @override
+  Future<BathroomScanScene> startForRoom(String scanId, RoomInstance room) {
+    if (room.archived || room.type == AssessmentLocation.outdoorPaths) {
+      throw const FormatException('Room is not available for indoor capture.');
+    }
+    return _start(scanId, room: room);
+  }
+
+  Future<BathroomScanScene> _start(String scanId, {RoomInstance? room}) async {
     if (!isCaseUuidV4(scanId)) throw const FormatException('Invalid scan ID.');
-    final language = AppLanguageController.instance.effectiveLanguage.code;
+    final language = AppLanguageController.instance.effectiveLanguage;
     final scene = BathroomScanScene.fromJson(
       await channel.invokeMethod<Object?>('start', {
         'scanId': scanId,
-        if (language != 'en') 'languageCode': language,
+        if (language.code != 'en') 'languageCode': language.code,
+        if (room != null)
+          'room': {
+            'type': room.type.name,
+            'name':
+                room.name ??
+                AppLocalizations(language.locale!).text(room.type.title),
+          },
       }),
     );
     if (scene.scanId != scanId) {

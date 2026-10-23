@@ -51,7 +51,7 @@ final class BathroomScanPlatform {
       result(failure("scan_failed", "The scan request is invalid.")); return
     }
     guard request == nil else {
-      result(failure("scan_busy", "Another bathroom scan is already open.")); return
+      result(failure("scan_busy", "Another room scan is already open.")); return
     }
     guard #available(iOS 17.0, *), homeSupported() else {
       result(failure("scan_unavailable", "Connected capture requires a supported LiDAR iPhone.")); return
@@ -85,9 +85,10 @@ final class BathroomScanPlatform {
       })
   }
 
-  private static func requestID(_ arguments: Any?, allowLanguage: Bool = false) -> String? {
+  static func requestID(_ arguments: Any?, allowLanguage: Bool = false) -> String? {
     guard let args = arguments as? [String: Any],
-      args.count == 1 || (allowLanguage && args.count == 2 && args["languageCode"] != nil),
+      Set(args.keys).isSubset(of: allowLanguage ? ["scanId", "languageCode", "room"] : ["scanId"]),
+      args["room"] == nil || (allowLanguage && RoomScanContext.parse(args["room"]) != nil),
       args["languageCode"] == nil || (allowLanguage && ["en", "es", "zh-Hans", "zh-Hant", "vi", "fil"].contains(args["languageCode"] as? String ?? "")),
       let value = args["scanId"] as? String, BathroomScanGeometry.validScanID(value) else { return nil }
     return value
@@ -98,13 +99,13 @@ final class BathroomScanPlatform {
       result(failure("scan_failed", "The scan request is invalid.")); return
     }
     guard request == nil else {
-      result(failure("scan_busy", "Another bathroom scan is already open.")); return
+      result(failure("scan_busy", "Another room scan is already open.")); return
     }
     let available = capabilities()
     guard available["supported"] as? Bool == true else {
       let denied = available["reason"] as? String == "permission_denied"
       result(failure(denied ? "scan_permission_denied" : "scan_unavailable",
-        denied ? "Allow camera access in Settings to scan your bathroom."
+        denied ? "Allow camera access in Settings to scan this room."
           : "Camera scanning is unavailable. Continue with photos and manual measurements.")); return
     }
     let pending = BathroomScanRequest(scanID: scanID) { value in
@@ -135,12 +136,13 @@ final class BathroomScanPlatform {
           pending.complete(failure("scan_unavailable", "Close the current screen and try scanning again.")); return
         }
         let language = (arguments as? [String: Any])?["languageCode"] as? String ?? "en"
+        let room = RoomScanContext.parse((arguments as? [String: Any])?["room"])
         let controller: UIViewController & BathroomNativeScanController
         let complete: FlutterResult = { [weak pending] value in pending?.complete(value) }
         if #available(iOS 16.0, *), capabilities()["source"] as? String == "roomplan" {
-          controller = BathroomRoomCaptureController(scanID: scanID, language: language, completion: complete)
+          controller = BathroomRoomCaptureController(scanID: scanID, language: language, roomName: room?.name, completion: complete)
         } else if ARWorldTrackingConfiguration.isSupported {
-          controller = BathroomARKitCaptureController(scanID: scanID, language: language, completion: complete)
+          controller = BathroomARKitCaptureController(scanID: scanID, language: language, roomName: room?.name, completion: complete)
         } else {
           pending.complete(failure("scan_unavailable", "Camera scanning is unavailable.")); return
         }
@@ -156,6 +158,24 @@ final class BathroomScanPlatform {
 
   static func failure(_ code: String, _ message: String) -> FlutterError {
     FlutterError(code: code, message: message, details: nil)
+  }
+}
+
+/// Display-only context. Stable room/case IDs never cross the capture channel.
+struct RoomScanContext {
+  enum RoomType: String { case bathroom, entrance, stairs, livingSpaces, bedroom, kitchen }
+  let type: RoomType
+  let name: String
+  static func parse(_ value: Any?) -> RoomScanContext? {
+    guard let room = value as? [String: Any], Set(room.keys) == ["type", "name"],
+      let rawType = room["type"] as? String, let type = RoomType(rawValue: rawType),
+      let name = room["name"] as? String, !name.isEmpty, name.unicodeScalars.count <= 80,
+      name.trimmingCharacters(in: .whitespacesAndNewlines) == name,
+      !name.unicodeScalars.contains(where: { scalar in
+        let v = scalar.value
+        return v < 32 || (127...159).contains(v) || (0x2028...0x202e).contains(v) || (0x2066...0x2069).contains(v)
+      }) else { return nil }
+    return RoomScanContext(type: type, name: name)
   }
 }
 
@@ -203,12 +223,12 @@ final class BathroomScanRequest {
   }
 
   private func permissionDenied() {
-    complete(BathroomScanPlatform.failure("scan_permission_denied", "Allow camera access in Settings to scan your bathroom."))
+    complete(BathroomScanPlatform.failure("scan_permission_denied", "Allow camera access in Settings to scan this room."))
   }
 
   func cancel(scanID: String) {
     guard self.scanID == scanID else { return }
-    complete(BathroomScanPlatform.failure("scan_cancelled", "The bathroom scan was cancelled."))
+    complete(BathroomScanPlatform.failure("scan_cancelled", "The room scan was cancelled."))
   }
 
   func complete(_ value: Any?) {
@@ -287,7 +307,7 @@ enum BathroomScanReadiness {
       return BathroomScanPlatform.failure("scan_interrupted", "Return to the app and start the scan again.")
     }
     guard authorization == .authorized else {
-      return BathroomScanPlatform.failure("scan_permission_denied", "Allow camera access in Settings to scan your bathroom.")
+      return BathroomScanPlatform.failure("scan_permission_denied", "Allow camera access in Settings to scan this room.")
     }
     guard thermalState == .nominal || thermalState == .fair else {
       return BathroomScanPlatform.failure("scan_interrupted", "Let your device cool before starting another scan.")
@@ -324,9 +344,9 @@ final class BathroomScanCaptureLayout: UIView {
   let captureScroll = UIScrollView()
   let heading = UILabel()
 
-  init(camera: UIView, status: UILabel, cancelButton: UIButton, finishButton: UIButton, language: String = "en") {
+  init(camera: UIView, status: UILabel, cancelButton: UIButton, finishButton: UIButton, language: String = "en", roomName: String? = nil) {
     super.init(frame: .zero)
-    heading.text = BathroomScanText.text("Scan this room", language: language)
+    heading.text = BathroomScanText.text("Scan this room", language: language) + (roomName.map { "\n" + $0 } ?? "")
     heading.font = .preferredFont(forTextStyle: .title2)
     heading.adjustsFontForContentSizeCategory = true
     heading.numberOfLines = 0
@@ -462,6 +482,7 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
     write: { UIApplication.shared.isIdleTimerDisabled = $0 })
   private let scanID: String
   private let language: String
+  private let roomName: String?
   private let completion: FlutterResult
   private var captureView: RoomCaptureView?
   private var deadline: Timer?
@@ -469,8 +490,8 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
   private let status = UILabel()
   private let finishButton = UIButton(type: .system)
 
-  init(scanID: String, language: String = "en", completion: @escaping FlutterResult) {
-    self.scanID = scanID; self.language = language; self.completion = completion
+  init(scanID: String, language: String = "en", roomName: String? = nil, completion: @escaping FlutterResult) {
+    self.scanID = scanID; self.language = language; self.roomName = roomName; self.completion = completion
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -485,7 +506,7 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
     let cancel = UIButton(type: .system)
     cancel.addTarget(self, action: #selector(cancelScan), for: .touchUpInside)
     finishButton.addTarget(self, action: #selector(finishScan), for: .touchUpInside)
-    let layout = BathroomScanCaptureLayout(camera: camera, status: status, cancelButton: cancel, finishButton: finishButton, language: language)
+    let layout = BathroomScanCaptureLayout(camera: camera, status: status, cancelButton: cancel, finishButton: finishButton, language: language, roomName: roomName)
     layout.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(layout)
     NSLayoutConstraint.activate([
@@ -546,7 +567,7 @@ private final class BathroomRoomCaptureController: UIViewController, RoomCapture
   }
 
   @objc private func cancelScan() {
-    fail("scan_cancelled", "The bathroom scan was cancelled.")
+    fail("scan_cancelled", "The room scan was cancelled.")
   }
 
   @objc private func finishScan() {

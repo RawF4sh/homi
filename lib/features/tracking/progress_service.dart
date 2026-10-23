@@ -126,6 +126,7 @@ class ProgressService extends ChangeNotifier with WidgetsBindingObserver {
   Future<ProgressSnapshot> refresh(String caseId) => _serial(() async {
     try {
       final result = await _fetch(caseId);
+      feedback = null;
       await _reconcile();
       _guard();
       notifyListeners();

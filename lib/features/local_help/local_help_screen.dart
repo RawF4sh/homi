@@ -46,6 +46,8 @@ class LocalHelpScreen extends StatefulWidget {
     this.openExternal,
     this.directory = const OfficialReferralDirectory(),
     this.now,
+    this.embedded = false,
+    this.header,
   });
   final AppServices services;
   final String? findingId;
@@ -53,11 +55,15 @@ class LocalHelpScreen extends StatefulWidget {
   final Future<bool> Function(Uri)? openExternal;
   final ReferralDirectory directory;
   final DateTime Function()? now;
+  final bool embedded;
+  final Widget? header;
   @override
-  State<LocalHelpScreen> createState() => _LocalHelpScreenState();
+  LocalHelpScreenState createState() => LocalHelpScreenState();
 }
 
-class _LocalHelpScreenState extends State<LocalHelpScreen> {
+class LocalHelpScreenState extends State<LocalHelpScreen> {
+  bool get canLeave => !_working;
+
   LocalHelpRepository? _repository;
   LocalHelpRecord? _record;
   Map<String, Object?> _receipts = {};
@@ -307,256 +313,240 @@ class _LocalHelpScreenState extends State<LocalHelpScreen> {
     final r = _record;
     final repository = _repository;
     final available = widget.services.config.localHelpEnabled && _current;
+    final body = SahContent(
+      child: !available
+          ? Center(
+              child: Text(
+                context.tr('Reopen the selected plan to use local help.'),
+              ),
+            )
+          : ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                if (widget.header != null) widget.header!,
+                Text(
+                  context.tr(
+                    'Organizations may arrange repair or volunteer help. Confirm your address, costs and intake directly. No worker booking or funding is guaranteed.',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  context.tr(
+                    'Contacts stay on this device for this plan. Signing out removes them. Follow-ups use My next steps and its separate reminder controls.',
+                  ),
+                ),
+                if (_error != null) ...[
+                  SahNotice(
+                    message: context.tr(_error!),
+                    tone: SahNoticeTone.warning,
+                  ),
+                  if (r == null)
+                    TextButton(
+                      onPressed: _working ? null : _load,
+                      child: Text(context.tr('Retry')),
+                    ),
+                ],
+                if (_working) const LinearProgressIndicator(),
+                if (r != null) ...[
+                  _heading('Confirm your location'),
+                  Form(
+                    key: _locationForm,
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _city,
+                          maxLength: 100,
+                          decoration: InputDecoration(
+                            labelText: context.tr('City (optional)'),
+                          ),
+                        ),
+                        TextFormField(
+                          controller: _county,
+                          maxLength: 100,
+                          decoration: InputDecoration(
+                            labelText: context.tr('County (optional)'),
+                          ),
+                        ),
+                        TextFormField(
+                          controller: _zip,
+                          maxLength: 10,
+                          keyboardType: TextInputType.text,
+                          decoration: InputDecoration(
+                            labelText: context.tr('ZIP code (optional)'),
+                          ),
+                          validator: (s) =>
+                              s!.trim().isEmpty ||
+                                  RegExp(
+                                    r'^[0-9]{5}(-[0-9]{4})?$',
+                                  ).hasMatch(s.trim())
+                              ? null
+                              : context.tr('Enter a 5-digit ZIP or ZIP+4.'),
+                        ),
+                        FilledButton(
+                          onPressed: _working
+                              ? null
+                              : () {
+                                  if (_locationForm.currentState!.validate()) {
+                                    _run(
+                                      () => _save(
+                                        () => repository!.confirmLocation(
+                                          HelpLocation(
+                                            city: _city.text.trim(),
+                                            county: _county.text.trim(),
+                                            zip: _zip.text.trim().isEmpty
+                                                ? null
+                                                : _zip.text.trim(),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                          child: Text(context.tr('Confirm location')),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    context.tr(
+                      'Unknown location? Use the national locators. Location is not sent to these websites.',
+                    ),
+                  ),
+                  if (r.location != null)
+                    Text(
+                      context.tr('Confirmed location: {location}', {
+                        'location': [
+                          r.location!.city,
+                          r.location!.county,
+                          r.location!.zip ?? '',
+                        ].where((v) => v.isNotEmpty).join(', '),
+                      }),
+                    ),
+                  ExpansionTile(
+                    key: const ValueKey('local-provider-search'),
+                    leading: const Icon(Icons.search),
+                    title: Text(context.tr('Search local providers')),
+                    maintainState: true,
+                    children: [
+                      ProviderSearchSection(
+                        showHeading: false,
+                        directory: repository!.directory,
+                        confirmedCounty: r.location?.county,
+                        providerCard: (p) => _providerCard(p, r),
+                      ),
+                    ],
+                  ),
+                  _heading('Official referrals'),
+                  if (r.location == null ||
+                      !repository.directory.providers.any(
+                        (p) =>
+                            !p.isLocator && p.listsCounty(r.location!.county),
+                      ))
+                    Text(
+                      context.tr(
+                        'No reviewed local listing for this location. Use the national locators to ask who serves your address.',
+                      ),
+                    ),
+                  for (final p in repository.directory.providers.where(
+                    (p) =>
+                        !p.isLocalProvider &&
+                        (p.isLocator ||
+                            r.location != null &&
+                                (r.location!.county.isEmpty ||
+                                    p.listsCounty(r.location!.county))),
+                  ))
+                    _providerCard(p, r),
+                  _heading('Saved contacts'),
+                  if (r.contacts.isEmpty)
+                    Text(context.tr('No contacts saved yet.')),
+                  for (final c in r.contacts)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              repository.directory
+                                      .provider(c.providerId)
+                                      ?.name ??
+                                  context.tr('Organization no longer listed'),
+                            ),
+                            if (c.note.isNotEmpty) Text(c.note),
+                            if (repository.directory.provider(c.providerId)
+                                case final p?) ...[
+                              if (p.phone != null) SelectableText(p.phone!),
+                              SelectableText(p.website),
+                            ],
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                if (repository.directory.provider(c.providerId)
+                                    case final p?) ...[
+                                  if (p.phone != null)
+                                    TextButton(
+                                      onPressed: _working
+                                          ? null
+                                          : () => _open(p, phone: true),
+                                      child: Text(
+                                        context.tr('Call organization'),
+                                      ),
+                                    ),
+                                  TextButton(
+                                    onPressed: _working ? null : () => _open(p),
+                                    child: Text(
+                                      context.tr('Open official website'),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _working
+                                        ? null
+                                        : () => _contact(p, c),
+                                    child: Text(
+                                      context.tr('Edit contact note'),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _working
+                                        ? null
+                                        : () => _task(c.providerId),
+                                    child: Text(context.tr('Add follow-up')),
+                                  ),
+                                ],
+                                TextButton(
+                                  onPressed: _working
+                                      ? null
+                                      : () => _run(
+                                          () => _save(
+                                            () => repository.removeContact(
+                                              c.providerId,
+                                            ),
+                                          ),
+                                        ),
+                                  child: Text(
+                                    context.tr('Remove saved contact'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  _heading('Original local follow-ups'),
+                  if (r.tasks.isEmpty) Text(context.tr('No follow-ups yet.')),
+                  for (final t in r.tasks) _taskCard(t, repository),
+                ],
+              ],
+            ),
+    );
+    if (widget.embedded) return body;
     return PopScope(
       canPop: !_working,
       child: Scaffold(
         appBar: AppBar(title: Text(context.tr('Find local help'))),
-        body: SafeArea(
-          child: SahContent(
-            child: !available
-                ? Center(
-                    child: Text(
-                      context.tr('Reopen the selected plan to use local help.'),
-                    ),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.all(20),
-                    children: [
-                      Text(
-                        context.tr(
-                          'Organizations may arrange repair or volunteer help. Confirm your address, costs and intake directly. No worker booking or funding is guaranteed.',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        context.tr(
-                          'Contacts stay on this device for this plan. Signing out removes them. Follow-ups use My next steps and its separate reminder controls.',
-                        ),
-                      ),
-                      if (_error != null) ...[
-                        SahNotice(
-                          message: context.tr(_error!),
-                          tone: SahNoticeTone.warning,
-                        ),
-                        if (r == null)
-                          TextButton(
-                            onPressed: _working ? null : _load,
-                            child: Text(context.tr('Retry')),
-                          ),
-                      ],
-                      if (_working) const LinearProgressIndicator(),
-                      if (r != null) ...[
-                        _heading('Confirm your location'),
-                        Form(
-                          key: _locationForm,
-                          child: Column(
-                            children: [
-                              TextFormField(
-                                controller: _city,
-                                maxLength: 100,
-                                decoration: InputDecoration(
-                                  labelText: context.tr('City (optional)'),
-                                ),
-                              ),
-                              TextFormField(
-                                controller: _county,
-                                maxLength: 100,
-                                decoration: InputDecoration(
-                                  labelText: context.tr('County (optional)'),
-                                ),
-                              ),
-                              TextFormField(
-                                controller: _zip,
-                                maxLength: 10,
-                                keyboardType: TextInputType.text,
-                                decoration: InputDecoration(
-                                  labelText: context.tr('ZIP code (optional)'),
-                                ),
-                                validator: (s) =>
-                                    s!.trim().isEmpty ||
-                                        RegExp(
-                                          r'^[0-9]{5}(-[0-9]{4})?$',
-                                        ).hasMatch(s.trim())
-                                    ? null
-                                    : context.tr(
-                                        'Enter a 5-digit ZIP or ZIP+4.',
-                                      ),
-                              ),
-                              FilledButton(
-                                onPressed: _working
-                                    ? null
-                                    : () {
-                                        if (_locationForm.currentState!
-                                            .validate()) {
-                                          _run(
-                                            () => _save(
-                                              () => repository!.confirmLocation(
-                                                HelpLocation(
-                                                  city: _city.text.trim(),
-                                                  county: _county.text.trim(),
-                                                  zip: _zip.text.trim().isEmpty
-                                                      ? null
-                                                      : _zip.text.trim(),
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        }
-                                      },
-                                child: Text(context.tr('Confirm location')),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          context.tr(
-                            'Unknown location? Use the national locators. Location is not sent to these websites.',
-                          ),
-                        ),
-                        if (r.location != null)
-                          Text(
-                            context.tr('Confirmed location: {location}', {
-                              'location': [
-                                r.location!.city,
-                                r.location!.county,
-                                r.location!.zip ?? '',
-                              ].where((v) => v.isNotEmpty).join(', '),
-                            }),
-                          ),
-                        ExpansionTile(
-                          key: const ValueKey('local-provider-search'),
-                          leading: const Icon(Icons.search),
-                          title: Text(context.tr('Search local providers')),
-                          maintainState: true,
-                          children: [
-                            ProviderSearchSection(
-                              showHeading: false,
-                              directory: repository!.directory,
-                              confirmedCounty: r.location?.county,
-                              providerCard: (p) => _providerCard(p, r),
-                            ),
-                          ],
-                        ),
-                        _heading('Official referrals'),
-                        if (r.location == null ||
-                            !repository.directory.providers.any(
-                              (p) =>
-                                  !p.isLocator &&
-                                  p.listsCounty(r.location!.county),
-                            ))
-                          Text(
-                            context.tr(
-                              'No reviewed local listing for this location. Use the national locators to ask who serves your address.',
-                            ),
-                          ),
-                        for (final p in repository.directory.providers.where(
-                          (p) =>
-                              !p.isLocalProvider &&
-                              (p.isLocator ||
-                                  r.location != null &&
-                                      (r.location!.county.isEmpty ||
-                                          p.listsCounty(r.location!.county))),
-                        ))
-                          _providerCard(p, r),
-                        _heading('Saved contacts'),
-                        if (r.contacts.isEmpty)
-                          Text(context.tr('No contacts saved yet.')),
-                        for (final c in r.contacts)
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Text(
-                                    repository.directory
-                                            .provider(c.providerId)
-                                            ?.name ??
-                                        context.tr(
-                                          'Organization no longer listed',
-                                        ),
-                                  ),
-                                  if (c.note.isNotEmpty) Text(c.note),
-                                  if (repository.directory.provider(
-                                        c.providerId,
-                                      )
-                                      case final p?) ...[
-                                    if (p.phone != null)
-                                      SelectableText(p.phone!),
-                                    SelectableText(p.website),
-                                  ],
-                                  Wrap(
-                                    spacing: 8,
-                                    children: [
-                                      if (repository.directory.provider(
-                                            c.providerId,
-                                          )
-                                          case final p?) ...[
-                                        if (p.phone != null)
-                                          TextButton(
-                                            onPressed: _working
-                                                ? null
-                                                : () => _open(p, phone: true),
-                                            child: Text(
-                                              context.tr('Call organization'),
-                                            ),
-                                          ),
-                                        TextButton(
-                                          onPressed: _working
-                                              ? null
-                                              : () => _open(p),
-                                          child: Text(
-                                            context.tr('Open official website'),
-                                          ),
-                                        ),
-                                        TextButton(
-                                          onPressed: _working
-                                              ? null
-                                              : () => _contact(p, c),
-                                          child: Text(
-                                            context.tr('Edit contact note'),
-                                          ),
-                                        ),
-                                        TextButton(
-                                          onPressed: _working
-                                              ? null
-                                              : () => _task(c.providerId),
-                                          child: Text(
-                                            context.tr('Add follow-up'),
-                                          ),
-                                        ),
-                                      ],
-                                      TextButton(
-                                        onPressed: _working
-                                            ? null
-                                            : () => _run(
-                                                () => _save(
-                                                  () =>
-                                                      repository.removeContact(
-                                                        c.providerId,
-                                                      ),
-                                                ),
-                                              ),
-                                        child: Text(
-                                          context.tr('Remove saved contact'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        _heading('Original local follow-ups'),
-                        if (r.tasks.isEmpty)
-                          Text(context.tr('No follow-ups yet.')),
-                        for (final t in r.tasks) _taskCard(t, repository),
-                      ],
-                    ],
-                  ),
-          ),
-        ),
+        body: SafeArea(child: body),
       ),
     );
   }

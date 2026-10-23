@@ -23,11 +23,13 @@ class HomeSafetyScreen extends StatefulWidget {
     this.catalog,
     this.scansFirst = false,
     this.workspaceMode = false,
+    this.embedded = false,
     this.initialRoomId,
   });
   final HomeSafetyCatalog? catalog;
   final bool scansFirst;
   final bool workspaceMode;
+  final bool embedded;
   final String? initialRoomId;
   final AppServices services;
   @override
@@ -48,6 +50,14 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
     selectedRoom = id;
     _roomSection = 0;
   });
+
+  /// Returns true when this feature consumed a back action.
+  bool handleBack() {
+    if (!canLeave || !enabled) return true;
+    if (selectedRoom == null) return false;
+    _roomBack();
+    return true;
+  }
 
   void _roomBack() {
     if (_roomSection != 0) {
@@ -565,7 +575,16 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
     await s.refresh();
   });
 
-  Future<void> openRoomScan(RoomInstance? room) => run(() async {
+  Future<void> openRoomScan(RoomInstance? room) => openRoomEvidence(
+    room,
+    scan: room?.type != AssessmentLocation.outdoorPaths,
+  );
+
+  Future<void> openRoomEvidence(
+    RoomInstance? room, {
+    bool scan = false,
+    bool photo = true,
+  }) => run(() async {
     final previous = session!;
     if (previous.hasPending &&
         !previous.offline &&
@@ -581,7 +600,8 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
           services: widget.services,
           scanRoom: room,
           legacyScan: room == null,
-          startWithRoomScan: room?.type != AssessmentLocation.outdoorPaths,
+          startWithRoomScan: scan,
+          initialManualPhoto: photo,
         ),
       ),
     );
@@ -829,13 +849,58 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
     super.dispose();
   }
 
+  Widget _page({required Widget body, required AppBar appBar}) =>
+      widget.embedded
+      ? body
+      : Scaffold(
+          appBar: appBar,
+          body: SafeArea(child: body),
+        );
+
+  List<Widget> _contextActions(HomeSafetySession s, RoomInstance? room) => [
+    if (room != null) ...[
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          key: const ValueKey('rooms-back'),
+          onPressed: enabled && canLeave ? handleBack : null,
+          icon: const Icon(Icons.arrow_back),
+          label: Text(context.tr('Back')),
+        ),
+      ),
+      Semantics(
+        header: true,
+        child: Text(
+          roomTitle(room),
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+      ),
+    ],
+    Wrap(
+      spacing: 8,
+      children: [
+        TextButton.icon(
+          onPressed: editable && !s.caseWriteBlocked ? openReport : null,
+          icon: const Icon(Icons.picture_as_pdf_outlined),
+          label: Text(context.tr('Room and checklist report')),
+        ),
+        TextButton.icon(
+          onPressed: enabled ? () => run(s.refresh) : null,
+          icon: const Icon(Icons.refresh),
+          label: Text(context.tr('Check saved state')),
+        ),
+      ],
+    ),
+    const SizedBox(height: 16),
+  ];
+
   @override
   Widget build(BuildContext context) => FutureBuilder<void>(
     future: ready,
     builder: (context, loading) {
       final s = session;
       if (loading.hasError) {
-        return Scaffold(
+        return _page(
           appBar: AppBar(
             title: Text(
               context.tr(
@@ -847,20 +912,18 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
               ),
             ),
           ),
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                context.tr(
-                  'The checklist could not be opened. Existing device changes have been kept. Reopen the case to try again.',
-                ),
+          body: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              context.tr(
+                'The checklist could not be opened. Existing device changes have been kept. Reopen the case to try again.',
               ),
             ),
           ),
         );
       }
       if (loading.connectionState != ConnectionState.done || s == null) {
-        return Scaffold(
+        return _page(
           appBar: AppBar(
             title: Text(
               context.tr(
@@ -882,13 +945,13 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
               .where((r) => r.id == selectedRoom)
               .firstOrNull;
           return PopScope(
-            canPop: room == null && canLeave,
+            canPop: widget.embedded || (room == null && canLeave),
             onPopInvokedWithResult: (popped, result) {
-              if (!popped && room != null && enabled) {
+              if (!widget.embedded && !popped && room != null && enabled) {
                 _roomBack();
               }
             },
-            child: Scaffold(
+            child: _page(
               appBar: AppBar(
                 title: Text(
                   room == null
@@ -927,159 +990,158 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
                   ),
                 ],
               ),
-              body: SafeArea(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 720),
-                    child: ListView(
-                      key: widget.workspaceMode
-                          ? ValueKey('room-page-${room?.id}-$_roomSection')
-                          : null,
-                      padding: const EdgeInsets.all(20),
-                      children: [
-                        if (!widget.workspaceMode &&
-                            (!widget.scansFirst || room != null)) ...[
-                          Text(
-                            context.tr(
-                              'Home safety questions adapted from CDC STEADI. This is not a clinical fall-risk score or a safety certification.',
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: enabled
-                                ? () => run(() async {
-                                    if (!await launchUrl(
-                                      Uri.parse(s.catalog.sourceUrl),
-                                      mode: LaunchMode.externalApplication,
-                                    )) {
-                                      {
-                                        throw StateError('Source unavailable.');
-                                      }
-                                    }
-                                  })
-                                : null,
-                            child: Text(context.tr('View CDC source (2017)')),
-                          ),
-                          Text(
-                            context.tr(
-                              'Checklist translations are provided by the app; they are not official CDC translations.',
-                            ),
-                          ),
-                        ],
-                        if (error != null)
-                          SahNotice(
-                            message: context.tr(error!),
-                            tone: SahNoticeTone.warning,
-                          ),
-                        if (s.localSaveFailed)
-                          SahNotice(
-                            message: context.tr(
-                              'The device save failed. Keep this screen open and try again.',
-                            ),
-                            tone: SahNoticeTone.error,
-                          ),
-                        if (s.offline)
-                          SahNotice(
-                            message: context.tr(
-                              'Your checklist is saved on this device. Online saving is unavailable right now. You can keep working here.',
-                            ),
-                          ),
-                        if (s.caseWriteBlocked)
-                          SahNotice(
-                            message: context.tr(
-                              'Resident details have unsaved changes. You can continue the checklist here; resolve those details before syncing.',
-                            ),
-                          ),
-                        if (s.conflict != null) ...[
-                          SahNotice(
-                            message: context.tr(
-                              'This device and the saved checklist differ. Review both before continuing.',
-                            ),
-                            tone: SahNoticeTone.warning,
-                          ),
-                          if (s.pendingRoomDeletion)
-                            Text(
-                              context.tr(
-                                'Use the saved checklist, then reopen the archived room to review deletion again.',
-                              ),
-                            )
-                          else
-                            OutlinedButton(
-                              onPressed: enabled ? () => resolve(true) : null,
-                              child: Text(
-                                context.tr('Keep device changes for review'),
-                              ),
-                            ),
-                          TextButton(
-                            onPressed: enabled ? () => resolve(false) : null,
-                            child: Text(context.tr('Use saved checklist')),
-                          ),
-                        ] else if (s.needsReconcile)
-                          OutlinedButton(
-                            onPressed: enabled ? () => run(s.refresh) : null,
-                            child: Text(context.tr('Check saved state')),
-                          ),
-                        Semantics(
-                          liveRegion: true,
-                          child: Text(
-                            context.tr(
-                              s.hasPending
-                                  ? 'Saved on this device · {count} changes to sync'
-                                  : s.offline
-                                  ? 'Checklist kept on this device'
-                                  : 'Checklist saved online',
-                              {'count': s.pending.length},
-                            ),
+              body: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: ListView(
+                    key: widget.workspaceMode
+                        ? ValueKey('room-page-${room?.id}-$_roomSection')
+                        : null,
+                    padding: const EdgeInsets.all(20),
+                    children: [
+                      if (widget.embedded) ..._contextActions(s, room),
+                      if (!widget.workspaceMode &&
+                          (!widget.scansFirst || room != null)) ...[
+                        Text(
+                          context.tr(
+                            'Home safety questions adapted from CDC STEADI. This is not a clinical fall-risk score or a safety certification.',
                           ),
                         ),
-                        if (s.hasPending)
-                          FilledButton.icon(
-                            key: const ValueKey('rooms-sync'),
-                            onPressed: editable && !s.caseWriteBlocked
-                                ? () => run(s.save)
-                                : null,
-                            icon: const Icon(Icons.cloud_upload_outlined),
-                            label: Text(context.tr('Save checklist online')),
+                        TextButton(
+                          onPressed: enabled
+                              ? () => run(() async {
+                                  if (!await launchUrl(
+                                    Uri.parse(s.catalog.sourceUrl),
+                                    mode: LaunchMode.externalApplication,
+                                  )) {
+                                    {
+                                      throw StateError('Source unavailable.');
+                                    }
+                                  }
+                                })
+                              : null,
+                          child: Text(context.tr('View CDC source (2017)')),
+                        ),
+                        Text(
+                          context.tr(
+                            'Checklist translations are provided by the app; they are not official CDC translations.',
                           ),
-                        const SizedBox(height: 16),
-                        if (room?.archived == true) ...[
-                          ...archivedRoom(s, room!),
-                        ] else if (widget.workspaceMode && room != null) ...[
-                          if (_roomSection == 0)
-                            ...roomOverview(s, room)
-                          else if (_roomSection == 1)
-                            ...roomQuestions(s, room)
-                          else
-                            ...roomConcerns(s, room),
-                        ] else if (room == null && widget.scansFirst) ...[
-                          FilledButton.icon(
-                            key: const ValueKey('rooms-add'),
-                            onPressed: editable && s.document.rooms.length < 32
-                                ? roomDialog
-                                : null,
-                            icon: const Icon(Icons.add),
-                            label: Text(context.tr('Add a room')),
-                          ),
-                          const SizedBox(height: 16),
-                          homeModelEntry(),
-                          RoomScanCards(
-                            key: ValueKey('room-scans-$scanEpoch'),
-                            store: widget.services.store,
-                            caseId: s.caseId,
-                            rooms: s.document.activeRooms,
-                            isCurrent: () => mounted && s.isCurrent,
-                            enabled: editable,
-                            onOpen: openRoomScan,
-                            onChecklist: (r) => _selectRoom(r.id),
-                            onArchive: (r) => run(() => changeRoomArchive(r)),
-                          ),
-                          ...archivedRooms(s),
-                        ] else if (room == null)
-                          ...roomList(s)
-                        else
-                          ...roomChecklist(s, room),
+                        ),
                       ],
-                    ),
+                      if (error != null)
+                        SahNotice(
+                          message: context.tr(error!),
+                          tone: SahNoticeTone.warning,
+                        ),
+                      if (s.localSaveFailed)
+                        SahNotice(
+                          message: context.tr(
+                            'The device save failed. Keep this screen open and try again.',
+                          ),
+                          tone: SahNoticeTone.error,
+                        ),
+                      if (s.offline)
+                        SahNotice(
+                          message: context.tr(
+                            'Your checklist is saved on this device. Online saving is unavailable right now. You can keep working here.',
+                          ),
+                        ),
+                      if (s.caseWriteBlocked)
+                        SahNotice(
+                          message: context.tr(
+                            'Resident details have unsaved changes. You can continue the checklist here; resolve those details before syncing.',
+                          ),
+                        ),
+                      if (s.conflict != null) ...[
+                        SahNotice(
+                          message: context.tr(
+                            'This device and the saved checklist differ. Review both before continuing.',
+                          ),
+                          tone: SahNoticeTone.warning,
+                        ),
+                        if (s.pendingRoomDeletion)
+                          Text(
+                            context.tr(
+                              'Use the saved checklist, then reopen the archived room to review deletion again.',
+                            ),
+                          )
+                        else
+                          OutlinedButton(
+                            onPressed: enabled ? () => resolve(true) : null,
+                            child: Text(
+                              context.tr('Keep device changes for review'),
+                            ),
+                          ),
+                        TextButton(
+                          onPressed: enabled ? () => resolve(false) : null,
+                          child: Text(context.tr('Use saved checklist')),
+                        ),
+                      ] else if (s.needsReconcile)
+                        OutlinedButton(
+                          onPressed: enabled ? () => run(s.refresh) : null,
+                          child: Text(context.tr('Check saved state')),
+                        ),
+                      Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          context.tr(
+                            s.hasPending
+                                ? 'Saved on this device · {count} changes to sync'
+                                : s.offline
+                                ? 'Checklist kept on this device'
+                                : 'Checklist saved online',
+                            {'count': s.pending.length},
+                          ),
+                        ),
+                      ),
+                      if (s.hasPending)
+                        FilledButton.icon(
+                          key: const ValueKey('rooms-sync'),
+                          onPressed: editable && !s.caseWriteBlocked
+                              ? () => run(s.save)
+                              : null,
+                          icon: const Icon(Icons.cloud_upload_outlined),
+                          label: Text(context.tr('Save checklist online')),
+                        ),
+                      const SizedBox(height: 16),
+                      if (room?.archived == true) ...[
+                        ...archivedRoom(s, room!),
+                      ] else if (widget.workspaceMode && room != null) ...[
+                        if (_roomSection == 0)
+                          ...roomOverview(s, room)
+                        else if (_roomSection == 1)
+                          ...roomQuestions(s, room)
+                        else
+                          ...roomConcerns(s, room),
+                      ] else if (room == null && widget.scansFirst) ...[
+                        FilledButton.icon(
+                          key: const ValueKey('rooms-add'),
+                          onPressed: editable && s.document.rooms.length < 32
+                              ? roomDialog
+                              : null,
+                          icon: const Icon(Icons.add),
+                          label: Text(context.tr('Add a room')),
+                        ),
+                        const SizedBox(height: 16),
+                        homeModelEntry(),
+                        RoomScanCards(
+                          key: ValueKey('room-scans-$scanEpoch'),
+                          store: widget.services.store,
+                          caseId: s.caseId,
+                          rooms: s.document.activeRooms,
+                          isCurrent: () => mounted && s.isCurrent,
+                          enabled: editable,
+                          onOpen: openRoomScan,
+                          onChecklist: (r) => _selectRoom(r.id),
+                          onArchive: (r) => run(() => changeRoomArchive(r)),
+                        ),
+                        ...archivedRooms(s),
+                      ] else if (room == null)
+                        ...roomList(s)
+                      else
+                        ...roomChecklist(s, room),
+                    ],
                   ),
                 ),
               ),
@@ -1187,6 +1249,18 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
         questionsLabel: answered < questions.length
             ? 'Continue room questions'
             : 'Review room questions',
+      ),
+      OutlinedButton.icon(
+        key: const ValueKey('room-add-photo'),
+        onPressed: editable ? () => openRoomEvidence(room) : null,
+        icon: const Icon(Icons.add_a_photo_outlined),
+        label: Text(context.tr('Add photo')),
+      ),
+      OutlinedButton.icon(
+        key: const ValueKey('room-enter-measurement'),
+        onPressed: editable ? () => openRoomEvidence(room, photo: false) : null,
+        icon: const Icon(Icons.straighten),
+        label: Text(context.tr('Enter measurement')),
       ),
       SahActionTile(
         key: const ValueKey('room-concerns'),

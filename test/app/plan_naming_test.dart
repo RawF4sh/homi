@@ -1,3 +1,4 @@
+import 'homi_navigation_support.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -140,6 +141,9 @@ void main() {
   }
 
   Future<void> reveal(WidgetTester tester, Finder target) async {
+    final scroll = find.byType(Scrollable).first;
+    tester.state<ScrollableState>(scroll).position.jumpTo(0);
+    await tick(tester);
     if (target.evaluate().isEmpty) {
       await tester.scrollUntilVisible(
         target,
@@ -189,7 +193,7 @@ void main() {
   }
 
   Future<void> plans(WidgetTester tester) async {
-    await tester.tap(find.byKey(const ValueKey('nav-plans')));
+    await openManagePlans(tester);
     await tick(tester);
   }
 
@@ -429,7 +433,7 @@ void main() {
     store.delayedNameRead = Completer<Map<String, Object?>?>();
     await tester.tap(rename);
     await tick(tester);
-    await tester.pageBack();
+    await tester.binding.handlePopRoute();
     await tick(tester);
     store.delayedNameRead!.complete(null);
     await tick(tester);

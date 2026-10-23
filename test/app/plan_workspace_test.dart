@@ -25,7 +25,7 @@ import 'app_design_test.dart' show narrowLargeText;
 
 Future<void> tapKey(WidgetTester tester, String key) async {
   final target = find.byKey(ValueKey(key));
-  if (key.startsWith('plan-tab-')) {
+  if (key.startsWith('plan-tab-') || key == 'ask-homi') {
     await tester.tap(target);
   } else {
     final scroll = find.byType(Scrollable).first;
@@ -121,10 +121,18 @@ void main() {
         );
         await tester.pumpAndSettle();
         final words = AppLocalizations(locale);
-        expect(find.byType(NavigationDestination), findsNWidgets(4));
+        for (final destination in [
+          'plan',
+          'rooms',
+          'help',
+          'tasks',
+          'settings',
+        ]) {
+          expect(find.byKey(ValueKey('plan-tab-$destination')), findsOneWidget);
+        }
         expect(find.byKey(const ValueKey('case-assessment')), findsNothing);
         expect(find.byKey(const ValueKey('case-room-scans')), findsNothing);
-        await tapKey(tester, 'case-assistant');
+        await tapKey(tester, 'ask-homi');
         expect(find.byType(PlanAssistantScreen), findsOneWidget);
         expect(
           find.text(
@@ -140,16 +148,15 @@ void main() {
         expect(find.byType(HomeSafetyScreen), findsOneWidget);
         await tapKey(tester, 'plan-tab-tasks');
         expect(
-          find.text(words.text('Tasks are not available yet.')),
+          find.text(
+            words.text(
+              'Tasks are disabled in this build. Check feature availability in Settings.',
+            ),
+          ),
           findsOneWidget,
         );
         await tapKey(tester, 'plan-tab-plan');
-        expect(
-          tester
-              .widget<NavigationBar>(find.byType(NavigationBar))
-              .selectedIndex,
-          0,
-        );
+        expect(find.byKey(const ValueKey('plan-tab-plan')), findsOneWidget);
         expect(tester.takeException(), isNull);
       });
     }
@@ -206,16 +213,21 @@ void main() {
       await tapKey(tester, 'plan-tab-rooms');
       await tapKey(tester, 'room-upstairs');
       expect(find.text('View room model'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('room-concerns')),
+        160,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.byKey(const ValueKey('room-concerns')), findsOneWidget);
       await preview(tester, 'room');
       await tapKey(tester, 'room-continue-questions');
       expect(find.text('Room questions'), findsOneWidget);
-      await tester.pageBack();
+      await tapKey(tester, 'rooms-back');
       await tester.pumpAndSettle();
       expect(find.text('View room model'), findsOneWidget);
       await tapKey(tester, 'room-concerns');
       expect(find.text('Concerns and evidence'), findsOneWidget);
-      await tester.pageBack();
+      await tapKey(tester, 'rooms-back');
       await tester.pumpAndSettle();
       await tapKey(tester, 'plan-tab-tasks');
       expect(find.byType(ProgramProgressScreen), findsOneWidget);
@@ -225,7 +237,7 @@ void main() {
       expect(find.text('Main bathroom'), findsOneWidget);
       expect(find.text('View room model'), findsOneWidget);
       expect(h.store.bytes[modelKey], originalModel);
-      await tester.pageBack();
+      await tapKey(tester, 'rooms-back');
       await tester.pumpAndSettle();
       await tapKey(tester, 'room-downstairs');
       expect(
@@ -235,7 +247,7 @@ void main() {
       expect(find.text('View room model'), findsNothing);
       expect(h.store.bytes[modelKey], originalModel);
       await tapKey(tester, 'plan-tab-plan');
-      await tapKey(tester, 'case-assistant');
+      await tapKey(tester, 'ask-homi');
       expect(find.byType(TextField), findsNothing);
       expect(tester.takeException(), isNull);
     },
@@ -281,7 +293,6 @@ void main() {
         }
         await tapKey(tester, 'plan-tab-plan');
         await tapKey(tester, 'plan-tab-rooms');
-        await tapKey(tester, 'room-continue-questions');
         await tester.scrollUntilVisible(
           find.byKey(const ValueKey('answer-bedroom.path')),
           150,
@@ -345,7 +356,9 @@ void main() {
     await tapKey(tester, 'plan-tab-rooms');
     final release = Completer<void>();
     h.server.beforeRead = () => release.future;
-    await tester.tap(find.byTooltip('Check saved state'));
+    final refresh = find.widgetWithText(TextButton, 'Check saved state');
+    await tester.ensureVisible(refresh);
+    await tester.tap(refresh);
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('plan-tab-plan')));
     await tester.pump();

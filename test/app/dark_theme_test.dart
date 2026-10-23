@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -136,15 +137,76 @@ void main() {
       tester.element(find.text('Appearance')),
     ).scaffoldBackgroundColor;
     expect(background(), SafeAtHomeTheme.ivory);
-    await tester.tap(find.text('Dark'));
+    await tester.tap(find.byKey(const ValueKey('appearance-selection')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dark').last);
     await tester.pumpAndSettle();
     expect(appearance.value, ThemeMode.dark);
     expect(background(), SafeAtHomeTheme.darkBackground);
-    await tester.tap(find.text('Light'));
+    await tester.tap(find.byKey(const ValueKey('appearance-selection')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Light').last);
     await tester.pumpAndSettle();
     expect(background(), SafeAtHomeTheme.ivory);
     await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     expect(tester.takeException(), isNull);
   });
+
+  test(
+    'appearance writes keep the latest choice and stale loads cannot replace it',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('sah-appearance-race-');
+      addTearDown(() => dir.delete(recursive: true));
+      final saved = File('${dir.path}/appearance');
+      await saved.writeAsString('dark');
+      final gate = Completer<File>();
+      var reads = 0;
+      final appearance = AppAppearance(
+        file: () => reads++ == 0 ? gate.future : Future.value(saved),
+      );
+      addTearDown(appearance.dispose);
+      final loading = appearance.load();
+      await Future.wait([
+        appearance.choose(ThemeMode.dark),
+        appearance.choose(ThemeMode.light),
+        appearance.choose(ThemeMode.system),
+      ]);
+      gate.complete(saved);
+      await loading;
+      expect(appearance.value, ThemeMode.system);
+      expect(await saved.readAsString(), 'system');
+      expect(await File('${saved.path}.next').exists(), false);
+    },
+  );
+
+  test(
+    'failed appearance writes apply temporarily and retry can persist',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'sah-appearance-retry-',
+      );
+      addTearDown(() => dir.delete(recursive: true));
+      var fail = true;
+      final appearance = AppAppearance(
+        file: () async {
+          if (fail) throw const FileSystemException('Fictional failure');
+          return File('${dir.path}/appearance');
+        },
+      );
+      addTearDown(appearance.dispose);
+      await appearance.choose(ThemeMode.dark);
+      expect(appearance.value, ThemeMode.dark);
+      expect(appearance.saveFailed, isTrue);
+      fail = false;
+      await appearance.choose(appearance.value);
+      expect(appearance.saveFailed, isFalse);
+      final reopened = AppAppearance(
+        file: () async => File('${dir.path}/appearance'),
+      );
+      addTearDown(reopened.dispose);
+      await reopened.load();
+      expect(reopened.value, ThemeMode.dark);
+    },
+  );
 }

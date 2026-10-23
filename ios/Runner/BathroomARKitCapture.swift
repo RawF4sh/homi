@@ -60,6 +60,7 @@ struct BathroomARKitMeasurements {
 final class BathroomARKitCaptureController: UIViewController, BathroomNativeScanController, ARSessionDelegate {
   private let scanID: String
   private let language: String
+  private let roomName: String?
   private let completion: FlutterResult
   private let camera = ARSCNView(frame: .zero)
   private let status = UILabel()
@@ -78,8 +79,8 @@ final class BathroomARKitCaptureController: UIViewController, BathroomNativeScan
   private var lastStatus: String?
   private var stableFrames = 0
 
-  init(scanID: String, language: String, completion: @escaping FlutterResult) {
-    self.scanID = scanID; self.language = language; self.completion = completion
+  init(scanID: String, language: String, roomName: String? = nil, completion: @escaping FlutterResult) {
+    self.scanID = scanID; self.language = language; self.roomName = roomName; self.completion = completion
     super.init(nibName: nil, bundle: nil)
   }
   required init?(coder: NSCoder) { fatalError("Storyboard construction is not supported") }
@@ -123,7 +124,7 @@ final class BathroomARKitCaptureController: UIViewController, BathroomNativeScan
     finish.addTarget(self, action: #selector(finishScan), for: .touchUpInside)
     let layout = BathroomScanCaptureLayout(camera: controls, status: status, cancelButton: cancel,
       finishButton: finish, language: language)
-    layout.heading.text = text("Camera-only scan")
+    layout.heading.text = text("Camera-only scan") + (roomName.map { "\n" + $0 } ?? "")
     layout.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(layout)
     NSLayoutConstraint.activate([
