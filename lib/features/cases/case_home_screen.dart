@@ -1,4 +1,5 @@
 import '../sharing/sharing_screens.dart';
+import '../local_help/nationwide_help_browser.dart';
 import '../assistant/plan_assistant_screen.dart';
 import '../assistant/assistant_app_context.dart';
 import '../assistant/assistant_runtime.dart';
@@ -896,6 +897,8 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                       )
                     : _managing
                     ? management
+                    : _tab == 2 && widget.services.config.localHelpEnabled
+                    ? const NationwideHelpBrowser(embedded: true)
                     : _tab == 4
                     ? AccountSettingsScreen(
                         key: _settingsKey,

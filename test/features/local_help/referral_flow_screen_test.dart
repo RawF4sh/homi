@@ -19,6 +19,7 @@ class _ClosedDirectory implements ReferralDirectory {
     officialReferrals[1],
     const ReferralProvider(
       id: 'closed-referral',
+      stateCodes: ['CA'],
       name: 'Fictional closed organization',
       description: 'Ask about local home repair and community services.',
       website: 'https://example.org',
@@ -126,7 +127,7 @@ void main() {
       addTearDown(h.dispose);
       final local = LocalHelpRepository(h.app.coordinator);
       await local.confirmLocation(
-        HelpLocation(city: '', county: 'San Mateo', zip: null),
+        HelpLocation(stateCode: 'CA', city: '', county: 'San Mateo', zip: null),
       );
       await tester.pumpWidget(
         localized(

@@ -10,10 +10,12 @@ class ProviderSearchSection extends StatefulWidget {
     required this.directory,
     required this.providerCard,
     this.confirmedCounty,
+    this.confirmedStateCode,
+    this.confirmedCountyFips,
     this.showHeading = true,
   });
   final ReferralDirectory directory;
-  final String? confirmedCounty;
+  final String? confirmedCounty, confirmedStateCode, confirmedCountyFips;
   final bool showHeading;
   final Widget Function(ReferralProvider) providerCard;
 
@@ -25,13 +27,16 @@ class _ProviderSearchSectionState extends State<ProviderSearchSection>
     with AutomaticKeepAliveClientMixin {
   final _query = TextEditingController();
   String? _county;
+  String? _stateCode;
   ReferralService? _service;
+  ReferralRole? _role;
   @override
   bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
+    _stateCode = widget.confirmedStateCode;
     _county = _confirmedCounty();
   }
 
@@ -51,7 +56,9 @@ class _ProviderSearchSectionState extends State<ProviderSearchSection>
   @override
   void didUpdateWidget(covariant ProviderSearchSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.confirmedCounty != widget.confirmedCounty) {
+    if (oldWidget.confirmedCounty != widget.confirmedCounty ||
+        oldWidget.confirmedStateCode != widget.confirmedStateCode) {
+      _stateCode = widget.confirmedStateCode;
       _county = _confirmedCounty();
     }
   }
@@ -67,7 +74,9 @@ class _ProviderSearchSectionState extends State<ProviderSearchSection>
     super.build(context);
     final counties = <String>{
       for (final p in widget.directory.providers.where(
-        (p) => p.isLocalProvider,
+        (p) =>
+            p.isLocalProvider &&
+            (_stateCode == null || p.stateCodes.contains(_stateCode)),
       ))
         ...p.counties,
       ?_county,
@@ -76,7 +85,14 @@ class _ProviderSearchSectionState extends State<ProviderSearchSection>
       widget.directory,
       query: _query.text,
       county: _county,
+      stateCode: _stateCode,
+      countyFips:
+          _county == widget.confirmedCounty &&
+              _stateCode == widget.confirmedStateCode
+          ? widget.confirmedCountyFips
+          : null,
       service: _service,
+      role: _role,
       translate: (s) => context.tr(s),
     );
     return Column(
@@ -93,8 +109,27 @@ class _ProviderSearchSectionState extends State<ProviderSearchSection>
           ),
         Text(
           context.tr(
-            'A small reviewed Bay Area directory, available offline. Search organizations, cities, counties or services. ZIP coverage and current availability must be confirmed directly.',
+            'Reviewed listings are available offline. Search by state, organization, city, county or service. A listing does not confirm address eligibility or current availability.',
           ),
+        ),
+        DropdownButtonFormField<String>(
+          key: ValueKey('provider-state-${_stateCode ?? ''}'),
+          initialValue: _stateCode ?? '',
+          isExpanded: true,
+          itemHeight: null,
+          decoration: InputDecoration(labelText: context.tr('State or DC')),
+          items: [
+            DropdownMenuItem(
+              value: '',
+              child: Text(context.tr('All listed states')),
+            ),
+            for (final state in usStates)
+              DropdownMenuItem(value: state.code, child: Text(state.name)),
+          ],
+          onChanged: (value) => setState(() {
+            _stateCode = value == '' ? null : value;
+            _county = null;
+          }),
         ),
         TextField(
           key: const ValueKey('provider-search-query'),
@@ -148,6 +183,29 @@ class _ProviderSearchSectionState extends State<ProviderSearchSection>
                 .firstOrNull,
           ),
         ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          key: ValueKey('provider-role-${_role?.name ?? ''}'),
+          initialValue: _role?.name ?? '',
+          isExpanded: true,
+          itemHeight: null,
+          decoration: InputDecoration(
+            labelText: context.tr('Organization role'),
+          ),
+          items: [
+            DropdownMenuItem(value: '', child: Text(context.tr('All roles'))),
+            for (final role in ReferralRole.values)
+              DropdownMenuItem(
+                value: role.name,
+                child: Text(context.tr(role.label)),
+              ),
+          ],
+          onChanged: (value) => setState(
+            () => _role = ReferralRole.values
+                .where((r) => r.name == value)
+                .firstOrNull,
+          ),
+        ),
         Align(
           alignment: AlignmentDirectional.centerStart,
           child: TextButton(
@@ -155,7 +213,9 @@ class _ProviderSearchSectionState extends State<ProviderSearchSection>
               FocusScope.of(context).unfocus();
               _query.clear();
               _county = null;
+              _stateCode = null;
               _service = null;
+              _role = null;
             }),
             child: Text(context.tr('Clear search and filters')),
           ),

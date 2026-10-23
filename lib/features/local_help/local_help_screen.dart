@@ -10,7 +10,9 @@ import '../../shared/presentation/sah_components.dart';
 import 'local_help_record.dart';
 import 'local_help_repository.dart';
 import 'referral_directory.dart';
+import 'referral_coverage_summary.dart';
 import 'provider_search_section.dart';
+import 'nationwide_help_browser.dart';
 
 class LocalHelpButton extends StatelessWidget {
   const LocalHelpButton({super.key, required this.services, this.findingId});
@@ -23,16 +25,18 @@ class LocalHelpButton extends StatelessWidget {
           tooltip: context.tr('Find local help'),
           icon: const Icon(Icons.support_agent),
           onPressed:
-              services.coordinator.isCurrent &&
-                  services.coordinator.draft != null &&
-                  !services.coordinator.busy &&
+              !services.coordinator.busy &&
                   !services.coordinator.hasUndurableEdits
               ? () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => LocalHelpScreen(
-                      services: services,
-                      findingId: findingId,
-                    ),
+                    builder: (_) =>
+                        services.coordinator.isCurrent &&
+                            services.coordinator.draft != null
+                        ? LocalHelpScreen(
+                            services: services,
+                            findingId: findingId,
+                          )
+                        : const NationwideHelpBrowser(),
                   ),
                 )
               : null,
@@ -68,10 +72,6 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
   LocalHelpRepository? _repository;
   LocalHelpRecord? _record;
   Map<String, Object?> _receipts = {};
-  final _locationForm = GlobalKey<FormState>();
-  final _city = TextEditingController(),
-      _county = TextEditingController(),
-      _zip = TextEditingController();
   bool _working = false;
   String? _error;
   bool get _current => _repository?.isCurrent == true;
@@ -97,9 +97,6 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
   @override
   void dispose() {
     widget.services.coordinator.removeListener(_changed);
-    _city.dispose();
-    _county.dispose();
-    _zip.dispose();
     super.dispose();
   }
 
@@ -111,10 +108,6 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
         _repository!,
       ).receipts();
       if (!mounted || !_current) return;
-      final profile = widget.services.coordinator.draft!.profile;
-      _city.text = r.location?.city ?? profile.city ?? '';
-      _county.text = r.location?.county ?? profile.county ?? '';
-      _zip.text = r.location?.zip ?? '';
       setState(() {
         _record = r;
         _receipts = receipts;
@@ -349,81 +342,40 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
                 ],
                 if (_working) const LinearProgressIndicator(),
                 if (r != null) ...[
-                  _heading('Confirm your location'),
-                  Form(
-                    key: _locationForm,
-                    child: Column(
-                      children: [
-                        TextFormField(
-                          controller: _city,
-                          maxLength: 100,
-                          decoration: InputDecoration(
-                            labelText: context.tr('City (optional)'),
-                          ),
+                  ReferralLocationEditor(
+                    initialLocation:
+                        r.location ??
+                        HelpLocation(
+                          city:
+                              widget.services.coordinator.draft!.profile.city ??
+                              '',
+                          county:
+                              widget
+                                  .services
+                                  .coordinator
+                                  .draft!
+                                  .profile
+                                  .county ??
+                              '',
+                          zip: null,
                         ),
-                        TextFormField(
-                          controller: _county,
-                          maxLength: 100,
-                          decoration: InputDecoration(
-                            labelText: context.tr('County (optional)'),
-                          ),
-                        ),
-                        TextFormField(
-                          controller: _zip,
-                          maxLength: 10,
-                          keyboardType: TextInputType.text,
-                          decoration: InputDecoration(
-                            labelText: context.tr('ZIP code (optional)'),
-                          ),
-                          validator: (s) =>
-                              s!.trim().isEmpty ||
-                                  RegExp(
-                                    r'^[0-9]{5}(-[0-9]{4})?$',
-                                  ).hasMatch(s.trim())
-                              ? null
-                              : context.tr('Enter a 5-digit ZIP or ZIP+4.'),
-                        ),
-                        FilledButton(
-                          onPressed: _working
-                              ? null
-                              : () {
-                                  if (_locationForm.currentState!.validate()) {
-                                    _run(
-                                      () => _save(
-                                        () => repository!.confirmLocation(
-                                          HelpLocation(
-                                            city: _city.text.trim(),
-                                            county: _county.text.trim(),
-                                            zip: _zip.text.trim().isEmpty
-                                                ? null
-                                                : _zip.text.trim(),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
-                          child: Text(context.tr('Confirm location')),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    context.tr(
-                      'Unknown location? Use the national locators. Location is not sent to these websites.',
+                    busy: _working,
+                    onConfirm: (location) => _run(
+                      () => _save(() => repository!.confirmLocation(location)),
                     ),
                   ),
                   if (r.location != null)
                     Text(
                       context.tr('Confirmed location: {location}', {
-                        'location': [
-                          r.location!.city,
-                          r.location!.county,
-                          r.location!.zip ?? '',
-                        ].where((v) => v.isNotEmpty).join(', '),
+                        'location': referralLocationLabel(r.location!),
                       }),
                     ),
+                  const NationwideHelpNotice(),
+                  ReferralCoverageSummary(
+                    directory: repository!.directory,
+                    stateCode: r.location?.stateCode,
+                    now: widget.now?.call() ?? DateTime.now(),
+                  ),
                   ExpansionTile(
                     key: const ValueKey('local-provider-search'),
                     leading: const Icon(Icons.search),
@@ -432,32 +384,45 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
                     children: [
                       ProviderSearchSection(
                         showHeading: false,
-                        directory: repository!.directory,
+                        directory: repository.directory,
                         confirmedCounty: r.location?.county,
+                        confirmedStateCode: r.location?.stateCode,
+                        confirmedCountyFips: r.location?.countyFips,
                         providerCard: (p) => _providerCard(p, r),
                       ),
                     ],
                   ),
                   _heading('Official referrals'),
-                  if (r.location == null ||
+                  if (r.location?.stateCode == null ||
                       !repository.directory.providers.any(
                         (p) =>
-                            !p.isLocator && p.listsCounty(r.location!.county),
+                            p.isLocalProvider &&
+                            p.listsCounty(
+                              r.location?.county,
+                              stateCode: r.location?.stateCode,
+                              countyFips: r.location?.countyFips,
+                            ),
                       ))
                     Text(
                       context.tr(
                         'No reviewed local listing for this location. Use the national locators to ask who serves your address.',
                       ),
                     ),
-                  for (final p in repository.directory.providers.where(
-                    (p) =>
-                        !p.isLocalProvider &&
-                        (p.isLocator ||
-                            r.location != null &&
-                                (r.location!.county.isEmpty ||
-                                    p.listsCounty(r.location!.county))),
-                  ))
-                    _providerCard(p, r),
+                  for (final kind in [
+                    ReferralProviderKind.nationalLocator,
+                    ReferralProviderKind.referralContact,
+                    ReferralProviderKind.programReferral,
+                  ]) ...[
+                    ReferralSectionHeading(label: referralKindHeading(kind)),
+                    for (final p in repository.directory.providers.where(
+                      (p) =>
+                          p.providerKind == kind &&
+                          (p.isLocator ||
+                              r.location?.stateCode != null &&
+                                  p.stateCodes.contains(r.location!.stateCode)),
+                    ))
+                      _providerCard(p, r),
+                  ],
                   _heading('Saved contacts'),
                   if (r.contacts.isEmpty)
                     Text(context.tr('No contacts saved yet.')),
@@ -555,89 +520,35 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
   Widget _providerCard(ReferralProvider p, LocalHelpRecord r) {
     final now = widget.now?.call() ?? DateTime.now();
     final saved = r.contacts.where((c) => c.providerId == p.id).firstOrNull;
-    final county = p.counties
-        .where(
-          (c) =>
-              normalizeReferralCounty(c) ==
-              normalizeReferralCounty(r.location?.county ?? ''),
-        )
-        .firstOrNull;
-    final coverage = p.coverage(county, now);
-    return Card(
-      key: ValueKey(p.id),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(p.name, style: Theme.of(context).textTheme.titleMedium),
-            Text(context.tr(p.description)),
-            if (p.services.isNotEmpty)
-              Text(p.services.map((s) => context.tr(s.label)).join(' · ')),
-            Text(
-              context.tr(
-                coverage == ReferralCoverage.locator
-                    ? 'National locator: ask who serves your address.'
-                    : coverage == ReferralCoverage.listedCounty
-                    ? 'Listed for this county; confirm address coverage.'
-                    : 'Coverage unknown: contact to confirm.',
+    return NationwideReferralCard(
+      provider: p,
+      location: r.location,
+      now: now,
+      actions: Wrap(
+        spacing: 8,
+        children: [
+          if (p.phone != null)
+            TextButton(
+              onPressed: _working ? null : () => _open(p, phone: true),
+              child: Text(
+                context.tr(p.phone == '211' ? 'Call 211' : 'Call organization'),
               ),
             ),
-            if (p.counties.isNotEmpty) Text(p.counties.join(', ')),
-            if (p.cities.isNotEmpty) Text(p.cities.join(', ')),
-            if (p.areaNote != null) Text(context.tr(p.areaNote!)),
-            Text(
-              context.tr(
-                p.availability == ReferralAvailability.closed
-                    ? 'Intake closed: ask about alternatives.'
-                    : 'Intake and repair availability unknown.',
-              ),
+          TextButton(
+            onPressed: _working ? null : () => _open(p),
+            child: Text(context.tr(referralWebsiteLabel(p))),
+          ),
+          TextButton(
+            onPressed: _working ? null : () => _contact(p, saved),
+            child: Text(
+              context.tr(saved == null ? 'Save contact' : 'Edit contact note'),
             ),
-            if (p.needsReview(now))
-              Text(context.tr('Listing needs review. Contact to confirm.')),
-            Text(context.tr('Reviewed {date}', {'date': _date(p.reviewedOn)})),
-            if (p.phone != null) SelectableText(p.phone!),
-            SelectableText(p.website),
-            Wrap(
-              spacing: 8,
-              children: [
-                if (p.phone != null)
-                  TextButton(
-                    onPressed: _working ? null : () => _open(p, phone: true),
-                    child: Text(
-                      context.tr(
-                        p.phone == '211' ? 'Call 211' : 'Call organization',
-                      ),
-                    ),
-                  ),
-                TextButton(
-                  onPressed: _working ? null : () => _open(p),
-                  child: Text(
-                    context.tr(
-                      p.id == 'referral-211-national'
-                          ? 'Find my local 211'
-                          : p.id == 'referral-rebuilding-together-national'
-                          ? 'Find a Rebuilding Together affiliate'
-                          : 'Open official website',
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: _working ? null : () => _contact(p, saved),
-                  child: Text(
-                    context.tr(
-                      saved == null ? 'Save contact' : 'Edit contact note',
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: _working ? null : () => _task(p.id),
-                  child: Text(context.tr('Add follow-up')),
-                ),
-              ],
-            ),
-          ],
-        ),
+          ),
+          TextButton(
+            onPressed: _working ? null : () => _task(p.id),
+            child: Text(context.tr('Add follow-up')),
+          ),
+        ],
       ),
     );
   }

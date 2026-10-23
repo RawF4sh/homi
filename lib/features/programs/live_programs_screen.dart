@@ -169,7 +169,30 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
     context,
   ).pushReplacement(MaterialPageRoute<void>(builder: (_) => screen));
 
+  // v1 has no form-capability field. Only these existing production routes have
+  // reviewed questionnaires and mappings. New production programs default to
+  // an app-generated checklist; explicit fictional demos keep their test flow.
+  bool _hasFormWorkflow(ProgramMatch match) =>
+      match.isDemo ||
+      const {
+        'scfhp-eaa',
+        'hpsm-eaa',
+        'rtp-home-repair',
+      }.contains(match.programId);
+
+  Widget _checklist(ProgramMatch match) => DraftPacketScreen(
+    snapshot: widget.services.coordinator.currentCase(),
+    program: match,
+    service: ApiPacketPreparationService(widget.services.packets),
+    currentCase: widget.services.coordinator.currentCase,
+    caseChanges: widget.services.coordinator,
+  );
+
   void _start(ProgramMatch match) {
+    if (!_hasFormWorkflow(match)) {
+      _open(_checklist(match));
+      return;
+    }
     void export() => _replace(
       PrivateExportScreen(services: widget.services, program: match),
     );
@@ -361,7 +384,7 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
         if (unknowns.any((check) => check.resolvedBy == resolver)) ...[
           heading(label),
           Text(context.tr(guidance)),
-          if (resolver == 'resident')
+          if (resolver == 'resident' && _hasFormWorkflow(match))
             Align(
               alignment: AlignmentDirectional.centerStart,
               child: TextButton(
@@ -402,7 +425,7 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
   }
 
   Widget _details(BuildContext context, ProgramMatch match, bool same) {
-    final c = widget.services.coordinator;
+    final hasFormWorkflow = _hasFormWorkflow(match);
     Widget step(String key, String label, Widget Function() screen) => Align(
       alignment: AlignmentDirectional.centerStart,
       child: TextButton(
@@ -455,13 +478,23 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
             'Preparation only. Nothing has been submitted by this app.',
           ),
         ),
+        if (!hasFormWorkflow)
+          Text(
+            context.tr(
+              'This app-generated checklist is not an official application form. Review requirements with the program.',
+            ),
+          ),
         ..._requirements(context, match, same),
         const SizedBox(height: 16),
         OutlinedButton(
           key: ValueKey('program-${match.programId}-start'),
           onPressed: same ? () => _start(match) : null,
           child: Text(
-            context.tr('Prepare a draft'),
+            context.tr(
+              hasFormWorkflow
+                  ? 'Prepare a draft'
+                  : 'Homi preparation checklist',
+            ),
             textAlign: TextAlign.center,
           ),
         ),
@@ -472,32 +505,31 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
             style: Theme.of(context).textTheme.titleSmall,
           ),
         ),
-        step(
-          'program-${match.programId}-intake',
-          'Review program questions',
-          () => ProgramIntakeScreen(services: widget.services, program: match),
-        ),
+        if (hasFormWorkflow)
+          step(
+            'program-${match.programId}-intake',
+            'Review program questions',
+            () =>
+                ProgramIntakeScreen(services: widget.services, program: match),
+          ),
         step(
           '',
-          'Draft checklist',
-          () => DraftPacketScreen(
-            snapshot: c.currentCase(),
-            program: match,
-            service: ApiPacketPreparationService(widget.services.packets),
-            currentCase: c.currentCase,
-            caseChanges: c,
+          hasFormWorkflow ? 'Draft checklist' : 'Homi preparation checklist',
+          () => _checklist(match),
+        ),
+        if (hasFormWorkflow) ...[
+          step(
+            'program-${match.programId}-answers',
+            'Review administrative answers',
+            () => FormReviewScreen(services: widget.services, program: match),
           ),
-        ),
-        step(
-          'program-${match.programId}-answers',
-          'Review administrative answers',
-          () => FormReviewScreen(services: widget.services, program: match),
-        ),
-        step(
-          'program-${match.programId}-export',
-          'Review evidence and draft PDF',
-          () => PrivateExportScreen(services: widget.services, program: match),
-        ),
+          step(
+            'program-${match.programId}-export',
+            'Review evidence and draft PDF',
+            () =>
+                PrivateExportScreen(services: widget.services, program: match),
+          ),
+        ],
         step(
           'program-${match.programId}-history',
           'Manual request history',

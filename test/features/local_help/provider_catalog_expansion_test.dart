@@ -45,7 +45,7 @@ void main() {
         await expandedRepo.saveTask(followUp(p));
       }
       final saved = await expandedRepo.load();
-      expect(saved.contacts, hasLength(12));
+      expect(saved.contacts, hasLength(localProviderCatalog.length));
       final sharedIds = <String, String>{};
       final importer = ReferralTaskImport(h.app, expandedRepo);
       for (final source in saved.tasks) {
@@ -67,7 +67,7 @@ void main() {
       final after = await resumed.load();
       expect(after.toJson(), saved.toJson());
       final progress = await h.app.progress!.refresh(resumed.caseId);
-      expect(progress.tasks, hasLength(12));
+      expect(progress.tasks, hasLength(localProviderCatalog.length));
       for (final source in after.tasks) {
         final task = progress.tasks.singleWhere(
           (t) => t.referralId == source.providerId,
@@ -83,8 +83,8 @@ void main() {
           resumed,
         ).import(source, keepDueDate: true);
       }
-      expect(server.tasks, hasLength(12));
-      expect(server.mutations, hasLength(12));
+      expect(server.tasks, hasLength(localProviderCatalog.length));
+      expect(server.mutations, hasLength(localProviderCatalog.length));
       expect(h.device.requests, 0);
       expect(h.device.scheduled, isEmpty);
     },

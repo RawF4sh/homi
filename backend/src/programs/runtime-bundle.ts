@@ -5,11 +5,12 @@ import { createScfhpEaaFormTemplate } from '../forms/scfhp-eaa-template.ts';
 import { createHpsmEaaFormTemplate } from '../forms/hpsm-eaa-template.ts';
 import { createRtpHomeRepairFormTemplate } from '../forms/rtp-home-repair-template.ts';
 import { createHpsmEaaResearchProgram, createRtpResearchProgram } from './team-beta.ts';
+import { createFederalPreparationPrograms } from './federal-preparation.ts';
 import { MAX_TEMPLATE_BYTES, verifyTemplateBytes } from '../forms/template-artifact.ts';
 import type { VerifiedFormTemplate } from '../forms/field-mapping.ts';
 import type { ProgramDefinition } from '../types.ts';
 
-export type BenefitsBundleName = 'disabled' | 'scfhp-eaa-draft-v1' | 'team-beta-drafts-v2';
+export type BenefitsBundleName = 'disabled' | 'scfhp-eaa-draft-v1' | 'team-beta-drafts-v2' | 'nationwide-preparation-v1';
 
 export interface RuntimeBenefitsBundle {
   readonly name: BenefitsBundleName;
@@ -30,7 +31,8 @@ export class BenefitsBundleConfigurationError extends Error {
 }
 
 function bundleName(value: unknown): BenefitsBundleName {
-  if (value === 'disabled' || value === 'scfhp-eaa-draft-v1' || value === 'team-beta-drafts-v2') return value;
+  if (value === 'disabled' || value === 'scfhp-eaa-draft-v1' || value === 'team-beta-drafts-v2'
+    || value === 'nationwide-preparation-v1') return value;
   throw new BenefitsBundleConfigurationError();
 }
 
@@ -66,6 +68,12 @@ export async function loadRuntimeBenefitsBundle(
     if (selected === 'disabled') {
       return Object.freeze({ name: selected, enabled: false,
         loadRegistry: async () => [], loadFormTemplate: async () => null });
+    }
+    if (selected === 'nationwide-preparation-v1') {
+      // Referral/checklist access is independent of the California PDF artifacts.
+      const programs = createFederalPreparationPrograms();
+      return Object.freeze({ name: selected, enabled: true,
+        loadRegistry: async () => structuredClone(programs), loadFormTemplate: async () => null });
     }
     const read = dependencies.readTemplateBytes ?? readTemplateBytes;
     if (typeof read !== 'function') throw new BenefitsBundleConfigurationError();

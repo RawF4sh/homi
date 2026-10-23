@@ -1,3 +1,24 @@
+import 'referral_geography.dart';
+
+export 'referral_geography.dart';
+
+enum ReferralProviderKind {
+  organization,
+  nationalLocator,
+  referralContact,
+  programReferral,
+}
+
+enum ReferralRole {
+  repairProvider('Performs repairs'),
+  modificationFunder('Funds modifications'),
+  coordinator('Coordinates assistance'),
+  referralService('Provides referrals');
+
+  const ReferralRole(this.label);
+  final String label;
+}
+
 enum ReferralAvailability { unknown, closed }
 
 enum ReferralCoverage { locator, listedCounty, unknown }
@@ -27,7 +48,13 @@ class ReferralProvider {
     this.services = const [],
     this.cities = const [],
     this.areaNote,
-  });
+    this.stateCodes = const [],
+    this.serviceAreas = const [],
+    this.parentNetworkId,
+    this.organizationId,
+    this.kind,
+    List<ReferralRole>? roles,
+  }) : _roles = roles;
   final String id, name, description, website, reviewedOn, reviewAfter;
   final List<String> sources, counties;
   final String? phone;
@@ -36,23 +63,99 @@ class ReferralProvider {
   final List<ReferralService> services;
   final List<String> cities;
   final String? areaNote;
-  bool get isLocalProvider => !isLocator && services.isNotEmpty;
+  final List<String> stateCodes;
+  final List<ReferralServiceArea> serviceAreas;
+  final String? parentNetworkId, organizationId;
+  final ReferralProviderKind? kind;
+  final List<ReferralRole>? _roles;
+  List<ReferralRole> get roles =>
+      _roles ??
+      switch (providerKind) {
+        ReferralProviderKind.organization => const [
+          ReferralRole.repairProvider,
+        ],
+        ReferralProviderKind.programReferral => const [
+          ReferralRole.modificationFunder,
+        ],
+        _ => const [ReferralRole.referralService],
+      };
+  ReferralProviderKind get providerKind =>
+      kind ??
+      (isLocator
+          ? ReferralProviderKind.nationalLocator
+          : services.isNotEmpty
+          ? ReferralProviderKind.organization
+          : ReferralProviderKind.referralContact);
+  String get canonicalOrganizationId => organizationId ?? id;
+  bool get isLocalProvider => providerKind == ReferralProviderKind.organization;
+
+  Iterable<ReferralServiceArea> get listedAreas => serviceAreas.isNotEmpty
+      ? serviceAreas
+      : [
+          if (stateCodes.length == 1)
+            for (final county in counties)
+              ReferralServiceArea(
+                stateCode: stateCodes.single,
+                countyName: county,
+                countyFips: referralCountyFips[stateCodes.single]?[county],
+                cities: cities,
+                restriction: areaNote,
+              ),
+        ];
 
   bool needsReview(DateTime now) => !DateTime(
     now.year,
     now.month,
     now.day,
   ).isBefore(DateTime.parse(reviewAfter));
-  bool listsCounty(String? county) =>
-      county != null &&
-      counties.any(
-        (c) => normalizeReferralCounty(c) == normalizeReferralCounty(county),
-      );
-  ReferralCoverage coverage(String? county, DateTime now) => isLocator
-      ? ReferralCoverage.locator
-      : !needsReview(now) && listsCounty(county)
-      ? ReferralCoverage.listedCounty
-      : ReferralCoverage.unknown;
+  bool listsCounty(String? county, {String? stateCode, String? countyFips}) {
+    if (stateCode == null || !stateCodes.contains(stateCode.toUpperCase())) {
+      return false;
+    }
+    return listedAreas.any(
+      (area) =>
+          area.stateCode == stateCode.toUpperCase() &&
+          (countyFips != null
+              ? area.countyFips == countyFips
+              : county != null &&
+                    area.countyName != null &&
+                    normalizeReferralCounty(area.countyName!) ==
+                        normalizeReferralCounty(county)),
+    );
+  }
+
+  ReferralCoverage coverage(
+    String? county,
+    DateTime now, {
+    String? stateCode,
+    String? countyFips,
+    String? city,
+    String? zip,
+  }) {
+    if (isLocator) return ReferralCoverage.locator;
+    if (availability == ReferralAvailability.closed ||
+        needsReview(now) ||
+        !listsCounty(county, stateCode: stateCode, countyFips: countyFips)) {
+      return ReferralCoverage.unknown;
+    }
+    // A county candidate can include partial areas, but it must never become an
+    // address-coverage claim. ZIP/city input does not resolve an area restriction.
+    final wholeCounty = listedAreas.any(
+      (a) =>
+          a.stateCode == stateCode?.toUpperCase() &&
+          (countyFips != null
+              ? a.countyFips == countyFips
+              : a.countyName != null &&
+                    normalizeReferralCounty(a.countyName!) ==
+                        normalizeReferralCounty(county ?? '')) &&
+          a.cities.isEmpty &&
+          a.zipCodes.isEmpty &&
+          a.restriction == null,
+    );
+    return wholeCounty
+        ? ReferralCoverage.listedCounty
+        : ReferralCoverage.unknown;
+  }
 }
 
 String normalizeReferralCounty(String county) =>
@@ -69,6 +172,7 @@ class OfficialReferralDirectory implements ReferralDirectory {
   List<ReferralProvider> get providers => const [
     ...officialReferrals,
     ...localProviderCatalog,
+    ...federalProgramReferrals,
   ];
   @override
   ReferralProvider? provider(String id) =>
@@ -107,6 +211,7 @@ const officialReferrals = [
   ),
   ReferralProvider(
     id: 'referral-211-bay-area',
+    stateCodes: ['CA'],
     name: '211 Bay Area',
     description: 'Ask about local home repair and community services.',
     website: 'https://211bayarea.org/contact/',
@@ -119,11 +224,53 @@ const officialReferrals = [
     reviewedOn: '2026-10-24',
     reviewAfter: '2026-11-23',
   ),
+  ReferralProvider(
+    id: 'referral-eldercare-national',
+    name: 'Eldercare Locator',
+    description:
+        'Official aging-service referral, including Area Agencies on Aging. Ask about local support and home accessibility resources.',
+    website: 'https://eldercare.acl.gov/home',
+    phone: '18006771116',
+    isLocator: true,
+    sources: ['https://acl.gov/help', 'https://eldercare.acl.gov/home'],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2027-01-24',
+  ),
+  ReferralProvider(
+    id: 'referral-habitat-national',
+    name: 'Habitat for Humanity affiliate locator',
+    description:
+        'Find a local Habitat affiliate. Ask whether it offers repairs, accessibility work or financing in your area; services differ.',
+    website:
+        'https://www.habitat.org/volunteer/near-you/find-your-local-habitat',
+    isLocator: true,
+    sources: [
+      'https://www.habitat.org/volunteer/near-you/find-your-local-habitat',
+    ],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2027-01-24',
+    parentNetworkId: 'habitat-for-humanity',
+  ),
+  ReferralProvider(
+    id: 'referral-cil-national',
+    name: 'Centers for Independent Living directory',
+    description:
+        'Official ACL state and territory list of Centers for Independent Living. Ask about accessibility advice, local services and referrals; centers are not necessarily repair providers.',
+    website:
+        'https://acl.gov/programs/centers-independent-living/list-cils-and-spils',
+    isLocator: true,
+    sources: [
+      'https://acl.gov/programs/centers-independent-living/list-cils-and-spils',
+    ],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2027-01-24',
+  ),
 ];
 
-const localProviderCatalogVersion = 'bay-area-2026-10-25-v2';
+const localProviderCatalogVersion = 'us-pilot-2026-10-26-v1';
 const localProviderCatalog = [
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-rebuilding-together-silicon-valley',
     name: 'Rebuilding Together Silicon Valley',
     description:
@@ -156,6 +303,7 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-23',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-rebuilding-together-san-francisco',
     name: 'Rebuilding Together San Francisco',
     description:
@@ -172,6 +320,7 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-23',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-habitat-greater-san-francisco',
     name: 'Habitat for Humanity Greater San Francisco',
     description:
@@ -188,7 +337,9 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-23',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-cid-san-mateo',
+    roles: [ReferralRole.coordinator, ReferralRole.referralService],
     name: 'Center for Independence of Individuals with Disabilities (CID)',
     description:
         'Assistive technology advice and home modification resource coordination.',
@@ -207,6 +358,7 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-23',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-habitat-east-bay-silicon-valley',
     name: 'Habitat for Humanity East Bay/Silicon Valley',
     description:
@@ -226,6 +378,7 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-24',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-rebuilding-together-petaluma',
     name: 'Rebuilding Together Petaluma',
     description:
@@ -264,6 +417,7 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-24',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-rebuilding-together-solano-county',
     name: 'Rebuilding Together Solano County',
     description:
@@ -283,6 +437,7 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-24',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-marin-center-independent-living',
     name: 'Marin Center for Independent Living',
     description:
@@ -298,7 +453,9 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-24',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-napa-housing-rehabilitation',
+    roles: [ReferralRole.modificationFunder, ReferralRole.coordinator],
     name: 'City of Napa Housing Rehabilitation',
     description:
         'Home repair and accessibility program assistance in Napa County cities.',
@@ -324,7 +481,9 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-24',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-cil-residential-access',
+    roles: [ReferralRole.coordinator, ReferralRole.referralService],
     name: 'Center for Independent Living — Residential Access',
     description:
         'Home accessibility modifications in Berkeley and consultations in nearby Alameda County cities.',
@@ -347,7 +506,9 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-24',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-alameda-county-healthy-homes',
+    roles: [ReferralRole.modificationFunder, ReferralRole.coordinator],
     name: 'Alameda County Healthy Homes — Minor Home Repair',
     description:
         'Minor home repairs and safety modifications in selected Alameda County communities.',
@@ -378,6 +539,7 @@ const localProviderCatalog = [
     reviewAfter: '2026-11-24',
   ),
   ReferralProvider(
+    stateCodes: ['CA'],
     id: 'provider-habitat-sonoma-county',
     name: 'Habitat for Humanity of Sonoma County',
     description:
@@ -392,6 +554,216 @@ const localProviderCatalog = [
     sources: ['https://habitatsoco.org/contact/'],
     reviewedOn: '2026-10-25',
     reviewAfter: '2026-11-24',
+  ),
+  ReferralProvider(
+    id: 'rt-seattle-wa',
+    organizationId: 'rt-seattle-wa',
+    parentNetworkId: 'rebuilding-together',
+    stateCodes: ['WA'],
+    name: 'Rebuilding Together Seattle',
+    description:
+        'Free home repairs and accessibility modifications in a limited Seattle-area service corridor.',
+    website: 'https://www.rtseattle.org/homeowner',
+    phone: '12066821231',
+    counties: ['King', 'Snohomish'],
+    cities: ['Everett', 'Seattle', 'SeaTac', 'Renton'],
+    serviceAreas: [
+      ReferralServiceArea(
+        stateCode: 'WA',
+        countyFips: '53033',
+        countyName: 'King',
+        restriction: 'Everett–SeaTac I-5 corridor and parts of Renton only.',
+      ),
+      ReferralServiceArea(
+        stateCode: 'WA',
+        countyFips: '53061',
+        countyName: 'Snohomish',
+        restriction: 'Everett–SeaTac I-5 corridor only.',
+      ),
+    ],
+    services: [ReferralService.homeRepair, ReferralService.accessibility],
+    areaNote:
+        'Limited corridor, not all King or Snohomish County. Owner-occupied primary homes; income and project review required. Waits may be a year. Ask about capacity; no emergency service.',
+    sources: ['https://www.rtseattle.org/homeowner'],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2027-01-24',
+  ),
+  ReferralProvider(
+    id: 'renovation-alliance-va',
+    organizationId: 'renovation-alliance-va',
+    stateCodes: ['VA'],
+    name: 'Renovation Alliance',
+    description:
+        'Free critical home repairs and accessibility modifications in the Roanoke region, including rural communities.',
+    website: 'https://www.renovateall.org/apply',
+    phone: '15404000959',
+    counties: [
+      'Botetourt',
+      'Craig',
+      'Floyd',
+      'Franklin',
+      'Roanoke',
+      'Roanoke city',
+      'Salem city',
+    ],
+    serviceAreas: [
+      ReferralServiceArea(
+        stateCode: 'VA',
+        countyFips: '51023',
+        countyName: 'Botetourt',
+      ),
+      ReferralServiceArea(
+        stateCode: 'VA',
+        countyFips: '51045',
+        countyName: 'Craig',
+      ),
+      ReferralServiceArea(
+        stateCode: 'VA',
+        countyFips: '51063',
+        countyName: 'Floyd',
+      ),
+      ReferralServiceArea(
+        stateCode: 'VA',
+        countyFips: '51067',
+        countyName: 'Franklin',
+      ),
+      ReferralServiceArea(
+        stateCode: 'VA',
+        countyFips: '51161',
+        countyName: 'Roanoke',
+      ),
+      ReferralServiceArea(
+        stateCode: 'VA',
+        countyFips: '51770',
+        countyName: 'Roanoke city',
+      ),
+      ReferralServiceArea(
+        stateCode: 'VA',
+        countyFips: '51775',
+        countyName: 'Salem city',
+      ),
+    ],
+    services: [ReferralService.homeRepair, ReferralService.accessibility],
+    areaNote:
+        'Named counties plus the independent cities of Roanoke and Salem. Owner occupancy and income documentation required. Ask about current capacity; no numerical income limit is inferred.',
+    sources: ['https://www.renovateall.org/apply'],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2027-01-24',
+  ),
+  ReferralProvider(
+    id: 'austin-habitat-tx',
+    organizationId: 'austin-habitat-tx',
+    parentNetworkId: 'habitat-for-humanity',
+    stateCodes: ['TX'],
+    name: 'Austin Habitat for Humanity',
+    description:
+        'Home repairs and accessibility modifications in selected central Texas counties and cities.',
+    website: 'https://austinhabitat.org/programs/home-repair/',
+    phone: '15124728788',
+    counties: ['Bastrop', 'Blanco', 'Caldwell', 'Hays', 'Travis'],
+    cities: ['Austin', 'Kyle'],
+    serviceAreas: [
+      ReferralServiceArea(
+        stateCode: 'TX',
+        countyFips: '48021',
+        countyName: 'Bastrop',
+      ),
+      ReferralServiceArea(
+        stateCode: 'TX',
+        countyFips: '48031',
+        countyName: 'Blanco',
+      ),
+      ReferralServiceArea(
+        stateCode: 'TX',
+        countyFips: '48055',
+        countyName: 'Caldwell',
+      ),
+      ReferralServiceArea(
+        stateCode: 'TX',
+        countyFips: '48209',
+        countyName: 'Hays',
+      ),
+      ReferralServiceArea(
+        stateCode: 'TX',
+        countyFips: '48453',
+        countyName: 'Travis',
+      ),
+      ReferralServiceArea(
+        stateCode: 'TX',
+        cities: ['Austin', 'Kyle'],
+        restriction:
+            'Austin corporate city limits and Kyle; confirm exact address.',
+      ),
+    ],
+    services: [ReferralService.homeRepair, ReferralService.accessibility],
+    areaNote:
+        'Interest form joins a waitlist, not an application. Owner-occupied single-family homes; manufactured homes need permanent foundation and resident-owned land. Confirm costs and financing; free repairs are not established.',
+    sources: ['https://austinhabitat.org/programs/home-repair/'],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2027-01-24',
+  ),
+  ReferralProvider(
+    id: 'pca-philadelphia-pa',
+    organizationId: 'pca-philadelphia-pa',
+    stateCodes: ['PA'],
+    parentNetworkId: 'area-agencies-on-aging',
+    name: 'Philadelphia Corporation for Aging',
+    description:
+        'Home repair and accessibility assistance through Philadelphia County’s Area Agency on Aging.',
+    website:
+        'https://pcacares.org/services/help-in-the-home/home-repairs-modifications/',
+    phone: '2157659040',
+    counties: ['Philadelphia'],
+    serviceAreas: [
+      ReferralServiceArea(
+        stateCode: 'PA',
+        countyName: 'Philadelphia',
+        countyFips: '42101',
+      ),
+    ],
+    services: [
+      ReferralService.homeRepair,
+      ReferralService.accessibility,
+      ReferralService.coordination,
+    ],
+    roles: [ReferralRole.repairProvider, ReferralRole.coordinator],
+    areaNote:
+        'SHARP serves eligible homeowners age 60 and older; income and home-condition rules apply. Some services may require cost-sharing. Confirm current capacity and costs.',
+    sources: [
+      'https://pcacares.org/services/help-in-the-home/home-repairs-modifications/',
+      'https://pcacares.org/about/leadership-governance/',
+    ],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2027-01-24',
+  ),
+  ReferralProvider(
+    id: 'ability360-az',
+    organizationId: 'ability360-az',
+    stateCodes: ['AZ'],
+    parentNetworkId: 'centers-for-independent-living',
+    name: 'Ability360',
+    description:
+        'Home accessibility modification coordination for eligible Maricopa County residents.',
+    website: 'https://ability360.org/life-skills/home-modifications/',
+    phone: '6022960536',
+    counties: ['Maricopa'],
+    serviceAreas: [
+      ReferralServiceArea(
+        stateCode: 'AZ',
+        countyName: 'Maricopa',
+        countyFips: '04013',
+      ),
+    ],
+    services: [ReferralService.accessibility, ReferralService.coordination],
+    roles: [ReferralRole.coordinator, ReferralRole.modificationFunder],
+    areaNote:
+        'For qualifying residents with disabilities and/or seniors in Maricopa County. Funding and qualification rules apply; confirm current service area, project availability and any resident contribution. Older cost-sharing information differs from the current page.',
+    sources: [
+      'https://ability360.org/life-skills/home-modifications/',
+      'https://sci.ability360.org/about/',
+    ],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2027-01-24',
   ),
 ];
 
@@ -413,3 +785,45 @@ Uri referralDestination(ReferralProvider provider, {bool phone = false}) {
   }
   return uri;
 }
+
+// Discovery and preparation only. These entries do not enable server policy
+// matching, official form generation, submission, or eligibility conclusions.
+const federalProgramReferrals = [
+  ReferralProvider(
+    id: 'referral-usda-section-504',
+    kind: ReferralProviderKind.programReferral,
+    name: 'USDA Section 504 Home Repair',
+    stateCodes: usStateCodes,
+    description:
+        'Official rural home-repair loan and grant route. USDA must confirm address, income, ownership, funding and loan/grant conditions.',
+    website:
+        'https://www.rd.usda.gov/programs-services/single-family-housing-programs/single-family-housing-repair-loans-grants',
+    areaNote:
+        'Preparation only. Current USDA overview and regulation conflict on loan income policy. Ask the local Rural Development office to resolve this. Age 62 applies to grants, not all loans. No official application is generated.',
+    sources: [
+      'https://www.rd.usda.gov/programs-services/single-family-housing-programs/single-family-housing-repair-loans-grants',
+      'https://www.ecfr.gov/current/title-7/subtitle-B/chapter-XXXV/part-3550/subpart-C/section-3550.103',
+      'https://www.rd.usda.gov/media/file/download/rd-sfh-attachment12e.pdf',
+    ],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2026-11-25',
+  ),
+  ReferralProvider(
+    id: 'referral-va-hisa',
+    kind: ReferralProviderKind.programReferral,
+    name: 'VA Home Improvements and Structural Alterations (HISA)',
+    stateCodes: usStateCodes,
+    description:
+        'Official VA accessibility-adaptation route. VA and your clinician must confirm benefit eligibility, medical necessity, permitted work and remaining benefit.',
+    website: 'https://prosthetics.va.gov/psas/hisa2.asp',
+    areaNote:
+        'Preparation only. Ask local VA Prosthetics about a prescription, itemized estimate, before-work photo, form and actual property permission. Official form page and PDF revision dates differ; no mapped form is generated. This is not approval or submission.',
+    sources: [
+      'https://prosthetics.va.gov/psas/hisa2.asp',
+      'https://www.va.gov/forms/10-0103/',
+      'https://www.va.gov/VHAPUbLICAtIons/ViewPublication.asp?pub_ID=5739',
+    ],
+    reviewedOn: '2026-10-26',
+    reviewAfter: '2026-11-25',
+  ),
+];

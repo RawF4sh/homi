@@ -16,6 +16,10 @@ import 'catalogs/sharing.dart';
 import 'catalogs/sensitive_sharing.dart';
 import 'catalogs/tracking.dart';
 import 'catalogs/local_help.dart';
+import 'catalogs/nationwide_help.dart';
+import 'catalogs/federal_preparation.dart';
+import 'catalogs/nationwide_records.dart';
+import 'catalogs/referral_coverage.dart';
 import 'catalogs/home_safety.dart';
 import 'catalogs/core.dart';
 import 'catalogs/errors.dart';
@@ -62,6 +66,10 @@ class AppLocalizations {
     sensitiveSharingTranslations,
     trackingTranslations,
     localHelpTranslations,
+    nationwideHelpTranslations,
+    federalPreparationTranslations,
+    nationwideRecordsTranslations,
+    referralCoverageTranslations,
     homeSafetyTranslations,
     coreTranslations,
     assessmentTranslations,

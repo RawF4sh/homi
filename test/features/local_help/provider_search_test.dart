@@ -10,21 +10,34 @@ void main() {
   test(
     'all nine counties have reviewed records without inventing city-wide funding',
     () {
-      expect(localProviderCatalog.expand((p) => p.counties).toSet(), {
-        'Alameda',
-        'Contra Costa',
-        'Marin',
-        'Napa',
-        'San Francisco',
-        'San Mateo',
-        'Santa Clara',
-        'Solano',
-        'Sonoma',
-      });
+      expect(
+        localProviderCatalog
+            .where((p) => p.stateCodes.contains('CA'))
+            .expand((p) => p.counties)
+            .toSet(),
+        {
+          'Alameda',
+          'Contra Costa',
+          'Marin',
+          'Napa',
+          'San Francisco',
+          'San Mateo',
+          'Santa Clara',
+          'Solano',
+          'Sonoma',
+        },
+      );
       for (final county
-          in localProviderCatalog.expand((p) => p.counties).toSet()) {
+          in localProviderCatalog
+              .where((p) => p.stateCodes.contains('CA'))
+              .expand((p) => p.counties)
+              .toSet()) {
         expect(
-          searchLocalProviders(directory, county: '$county County'),
+          searchLocalProviders(
+            directory,
+            stateCode: 'CA',
+            county: '$county County',
+          ),
           isNotEmpty,
         );
       }
@@ -101,6 +114,7 @@ void main() {
     () {
       final p = searchLocalProviders(
         directory,
+        stateCode: 'CA',
         county: 'Sonoma',
         query: 'Habitat',
       ).single;
@@ -114,6 +128,7 @@ void main() {
       expect(
         searchLocalProviders(
           directory,
+          stateCode: 'CA',
           county: 'Sonoma',
           query: 'Rebuilding',
         ).single.availability,
@@ -128,8 +143,10 @@ void main() {
         directory.providers.map((p) => p.id).toSet().length,
         directory.providers.length,
       );
-      expect(localProviderCatalogVersion, 'bay-area-2026-10-25-v2');
-      for (final p in localProviderCatalog) {
+      expect(localProviderCatalogVersion, 'us-pilot-2026-10-26-v1');
+      for (final p in localProviderCatalog.where(
+        (p) => p.stateCodes.contains('CA'),
+      )) {
         expect(directory.provider(p.id), same(p));
         expect(p.isLocalProvider, isTrue);
         expect(p.counties, isNotEmpty);
@@ -173,7 +190,7 @@ void main() {
     'search finds individual organizations rather than national locators',
     () {
       final all = searchLocalProviders(directory);
-      expect(all, hasLength(12));
+      expect(all, hasLength(17));
       expect(
         all.any((p) => p.isLocator || officialReferrals.contains(p)),
         isFalse,
@@ -190,6 +207,7 @@ void main() {
         searchLocalProviders(
           directory,
           query: 'Cupertino',
+          stateCode: 'CA',
           county: 'Santa Clara County',
         ).single.id,
         silicon,
@@ -198,6 +216,7 @@ void main() {
         searchLocalProviders(
           directory,
           query: 'Cupertino',
+          stateCode: 'CA',
           county: 'San Mateo',
         ),
         isEmpty,
@@ -207,7 +226,10 @@ void main() {
         searchLocalProviders(directory, query: 'Fictional unavailable repair'),
         isEmpty,
       );
-      expect(searchLocalProviders(directory, county: 'not listed'), isEmpty);
+      expect(
+        searchLocalProviders(directory, stateCode: 'CA', county: 'not listed'),
+        isEmpty,
+      );
       expect(searchLocalProviders(directory, query: '   '), all);
       expect(() => all.clear(), throwsUnsupportedError);
     },
@@ -218,11 +240,12 @@ void main() {
     () {
       expect(
         searchLocalProviders(directory, service: ReferralService.homeRepair),
-        hasLength(9),
+        hasLength(13),
       );
       expect(
         searchLocalProviders(
           directory,
+          stateCode: 'CA',
           county: 'SAN MATEO county',
           service: ReferralService.coordination,
         ).single.id,
@@ -231,6 +254,7 @@ void main() {
       expect(
         searchLocalProviders(
           directory,
+          stateCode: 'CA',
           county: 'San Mateo',
           service: ReferralService.accessibility,
         ).single.id,
@@ -239,6 +263,7 @@ void main() {
       expect(
         searchLocalProviders(
           directory,
+          stateCode: 'CA',
           county: 'Santa Clara',
           service: ReferralService.coordination,
         ),
@@ -254,6 +279,7 @@ void main() {
         final tr = AppLocalizations(locale);
         final results = searchLocalProviders(
           directory,
+          stateCode: 'CA',
           query: tr.text('Service coordination'),
           translate: tr.text,
         );
@@ -264,6 +290,7 @@ void main() {
       expect(
         searchLocalProviders(
           directory,
+          stateCode: 'CA',
           query: 'tecnologia',
           translate: tr.text,
         ).map((p) => p.id),

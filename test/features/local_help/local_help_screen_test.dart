@@ -48,7 +48,7 @@ Future<void> reveal(WidgetTester tester, Finder target) async {
     target,
     200,
     scrollable: scrollable,
-    maxScrolls: 200,
+    maxScrolls: 800,
   );
   await tester.ensureVisible(target);
   await tester.pumpAndSettle();
@@ -216,6 +216,10 @@ void main() {
         find.widgetWithText(TextFormField, 'County (optional)'),
         'Fictional county',
       );
+      final state = find.byKey(const ValueKey('help-location-state'));
+      tester.state<FormFieldState<String>>(state).didChange('NY');
+      tester.widget<DropdownButtonFormField<String>>(state).onChanged!('NY');
+      await tester.pumpAndSettle();
       await tap(tester, find.text('Confirm location'));
       await tap(tester, find.text('Find my local 211'));
       expect(

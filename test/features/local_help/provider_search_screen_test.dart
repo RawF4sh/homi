@@ -23,9 +23,9 @@ void main() {
     'new county listings do not show the old unsupported-location message',
     (tester) async {
       final app = await make();
-      await LocalHelpRepository(
-        app.coordinator,
-      ).confirmLocation(HelpLocation(city: '', county: 'Alameda', zip: null));
+      await LocalHelpRepository(app.coordinator).confirmLocation(
+        HelpLocation(stateCode: 'CA', city: '', county: 'Alameda', zip: null),
+      );
       await tester.pumpWidget(
         localized(const Locale('en'), LocalHelpScreen(services: app)),
       );
@@ -40,7 +40,7 @@ void main() {
         findsNothing,
       );
       await reveal(tester, find.byKey(const ValueKey('referral-211-national')));
-      expect(find.byKey(const ValueKey('referral-211-bay-area')), findsNothing);
+      await reveal(tester, find.byKey(const ValueKey('referral-211-bay-area')));
       expect(tester.takeException(), isNull);
     },
   );
@@ -49,9 +49,9 @@ void main() {
     'closed Sonoma intake is visible before opening details and keeps contact actions',
     (tester) async {
       final app = await make();
-      await LocalHelpRepository(
-        app.coordinator,
-      ).confirmLocation(HelpLocation(city: '', county: 'Sonoma', zip: null));
+      await LocalHelpRepository(app.coordinator).confirmLocation(
+        HelpLocation(stateCode: 'CA', city: '', county: 'Sonoma', zip: null),
+      );
       final opened = <Uri>[];
       await tester.pumpWidget(
         localized(
@@ -101,7 +101,7 @@ void main() {
       final app = await make();
       final repo = LocalHelpRepository(app.coordinator);
       await repo.confirmLocation(
-        HelpLocation(city: '', county: 'San Mateo', zip: null),
+        HelpLocation(stateCode: 'CA', city: '', county: 'San Mateo', zip: null),
       );
       await tester.pumpWidget(
         localized(
@@ -146,7 +146,7 @@ void main() {
         findsOneWidget,
       );
       await tap(tester, find.text('Clear search and filters'));
-      await reveal(tester, find.text('Providers found: 12'));
+      await reveal(tester, find.text('Providers found: 17'));
       expect((await repo.load()).location!.county, 'Santa Clara County');
       expect(tester.takeException(), isNull);
     },
@@ -157,7 +157,12 @@ void main() {
     (tester) async {
       final app = await make();
       await LocalHelpRepository(app.coordinator).confirmLocation(
-        HelpLocation(city: '', county: 'Unlisted county', zip: null),
+        HelpLocation(
+          stateCode: 'CA',
+          city: '',
+          county: 'Unlisted county',
+          zip: null,
+        ),
       );
       await tester.pumpWidget(
         localized(const Locale('en'), LocalHelpScreen(services: app)),
@@ -166,7 +171,7 @@ void main() {
       await tap(tester, find.byKey(const ValueKey('local-provider-search')));
       await reveal(tester, find.text('Providers found: 0'));
       await tap(tester, find.text('Clear search and filters'));
-      await reveal(tester, find.text('Providers found: 12'));
+      await reveal(tester, find.text('Providers found: 17'));
       final query = find.byKey(const ValueKey('provider-search-query'));
       await reveal(tester, query);
       await tester.enterText(query, 'San José');
@@ -195,7 +200,7 @@ void main() {
         find.byKey(const ValueKey('referral-rebuilding-together-national')),
       );
       await tap(tester, find.text('Clear search and filters'));
-      await reveal(tester, find.text('Providers found: 12'));
+      await reveal(tester, find.text('Providers found: 17'));
       expect(tester.takeException(), isNull);
     },
   );
@@ -206,7 +211,7 @@ void main() {
       final app = await make();
       final repo = LocalHelpRepository(app.coordinator);
       await repo.confirmLocation(
-        HelpLocation(city: '', county: 'San Mateo', zip: null),
+        HelpLocation(stateCode: 'CA', city: '', county: 'San Mateo', zip: null),
       );
       final opened = <Uri>[];
       Widget screen() => localized(
@@ -328,7 +333,7 @@ void main() {
         await tester.pumpAndSettle();
         await reveal(
           tester,
-          find.text(tr.text('Providers found: {count}', {'count': '4'})),
+          find.text(tr.text('Providers found: {count}', {'count': '6'})),
         );
         await tap(tester, find.text(tr.text('Clear search and filters')));
         await tap(tester, find.text(tr.text('All services')));
@@ -347,7 +352,7 @@ void main() {
         await tester.pumpAndSettle();
         await reveal(
           tester,
-          find.text(tr.text('Providers found: {count}', {'count': '4'})),
+          find.text(tr.text('Providers found: {count}', {'count': '6'})),
         );
         expect(tester.takeException(), isNull);
       },

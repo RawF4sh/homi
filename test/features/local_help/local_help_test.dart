@@ -88,7 +88,9 @@ void main() {
   test(
     'county listings and freshness never become address eligibility or live intake',
     () {
-      final p = officialReferrals.last;
+      final p = const OfficialReferralDirectory().provider(
+        'referral-211-bay-area',
+      )!;
       expect(
         p.coverage(null, DateTime(2026, 10, 24)),
         ReferralCoverage.unknown,
@@ -98,7 +100,7 @@ void main() {
         ReferralCoverage.unknown,
       );
       expect(
-        p.coverage('San Mateo', DateTime(2026, 10, 24)),
+        p.coverage('San Mateo', DateTime(2026, 10, 24), stateCode: 'CA'),
         ReferralCoverage.listedCounty,
       );
       expect(

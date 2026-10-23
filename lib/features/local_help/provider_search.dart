@@ -4,14 +4,24 @@ List<ReferralProvider> searchLocalProviders(
   ReferralDirectory directory, {
   String query = '',
   String? county,
+  String? stateCode,
+  String? countyFips,
   ReferralService? service,
+  ReferralRole? role,
   String Function(String)? translate,
 }) {
   final words = _normalize(query).split(' ').where((w) => w.isNotEmpty);
   final results = directory.providers.where((p) {
     if (!p.isLocalProvider ||
-        county != null && county.trim().isNotEmpty && !p.listsCounty(county) ||
-        service != null && !p.services.contains(service)) {
+        stateCode != null && !p.stateCodes.contains(stateCode.toUpperCase()) ||
+        (countyFips != null || county != null && county.trim().isNotEmpty) &&
+            !p.listsCounty(
+              county,
+              stateCode: stateCode,
+              countyFips: countyFips,
+            ) ||
+        service != null && !p.services.contains(service) ||
+        role != null && !p.roles.contains(role)) {
       return false;
     }
     final searchable = _normalize(
@@ -19,6 +29,12 @@ List<ReferralProvider> searchLocalProviders(
         p.name,
         p.description,
         if (translate != null) translate(p.description),
+        for (final role in p.roles) ...[
+          role.label,
+          if (translate != null) translate(role.label),
+        ],
+        ...p.stateCodes,
+        for (final code in p.stateCodes) referralState(code)?.name ?? code,
         ...p.counties,
         ...p.cities,
         for (final s in p.services) ...[
