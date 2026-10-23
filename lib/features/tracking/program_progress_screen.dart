@@ -1,3 +1,4 @@
+import '../../shared/presentation/sah_floating_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:timezone/timezone.dart' as tz;
 import '../../app/live_app.dart';
@@ -448,7 +449,7 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
     );
     final body = SahContent(
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: sahFloatingContentPadding(context),
         children: [
           if (widget.embedded)
             Align(

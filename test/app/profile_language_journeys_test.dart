@@ -62,7 +62,13 @@ void main() {
             'Not sure',
           ]) {
             expect(tr(text), isNot(text));
-            expect(find.text(tr(text)), findsOneWidget);
+            expect(
+              find.descendant(
+                of: find.byKey(const ValueKey('profile-coverage-card')),
+                matching: find.text(tr(text)),
+              ),
+              findsOneWidget,
+            );
           }
           for (final key in [
             'annualIncomeUsd',

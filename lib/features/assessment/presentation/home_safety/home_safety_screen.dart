@@ -7,12 +7,17 @@ import '../../../../app/live_app.dart';
 import '../../../../l10n/app_localizations.dart';
 import '../../../../shared/models/case_draft.dart';
 import '../../../../shared/presentation/sah_components.dart';
+import '../../../../shared/presentation/sah_floating_nav.dart';
 import '../../../../shared/services/matching_api_client.dart';
 import '../../application/home_safety/home_safety_session.dart';
 import '../../domain/assessment_location.dart';
+import '../../domain/local_place_rooms.dart';
+import '../../application/bathroom_scan_adapter.dart';
+import '../../application/bathroom_scan_availability.dart';
 import '../../domain/home_safety/home_safety.dart';
 import '../live_assessment_screen.dart';
 import '../room_scan_cards.dart';
+import '../room_capture_cards.dart';
 import '../whole_home_screen.dart';
 import '../../../tracking/program_progress_screen.dart';
 
@@ -36,8 +41,15 @@ class HomeSafetyScreen extends StatefulWidget {
   State<HomeSafetyScreen> createState() => HomeSafetyScreenState();
 }
 
-class HomeSafetyScreenState extends State<HomeSafetyScreen> {
+class HomeSafetyScreenState extends State<HomeSafetyScreen>
+    with WidgetsBindingObserver {
   HomeSafetySession? session;
+  late final scanAvailability = BathroomScanAvailability(
+    adapter:
+        widget.services.bathroomScanAdapter ??
+        const NativeBathroomScanAdapter(),
+    isCurrent: () => mounted && session?.isCurrent == true,
+  );
   late Future<void> ready;
   String? selectedRoom, error;
   bool working = false;
@@ -115,6 +127,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     selectedRoom = widget.initialRoomId;
     ready = initialize();
   }
@@ -125,6 +138,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
     final next = HomeSafetySession(services: widget.services, catalog: catalog);
     session = next;
     await next.initialize();
+    scanAvailability.refresh();
     try {
       if (await next.recoverScanRoomLinks() > 0) await next.save();
     } catch (_) {
@@ -642,16 +656,17 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
     await ready;
   });
 
-  Future<void> openHomeModel() async {
+  Future<void> openHomeModel({bool localPlaces = false}) async {
     final s = session;
     if (s == null || !enabled || !s.isCurrent || s.localSaveFailed) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => WholeHomeScreen(
           services: widget.services,
-          rooms: () => s.document.rooms,
+          rooms: () => localPlaces ? LocalPlaceRooms.all : s.document.rooms,
           isCurrent: () => mounted && s.isCurrent,
           scope: Listenable.merge([s, widget.services.coordinator]),
+          localPlaces: localPlaces,
         ),
       ),
     );
@@ -662,7 +677,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
     key: const ValueKey('open-whole-home-model'),
     onPressed: enabled ? openHomeModel : null,
     icon: const Icon(Icons.home_work_outlined),
-    label: Text(context.tr('Connected home model')),
+    label: Text(context.tr('Scan connected rooms')),
   );
 
   Future<void> openReport() => run(() async {
@@ -873,8 +888,17 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    scanAvailability.dispose();
     session?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && enabled) {
+      scanAvailability.refresh();
+    }
   }
 
   Widget _page({required Widget body, required AppBar appBar}) =>
@@ -967,7 +991,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
         );
       }
       return AnimatedBuilder(
-        animation: s,
+        animation: Listenable.merge([s, scanAvailability]),
         builder: (context, _) {
           final room = s.document.rooms
               .where((r) => r.id == selectedRoom)
@@ -1026,7 +1050,9 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
                     key: widget.workspaceMode
                         ? ValueKey('room-page-${room?.id}-$_roomSection')
                         : null,
-                    padding: const EdgeInsets.all(20),
+                    padding: widget.embedded
+                        ? sahFloatingContentPadding(context)
+                        : const EdgeInsets.all(20),
                     children: [
                       if (widget.embedded) ..._contextActions(s, room),
                       if (!widget.workspaceMode &&
@@ -1220,18 +1246,32 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
         onChecklist: (r) => _selectRoom(r.id),
         compact: true,
       ),
-    for (final room in s.document.activeRooms)
-      Card(
-        child: ListTile(
-          key: ValueKey('room-${room.id}'),
-          title: Text(roomTitle(room)),
-          subtitle: Text(
-            '${context.tr('{count} of {total} questions answered', {'count': s.catalog.forRoom(room).where((q) => s.document.answer(room.id, q.id)?.value != 'unanswered' && s.document.answer(room.id, q.id) != null).length, 'total': s.catalog.forRoom(room).length})}\n${progressText(s, room)}',
-          ),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: enabled ? () => _selectRoom(room.id) : null,
-        ),
-      ),
+    RoomCaptureCards(
+      key: ValueKey('room-cards-${s.caseId}-$scanEpoch'),
+      store: widget.services.store,
+      caseId: s.caseId,
+      rooms: s.document.activeRooms,
+      availability: scanAvailability,
+      isCurrent: () => mounted && s.isCurrent,
+      enabled: editable,
+      onScan: openRoomScan,
+      onOpenRoom: (room) => _selectRoom(room.id),
+      summary: (room) =>
+          '${context.tr('{count} of {total} questions answered', {'count': s.catalog.forRoom(room).where((q) => s.document.answer(room.id, q.id)?.value != 'unanswered' && s.document.answer(room.id, q.id) != null).length, 'total': s.catalog.forRoom(room).length})} · ${progressText(s, room)}',
+    ),
+    RoomCaptureCards(
+      key: ValueKey('saved-place-cards-${s.caseId}-$scanEpoch'),
+      store: widget.services.store,
+      caseId: s.caseId,
+      rooms: LocalPlaceRooms.all,
+      availability: scanAvailability,
+      isCurrent: () => mounted && s.isCurrent,
+      enabled: editable,
+      onScan: openRoomScan,
+      onOpenRoom: (room) => openRoomEvidence(room),
+      savedPlacesOnly: true,
+      onConnected: () => openHomeModel(localPlaces: true),
+    ),
     ...archivedRooms(s),
   ];
   List<Widget> roomOverview(HomeSafetySession s, RoomInstance room) {

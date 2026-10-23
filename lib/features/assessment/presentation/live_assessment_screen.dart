@@ -20,6 +20,9 @@ import '../domain/home_safety/home_safety.dart';
 import '../application/assessment_sync.dart';
 import '../application/assessment_flow.dart';
 import '../domain/assessment_location.dart';
+import '../domain/local_place_rooms.dart';
+import 'room_capture_cards.dart';
+import 'whole_home_screen.dart';
 import '../../../shared/presentation/sah_components.dart';
 import 'recovery_photo_review_card.dart';
 
@@ -64,6 +67,8 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
   final saveStatusKey = GlobalKey();
   Uint8List? recoveredPhoto;
   SavedScanState savedScan = SavedScanState.loading;
+  int _scanEpoch = 0;
+  bool get _placeList => widget.scanRoom == null && !widget.legacyScan;
 
   @override
   void initState() {
@@ -160,12 +165,6 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       savedScan == SavedScanState.reviewed;
 
   void chooseLocation(AssessmentLocation location) {
-    if (location == AssessmentLocation.bathroom &&
-        _hasSavedModel &&
-        _canOpenScan) {
-      openBathroomScan();
-      return;
-    }
     session.flow.chooseLocation(location);
   }
 
@@ -254,7 +253,7 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     }
   }
 
-  void openManualConcern({required bool photo}) {
+  void openManualConcern({required bool photo, AssessmentLocation? location}) {
     session.guard();
     if (session.flow.step == AssessmentStep.review) {
       session.flow.startAnother();
@@ -268,13 +267,19 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
     }
     _measurementRequested = !photo;
     session.flow.chooseLocation(
-      widget.scanRoom?.type ?? AssessmentLocation.bathroom,
+      location ?? widget.scanRoom?.type ?? AssessmentLocation.bathroom,
     );
     if (!photo) session.flow.continueWithoutPhoto();
   }
 
-  Future<void> openBathroomScan() async {
+  Future<void> openBathroomScan({
+    RoomInstance? room,
+    bool forceLegacy = false,
+  }) async {
+    final targetRoom = room ?? widget.scanRoom;
     if (widget.scanRoom == null &&
+        room == null &&
+        !forceLegacy &&
         !widget.legacyScan &&
         widget.services.config.homeSafetyEnabled) {
       await run(() async {
@@ -299,11 +304,13 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       session.guard();
       if (!mounted) return;
       final scanner = BathroomScanSession(
-        syncApi: widget.services.scanModels,
+        syncApi: LocalPlaceRooms.contains(targetRoom)
+            ? null
+            : widget.services.scanModels,
         caseRevision: () => widget.services.coordinator.currentCase().revision,
         store: widget.services.store,
         caseId: session.caseId,
-        room: widget.scanRoom,
+        room: targetRoom,
         isCurrent: () => session.isCurrent,
         adapter:
             widget.services.bathroomScanAdapter ??
@@ -318,14 +325,16 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                 ? null
                 : session.importedScanFinding(id),
             activeImports: () =>
-                session.activeScanImportsForRoom(widget.scanRoom?.id),
+                session.activeScanImportsForRoom(targetRoom?.id),
             onImport: session.importScanObservation,
             onContinue: (_) {
               session.guard();
               finish = true;
             },
-            onAddOtherConcern: () => openManualConcern(photo: false),
-            onUsePhotos: () => openManualConcern(photo: true),
+            onAddOtherConcern: () =>
+                openManualConcern(photo: false, location: targetRoom?.type),
+            onUsePhotos: () =>
+                openManualConcern(photo: true, location: targetRoom?.type),
           ),
         ),
       );
@@ -333,9 +342,28 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
       await session.flush();
       scanAvailability.refresh();
       await refreshSavedScan();
+      if (mounted) setState(() => _scanEpoch++);
     });
     if (finish && mounted) await continueToCase();
   }
+
+  Future<void> openConnectedPlaces() => run(() async {
+    await session.flush();
+    session.guard();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WholeHomeScreen(
+          services: widget.services,
+          rooms: () => LocalPlaceRooms.all,
+          isCurrent: () => mounted && session.isCurrent,
+          scope: session,
+          localPlaces: true,
+        ),
+      ),
+    );
+    if (mounted && session.isCurrent) setState(() => _scanEpoch++);
+  });
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -425,6 +453,25 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                 ? null
                 : session.photoMarksUnsaved;
             return AssessmentFlowScreen(
+              roomCards: _placeList
+                  ? RoomCaptureCards(
+                      key: ValueKey(
+                        'place-scans-${session.caseId}-$_scanEpoch',
+                      ),
+                      store: widget.services.store,
+                      caseId: session.caseId,
+                      rooms: LocalPlaceRooms.all,
+                      availability: scanAvailability,
+                      isCurrent: () => mounted && session.isCurrent,
+                      enabled: _canOpenScan,
+                      mergeLegacyBathroom: true,
+                      onScan: (room) => openBathroomScan(
+                        room: room,
+                        forceLegacy: room == null,
+                      ),
+                      onOpenRoom: (room) => chooseLocation(room.type),
+                    )
+                  : null,
               embedded: widget.embedded,
               expandMeasurements: _measurementRequested,
               flow: session.flow,
@@ -443,11 +490,18 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                   services: widget.services,
                   findingId: session.flow.findingId,
                 ),
-                IconButton(
-                  onPressed: busy ? null : history,
-                  tooltip: context.tr('Saved review history'),
-                  icon: const Icon(Icons.history),
-                ),
+                if (widget.embedded && _placeList)
+                  TextButton.icon(
+                    onPressed: busy ? null : history,
+                    icon: const Icon(Icons.history),
+                    label: Text(context.tr('Saved review history')),
+                  )
+                else
+                  IconButton(
+                    onPressed: busy ? null : history,
+                    tooltip: context.tr('Saved review history'),
+                    icon: const Icon(Icons.history),
+                  ),
                 if (!widget.embedded)
                   IconButton(
                     onPressed: busy || session.flow.isBusy ? null : close,
@@ -455,18 +509,28 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                     icon: const Icon(Icons.close),
                   ),
               ],
-              areaToolsFirst: scanAvailability.prefersScan || _hasSavedModel,
+              areaToolsFirst:
+                  _placeList || scanAvailability.prefersScan || _hasSavedModel,
               onChooseLocation: chooseLocation,
               locationStatus: {
                 if (_hasSavedModel)
                   widget.scanRoom?.type ?? AssessmentLocation.bathroom:
                       '3D scan saved',
               },
-              areaTools:
-                  _hasSavedModel &&
-                      widget.scanRoom == null &&
-                      (!widget.services.config.homeSafetyEnabled ||
-                          widget.legacyScan)
+              areaTools: _placeList
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('open-whole-home-model'),
+                        onPressed: _canOpenScan ? openConnectedPlaces : null,
+                        icon: const Icon(Icons.home_work_outlined),
+                        label: Text(context.tr('Scan connected rooms')),
+                      ),
+                    )
+                  : _hasSavedModel &&
+                        widget.scanRoom == null &&
+                        (!widget.services.config.homeSafetyEnabled ||
+                            widget.legacyScan)
                   ? null
                   : AssessmentScanEntry(
                       rooms:

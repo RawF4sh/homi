@@ -12,6 +12,111 @@ const double sahFloatingNavHeight = 72;
 double sahFloatingNavClearance(BuildContext context) =>
     MediaQuery.paddingOf(context).bottom + 24;
 
+/// Scroll padding, rather than viewport padding, lets content pass under the
+/// floating dock while keeping the last control reachable above it.
+EdgeInsets sahFloatingContentPadding(BuildContext context, {double all = 20}) =>
+    EdgeInsets.fromLTRB(
+      all,
+      all,
+      all,
+      all + (_FloatingContentInset.maybeOf(context)?.bottom ?? 0),
+    );
+
+class _FloatingContentInset extends InheritedWidget {
+  const _FloatingContentInset({required this.bottom, required super.child});
+  final double bottom;
+
+  static _FloatingContentInset? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_FloatingContentInset>();
+
+  @override
+  bool updateShouldNotify(_FloatingContentInset oldWidget) =>
+      bottom != oldWidget.bottom;
+}
+
+/// One transparent dock for both the selected-plan and account shells.
+class SahFloatingScaffold extends StatelessWidget {
+  const SahFloatingScaffold({
+    super.key,
+    required this.body,
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+    required this.onAssistant,
+  });
+
+  final Widget body;
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+  final VoidCallback onAssistant;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final keyboard = media.viewInsets.bottom > 0;
+    // At accessibility sizes and in short landscape viewports, reserve the
+    // dock's height so it cannot consume the usable scrolling/focus region.
+    final overlay =
+        !keyboard &&
+        media.textScaler.scale(14) <= 22 &&
+        media.size.height > 500;
+    return Scaffold(
+      extendBody: overlay,
+      body: Builder(
+        builder: (context) => _FloatingContentInset(
+          bottom: overlay ? MediaQuery.paddingOf(context).bottom : 0,
+          child: MediaQuery.removePadding(
+            context: context,
+            removeBottom: true,
+            child: SafeArea(bottom: false, child: body),
+          ),
+        ),
+      ),
+      bottomNavigationBar: keyboard
+          ? null
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  child: media.textScaler.scale(14) > 22
+                      ? IconButton.filled(
+                          key: const ValueKey('ask-homi'),
+                          onPressed: onAssistant,
+                          tooltip: context.tr('Ask Homi'),
+                          constraints: const BoxConstraints(
+                            minWidth: 48,
+                            minHeight: 48,
+                          ),
+                          icon: const Icon(Icons.chat_bubble_outline),
+                        )
+                      : FilledButton.icon(
+                          key: const ValueKey('ask-homi'),
+                          onPressed: onAssistant,
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            shape: const StadiumBorder(),
+                            elevation: 3,
+                          ),
+                          icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                          label: Text(context.tr('Ask Homi')),
+                        ),
+                ),
+                SahFloatingNavBar(
+                  selectedIndex: selectedIndex,
+                  onDestinationSelected: onDestinationSelected,
+                  destinations: homiDestinations(context),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
 class SahFloatingNavBar extends StatelessWidget {
   const SahFloatingNavBar({
     super.key,
@@ -34,7 +139,7 @@ class SahFloatingNavBar extends StatelessWidget {
     final opaque = media.highContrast || media.accessibleNavigation || !iOS;
     final surface = opaque
         ? scheme.surfaceContainerLow
-        : scheme.surfaceContainerLow.withValues(alpha: .9);
+        : scheme.surfaceContainerLow.withValues(alpha: .82);
     final largeText = media.textScaler.scale(14) > 22;
     final navigation = largeText
         ? Column(
@@ -141,7 +246,7 @@ class SahFloatingNavBar extends StatelessWidget {
     final bar = DecoratedBox(
       decoration: BoxDecoration(
         color: surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(28),
         border: Border.all(color: scheme.outlineVariant),
         boxShadow: [
           BoxShadow(
@@ -167,7 +272,7 @@ class SahFloatingNavBar extends StatelessWidget {
         media.padding.bottom > 0 ? media.padding.bottom : 12,
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(28),
         child: opaque || kIsWeb
             ? bar
             : BackdropFilter(

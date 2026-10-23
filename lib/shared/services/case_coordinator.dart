@@ -761,6 +761,7 @@ class CaseCoordinator extends ChangeNotifier {
         'case.',
         'case-delete.',
         'profile-edit.',
+        'profile-response.',
         'plan-name.',
         'plan-name-sync.',
       ]) {
@@ -795,6 +796,7 @@ class CaseCoordinator extends ChangeNotifier {
     if ([
       'case',
       'profile-edit',
+      'profile-response',
       'case-delete',
       'plan-name',
       'plan-name-sync',

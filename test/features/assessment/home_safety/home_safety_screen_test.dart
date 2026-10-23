@@ -36,6 +36,11 @@ void main() {
           250,
           scrollable: find.byType(Scrollable).first,
         );
+        await Scrollable.ensureVisible(
+          tester.element(find.byKey(const ValueKey('rooms-add'))),
+          alignment: .5,
+        );
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('rooms-add')));
         await tester.pumpAndSettle();
         await tester.enterText(find.byType(TextField), name);
@@ -49,6 +54,11 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).first,
       );
+      await Scrollable.ensureVisible(
+        tester.element(find.text('Fictional upstairs')),
+        alignment: .5,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Fictional upstairs'));
       await tester.pumpAndSettle();
       final dropdown = find.byKey(const ValueKey('answer-bedroom.path'));

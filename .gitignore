@@ -101,6 +101,7 @@ private-packets/
 *.pem
 
 /docs/*
+!/docs/homi-approved-ui.md
 !/docs/android-local-setup.md
 !/docs/backup-and-restore.md
 !/docs/bathroom-scanning.md

@@ -19,12 +19,14 @@ class WholeHomeScreen extends StatefulWidget {
     required this.isCurrent,
     required this.scope,
     this.captureAdapter,
+    this.localPlaces = false,
   });
   final AppServices services;
   final List<RoomInstance> Function() rooms;
   final bool Function() isCurrent;
   final Listenable scope;
   final WholeHomeCaptureAdapter? captureAdapter;
+  final bool localPlaces;
   @override
   State<WholeHomeScreen> createState() => _WholeHomeScreenState();
 }
@@ -37,6 +39,7 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
     isCurrent: widget.isCurrent,
     currentRooms: widget.rooms,
     adapter: widget.captureAdapter ?? const NativeWholeHomeCaptureAdapter(),
+    localPlaces: widget.localPlaces,
   );
   late Future<void> ready;
   HomeModelSync? synchronization;
@@ -44,7 +47,7 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
   bool get working => session.busy || syncing;
   Future<void> initialize() async {
     await session.initialize();
-    final api = widget.services.scanModels;
+    final api = widget.localPlaces ? null : widget.services.scanModels;
     if (api != null && synchronization == null && session.current) {
       final sync = HomeModelSync(
         api: api,

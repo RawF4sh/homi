@@ -6,7 +6,9 @@ import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
 import 'profile_suggestion_field.dart';
 import 'profile_suggestions.dart';
+import 'profile_response_state.dart';
 import '../../shared/models/case_draft.dart';
+import '../../shared/models/contracts.dart';
 import '../../shared/presentation/draft_exit_guard.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../../shared/services/draft_save_tracker.dart';
@@ -30,6 +32,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   String? _tenure;
   bool? _consent;
   bool _saving = false, _restoring = true;
+  bool _responsesUnavailable = false;
   bool _automaticSaving = false;
   Completer<void>? _localPromotion;
   bool _leaving = false;
@@ -53,13 +56,13 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   int _editVersion = 0;
   String? _pendingProfileFingerprint;
   Map<String, Object?>? _recovered;
-  int _fieldVersion = 0;
-  bool _choosingHealthPlan = false;
+  ProfileResponseState _responses = const ProfileResponseState();
+  ProfileResponseState _baseResponses = const ProfileResponseState();
   String get _editKey => 'profile-edit.$_caseId';
   static const labels = {
+    'healthPlan': 'Health plan',
     'city': 'City',
     'county': 'County',
-    'healthPlan': 'Health plan',
     'ageYears': 'Age in years',
     'householdSize': 'People in household',
     'annualIncomeUsd': 'Annual household income (USD)',
@@ -129,6 +132,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   bool get _editable =>
       (!_saving || _automaticSaving) &&
       !_restoring &&
+      !_responsesUnavailable &&
       !_leaving &&
       _recovered == null &&
       _sameBase;
@@ -190,6 +194,10 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       'values': restored,
       'tenure': saved['tenure'],
       'consent': saved['consent'],
+      // Old journals did not distinguish explicit uncertainty from no response.
+      'responses': saved['responses'] == null
+          ? const ProfileResponseState().toJson()
+          : ProfileResponseState.fromJson(saved['responses']).toJson(),
     };
   }
 
@@ -200,7 +208,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     }
     _tenure = value['tenure'] as String?;
     _consent = value['consent'] as bool?;
-    _fieldVersion++;
+    _responses = ProfileResponseState.fromJson(value['responses']);
   }
 
   Map<String, Object?> _journal([Map<String, Object?>? edits]) => {
@@ -213,11 +221,20 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       'values': {for (final key in labels.keys) key: _fields[key]!.text},
       'tenure': _tenure,
       'consent': _consent,
+      'responses': _responses.toJson(),
     },
   };
 
   Future<void> _restore() async {
+    var responsesLoaded = false;
     try {
+      _responses = await widget.services.profileResponses.read(
+        _caseId,
+        CaseProfile.fromJson(_baseProfile),
+      );
+      _requireBase();
+      _baseResponses = _responses;
+      responsesLoaded = true;
       final saved = await widget.services.store.readJson(_editKey);
       _requireBase();
       if (saved != null) {
@@ -240,8 +257,10 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       }
     } catch (_) {
       if (mounted) {
-        _notice =
-            'Unfinished edits could not be restored. The current case details are shown; check them before continuing.';
+        _responsesUnavailable = !responsesLoaded;
+        _notice = _responsesUnavailable
+            ? 'Saved response choices could not be opened. Retry before changing resident details.'
+            : 'Unfinished edits could not be restored. The current case details are shown; check them before continuing.';
       }
     }
     if (mounted) {
@@ -382,7 +401,13 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
 
   Future<void> _save({bool automatic = false}) async {
     if (automatic) {
-      if (_saving || _restoring || _recovered != null || !_sameBase) return;
+      if (_saving ||
+          _restoring ||
+          _responsesUnavailable ||
+          _recovered != null ||
+          !_sameBase) {
+        return;
+      }
     } else {
       if (!_editable || _saving) return;
       _cancelAutosave();
@@ -400,6 +425,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     });
     if (errors.isNotEmpty) return;
     final editVersion = _editVersion;
+    final responses = _responses;
     final promotion = Completer<void>();
     _localPromotion = promotion;
     setState(() {
@@ -435,12 +461,19 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           await c.updateDraft(changed);
         }
         _requireExactDraft({changedFingerprint});
+        await widget.services.profileResponses.write(
+          _caseId,
+          changed.profile,
+          responses,
+        );
+        _requireExactDraft({changedFingerprint});
         if (_editVersion == editVersion) {
           await widget.services.store.delete(_editKey);
         }
       });
       _requireBase();
       _baseProfile = changed.profile.toJson();
+      _baseResponses = responses.forProfile(changed.profile);
       _baseFingerprint = _fingerprint(_baseProfile);
       _pendingProfileFingerprint = null;
       _needsLocalPromotion = _editVersion != editVersion;
@@ -545,7 +578,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     if (!_sameBase && _onlineSave == null) {
       return context.tr('Review the changed case.');
     }
-    if (_draftSaves.failed || c.localSaveFailed) {
+    if (_responsesUnavailable || _draftSaves.failed || c.localSaveFailed) {
       return context.tr(
         'Device save needs attention. Your entries are still here.',
       );
@@ -569,10 +602,26 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     if (_syncFailed || c.hasUnsavedChanges) {
       return context.tr('Saved on this device.');
     }
-    return context.tr('Saved online');
+    // Explicit uncertainty is encrypted on this phone, not part of v1 sync.
+    return _responses.coverage != null ||
+            _responses.tenureNotSure ||
+            _responses.consentNotSure
+        ? context.tr('Saved on this device.')
+        : context.tr('Saved online');
   }
 
-  String _display(Object? value, {bool housing = false}) => switch (value) {
+  String _display(
+    Object? value, {
+    bool housing = false,
+    bool notSure = false,
+    bool planChosen = false,
+  }) => switch (value) {
+    null when notSure => context.tr('Not sure'),
+    String text when text.trim().isEmpty && notSure => context.tr('Not sure'),
+    null when planChosen => context.tr('Has a health plan'),
+    String text when text.trim().isEmpty && planChosen => context.tr(
+      'Has a health plan',
+    ),
     null => context.tr('Unknown'),
     true => context.tr('Yes'),
     false => context.tr('No'),
@@ -584,6 +633,15 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
 
   Widget _comparison() {
     final edits = _recovered!;
+    final recoveredResponses = ProfileResponseState.fromJson(
+      edits['responses'],
+    );
+    bool notSure(String key, ProfileResponseState state) => switch (key) {
+      'healthPlan' => state.coverage == ProfileCoverageChoice.notSure,
+      'tenure' => state.tenureNotSure,
+      'ownerConsentReported' => state.consentNotSure,
+      _ => false,
+    };
     final values = <String, Object?>{
       ...Map<String, Object?>.from(edits['values'] as Map),
       'tenure': edits['tenure'],
@@ -620,6 +678,10 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                     'value': _display(
                       _baseProfile[entry.key],
                       housing: entry.key == 'tenure',
+                      notSure: notSure(entry.key, _baseResponses),
+                      planChosen:
+                          entry.key == 'healthPlan' &&
+                          _baseResponses.coverage == ProfileCoverageChoice.plan,
                     ),
                   }),
                 ),
@@ -628,6 +690,11 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                     'value': _display(
                       values[entry.key],
                       housing: entry.key == 'tenure',
+                      notSure: notSure(entry.key, recoveredResponses),
+                      planChosen:
+                          entry.key == 'healthPlan' &&
+                          recoveredResponses.coverage ==
+                              ProfileCoverageChoice.plan,
                     ),
                   }),
                 ),
@@ -850,11 +917,16 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       AppLocalizations(locale).text('No health coverage'),
   };
 
-  _Coverage _coverage() {
+  _Coverage? _coverage() {
     final text = _fields['healthPlan']!.text.trim();
     if (_noCoverageAnswers.contains(text)) return _Coverage.none;
-    if (text.isNotEmpty || _choosingHealthPlan) return _Coverage.plan;
-    return _Coverage.unknown;
+    if (text.isNotEmpty) return _Coverage.plan;
+    return switch (_responses.coverage) {
+      ProfileCoverageChoice.plan => _Coverage.plan,
+      ProfileCoverageChoice.none => _Coverage.none,
+      ProfileCoverageChoice.notSure => _Coverage.unknown,
+      null => null,
+    };
   }
 
   Widget _coverageChoices() {
@@ -863,10 +935,22 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       if (!_editable) return;
       final focus = _fieldFocus['healthPlan']!;
       final field = _fields['healthPlan']!;
-      setState(() => _choosingHealthPlan = choice == _Coverage.plan);
+      setState(() {
+        _responses = ProfileResponseState(
+          coverage: switch (choice) {
+            _Coverage.plan => ProfileCoverageChoice.plan,
+            _Coverage.none => ProfileCoverageChoice.none,
+            _Coverage.unknown => ProfileCoverageChoice.notSure,
+          },
+          tenureNotSure: _responses.tenureNotSure,
+          consentNotSure: _responses.consentNotSure,
+        );
+      });
       if (choice == _Coverage.plan) {
         if (current == _Coverage.none) {
           _applySuggestionValues({'healthPlan': ''});
+        } else {
+          _stash();
         }
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -890,12 +974,14 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
         RadioListTile<_Coverage>(
           key: ValueKey(key),
           value: choice,
+          enabled: _editable,
           contentPadding: EdgeInsets.zero,
           title: Text(context.tr(label)),
         );
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: RadioGroup<_Coverage>(
+        key: const ValueKey('profile-coverage-group'),
         groupValue: current,
         onChanged: (choice) {
           if (choice != null) choose(choice);
@@ -922,6 +1008,91 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       ),
     );
   }
+
+  Widget _questionCard(String key, String title, Widget child) => Card.outlined(
+    key: ValueKey('profile-$key-card'),
+    margin: const EdgeInsets.only(bottom: 16),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(
+              context.tr(title),
+              key: ValueKey('profile-full-label-$key'),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
+    ),
+  );
+
+  Widget _responseChoices({
+    required String key,
+    required String? value,
+    required Map<String, String> options,
+    required ValueChanged<String> onChanged,
+  }) => RadioGroup<String>(
+    key: ValueKey('profile-$key-group'),
+    groupValue: value,
+    onChanged: (choice) {
+      if (!_editable || choice == null) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+      setState(() => onChanged(choice));
+      _stash();
+    },
+    child: Column(
+      children: [
+        for (final entry in options.entries)
+          RadioListTile<String>(
+            key: ValueKey('profile-$key-${entry.key}'),
+            value: entry.key,
+            enabled: _editable,
+            contentPadding: EdgeInsets.zero,
+            title: Text(context.tr(entry.value)),
+          ),
+      ],
+    ),
+  );
+
+  Widget _housingChoices() => _responseChoices(
+    key: 'tenure',
+    value: _tenure ?? (_responses.tenureNotSure ? 'notSure' : null),
+    options: const {'owner': 'Own', 'renter': 'Rent', 'notSure': 'Not sure'},
+    onChanged: (choice) {
+      _tenure = choice == 'notSure' ? null : choice;
+      _responses = ProfileResponseState(
+        coverage: _responses.coverage,
+        tenureNotSure: choice == 'notSure',
+        consentNotSure: _responses.consentNotSure,
+      );
+    },
+  );
+
+  Widget _consentChoices() => _responseChoices(
+    key: 'consent',
+    value: _consent == null
+        ? (_responses.consentNotSure ? 'notSure' : null)
+        : (_consent! ? 'yes' : 'no'),
+    options: const {'yes': 'Yes', 'no': 'No', 'notSure': 'Not sure'},
+    onChanged: (choice) {
+      _consent = switch (choice) {
+        'yes' => true,
+        'no' => false,
+        _ => null,
+      };
+      _responses = ProfileResponseState(
+        coverage: _responses.coverage,
+        tenureNotSure: _responses.tenureNotSure,
+        consentNotSure: choice == 'notSure',
+      );
+    },
+  );
 
   Widget _fullFieldLabel(String label, String key) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
@@ -987,7 +1158,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SahPageHeader(title: context.tr('About the resident')),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 20),
                         child: ListenableBuilder(
@@ -997,6 +1167,20 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                       ),
                       if (_notice != null)
                         SahNotice(message: context.tr(_notice!)),
+                      if (_responsesUnavailable && _sameBase)
+                        OutlinedButton(
+                          key: const ValueKey('profile-retry-responses'),
+                          onPressed: _restoring
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _restoring = true;
+                                    _responsesUnavailable = false;
+                                  });
+                                  unawaited(_restore());
+                                },
+                          child: Text(context.tr('Retry')),
+                        ),
                       if (!_sameBase && !_restoring && !_saving)
                         SahNotice(
                           title: context.tr('This case changed'),
@@ -1010,13 +1194,30 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                           semanticsLabel: context.tr('Restoring private edits'),
                         ),
                       if (_recovered != null) _comparison(),
-                      for (final key in labels.keys) ...[
+                      _questionCard(
+                        'coverage',
+                        'Health coverage',
+                        Padding(
+                          key: const ValueKey('profile-field-healthPlan'),
+                          padding: EdgeInsets.zero,
+                          child: _profileField('healthPlan'),
+                        ),
+                      ),
+                      _questionCard(
+                        'tenure',
+                        'Do you own or rent?',
+                        _housingChoices(),
+                      ),
+                      _questionCard(
+                        'consent',
+                        'Owner permission reported?',
+                        _consentChoices(),
+                      ),
+                      for (final key in labels.keys.where(
+                        (key) => key != 'healthPlan',
+                      )) ...[
                         if (key == 'city')
                           SahSectionHeading(title: context.tr('Location')),
-                        if (key == 'healthPlan')
-                          SahSectionHeading(
-                            title: context.tr('Health coverage'),
-                          ),
                         if (key == 'ageYears')
                           SahSectionHeading(title: context.tr('Household')),
                         Padding(
@@ -1025,74 +1226,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                           child: _profileField(key),
                         ),
                       ],
-                      SahSectionHeading(title: context.tr('Housing')),
-                      _fullFieldLabel('Do you own or rent?', 'tenure'),
-                      DropdownButtonFormField<String>(
-                        key: ValueKey(
-                          'tenure-$_restoring${_fieldVersion == 0 ? '' : '-$_fieldVersion'}',
-                        ),
-                        initialValue: _tenure,
-                        isExpanded: true,
-                        isDense: false,
-                        itemHeight: null,
-                        decoration: InputDecoration(
-                          labelText: context.tr('Do you own or rent?'),
-                        ),
-                        items: [
-                          DropdownMenuItem(
-                            value: null,
-                            child: Text(context.tr('Not provided')),
-                          ),
-                          DropdownMenuItem(
-                            value: 'owner',
-                            child: Text(context.tr('Own')),
-                          ),
-                          DropdownMenuItem(
-                            value: 'renter',
-                            child: Text(context.tr('Rent')),
-                          ),
-                        ],
-                        onChanged: !_editable
-                            ? null
-                            : (v) => setState(() {
-                                _tenure = v;
-                                _stash();
-                              }),
-                      ),
-                      const SizedBox(height: 16),
-                      _fullFieldLabel('Owner permission reported?', 'consent'),
-                      DropdownButtonFormField<bool>(
-                        key: ValueKey(
-                          'consent-$_restoring${_fieldVersion == 0 ? '' : '-$_fieldVersion'}',
-                        ),
-                        initialValue: _consent,
-                        isExpanded: true,
-                        isDense: false,
-                        itemHeight: null,
-                        decoration: InputDecoration(
-                          labelText: context.tr('Owner permission reported?'),
-                        ),
-                        items: [
-                          DropdownMenuItem(
-                            value: null,
-                            child: Text(context.tr('Not known')),
-                          ),
-                          DropdownMenuItem(
-                            value: true,
-                            child: Text(context.tr('Yes')),
-                          ),
-                          DropdownMenuItem(
-                            value: false,
-                            child: Text(context.tr('No')),
-                          ),
-                        ],
-                        onChanged: !_editable
-                            ? null
-                            : (v) => setState(() {
-                                _consent = v;
-                                _stash();
-                              }),
-                      ),
                       const SizedBox(height: 24),
                       if (_errors.isNotEmpty)
                         SahActionFeedback(

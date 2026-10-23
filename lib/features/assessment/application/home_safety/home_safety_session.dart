@@ -7,6 +7,7 @@ import '../../../../shared/services/home_safety_api_client.dart';
 import '../../../../shared/services/matching_api_client.dart';
 import '../../domain/home_safety/home_safety.dart';
 import '../../domain/assessment_location.dart';
+import '../../domain/local_place_rooms.dart';
 import '../live_assessment_session.dart';
 import '../bathroom_scan_session.dart';
 import '../whole_home_session.dart';
@@ -327,7 +328,8 @@ class HomeSafetySession extends ChangeNotifier {
     guard();
     var added = 0;
     for (final binding in bindings.entries) {
-      if (!document.activeRooms.any((r) => r.id == binding.value) ||
+      if (LocalPlaceRooms.containsId(binding.value) ||
+          !document.activeRooms.any((r) => r.id == binding.value) ||
           !snapshot.findings.any((f) => f.id == binding.key) ||
           document.findingRooms.any((l) => l.findingId == binding.key)) {
         continue;

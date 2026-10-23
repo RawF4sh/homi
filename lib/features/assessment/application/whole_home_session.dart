@@ -7,6 +7,7 @@ import '../../../shared/models/home_model_sync.dart';
 import '../../../shared/services/local_private_store.dart';
 import '../domain/home_safety/home_safety.dart';
 import '../domain/assessment_location.dart';
+import '../domain/local_place_rooms.dart';
 import '../domain/scan/bathroom_scan_scene.dart';
 import '../domain/scan/whole_home_model.dart';
 import 'bathroom_scan_session.dart';
@@ -23,12 +24,14 @@ class WholeHomeSession extends ChangeNotifier {
     required this.isCurrent,
     required this.currentRooms,
     this.adapter = const NativeWholeHomeCaptureAdapter(),
+    this.localPlaces = false,
   });
   final LocalPrivateStore store;
   final String caseId;
   final bool Function() isCurrent;
   final List<RoomInstance> Function() currentRooms;
   final WholeHomeCaptureAdapter adapter;
+  final bool localPlaces;
   final Map<String, BathroomScanScene> scans = {};
   final Set<String> unreadable = {};
   final Map<String, BathroomScanScene> _restoredSources = {};
@@ -36,7 +39,9 @@ class WholeHomeSession extends ChangeNotifier {
   bool busy = false, supported = false, initialized = false, _disposed = false;
   String? notice, _captureId;
   Set<String> _captureRooms = {};
-  String get key => 'assessment:$caseId:whole-home';
+  String get key => localPlaces
+      ? LocalPlaceRooms.homeKey(caseId)
+      : 'assessment:$caseId:whole-home';
   String get draftKey => '$key:draft';
   String get intentKey => '$key:capture';
   static final _writers = Expando<Future<void>>();

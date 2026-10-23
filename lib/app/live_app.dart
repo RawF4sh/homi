@@ -21,6 +21,7 @@ import '../features/assessment/domain/capture/capture_adapter.dart';
 import '../features/assessment/application/bathroom_scan_adapter.dart';
 import '../features/auth/login_screen.dart';
 import '../features/cases/case_home_screen.dart';
+import '../features/cases/profile_response_store.dart';
 import '../features/settings/account_settings_screen.dart';
 import '../shared/presentation/startup_error_screen.dart';
 import '../shared/services/annotated_export_api_client.dart';
@@ -231,6 +232,16 @@ class AppServices {
       discovery: discovery,
       planNames: planNames,
     );
+    final profileEpoch = session.epoch;
+    profileResponses = ProfileResponseStore(
+      store: store,
+      isCurrentCase: (caseId) =>
+          session.epoch == profileEpoch &&
+          session.userId == store.accountId &&
+          coordinator.isCurrent &&
+          coordinator.draft?.caseId == caseId,
+      scopeKey: () => coordinator.generation,
+    );
     if (config.trackingEnabled) {
       final epoch = session.epoch;
       bool current() =>
@@ -289,6 +300,7 @@ class AppServices {
   late final FormAnswersApiClient answers;
   late final RequestTrackingApiClient history;
   late final CaseCoordinator coordinator;
+  late final ProfileResponseStore profileResponses;
   Future<void> signOut() => _clearAccountSession(
     prepare: (finish) => coordinator.withSignOutReservation(() async {
       final names = coordinator.nameSync;
@@ -325,6 +337,7 @@ class AppServices {
   }
 
   void dispose() {
+    profileResponses.dispose();
     progress?.dispose();
     reminderOpen.dispose();
     coordinator.dispose();

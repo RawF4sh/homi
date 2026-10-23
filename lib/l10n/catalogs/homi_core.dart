@@ -1,4 +1,35 @@
 const homiCoreTranslations = <String, Map<String, String>>{
+  "Choose an answer": {
+    "es": "Elija una respuesta",
+    "zh-Hans": "请选择答案",
+    "zh-Hant": "請選擇答案",
+    "vi": "Chọn câu trả lời",
+    "fil": "Pumili ng sagot",
+  },
+  "Saved response choices could not be opened. Retry before changing resident details.": {
+    "es":
+        "No se pudieron abrir las respuestas guardadas. Reintente antes de cambiar los datos del residente.",
+    "zh-Hans": "无法打开已保存的回答。请重试后再修改居民信息。",
+    "zh-Hant": "無法開啟已儲存的回答。請重試後再修改住戶資料。",
+    "vi":
+        "Không mở được các câu trả lời đã lưu. Hãy thử lại trước khi thay đổi thông tin cư dân.",
+    "fil":
+        "Hindi mabuksan ang mga naka-save na sagot. Subukan muli bago baguhin ang detalye ng residente.",
+  },
+  "Switch plan": {
+    "es": "Cambiar de plan",
+    "zh-Hans": "切换计划",
+    "zh-Hant": "切換計畫",
+    "vi": "Đổi kế hoạch",
+    "fil": "Lumipat ng plano",
+  },
+  "Rename": {
+    "es": "Renombrar",
+    "zh-Hans": "重命名",
+    "zh-Hant": "重新命名",
+    "vi": "Đổi tên",
+    "fil": "Palitan ang pangalan",
+  },
   "Ask Homi": {
     "es": "Preguntar a Homi",
     "zh-Hans": "询问 Homi",

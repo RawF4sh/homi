@@ -1,4 +1,56 @@
 const programsTranslations = <String, Map<String, String>>{
+  "Could help with accessibility changes at home.": {
+    "es": "Podría ayudar con adaptaciones de accesibilidad en el hogar.",
+    "zh-Hans": "可能提供居家无障碍改造方面的帮助。",
+    "zh-Hant": "可能提供居家無障礙改造方面的協助。",
+    "vi": "Có thể hỗ trợ cải tạo nhà để dễ tiếp cận.",
+    "fil":
+        "Maaaring makatulong sa mga pagbabago para mas madaling magamit ang tahanan.",
+  },
+  "Could help with home modifications for accessibility.": {
+    "es":
+        "Podría ayudar con modificaciones del hogar para mejorar la accesibilidad.",
+    "zh-Hans": "可能提供改善无障碍条件的房屋改造帮助。",
+    "zh-Hant": "可能提供改善無障礙條件的房屋改造協助。",
+    "vi": "Có thể hỗ trợ sửa đổi nhà ở để cải thiện khả năng tiếp cận.",
+    "fil":
+        "Maaaring makatulong sa pag-aangkop ng bahay para mas madaling magamit.",
+  },
+  "Could help with home repairs.": {
+    "es": "Podría ayudar con reparaciones del hogar.",
+    "zh-Hans": "可能提供房屋维修方面的帮助。",
+    "zh-Hant": "可能提供房屋維修方面的協助。",
+    "vi": "Có thể hỗ trợ sửa chữa nhà ở.",
+    "fil": "Maaaring makatulong sa pag-aayos ng tahanan.",
+  },
+  "Eligibility and availability need confirmation.": {
+    "es": "Es necesario confirmar la elegibilidad y la disponibilidad.",
+    "zh-Hans": "资格和当前受理情况仍需确认。",
+    "zh-Hant": "資格和目前受理情況仍需確認。",
+    "vi": "Cần xác nhận điều kiện và tình trạng tiếp nhận.",
+    "fil": "Kailangang kumpirmahin ang pagiging kwalipikado at availability.",
+  },
+  "Details for {program}": {
+    "es": "Detalles de {program}",
+    "zh-Hans": "{program}的详情",
+    "zh-Hant": "{program}的詳情",
+    "vi": "Chi tiết về {program}",
+    "fil": "Mga detalye ng {program}",
+  },
+  "{count} program": {
+    "es": "{count} programa",
+    "zh-Hans": "{count} 个项目",
+    "zh-Hant": "{count} 個計畫",
+    "vi": "{count} chương trình",
+    "fil": "{count} programa",
+  },
+  "{count} programs": {
+    "es": "{count} programas",
+    "zh-Hans": "{count} 个项目",
+    "zh-Hant": "{count} 個計畫",
+    "vi": "{count} chương trình",
+    "fil": "{count} programa",
+  },
   "Possible help: home accessibility adaptations.": {
     "es": "Posible ayuda: adaptaciones de accesibilidad en el hogar.",
     "zh-Hans": "可能的帮助：居家无障碍改造。",

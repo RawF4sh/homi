@@ -96,8 +96,9 @@ void main() {
         );
         await tester.pumpAndSettle();
         final scroll = find.byType(Scrollable).first;
-        final action = find.byKey(
-          const ValueKey('program-fictional-program-review'),
+        final action = find.descendant(
+          of: find.byKey(const ValueKey('program-fictional-program-details')),
+          matching: find.text(tr('Details')),
         );
         await tester.scrollUntilVisible(
           action,
@@ -108,7 +109,7 @@ void main() {
         await Scrollable.ensureVisible(tester.element(action), alignment: .5);
         await tester.pumpAndSettle();
         expect(action.hitTestable(), findsOneWidget);
-        expect(tester.widget<FilledButton>(action).onPressed, isNotNull);
+        expect(find.text(tr('Review requirements')), findsNothing);
         expect(
           find.text(
             tr('{met} met · {notMet} not met · {unknown} need confirmation', {
@@ -123,14 +124,6 @@ void main() {
         for (final reason in reasons) {
           expect(find.text(reason), findsNothing);
         }
-        final title = find.descendant(
-          of: find.byKey(const ValueKey('program-fictional-program-details')),
-          matching: find.text(tr('Details')),
-        );
-        expect(
-          tester.getTopLeft(action).dy,
-          lessThan(tester.getTopLeft(title).dy),
-        );
         await tester.tap(action);
         await tester.pumpAndSettle();
         expect(
@@ -172,9 +165,9 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(lastTitle.hitTestable(), findsOneWidget);
-        await Scrollable.ensureVisible(tester.element(title), alignment: .5);
+        await Scrollable.ensureVisible(tester.element(action), alignment: .5);
         await tester.pumpAndSettle();
-        await tester.tap(title);
+        await tester.tap(action);
         await tester.pumpAndSettle();
         expect(find.text(reasons.last), findsNothing);
         await Scrollable.ensureVisible(tester.element(action), alignment: .5);

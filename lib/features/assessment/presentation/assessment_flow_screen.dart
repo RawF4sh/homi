@@ -13,6 +13,7 @@ import '../domain/measurement/measurement_fields.dart';
 import '../domain/review/finding_review_state.dart';
 import '../domain/review/finding_review_tracker.dart';
 import '../../../shared/presentation/sah_components.dart';
+import '../../../shared/presentation/sah_floating_nav.dart';
 import 'annotation_editor_screen.dart';
 import 'photo_privacy_screen.dart';
 import 'assessment_copy.dart';
@@ -34,6 +35,7 @@ class AssessmentFlowScreen extends StatelessWidget {
     this.scanFindingIds = const {},
     this.onChooseLocation,
     this.locationStatus = const {},
+    this.roomCards,
   });
 
   final ValueChanged<AssessmentLocation>? onChooseLocation;
@@ -48,6 +50,7 @@ class AssessmentFlowScreen extends StatelessWidget {
   final bool expandMeasurements;
 
   final Widget? areaTools;
+  final Widget? roomCards;
   final bool areaToolsFirst;
 
   final bool keptOnDevice;
@@ -137,16 +140,23 @@ class AssessmentFlowScreen extends StatelessWidget {
             ),
             body: SingleChildScrollView(
               key: ValueKey('assessment-scroll-${step.name}'),
-              padding: const EdgeInsets.all(16),
+              padding: embedded
+                  ? sahFloatingContentPadding(context, all: 16)
+                  : const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (embedded) ...[
-                    if (step != AssessmentStep.chooseArea)
+                    if (step != AssessmentStep.chooseArea || roomCards != null)
                       Semantics(
                         header: true,
                         child: Text(
-                          context.tr(_title(step)),
+                          context.tr(
+                            step == AssessmentStep.chooseArea &&
+                                    roomCards != null
+                                ? 'Rooms'
+                                : _title(step),
+                          ),
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                       ),
@@ -202,15 +212,17 @@ class AssessmentFlowScreen extends StatelessWidget {
   }
 
   Widget _page({
-    required Widget body,
+    required SingleChildScrollView body,
     required AppBar appBar,
     Widget? bottomNavigationBar,
   }) => embedded
-      ? Column(
-          children: [
-            Expanded(child: body),
-            ?bottomNavigationBar,
-          ],
+      ? SingleChildScrollView(
+          key: body.key,
+          padding: body.padding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [body.child!, ?bottomNavigationBar],
+          ),
         )
       : Scaffold(
           appBar: appBar,
@@ -261,24 +273,28 @@ class AssessmentFlowScreen extends StatelessWidget {
           ),
       ],
       if (areaToolsFirst) ?areaTools,
-      SahSectionHeading(
-        title: context.tr(
-          drafts.isEmpty ? 'Choose a place' : 'Add another concern',
+      if (roomCards == null)
+        SahSectionHeading(
+          title: context.tr(
+            drafts.isEmpty ? 'Choose a place' : 'Add another concern',
+          ),
         ),
-      ),
 
-      for (final AssessmentLocation location in AssessmentLocation.values)
-        SahActionTile(
-          key: ValueKey('area-${location.name}'),
-          title: context.tr(location.title),
-          subtitle: locationStatus[location] == null
-              ? null
-              : context.tr(locationStatus[location]!),
-          icon: location.icon,
-          onTap: () => onChooseLocation != null
-              ? onChooseLocation!(location)
-              : flow.chooseLocation(location),
-        ),
+      if (roomCards != null)
+        roomCards!
+      else
+        for (final AssessmentLocation location in AssessmentLocation.values)
+          SahActionTile(
+            key: ValueKey('area-${location.name}'),
+            title: context.tr(location.title),
+            subtitle: locationStatus[location] == null
+                ? null
+                : context.tr(locationStatus[location]!),
+            icon: location.icon,
+            onTap: () => onChooseLocation != null
+                ? onChooseLocation!(location)
+                : flow.chooseLocation(location),
+          ),
       if (!areaToolsFirst) ?areaTools,
     ];
   }

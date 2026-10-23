@@ -1,3 +1,4 @@
+import '../../shared/presentation/sah_floating_nav.dart';
 import '../assistant/assistant_runtime.dart';
 import '../assistant/local_model_settings.dart';
 import 'package:flutter/material.dart';
@@ -355,7 +356,7 @@ class AccountSettingsScreenState extends State<AccountSettingsScreen> {
   Widget build(BuildContext context) {
     final body = SahContent(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: sahFloatingContentPadding(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

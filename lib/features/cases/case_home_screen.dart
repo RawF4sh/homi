@@ -717,17 +717,27 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
 
   Widget _planSelector() {
     final current = widget.services.coordinator.draft?.caseId;
+    final largeText = MediaQuery.textScalerOf(context).scale(14) > 22;
     final ids = {..._local, ..._cases.map((item) => item.caseId), ?current};
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
       child: Row(
         children: [
-          Expanded(
+          if (!largeText)
+            Expanded(
+              child: Text(
+                'homi',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          Flexible(
+            flex: 2,
             child: PopupMenuButton<String>(
               key: const ValueKey('active-plan-selector'),
-              tooltip: current == null
-                  ? context.tr('Choose a plan to continue')
-                  : _title(current),
+              tooltip: context.tr('Switch plan'),
               enabled: _canChoose,
               onSelected: (value) {
                 if (value == 'manage') {
@@ -767,21 +777,26 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                   child: Text(context.tr('Start a new plan')),
                 ),
               ],
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        current == null
-                            ? context.tr('Choose a plan to continue')
-                            : _title(current),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const Icon(Icons.expand_more),
-                  ],
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.swap_horiz, size: 22),
+                      const SizedBox(width: 8),
+                      Flexible(child: Text(context.tr('Switch plan'))),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -808,22 +823,24 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
   Widget build(BuildContext context) {
     final c = widget.services.coordinator;
     final selected = c.draft != null && !_removals.containsKey(c.draft!.caseId);
-    final management = SahContent(
-      child: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          key: const PageStorageKey('manage-plans'),
-          padding: const EdgeInsets.all(20),
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: [
-            if (selected)
-              TextButton.icon(
-                onPressed: () => setState(() => _managing = false),
-                icon: const Icon(Icons.arrow_back),
-                label: Text(context.tr('Return to plan')),
-              ),
-            ..._plans(),
-          ],
+    final management = Builder(
+      builder: (context) => SahContent(
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: ListView(
+            key: const PageStorageKey('manage-plans'),
+            padding: sahFloatingContentPadding(context),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              if (selected)
+                TextButton.icon(
+                  onPressed: () => setState(() => _managing = false),
+                  icon: const Icon(Icons.arrow_back),
+                  label: Text(context.tr('Return to plan')),
+                ),
+              ..._plans(),
+            ],
+          ),
         ),
       ),
     );
@@ -838,9 +855,12 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         if (_workspaceKey.currentState?.handleBack() == true) return;
         if (_tab != 0) unawaited(_selectTab(0));
       },
-      child: Scaffold(
-        body: SafeArea(
-          child: Column(
+      child: SahFloatingScaffold(
+        selectedIndex: _tab,
+        onDestinationSelected: _selectTab,
+        onAssistant: _assistant,
+        body: Builder(
+          builder: (context) => Column(
             children: [
               _planSelector(),
               if (widget.services.reminderOpen.value)
@@ -884,7 +904,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                       )
                     : SahContent(
                         child: ListView(
-                          padding: const EdgeInsets.all(20),
+                          padding: sahFloatingContentPadding(context),
                           children: [
                             ..._status(),
                             SahEmptyState(
@@ -910,27 +930,6 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
             ],
           ),
         ),
-        bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
-            ? null
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton.icon(
-                    key: const ValueKey('ask-homi'),
-                    onPressed: _assistant,
-                    icon: const Icon(Icons.chat_bubble_outline),
-                    label: Text(
-                      context.tr('Ask Homi'),
-                      style: Theme.of(context).textTheme.labelMedium,
-                    ),
-                  ),
-                  SahFloatingNavBar(
-                    selectedIndex: _tab,
-                    onDestinationSelected: _selectTab,
-                    destinations: homiDestinations(context),
-                  ),
-                ],
-              ),
       ),
     );
   }

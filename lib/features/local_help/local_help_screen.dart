@@ -1,3 +1,4 @@
+import '../../shared/presentation/sah_floating_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -321,7 +322,7 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
               ),
             )
           : ListView(
-              padding: const EdgeInsets.all(20),
+              padding: sahFloatingContentPadding(context),
               children: [
                 if (widget.header != null) widget.header!,
                 Text(

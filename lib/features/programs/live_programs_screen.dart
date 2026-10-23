@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/live_app.dart';
 import '../../shared/models/contracts.dart';
 import '../../shared/presentation/sah_components.dart';
+import '../../shared/presentation/sah_floating_nav.dart';
 import '../../shared/services/packet_preparation_service.dart';
 import 'program_intake_screen.dart';
 import '../requests/draft_packet_screen.dart';
@@ -231,10 +232,17 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
   // entirely in the versioned server response. No geography is inferred from
   // the program name because v1 does not carry a verified service-area field.
   String _purpose(ProgramMatch match) => switch (match.programId) {
-    'scfhp-eaa' => 'Possible help: home accessibility adaptations.',
-    'hpsm-eaa' => 'Possible help: home modifications.',
-    'rtp-home-repair' => 'Possible help: home repairs.',
+    'scfhp-eaa' => 'Could help with accessibility changes at home.',
+    'hpsm-eaa' => 'Could help with home modifications for accessibility.',
+    'rtp-home-repair' => 'Could help with home repairs.',
     _ => 'Possible help: review the program’s service scope.',
+  };
+
+  String _title(ProgramMatch match) => switch (match.programId) {
+    'scfhp-eaa' => 'SCFHP',
+    'hpsm-eaa' => 'HPSM',
+    'rtp-home-repair' => 'Rebuilding Together Peninsula',
+    _ => match.programName,
   };
 
   Future<void> _contactProgram(ProgramMatch match) => showDialog<void>(
@@ -407,9 +415,46 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
       key: ValueKey('program-${match.programId}-details'),
       controller: _detailsController(match.programId),
       tilePadding: EdgeInsets.zero,
-      title: Text(context.tr('Details')),
+      title: Text(
+        context.tr('Details'),
+        semanticsLabel: context.tr('Details for {program}', {
+          'program': _title(match),
+        }),
+      ),
       expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_title(match) != match.programName) ...[
+          Text(match.programName),
+          const SizedBox(height: 8),
+        ],
+        Text(
+          context.tr('Service area: confirm your address with the program.'),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          context.tr(switch (match.availability) {
+            'accepting' =>
+              'Intake is listed as open. Confirm current availability with the program.',
+            'not_accepting' =>
+              'Intake is listed as closed. Ask the program about next steps.',
+            _ =>
+              'Current availability is unverified. Confirm it with the program.',
+          }),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          context.tr(switch (match.status) {
+            'meets_known_criteria' => 'Matches the known checks',
+            'does_not_meet_criterion' => 'A known criterion is not met',
+            _ => 'More information is needed',
+          }),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          context.tr(
+            'Preparation only. Nothing has been submitted by this app.',
+          ),
+        ),
         ..._requirements(context, match, same),
         const SizedBox(height: 16),
         OutlinedButton(
@@ -543,9 +588,18 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
         result.caseId == c.snapshot!.caseId &&
         result.caseRevision == c.snapshot!.revision &&
         !c.hasUnsavedChanges;
+    final now = DateTime.now().toUtc();
+    final datedChecksExpired =
+        result != null &&
+        (now.isBefore(DateTime.parse(result.evaluatedAt)) ||
+            result.matches.any(
+              (match) =>
+                  match.recheckAfter != null &&
+                  !now.isBefore(DateTime.parse(match.recheckAfter!)),
+            ));
     final body = SahContent(
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: sahFloatingContentPadding(context),
         children: [
           if (widget.header != null) widget.header!,
           if (!widget.workspaceMode)
@@ -595,9 +649,7 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
               ),
               tone: SahNoticeTone.warning,
             ),
-          if (result != null &&
-              same &&
-              !result.isFreshFor(c.currentCase(), now: DateTime.now().toUtc()))
+          if (same && datedChecksExpired)
             SahStatusBadge(
               label: context.tr('Some policy details are unconfirmed'),
               icon: Icons.info_outline_rounded,
@@ -606,6 +658,7 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
           if (!_busy &&
               (_error != null ||
                   result == null ||
+                  (datedChecksExpired && !c.hasUnsavedChanges) ||
                   (!same && !c.hasUnsavedChanges)))
             Align(
               alignment: AlignmentDirectional.centerStart,
@@ -627,15 +680,23 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
               ),
               icon: Icons.search_rounded,
             ),
-          if (result != null && result.matches.isNotEmpty)
+          if (result != null && result.matches.isNotEmpty) ...[
             SahSectionHeading(
               title: context.tr(
                 result.matches.length == 1
-                    ? '{count} program route to review'
-                    : '{count} program routes to review',
+                    ? '{count} program'
+                    : '{count} programs',
                 {'count': result.matches.length},
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                context.tr('Eligibility and availability need confirmation.'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
           if (_assistantProgramId != null)
             TextButton(
               onPressed: () => setState(() => _assistantProgramId = null),
@@ -649,86 +710,32 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
             ))
               Card(
                 key: ValueKey('program-${match.programId}'),
-                margin: const EdgeInsets.only(bottom: 24),
+                margin: const EdgeInsets.only(bottom: 16),
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Semantics(
                         header: true,
                         child: Text(
-                          match.programName,
-                          style: Theme.of(context).textTheme.titleLarge,
+                          _title(match),
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(context.tr(_purpose(match))),
                       const SizedBox(height: 8),
-                      Text(
-                        context.tr(
-                          'Service area: confirm your address with the program.',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        context.tr(switch (match.availability) {
-                          'accepting' =>
-                            'Intake is listed as open. Confirm current availability with the program.',
-                          'not_accepting' =>
-                            'Intake is listed as closed. Ask the program about next steps.',
-                          _ =>
-                            'Current availability is unverified. Confirm it with the program.',
-                        }),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        context.tr(switch (match.status) {
-                          'meets_known_criteria' => 'Matches the known checks',
-                          'does_not_meet_criterion' =>
-                            'A known criterion is not met',
-                          _ => 'More information is needed',
-                        }),
-                      ),
-                      if (match.checks.any(
-                        (check) => check.status == 'unknown',
-                      )) ...[
-                        const SizedBox(height: 8),
+                      if (match.availability == 'not_accepting') ...[
                         Text(
-                          context.tr('Review needed: {groups}', {
-                            'groups': [
-                              for (final (resolver, label) in [
-                                ('resident', 'You can answer'),
-                                ('program', 'Ask the program'),
-                                ('professional', 'Professional review'),
-                                (null, 'Reviewer not specified'),
-                              ])
-                                if (match.checks.any(
-                                  (check) =>
-                                      check.status == 'unknown' &&
-                                      check.resolvedBy == resolver,
-                                ))
-                                  context.tr(label),
-                            ].join(' · '),
-                          }),
+                          context.tr(
+                            'Intake is listed as closed. Ask the program about next steps.',
+                          ),
                         ),
+                        const SizedBox(height: 8),
                       ],
-                      const SizedBox(height: 8),
-                      Text(
-                        context.tr(
-                          'Preparation only. Nothing has been submitted by this app.',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        key: ValueKey('program-${match.programId}-review'),
-                        onPressed: () =>
-                            _detailsController(match.programId).expand(),
-                        child: Text(
-                          context.tr('Review requirements'),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
+                      if (match.status == 'does_not_meet_criterion')
+                        Text(context.tr('A known criterion is not met')),
                       _details(context, match, same),
                     ],
                   ),

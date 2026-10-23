@@ -17,7 +17,6 @@ import 'package:safe_at_home/features/cases/case_workspace_screen.dart';
 import 'package:safe_at_home/features/tracking/program_progress_screen.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:safe_at_home/l10n/catalogs/plan_workspace.dart';
-import 'package:safe_at_home/shared/presentation/sah_components.dart';
 
 import '../features/assessment/domain/scan/scan_test_fixtures.dart';
 import '../features/assessment/home_safety/home_safety_support.dart';
@@ -374,7 +373,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('personal task target takes priority and stale tasks never do', (
+  testWidgets('Plan keeps permanent entries without suggested next steps', (
     tester,
   ) async {
     final h = await safetyHarness(
@@ -409,16 +408,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final panel = tester.widget<SahFeaturePanel>(
-      find.byKey(const ValueKey('case-next-step')),
-    );
-    expect(panel.description, 'Fictional call to 李家');
-    await tapKey(tester, 'case-next-task');
+    expect(find.byKey(const ValueKey('case-next-step')), findsNothing);
+    expect(find.text('Suggested next step'), findsNothing);
+    expect(find.text('Start with a room'), findsNothing);
+    await tapKey(tester, 'case-tasks');
     expect(find.byType(ProgramProgressScreen), findsOneWidget);
     h.server.tasks.single['needsReview'] = true;
     await h.services.progress!.refresh(h.server.snapshot.caseId);
     await tapKey(tester, 'plan-tab-plan');
-    expect(find.byKey(const ValueKey('case-next-task')), findsNothing);
-    expect(find.byKey(const ValueKey('case-next-assessment')), findsOneWidget);
+    expect(find.byKey(const ValueKey('case-next-step')), findsNothing);
+    await tapKey(tester, 'case-rooms');
+    expect(find.byType(HomeSafetyScreen), findsOneWidget);
   });
 }

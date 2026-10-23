@@ -25,6 +25,7 @@ import 'catalogs/lifecycle.dart';
 import 'catalogs/native_scan.dart';
 import 'catalogs/scan_sync.dart';
 import 'catalogs/room_scans.dart';
+import 'catalogs/room_actions.dart';
 import 'catalogs/whole_home.dart';
 import 'catalogs/home_model_sync.dart';
 import 'catalogs/room_lifecycle.dart';
@@ -73,6 +74,7 @@ class AppLocalizations {
     lifecycleTranslations,
     nativeScanTranslations,
     roomScanTranslations,
+    roomActionTranslations,
     wholeHomeTranslations,
     homeModelSyncTranslations,
     roomLifecycleTranslations,

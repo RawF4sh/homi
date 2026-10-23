@@ -91,7 +91,7 @@ void main() {
       expect(jsonEncode(h.server.tasks), isNot(contains(privateNote)));
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tap(tester, find.text('Assistance programs'));
+      await tap(tester, find.text('Programs'));
       expect(
         tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
         2,
@@ -157,7 +157,7 @@ void main() {
       expect(jsonEncode(server.tasks), isNot(contains(offlineNote)));
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tap(tester, find.text('Assistance programs'));
+      await tap(tester, find.text('Programs'));
       await _tab(tester, 'tasks');
       await reveal(tester, find.text(edited));
       await _tab(tester, 'help');
@@ -199,7 +199,7 @@ void main() {
         ).load()).contacts.single.note,
         note,
       );
-      await tap(tester, find.text('Assistance programs'));
+      await tap(tester, find.text('Programs'));
       await _tab(tester, 'plan');
       await _openHelp(tester);
       await reveal(tester, find.text(note));

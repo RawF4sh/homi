@@ -6,6 +6,7 @@ import 'package:safe_at_home/features/assessment/application/bathroom_scan_sessi
 import 'package:safe_at_home/features/assessment/application/whole_home_capture_adapter.dart';
 import 'package:safe_at_home/features/assessment/application/whole_home_session.dart';
 import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.dart';
+import 'package:safe_at_home/features/assessment/domain/local_place_rooms.dart';
 import 'package:safe_at_home/features/assessment/domain/scan/whole_home_model.dart';
 import 'package:safe_at_home/features/assessment/domain/scan/bathroom_scan_scene.dart';
 import '../domain/scan/scan_test_fixtures.dart';
@@ -63,8 +64,89 @@ void main() {
     }
     sessions.clear();
     await store.close();
-    await directory.delete(recursive: true);
+    if (await directory.exists()) await directory.delete(recursive: true);
   });
+
+  test(
+    'device place layouts restore separately from structured layouts and other cases',
+    () async {
+      final structured = await aligned();
+      final original = await store.readBytes(structured.key);
+      for (final room in LocalPlaceRooms.all.take(2)) {
+        await seedHomeRoom(store, room, homeScene());
+      }
+      WholeHomeSession local(String caseId) {
+        final value = WholeHomeSession(
+          store: store,
+          caseId: caseId,
+          isCurrent: () => current,
+          currentRooms: () => LocalPlaceRooms.all,
+          adapter: capture,
+          localPlaces: true,
+        );
+        sessions.add(value);
+        return value;
+      }
+
+      final value = local(homeCaseId);
+      await value.initialize();
+      expect(value.model, isNull);
+      await value.setReference(LocalPlaceRooms.all.first.id);
+      await value.place(
+        LocalPlaceRooms.all[1].id,
+        LocalPlaceRooms.all.first.id,
+        RoomPose(x: 3),
+      );
+      expect(value.key, LocalPlaceRooms.homeKey(homeCaseId));
+      expect(value.key, isNot(structured.key));
+      expect(await store.readBytes(structured.key), original);
+      final reopened = local(homeCaseId);
+      await reopened.initialize();
+      expect(reopened.connected(), hasLength(2));
+      final other = local('11111111-0000-4000-8000-000000000001');
+      await other.initialize();
+      expect(other.model, isNull);
+      expect(other.scans, isEmpty);
+      current = false;
+      await expectLater(
+        value.setReference(LocalPlaceRooms.all.first.id),
+        throwsA(isA<ScanScopeExpired>()),
+      );
+    },
+  );
+
+  test(
+    'account private-store clearing removes place scans and connected layouts',
+    () async {
+      final room = LocalPlaceRooms.all.first;
+      await seedHomeRoom(store, room, homeScene());
+      final value = WholeHomeSession(
+        store: store,
+        caseId: homeCaseId,
+        isCurrent: () => current,
+        currentRooms: () => LocalPlaceRooms.all,
+        adapter: capture,
+        localPlaces: true,
+      );
+      sessions.add(value);
+      await value.initialize();
+      await value.setReference(room.id);
+      await store.clear();
+      final reopened = LocalPrivateStore(
+        directory: directory,
+        accountId: 'fictional-account',
+        secrets: secrets,
+      );
+      expect(await reopened.readBytes(value.key), isNull);
+      expect(
+        await reopened.readBytes(
+          BathroomScanSession.storageKey(homeCaseId, room: room),
+        ),
+        isNull,
+      );
+      await reopened.close();
+    },
+  );
 
   test(
     'ARCore capture proposal requires review, persists its method, and fences changed baselines',

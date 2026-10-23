@@ -62,6 +62,7 @@ Map<String, Object?> _manualProgram({bool sources = true}) => {
 Map<String, Object?> _response(
   Map<String, Object?> request, {
   bool sources = true,
+  List<Map<String, Object?>>? programs,
 }) {
   final now = DateTime.now().toUtc().toIso8601String();
   return {
@@ -70,7 +71,7 @@ Map<String, Object?> _response(
     'caseRevision': request['expectedCaseRevision'],
     'evaluatedAt': now,
     'evaluationDate': now.substring(0, 10),
-    'matches': [_manualProgram(sources: sources)],
+    'matches': programs ?? [_manualProgram(sources: sources)],
   };
 }
 
@@ -109,6 +110,11 @@ Future<void> _tap(WidgetTester tester, Finder target) async {
   await tester.pumpAndSettle();
 }
 
+Finder _details(String id) => find.descendant(
+  of: find.byKey(ValueKey('program-$id-details')),
+  matching: find.text('Details'),
+);
+
 void main() {
   for (final dark in [false, true]) {
     testWidgets(
@@ -134,30 +140,35 @@ void main() {
           findsOneWidget,
         );
         expect(
-          find.text('Service area: confirm your address with the program.'),
+          find.text('Eligibility and availability need confirmation.'),
           findsOneWidget,
         );
-        expect(
-          find.text(
-            'Current availability is unverified. Confirm it with the program.',
-          ),
-          findsOneWidget,
-        );
-        expect(
-          find.text(
-            'Preparation only. Nothing has been submitted by this app.',
-          ),
-          findsOneWidget,
-        );
+        for (final label in [
+          'Service area: confirm your address with the program.',
+          'Current availability is unverified. Confirm it with the program.',
+          'More information is needed',
+          'Ask the program',
+          'Review requirements',
+          'Some policy details are unconfirmed',
+          'Preparation only. Nothing has been submitted by this app.',
+        ]) {
+          expect(find.text(label), findsNothing);
+        }
+        expect(find.textContaining('Review needed:'), findsNothing);
         expect(
           find.text('0 met · 0 not met · 10 need confirmation'),
           findsNothing,
         );
         expect(find.text('Prepare a draft'), findsNothing);
-        await _tap(
-          tester,
-          find.byKey(const ValueKey('program-fictional-program-review')),
-        );
+        await _tap(tester, _details('fictional-program'));
+        for (final label in [
+          'Service area: confirm your address with the program.',
+          'Current availability is unverified. Confirm it with the program.',
+          'More information is needed',
+          'Preparation only. Nothing has been submitted by this app.',
+        ]) {
+          expect(find.text(label), findsOneWidget);
+        }
         expect(
           find.text('0 met · 0 not met · 10 need confirmation'),
           findsOneWidget,
@@ -227,6 +238,162 @@ void main() {
   }
 
   testWidgets(
+    'three program overviews stay compact and retain full names in details',
+    (tester) async {
+      const routes = [
+        (
+          'scfhp-eaa',
+          'SCFHP',
+          'SCFHP Environmental Accessibility Adaptations (referral draft)',
+          'Could help with accessibility changes at home.',
+        ),
+        (
+          'hpsm-eaa',
+          'HPSM',
+          'HPSM Home Modifications (referral draft)',
+          'Could help with home modifications for accessibility.',
+        ),
+        (
+          'rtp-home-repair',
+          'Rebuilding Together Peninsula',
+          'Rebuilding Together Peninsula (preparation worksheet)',
+          'Could help with home repairs.',
+        ),
+      ];
+      final transport = FakeTransport((request) async {
+        final body = http.requestJson(request);
+        if (request.endpoint.path == '/v1/create-case') {
+          return http.jsonResponse({...body, 'revision': 1});
+        }
+        return http.jsonResponse(
+          _response(
+            body,
+            programs: [
+              for (final (id, _, fullName, _) in routes)
+                {..._manualProgram(), 'programId': id, 'programName': fullName},
+            ],
+          ),
+        );
+      });
+      final app = await _app(transport);
+      await tester.pumpWidget(_screen(app, embedded: true));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Eligibility and availability need confirmation.'),
+        findsOneWidget,
+      );
+      expect(find.text('3 programs'), findsOneWidget);
+      expect(find.text('Details'), findsNWidgets(3));
+      expect(find.byType(FilledButton), findsNothing);
+      expect(find.textContaining('Review needed:'), findsNothing);
+      for (final (id, title, fullName, purpose) in routes) {
+        expect(find.text(title), findsOneWidget);
+        expect(find.text(purpose), findsOneWidget);
+        expect(find.text(fullName), findsNothing);
+        await _tap(tester, _details(id));
+        expect(find.text(fullName), findsOneWidget);
+        expect(
+          find.text(
+            'Preparation only. Nothing has been submitted by this app.',
+          ),
+          findsOneWidget,
+        );
+        await _tap(tester, _details(id));
+        expect(find.text(fullName), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'closed intake and a failed criterion remain visible before details',
+    (tester) async {
+      final route = _manualProgram();
+      final checks = (route['checks'] as List).cast<Map<String, Object?>>();
+      route['availability'] = 'not_accepting';
+      route['status'] = 'does_not_meet_criterion';
+      route['checks'] = [
+        {
+          ...checks.first,
+          'status': 'fail',
+          'explanation': 'A fictional documented criterion is not met.',
+        },
+        ...checks.skip(1),
+      ];
+      final transport = FakeTransport((request) async {
+        final body = http.requestJson(request);
+        return http.jsonResponse(
+          request.endpoint.path == '/v1/create-case'
+              ? {...body, 'revision': 1}
+              : _response(body, programs: [route]),
+        );
+      });
+      final app = await _app(transport);
+      await tester.pumpWidget(_screen(app));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Intake is listed as closed. Ask the program about next steps.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('A known criterion is not met'), findsOneWidget);
+      expect(
+        find.text('A fictional documented criterion is not met.'),
+        findsNothing,
+      );
+      await _tap(tester, _details('fictional-program'));
+      expect(
+        find.text('A fictional documented criterion is not met.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('0 met · 1 not met · 9 need confirmation'),
+        findsOneWidget,
+      );
+      expect(find.text('Not met'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'expired dated checks retain a warning and a working refresh action',
+    (tester) async {
+      var reads = 0;
+      final transport = FakeTransport((request) async {
+        final body = http.requestJson(request);
+        if (request.endpoint.path == '/v1/create-case') {
+          return http.jsonResponse({...body, 'revision': 1});
+        }
+        reads++;
+        final deadline = DateTime.now().toUtc().add(
+          Duration(days: reads == 1 ? -1 : 1),
+        );
+        return http.jsonResponse(
+          _response(
+            body,
+            programs: [
+              {..._manualProgram(), 'recheckAfter': deadline.toIso8601String()},
+            ],
+          ),
+        );
+      });
+      final app = await _app(transport);
+      await tester.pumpWidget(_screen(app));
+      await tester.pumpAndSettle();
+      expect(find.text('Some policy details are unconfirmed'), findsOneWidget);
+      await _tap(tester, find.byKey(const ValueKey('program-refresh')));
+      expect(reads, 2);
+      expect(find.text('Some policy details are unconfirmed'), findsNothing);
+      expect(find.byKey(const ValueKey('program-refresh')), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
     'stale answers disable draft writes and clearing the plan removes prior results',
     (tester) async {
       final transport = FakeTransport((request) async {
@@ -239,10 +406,7 @@ void main() {
       final app = await _app(transport);
       await tester.pumpWidget(_screen(app));
       await tester.pumpAndSettle();
-      await _tap(
-        tester,
-        find.byKey(const ValueKey('program-fictional-program-review')),
-      );
+      await _tap(tester, _details('fictional-program'));
       expect(
         find.text('No verified source references are supplied for this route.'),
         findsOneWidget,

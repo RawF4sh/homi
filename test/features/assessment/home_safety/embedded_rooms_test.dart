@@ -79,7 +79,7 @@ void main() {
             id == 'second-bathroom' ? 'Second bathroom' : 'Fictional $id',
           ),
         );
-        await tester.ensureVisible(title);
+        await Scrollable.ensureVisible(tester.element(title), alignment: .5);
         await tester.pumpAndSettle();
         await tester.tap(title);
         await tester.pumpAndSettle();

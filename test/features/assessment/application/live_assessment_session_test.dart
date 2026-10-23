@@ -1544,6 +1544,9 @@ void main() {
       await settleUntil(
         () => find.byType(AssessmentFlowScreen).evaluate().isNotEmpty,
       );
+      await settleUntil(
+        () => find.text('Checking saved scans').evaluate().isEmpty,
+      );
       var persisted = false;
       services.store.flush().then((_) => persisted = true);
       await settleUntil(() => persisted);
@@ -1623,7 +1626,9 @@ void main() {
       await tester.tap(find.text('Open fictional case assessment'));
       await tester.pump();
 
-      final open = find.byKey(const ValueKey('open-bathroom-scan'));
+      final open = find.byKey(
+        const ValueKey('open-room-scan-device-area-bathroom'),
+      );
       final start = find.byKey(const ValueKey('bathroom-start-scan'));
       Future<void> openScan() async {
         await settleUntil(() => enabled(open));
@@ -1731,11 +1736,9 @@ void main() {
       );
       await tester.tap(recover);
       await settleUntil(() => recover.evaluate().isEmpty);
-      final bathroom = find.byKey(const ValueKey('area-bathroom'));
-      await settleUntil(
-        () => find.textContaining('3D scan saved').evaluate().isNotEmpty,
-      );
-      expect(open, findsNothing);
+      final bathroom = open;
+      await settleUntil(() => find.text('Scan saved').evaluate().isNotEmpty);
+      expect(open, findsOneWidget);
       await Scrollable.ensureVisible(tester.element(bathroom), alignment: .5);
       await tester.pump();
       await settleUntil(

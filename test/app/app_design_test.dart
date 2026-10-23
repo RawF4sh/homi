@@ -174,19 +174,14 @@ void main() {
       expect(app.coordinator.draft!.profile.city, 'Fictional City');
       expect(app.coordinator.draft!.profile.annualIncomeUsd, isNull);
       expect(app.coordinator.snapshot, isNull);
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('case-next-step')),
-        -200,
-        scrollable: find.byType(Scrollable).first,
-        maxScrolls: 100,
-      );
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('case-next-step')),
-          matching: find.byKey(const ValueKey('case-save-online')),
-        ),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('case-next-step')), findsNothing);
+      tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position
+          .jumpTo(0);
+      await tester.pumpAndSettle();
+      await reveal(tester, find.byKey(const ValueKey('case-save-online')));
+      expect(find.byKey(const ValueKey('case-save-online')), findsOneWidget);
       await reveal(tester, find.text('1 of 8 answered'));
       expect(find.text('1 of 8 answered'), findsOneWidget);
 
@@ -262,7 +257,7 @@ void main() {
   });
 
   testWidgets(
-    'housing menus remain usable at largest text without replacing unknown values',
+    'housing choices remain usable at largest text without replacing unknown values',
     (tester) async {
       narrowLargeText(tester, scale: 3.2);
       final transport = FakeTransport(
@@ -279,12 +274,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final menu = find.byKey(const ValueKey('tenure-false'));
-      await reveal(tester, menu);
-      await tester.tap(menu);
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Rent').last);
-      await tester.tap(find.text('Rent').last);
+      final choice = find.byKey(const ValueKey('profile-tenure-renter'));
+      await reveal(tester, choice);
+      await tester.tap(choice);
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
