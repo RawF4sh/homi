@@ -283,10 +283,25 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('3 programs'), findsOneWidget);
-      expect(find.text('Details'), findsNWidgets(3));
+      expect(find.text('Details'), findsWidgets);
       expect(find.byType(FilledButton), findsNothing);
       expect(find.textContaining('Review needed:'), findsNothing);
       for (final (id, title, fullName, purpose) in routes) {
+        final start = find.byKey(ValueKey('program-$id-start'));
+        await tester.scrollUntilVisible(
+          start,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(of: start, matching: find.text('Prepare forms')),
+          findsOneWidget,
+        );
+        expect(
+          tester.getTopLeft(start).dy,
+          lessThan(tester.getTopLeft(_details(id)).dy),
+        );
         expect(find.text(title), findsOneWidget);
         expect(find.text(purpose), findsOneWidget);
         expect(find.text(fullName), findsNothing);

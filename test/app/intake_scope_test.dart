@@ -42,7 +42,7 @@ class DelayedIntakeStore extends MemoryPrivateStore {
 
   @override
   Future<void> writeJson(String key, Map<String, Object?> value) async {
-    await _wait(key, false);
+    if (value['uncertain'] == true) await _wait(key, false);
     await super.writeJson(key, value);
   }
 }

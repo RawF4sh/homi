@@ -1256,6 +1256,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
       enabled: editable,
       onScan: openRoomScan,
       onOpenRoom: (room) => _selectRoom(room.id),
+      onConnected: openHomeModel,
       summary: (room) =>
           '${context.tr('{count} of {total} questions answered', {'count': s.catalog.forRoom(room).where((q) => s.document.answer(room.id, q.id)?.value != 'unanswered' && s.document.answer(room.id, q.id) != null).length, 'total': s.catalog.forRoom(room).length})} · ${progressText(s, room)}',
     ),

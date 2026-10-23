@@ -4,6 +4,7 @@ import '../../../l10n/app_localizations.dart';
 import '../../../shared/services/local_private_store.dart';
 import '../application/bathroom_scan_availability.dart';
 import '../application/bathroom_scan_session.dart';
+import '../application/whole_home_session.dart';
 import '../domain/assessment_location.dart';
 import '../domain/home_safety/home_safety.dart';
 import '../domain/local_place_rooms.dart';
@@ -45,6 +46,7 @@ class RoomCaptureCards extends StatefulWidget {
 class _RoomCaptureCardsState extends State<RoomCaptureCards> {
   final _saved = <String?>{};
   final _attention = <String?>{};
+  final _connectedRooms = <String>{};
   bool _loaded = false, _connected = false;
 
   @override
@@ -73,6 +75,24 @@ class _RoomCaptureCardsState extends State<RoomCaptureCards> {
         _attention.add(room?.id);
       }
     }
+    try {
+      _connectedRooms.addAll(
+        await WholeHomeSession.readSavedConnectedRoomIds(
+          store: widget.store,
+          caseId: widget.caseId,
+          rooms: widget.rooms,
+          isCurrent: () => mounted && widget.isCurrent(),
+          // Device place IDs have a separate namespace from named rooms.
+          localPlaces:
+              widget.rooms.isNotEmpty &&
+              widget.rooms.every(LocalPlaceRooms.contains),
+        ),
+      );
+    } catch (_) {
+      // Do not claim a room belongs to a model that could not be validated.
+      // The connected-model entry remains available for recovery.
+    }
+    if (!mounted || !widget.isCurrent()) return;
     if (widget.savedPlacesOnly) {
       try {
         _connected =
@@ -98,6 +118,7 @@ class _RoomCaptureCardsState extends State<RoomCaptureCards> {
     final id = useLegacy ? null : room.id;
     final model = _saved.contains(id);
     final attention = _attention.contains(id);
+    final connected = _connectedRooms.contains(room.id);
     final available = widget.availability.prefersScan;
     final enabled = widget.enabled && _loaded;
     final status = !_loaded
@@ -106,6 +127,8 @@ class _RoomCaptureCardsState extends State<RoomCaptureCards> {
         ? 'Review scan'
         : model
         ? 'Scan saved'
+        : connected
+        ? 'In connected model'
         : outdoor
         ? 'Photos & measurements'
         : 'No scan yet';
@@ -162,6 +185,15 @@ class _RoomCaptureCardsState extends State<RoomCaptureCards> {
         onPressed: enabled ? () => widget.onOpenRoom(room) : null,
         child: Text(context.tr('Open room'), textAlign: TextAlign.center),
       ),
+      if (connected && widget.onConnected != null)
+        TextButton(
+          key: ValueKey('connected-room-${room.id}'),
+          onPressed: enabled ? widget.onConnected : null,
+          child: Text(
+            context.tr('View connected model'),
+            textAlign: TextAlign.center,
+          ),
+        ),
       if (legacy && !useLegacy)
         TextButton(
           key: const ValueKey('legacy-bathroom-scan'),
@@ -227,7 +259,8 @@ class _RoomCaptureCardsState extends State<RoomCaptureCards> {
           (r) =>
               !widget.savedPlacesOnly ||
               _saved.contains(r.id) ||
-              _attention.contains(r.id),
+              _attention.contains(r.id) ||
+              _connectedRooms.contains(r.id),
         )
         .toList();
     final cards = [for (final room in rooms) _card(room)];

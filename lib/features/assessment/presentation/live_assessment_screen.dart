@@ -470,6 +470,7 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
                         forceLegacy: room == null,
                       ),
                       onOpenRoom: (room) => chooseLocation(room.type),
+                      onConnected: openConnectedPlaces,
                     )
                   : null,
               embedded: widget.embedded,

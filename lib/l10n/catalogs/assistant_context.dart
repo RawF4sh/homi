@@ -1,4 +1,92 @@
 const assistantContextTranslations = <String, Map<String, String>>{
+  'App guidance': {
+    'es': 'Guía de la aplicación',
+    'zh-Hans': '应用指南',
+    'zh-Hant': '應用程式指南',
+    'vi': 'Hướng dẫn ứng dụng',
+    'fil': 'Gabay sa app',
+  },
+  'These app steps do not use a language model.': {
+    'es': 'Estos pasos de la aplicación no usan un modelo de lenguaje.',
+    'zh-Hans': '这些应用操作步骤不使用语言模型。',
+    'zh-Hant': '這些應用程式操作步驟不使用語言模型。',
+    'vi': 'Các bước trong ứng dụng này không dùng mô hình ngôn ngữ.',
+    'fil': 'Hindi gumagamit ng modelo ng wika ang mga hakbang na ito sa app.',
+  },
+  'Open Help, choose a program, then open Prepare forms. Review the required answers and documents. Saving or sharing a draft does not submit an application.': {
+    'es':
+        'Abra Ayuda, elija un programa y abra Preparar formularios. Revise las respuestas y los documentos necesarios. Guardar o compartir un borrador no presenta una solicitud.',
+    'zh-Hans': '打开“帮助”，选择一个项目，然后打开“准备表格”。查看所需的答案和文档。保存或分享草稿并不等于提交申请。',
+    'zh-Hant': '開啟「協助」，選擇一個方案，然後開啟「準備表格」。查看所需的答案和文件。儲存或分享草稿並不等於提交申請。',
+    'vi':
+        'Mở Trợ giúp, chọn chương trình rồi mở Chuẩn bị biểu mẫu. Xem các câu trả lời và tài liệu cần thiết. Lưu hoặc chia sẻ bản nháp không có nghĩa là đã nộp đơn.',
+    'fil':
+        'Buksan ang Tulong, pumili ng programa, at buksan ang Ihanda ang mga form. Suriin ang mga kinakailangang sagot at dokumento. Ang pag-save o pagbabahagi ng draft ay hindi pagsusumite ng aplikasyon.',
+  },
+  'Draft preparation is unavailable in the current app state. Open Plan to check the selected plan.': {
+    'es':
+        'La preparación del borrador no está disponible en el estado actual. Abra Plan para revisar el plan seleccionado.',
+    'zh-Hans': '当前应用状态下无法准备草稿。打开“计划”以查看所选计划。',
+    'zh-Hant': '目前應用程式狀態下無法準備草稿。開啟「計畫」以查看所選計畫。',
+    'vi':
+        'Chưa thể chuẩn bị bản nháp ở trạng thái hiện tại. Mở Kế hoạch để kiểm tra kế hoạch đã chọn.',
+    'fil':
+        'Hindi magagamit ang paghahanda ng draft sa kasalukuyang kalagayan ng app. Buksan ang Plano upang suriin ang napiling plano.',
+  },
+  'Check availability': {
+    'es': 'Comprobar disponibilidad',
+    'zh-Hans': '检查可用性',
+    'zh-Hant': '檢查可用性',
+    'vi': 'Kiểm tra khả năng sử dụng',
+    'fil': 'Tingnan kung magagamit',
+  },
+  'Retry question': {
+    'es': 'Reintentar la pregunta',
+    'zh-Hans': '重新提问',
+    'zh-Hant': '重新提問',
+    'vi': 'Thử lại câu hỏi',
+    'fil': 'Subukang muli ang tanong',
+  },
+  'The model returned a reply the app could not verify. Try again or use App guidance.': {
+    'es':
+        'El modelo devolvió una respuesta que la aplicación no pudo verificar. Inténtelo de nuevo o use la Guía de la aplicación.',
+    'zh-Hans': '模型返回了应用无法验证的回复。请重试或使用“应用指南”。',
+    'zh-Hant': '模型傳回了應用程式無法驗證的回覆。請重試或使用「應用程式指南」。',
+    'vi':
+        'Mô hình trả về câu trả lời mà ứng dụng không thể xác minh. Hãy thử lại hoặc dùng Hướng dẫn ứng dụng.',
+    'fil':
+        'Hindi ma-verify ng app ang sagot ng modelo. Subukang muli o gamitin ang Gabay sa app.',
+  },
+  'This phone’s model cannot fit the current app context. Start a new chat without included findings, or use App guidance.': {
+    'es':
+        'El modelo de este teléfono no puede procesar todo el contexto actual. Inicie un chat nuevo sin observaciones incluidas o use la Guía de la aplicación.',
+    'zh-Hans': '此手机的模型无法容纳当前应用信息。请开始不包含观察记录的新对话，或使用“应用指南”。',
+    'zh-Hant': '此手機的模型無法容納目前應用程式資訊。請開始不包含觀察記錄的新對話，或使用「應用程式指南」。',
+    'vi':
+        'Mô hình trên điện thoại không chứa được toàn bộ ngữ cảnh hiện tại. Bắt đầu cuộc trò chuyện mới không kèm ghi nhận hoặc dùng Hướng dẫn ứng dụng.',
+    'fil':
+        'Hindi kasya sa modelo ng teleponong ito ang kasalukuyang konteksto. Magsimula ng bagong chat na walang kasamang obserbasyon o gamitin ang Gabay sa app.',
+  },
+  'The on-device model is unavailable. Check availability, or use App guidance.': {
+    'es':
+        'El modelo del dispositivo no está disponible. Compruebe la disponibilidad o use la Guía de la aplicación.',
+    'zh-Hans': '设备端模型不可用。请检查可用性，或使用“应用指南”。',
+    'zh-Hant': '裝置端模型無法使用。請檢查可用性，或使用「應用程式指南」。',
+    'vi':
+        'Mô hình trên thiết bị chưa khả dụng. Kiểm tra khả năng sử dụng hoặc dùng Hướng dẫn ứng dụng.',
+    'fil':
+        'Hindi magagamit ang modelo sa device. Tingnan kung magagamit na ito o gamitin ang Gabay sa app.',
+  },
+  'The app could not prepare this request. Use App guidance or reopen the assistant.': {
+    'es':
+        'La aplicación no pudo preparar esta solicitud. Use la Guía de la aplicación o vuelva a abrir el asistente.',
+    'zh-Hans': '应用无法准备此请求。请使用“应用指南”或重新打开助手。',
+    'zh-Hant': '應用程式無法準備此要求。請使用「應用程式指南」或重新開啟助理。',
+    'vi':
+        'Ứng dụng không thể chuẩn bị yêu cầu này. Dùng Hướng dẫn ứng dụng hoặc mở lại trợ lý.',
+    'fil':
+        'Hindi maihanda ng app ang kahilingang ito. Gamitin ang Gabay sa app o buksang muli ang assistant.',
+  },
   'All tasks': {
     'es': 'Todas las tareas',
     'zh-Hans': '所有任务',

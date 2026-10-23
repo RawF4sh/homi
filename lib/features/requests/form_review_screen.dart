@@ -28,6 +28,10 @@ class FormReviewScreen extends StatefulWidget {
 class _FormReviewScreenState extends State<FormReviewScreen> {
   final _fields = <String, TextEditingController>{};
   final _reviewed = <String, bool>{};
+  final _fieldAnchors = <String, GlobalKey>{};
+  final _fieldFocus = <String, FocusNode>{};
+  final _validationErrors = <String, String>{};
+  bool _onlineContext = false;
   FormAnswersResponse? _answers;
   Map<String, Object?>? _restoredDraft;
   bool _busy = true, _uncertain = false;
@@ -48,6 +52,8 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
     for (final key in formAnswerValueLimits.keys) {
       _fields[key] = TextEditingController();
       _reviewed[key] = false;
+      _fieldAnchors[key] = GlobalKey();
+      _fieldFocus[key] = FocusNode();
     }
     _read(initial: true);
   }
@@ -57,6 +63,9 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
     _draftSaves.dispose();
     for (final field in _fields.values) {
       field.dispose();
+    }
+    for (final focus in _fieldFocus.values) {
+      focus.dispose();
     }
     super.dispose();
   }
@@ -104,8 +113,38 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
       'uncertain': _uncertain,
       'caseRevision': snapshot.revision,
       'formContextId': _answers?.context.formContextId,
+      'response': _answers?.toJson(),
     };
+    if (!_onlineContext) _restoredDraft = value;
     await _draftSaves.track(() => widget.services.store.writeJson(_key, value));
+  }
+
+  void _restoreCached(Map<String, Object?> local) {
+    final raw = local['response'];
+    if (raw == null) return; // Older journals need one online reload.
+    final response = raw is Map && raw['schemaVersion'] == '2'
+        ? FormAnswersResponse.fromV2Json(raw)
+        : FormAnswersResponse.fromJson(raw);
+    if (response.caseId != _caseId ||
+        response.context.programId != widget.program.programId ||
+        response.caseRevision > _screenCase().revision) {
+      throw const FormatException('Private form context does not match.');
+    }
+    final values = local['values'] as Map;
+    for (final key in _fields.keys) {
+      final value = values[key];
+      if (value != null && value is! String) {
+        throw const FormatException('Invalid private form value.');
+      }
+    }
+    _answers = response;
+    for (final key in _activeKeys) {
+      final value = values[key];
+      _fields[key]!.text = value as String? ?? '';
+      // Offline context is useful for editing, never proof of current review.
+      _reviewed[key] = false;
+    }
+    _uncertain = local['uncertain'] == true;
   }
 
   Future<void> _read({bool initial = false}) async {
@@ -113,6 +152,7 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
     setState(() {
       _busy = true;
       _feedbackAtAction = false;
+      _onlineContext = false;
     });
     try {
       final c = widget.services.coordinator;
@@ -122,6 +162,7 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
       _screenCase(generation: openingGeneration);
       final local = _restoredDraft;
       if (local != null) {
+        _restoreCached(local);
         final values = local['values'] as Map;
         for (final key in _fields.keys) {
           _fields[key]!.text = values[key] as String? ?? '';
@@ -145,6 +186,8 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
       );
       if (!mounted) return;
       _answers = response;
+      _validationErrors.clear();
+      _onlineContext = true;
       if (initial || _restoredDraft != null) {
         for (final answer in response.saved?.answers ?? <SavedFormAnswer>[]) {
           _fields[answer.key]!.text = answer.value ?? '';
@@ -164,7 +207,8 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
           _uncertain = local['uncertain'] == true;
         }
         _restoredDraft = null;
-      } else {
+      }
+      if (_uncertain || !initial) {
         final saved = {
           for (final answer in response.saved?.answers ?? <SavedFormAnswer>[])
             answer.key: {
@@ -173,13 +217,15 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
               'reviewState': answer.reviewState,
             },
         };
-        final same = _inputs().every(
-          (answer) =>
-              jsonEncode(saved[answer.key]) == jsonEncode(answer.toJson()),
-        );
+        final same =
+            _validateAnswers().isEmpty &&
+            _inputs().every(
+              (answer) =>
+                  jsonEncode(saved[answer.key]) == jsonEncode(answer.toJson()),
+            );
         _uncertain = false;
         final currentReview = same && response.isCurrent;
-        _error = !response.isCurrent
+        _error = response.saved != null && !response.isCurrent
             ? 'Saved answers are from an earlier case or form. Your values remain below; review them again before saving.'
             : same
             ? 'Your answers were saved.'
@@ -189,8 +235,8 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
             _reviewed[key] = false;
           }
         }
-        await _persist();
       }
+      await _persist();
     } catch (error) {
       if (mounted) _error = safeOperationMessage(error);
     } finally {
@@ -198,8 +244,75 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
     }
   }
 
+  Map<String, String> _validateAnswers() {
+    final errors = <String, String>{};
+    final today = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+    for (final key in _activeKeys) {
+      final value = _fields[key]!.text.trim();
+      if (value.isEmpty) continue;
+      try {
+        FormAnswerInput.fromJson({
+          'key': key,
+          'value': value,
+          'reviewState': 'needs_review',
+        });
+        if (_definition(key).kind == 'date' && value.compareTo(today) > 0) {
+          errors[key] = 'Enter a date on or before today.';
+        }
+      } catch (_) {
+        errors[key] = switch (_definition(key).kind) {
+          'date' => 'Enter a valid date as YYYY-MM-DD, or leave blank.',
+          'email' => 'Enter a valid email address, or leave blank.',
+          _ => 'Check this answer or leave it blank.',
+        };
+      }
+    }
+    final birth = _fields['memberBirthDate']!.text.trim();
+    final referral = _fields['referralDate']!.text.trim();
+    if (_activeKeys.contains('memberBirthDate') &&
+        _activeKeys.contains('referralDate') &&
+        !errors.containsKey('memberBirthDate') &&
+        !errors.containsKey('referralDate') &&
+        birth.isNotEmpty &&
+        referral.isNotEmpty &&
+        birth.compareTo(referral) > 0) {
+      errors['memberBirthDate'] =
+          'Birth date must be on or before the referral date.';
+    }
+    return errors;
+  }
+
+  void _reviewInvalid() {
+    if (_validationErrors.isEmpty || _busy || !_scopeCurrent) return;
+    final key = _validationErrors.keys.first;
+    _fieldFocus[key]!.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scopeCurrent) return;
+      final target = _fieldAnchors[key]!.currentContext;
+      if (target != null) Scrollable.ensureVisible(target, alignment: .1);
+    });
+  }
+
   Future<void> _save() async {
-    if (_leaving || _answers == null || _uncertain || _busy) return;
+    if (_leaving ||
+        !_onlineContext ||
+        _answers == null ||
+        _uncertain ||
+        _busy) {
+      return;
+    }
+    final errors = _validateAnswers();
+    setState(() {
+      _validationErrors
+        ..clear()
+        ..addAll(errors);
+      _justSaved = false;
+      _error = null;
+    });
+    if (errors.isNotEmpty) {
+      _reviewInvalid();
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -251,6 +364,11 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
       _reviewed[key] = false;
       _error = null;
       _justSaved = false;
+      if (_validationErrors.isNotEmpty) {
+        _validationErrors
+          ..clear()
+          ..addAll(_validateAnswers());
+      }
     });
     try {
       await _persist();
@@ -320,13 +438,22 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                       ),
                     ),
                     if (_answers != null) ...[
+                      if (!_onlineContext)
+                        SahNotice(
+                          key: const ValueKey('form-offline-context'),
+                          message: context.tr(
+                            'These answers are kept on this device. Reconnect and reload before saving online.',
+                          ),
+                        ),
                       SahStatusBadge(
                         label: _answers!.artifactKind == 'preparation_worksheet'
                             ? context.tr('Worksheet · not an official form')
                             : context.tr('Official-form draft · not submitted'),
                         icon: Icons.description_outlined,
                       ),
-                      if (!_answers!.isCurrent)
+                      if (_onlineContext &&
+                          _answers!.saved != null &&
+                          !_answers!.isCurrent)
                         SahNotice(
                           message: context.tr(
                             'Saved answers need review for the current case and form.',
@@ -335,22 +462,30 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                         ),
                       SahSectionHeading(
                         title: context.tr('Review your answers'),
-                        description: context
-                            .tr('{reviewed} of {total} checked', {
-                              'reviewed': _activeKeys
-                                  .where(
-                                    (key) =>
-                                        _fields[key]!.text.trim().isNotEmpty &&
-                                        _reviewed[key] == true,
-                                  )
-                                  .length,
-                              'total': _activeKeys
-                                  .where(
-                                    (key) =>
-                                        _fields[key]!.text.trim().isNotEmpty,
-                                  )
-                                  .length,
-                            }),
+                        description:
+                            _activeKeys.every(
+                              (key) => _fields[key]!.text.trim().isEmpty,
+                            )
+                            ? context.tr(
+                                'Enter what you know. Leave unknown answers blank, then review each value you enter.',
+                              )
+                            : context.tr('{reviewed} of {total} checked', {
+                                'reviewed': _activeKeys
+                                    .where(
+                                      (key) =>
+                                          _fields[key]!.text
+                                              .trim()
+                                              .isNotEmpty &&
+                                          _reviewed[key] == true,
+                                    )
+                                    .length,
+                                'total': _activeKeys
+                                    .where(
+                                      (key) =>
+                                          _fields[key]!.text.trim().isNotEmpty,
+                                    )
+                                    .length,
+                              }),
                       ),
                       for (final key in _activeKeys)
                         Padding(
@@ -373,6 +508,8 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                               ),
                               const SizedBox(height: 12),
                               TextField(
+                                key: _fieldAnchors[key],
+                                focusNode: _fieldFocus[key],
                                 controller: _fields[key],
                                 enabled: !_busy && !exiting,
                                 autocorrect: false,
@@ -392,6 +529,11 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                                       ? 'YYYY-MM-DD'
                                       : null,
                                   counterText: '',
+                                  error: _validationErrors[key] == null
+                                      ? null
+                                      : Text(
+                                          context.tr(_validationErrors[key]!),
+                                        ),
                                 ),
                                 maxLength: _definition(key).maxLength,
                                 onChanged: (_) => _edited(key),
@@ -448,9 +590,23 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
                           key: const ValueKey('form-save-feedback'),
                           message: context.tr(_error!),
                         ),
+                      if (_validationErrors.isNotEmpty) ...[
+                        SahNotice(
+                          key: const ValueKey('form-validation-feedback'),
+                          title: context.tr('Check this answer'),
+                          message:
+                              '${administrativeFieldLabel(context, widget.program.programId, _definition(_validationErrors.keys.first))}: ${context.tr(_validationErrors.values.first)}',
+                          tone: SahNoticeTone.error,
+                        ),
+                        OutlinedButton(
+                          onPressed: _reviewInvalid,
+                          child: Text(context.tr('Review this answer')),
+                        ),
+                      ],
                       FilledButton(
                         key: const ValueKey('form-save'),
-                        onPressed: _busy || _uncertain || exiting
+                        onPressed:
+                            _busy || !_onlineContext || _uncertain || exiting
                             ? null
                             : () async {
                                 await _save();

@@ -444,7 +444,10 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
   }
 
   Future<void> _rename(String id) async {
-    if (!_canChoose || _removals.containsKey(id)) return;
+    final route = ModalRoute.of(context);
+    if (!_canChoose || _removals.containsKey(id) || route?.isCurrent != true) {
+      return;
+    }
     final c = widget.services.coordinator;
     final generation = c.generation;
     setState(() => _opening = true);
@@ -455,7 +458,12 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       } catch (_) {
         if (!c.isCurrent) rethrow;
       }
-      if (!mounted || !_isCurrent || generation != c.generation) return;
+      if (!mounted ||
+          !_isCurrent ||
+          generation != c.generation ||
+          route?.isCurrent != true) {
+        return;
+      }
       await showPlanNameDialog(
         context: context,
         initialName: c.planNameFor(id),
@@ -476,7 +484,9 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         },
       );
     } catch (error) {
-      if (mounted && _isCurrent) await showOperationError(context, error);
+      if (mounted && _isCurrent && route?.isCurrent == true) {
+        await showOperationError(context, error);
+      }
     } finally {
       if (_isCurrent) setState(() => _opening = false);
     }
@@ -725,83 +735,13 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       child: Row(
         children: [
           if (!largeText)
-            Expanded(
-              child: Text(
-                'homi',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w700,
-                ),
+            Text(
+              'homi',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.w700,
               ),
             ),
-          Flexible(
-            flex: 2,
-            child: PopupMenuButton<String>(
-              key: const ValueKey('active-plan-selector'),
-              tooltip: context.tr('Switch plan'),
-              enabled: _canChoose,
-              onSelected: (value) {
-                if (value == 'manage') {
-                  setState(() => _managing = true);
-                  return;
-                }
-                if (value == 'new') {
-                  unawaited(_create());
-                  return;
-                }
-                if (value == current) return;
-                final online = _cases
-                    .where((item) => item.caseId == value)
-                    .firstOrNull;
-                unawaited(
-                  _open(
-                    () => online == null
-                        ? widget.services.coordinator.restoreLocal(value)
-                        : widget.services.coordinator.resume(online),
-                    targetId: value,
-                  ),
-                );
-              },
-              itemBuilder: (_) => [
-                for (final id in ids)
-                  PopupMenuItem(
-                    value: id,
-                    enabled: !_removals.containsKey(id),
-                    child: Text(_title(id)),
-                  ),
-                PopupMenuItem(
-                  value: 'manage',
-                  child: Text(context.tr('Manage plans')),
-                ),
-                PopupMenuItem(
-                  value: 'new',
-                  child: Text(context.tr('Start a new plan')),
-                ),
-              ],
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.swap_horiz, size: 22),
-                      const SizedBox(width: 8),
-                      Flexible(child: Text(context.tr('Switch plan'))),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
           if (widget.services.config.permissionSharingEnabled)
             IconButton(
               tooltip: context.tr('Shared with me'),
@@ -815,6 +755,76 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                       ),
                     ),
             ),
+          Expanded(
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: PopupMenuButton<String>(
+                key: const ValueKey('active-plan-selector'),
+                tooltip: context.tr('Switch plan'),
+                enabled: _canChoose,
+                onSelected: (value) {
+                  if (value == 'manage') {
+                    setState(() => _managing = true);
+                    return;
+                  }
+                  if (value == 'new') {
+                    unawaited(_create());
+                    return;
+                  }
+                  if (value == current) return;
+                  final online = _cases
+                      .where((item) => item.caseId == value)
+                      .firstOrNull;
+                  unawaited(
+                    _open(
+                      () => online == null
+                          ? widget.services.coordinator.restoreLocal(value)
+                          : widget.services.coordinator.resume(online),
+                      targetId: value,
+                    ),
+                  );
+                },
+                itemBuilder: (_) => [
+                  for (final id in ids)
+                    PopupMenuItem(
+                      value: id,
+                      enabled: !_removals.containsKey(id),
+                      child: Text(_title(id)),
+                    ),
+                  PopupMenuItem(
+                    value: 'manage',
+                    child: Text(context.tr('Manage plans')),
+                  ),
+                  PopupMenuItem(
+                    value: 'new',
+                    child: Text(context.tr('Start a new plan')),
+                  ),
+                ],
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.swap_horiz, size: 22),
+                        const SizedBox(width: 8),
+                        Flexible(child: Text(context.tr('Switch plan'))),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

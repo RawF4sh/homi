@@ -333,33 +333,35 @@ void main() {
     },
   );
 
-  testWidgets('workspace rename can cancel or reset to the default name', (
-    tester,
-  ) async {
-    initialize();
-    await openHome(tester);
-    await start(tester);
-    await saveName(tester, 'Cedar house');
-    await tester.tap(find.byKey(const ValueKey('plan-rename')));
-    await tick(tester);
-    expect(find.text('Cedar house'), findsWidgets);
-    await tester.enterText(
-      find.byKey(const ValueKey('plan-name-input')),
-      'Cancelled replacement',
-    );
-    await tester.tap(find.text('Cancel'));
-    await tick(tester);
-    expect(find.text('Cancelled replacement'), findsNothing);
-    expect(find.text('Cedar house'), findsWidgets);
-    await tester.tap(find.byKey(const ValueKey('plan-rename')));
-    await tick(tester);
-    await saveName(tester, '   ');
-    expect(find.text('Cedar house'), findsNothing);
-    expect(find.text('Home safety plan'), findsWidgets);
-    expectMetadataRequests(creates: 1);
-    expect(remoteNames.values.single['name'], isNull);
-    expect(remoteNames.values.single['nameRevision'], 2);
-  });
+  testWidgets(
+    'managed rename can cancel or reset without cluttering the plan',
+    (tester) async {
+      initialize();
+      await openHome(tester);
+      await start(tester);
+      await saveName(tester, 'Cedar house');
+      expect(find.byKey(const ValueKey('plan-rename')), findsNothing);
+      final target = app.coordinator.currentDraft().caseId;
+      await plans(tester);
+      await choosePlanAction(tester, target, 'Rename plan');
+      expect(find.text('Cedar house'), findsWidgets);
+      await tester.enterText(
+        find.byKey(const ValueKey('plan-name-input')),
+        'Cancelled replacement',
+      );
+      await tester.tap(find.text('Cancel'));
+      await tick(tester);
+      expect(find.text('Cancelled replacement'), findsNothing);
+      expect(find.text('Cedar house'), findsWidgets);
+      await choosePlanAction(tester, target, 'Rename plan');
+      await saveName(tester, '   ');
+      expect(find.text('Cedar house'), findsNothing);
+      expect(find.text('Home safety plan'), findsWidgets);
+      expectMetadataRequests(creates: 1);
+      expect(remoteNames.values.single['name'], isNull);
+      expect(remoteNames.values.single['nameRevision'], 2);
+    },
+  );
 
   testWidgets('failed rename keeps typed text and supports an explicit retry', (
     tester,
@@ -394,7 +396,7 @@ void main() {
     expectMetadataRequests();
   });
 
-  testWidgets('repeated rename taps and a late name read respect the route', (
+  testWidgets('managed rename ignores a late name read after disposal', (
     tester,
   ) async {
     initialize();
@@ -407,22 +409,21 @@ void main() {
             body: TextButton(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => CaseWorkspaceScreen(services: app),
+                  builder: (_) => CaseHomeScreen(services: app),
                 ),
               ),
-              child: const Text('Open workspace'),
+              child: const Text('Open plans'),
             ),
           ),
         ),
       ),
     );
-    await tester.tap(find.text('Open workspace'));
+    await tester.tap(find.text('Open plans'));
     await tick(tester);
+    final target = app.coordinator.currentDraft().caseId;
+    await plans(tester);
     store.delayedNameRead = Completer<Map<String, Object?>?>();
-    final rename = find.byKey(const ValueKey('plan-rename'));
-    await tester.tap(rename);
-    await tester.tap(rename);
-    await tick(tester);
+    await choosePlanAction(tester, target, 'Rename plan');
     expect(store.delayedNameReads, 1);
     expect(find.byKey(const ValueKey('plan-name-input')), findsNothing);
     store.delayedNameRead!.complete(null);
@@ -431,15 +432,19 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tick(tester);
     store.delayedNameRead = Completer<Map<String, Object?>?>();
-    await tester.tap(rename);
-    await tick(tester);
-    await tester.binding.handlePopRoute();
+    await choosePlanAction(tester, target, 'Rename plan');
+    await tester.pumpWidget(
+      const MaterialApp(
+        key: ValueKey('outside-plans'),
+        home: Scaffold(body: Text('Outside plans')),
+      ),
+    );
     await tick(tester);
     store.delayedNameRead!.complete(null);
     await tick(tester);
-    expect(find.byType(CaseWorkspaceScreen), findsNothing);
+    expect(find.byType(CaseHomeScreen), findsNothing);
     expect(find.byKey(const ValueKey('plan-name-input')), findsNothing);
-    expect(find.text('Open workspace'), findsOneWidget);
+    expect(find.text('Outside plans'), findsOneWidget);
     expect(tester.takeException(), isNull);
     expectMetadataRequests();
   });

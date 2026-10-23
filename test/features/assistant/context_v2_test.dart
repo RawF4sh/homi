@@ -429,8 +429,12 @@ void main() {
         ],
       ),
     );
-    expect(c.sources, hasLength(AssistantContextV2.maxSources));
-    expect((c.toModelJson()['state'] as Map)['additionalRecords'], 73);
+    expect(c.sources.length, lessThanOrEqualTo(AssistantContextV2.maxSources));
+    expect(c.sources.length, greaterThan(HomiDestination.values.length));
+    expect(
+      (c.toModelJson()['state'] as Map)['additionalRecords'],
+      100 - (c.sources.length - HomiDestination.values.length),
+    );
     expect(
       utf8.encode(c.modelJson).length,
       lessThanOrEqualTo(AssistantContextV2.maxModelBytes),

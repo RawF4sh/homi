@@ -68,6 +68,67 @@ void main() {
   });
 
   test(
+    'first interrupted connected capture does not claim saved models exist',
+    () async {
+      for (final room in rooms) {
+        await store.delete(
+          BathroomScanSession.storageKey(homeCaseId, room: room),
+        );
+      }
+      final s = make();
+      await store.writeJson(s.intentKey, {
+        'version': 1,
+        'captureId': 'fictional-capture',
+      });
+      await s.initialize();
+      expect(s.model, isNull);
+      expect(s.scans, isEmpty);
+      expect(
+        s.notice,
+        'The connected capture was interrupted. Start a new capture when ready.',
+      );
+      expect(await store.readJson(s.intentKey), isNull);
+    },
+  );
+
+  test(
+    'card status reads do not clear interrupted capture intent or include archived rooms',
+    () async {
+      final s = await aligned();
+      await store.writeJson(s.intentKey, {
+        'version': 1,
+        'captureId': 'fictional-capture',
+      });
+      final before = await store.readBytes(s.intentKey);
+      final connected = await WholeHomeSession.readSavedConnectedRoomIds(
+        store: store,
+        caseId: homeCaseId,
+        rooms: rooms,
+        isCurrent: () => current,
+      );
+      expect(connected, {'bath-one', 'bath-two'});
+      expect(await store.readBytes(s.intentKey), before);
+      final active = await WholeHomeSession.readSavedConnectedRoomIds(
+        store: store,
+        caseId: homeCaseId,
+        rooms: rooms.where((r) => r.id != 'bath-two').toList(),
+        isCurrent: () => current,
+      );
+      expect(active, {'bath-one'});
+      current = false;
+      await expectLater(
+        WholeHomeSession.readSavedConnectedRoomIds(
+          store: store,
+          caseId: homeCaseId,
+          rooms: rooms,
+          isCurrent: () => current,
+        ),
+        throwsA(isA<ScanScopeExpired>()),
+      );
+    },
+  );
+
+  test(
     'device place layouts restore separately from structured layouts and other cases',
     () async {
       final structured = await aligned();

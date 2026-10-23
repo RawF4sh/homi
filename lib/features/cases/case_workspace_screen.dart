@@ -23,7 +23,6 @@ import '../assessment/presentation/home_safety/home_safety_screen.dart';
 import 'case_display_details.dart';
 import 'profile_editor_screen.dart';
 import 'profile_response_state.dart';
-import 'plan_name_dialog.dart';
 
 class CaseWorkspaceScreen extends StatefulWidget {
   const CaseWorkspaceScreen({
@@ -95,14 +94,12 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
     super.dispose();
   }
 
-  bool _renaming = false;
   int _standaloneTab = 0;
   int get _tab => widget.embedded ? widget.destination : _standaloneTab;
   final Set<int> _visited = {0};
   bool get canLeave =>
       !services.coordinator.hasUndurableEdits &&
       !services.coordinator.busy &&
-      !_renaming &&
       _roomsKey.currentState?.canLeave != false &&
       _tasksKey.currentState?.canLeave != false &&
       _legacyKey.currentState?.canLeave != false &&
@@ -312,57 +309,6 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
     ),
   );
 
-  Future<void> _rename() async {
-    final c = services.coordinator;
-    final draft = c.draft;
-    final route = ModalRoute.of(context);
-    if (_renaming ||
-        draft == null ||
-        c.busy ||
-        c.hasUndurableEdits ||
-        !c.isCurrent ||
-        route?.isCurrent != true) {
-      return;
-    }
-    final generation = c.generation;
-    setState(() => _renaming = true);
-    try {
-      await c.loadPlanName(draft.caseId);
-      try {
-        await c.syncPlanName(draft.caseId);
-      } catch (_) {
-        if (!c.isCurrent) rethrow;
-      }
-      if (!mounted ||
-          !c.isCurrent ||
-          generation != c.generation ||
-          route?.isCurrent != true) {
-        return;
-      }
-      await showPlanNameDialog(
-        context: context,
-        initialName: c.planNameFor(draft.caseId),
-        coordinator: c,
-        caseId: draft.caseId,
-        defaultName: homePlanTitle(draft, context: context),
-        onSave: (value) async {
-          if (!c.isCurrent || generation != c.generation) {
-            throw StateError(
-              'The selected account or plan changed. Reopen the name editor.',
-            );
-          }
-          await c.savePlanName(draft.caseId, value);
-        },
-      );
-    } catch (error) {
-      if (mounted && route?.isCurrent == true && c.isCurrent) {
-        await showOperationError(context, error);
-      }
-    } finally {
-      if (mounted) setState(() => _renaming = false);
-    }
-  }
-
   Future<void> _run(
     BuildContext context,
     Future<void> Function() action,
@@ -426,38 +372,13 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
             child: ListView(
               padding: sahFloatingContentPadding(context),
               children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final title = Semantics(
-                      header: true,
-                      child: Text(
-                        planTitle,
-                        key: const ValueKey('case-plan-title'),
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                    );
-                    final rename = TextButton.icon(
-                      key: const ValueKey('plan-rename'),
-                      onPressed: _renaming || c.busy || c.hasUndurableEdits
-                          ? null
-                          : _rename,
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      label: Text(context.tr('Rename')),
-                    );
-                    if (MediaQuery.textScalerOf(context).scale(14) > 22) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [title, rename],
-                      );
-                    }
-                    return Row(
-                      children: [
-                        Flexible(child: title),
-                        const SizedBox(width: 8),
-                        rename,
-                      ],
-                    );
-                  },
+                Semantics(
+                  header: true,
+                  child: Text(
+                    planTitle,
+                    key: const ValueKey('case-plan-title'),
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
                 ),
                 Text(
                   context.tr('Home safety plan'),

@@ -317,6 +317,18 @@ void main() {
       );
       await _open(tester, h, textScale: 2);
       expect(find.text('Guest bedroom in 3D'), findsOneWidget);
+      final semantics = tester.ensureSemantics();
+      await _openModel(tester);
+      await _reveal(tester, find.byType(BathroomModelView));
+      expect(
+        find.bySemanticsLabel(RegExp('^Partial room model')),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp('^Partial bathroom model')),
+        findsNothing,
+      );
+      semantics.dispose();
       await _reveal(tester, find.text('Getting through the doorway'));
       expect(find.text('Getting into or using the bath'), findsNothing);
       expect(
@@ -871,7 +883,7 @@ void main() {
       await _open(tester, harness);
       await _openModel(tester);
       await _reveal(tester, find.byType(BathroomModelView));
-      final model = find.bySemanticsLabel(RegExp('^Partial bathroom model'));
+      final model = find.bySemanticsLabel(RegExp('^Partial room model'));
       expect(model, findsOneWidget);
       final scene = fictionalScanScene();
       expect(

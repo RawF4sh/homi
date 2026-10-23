@@ -86,6 +86,7 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
 
   bool get _current =>
       _scopeCurrent &&
+      !widget.services.coordinator.hasUnsavedChanges &&
       _catalog != null &&
       widget.services.coordinator.snapshot != null &&
       _catalog!.belongsTo(widget.services.coordinator.currentCase());

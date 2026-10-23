@@ -45,6 +45,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
   String? _scope;
   String? _inputConversation;
   bool _settingInput = false, _canPop = false;
+  _AppHelpTopic? _guidanceTopic;
 
   @override
   void initState() {
@@ -104,6 +105,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     _draftEpoch++;
     _setInput('');
     _inputConversation = null;
+    _guidanceTopic = null;
     final source = widget.coordinator;
     final caseId = source?.draft?.caseId;
     final accountEpoch = source?.session.epoch;
@@ -195,6 +197,16 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
         '${c.conversationId}:${c.turns.length}:${c.busy}:${c.errorCode}:${c.interruptedQuestion}:${c.turns.lastOrNull?.answer}';
     if (stamp == _conversationStamp) return;
     _conversationStamp = stamp;
+    // Availability/history initialization must not scroll a new chat past its
+    // current-context actions and app guidance. Only conversation content has
+    // a meaningful "latest message" to reveal.
+    if (c.turns.isEmpty &&
+        c.pendingQuestion == null &&
+        c.interruptedQuestion == null &&
+        c.errorCode == null) {
+      if (_showLatest && mounted) setState(() => _showLatest = false);
+      return;
+    }
     final nearEnd = !_scroll.hasClients || _scroll.position.extentAfter < 100;
     if (nearEnd) {
       _latest();
@@ -575,8 +587,16 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       'Saved chat storage is full. Clear history to start another chat.',
     'REFUSED' =>
       'The model could not answer that request. Try asking about an app step or a confirmed finding.',
-    'CONTEXT_LIMIT' || 'QUESTION_LIMIT' =>
+    'QUESTION_LIMIT' =>
       'Try a shorter question, or clear the conversation and ask again.',
+    'CONTEXT_LIMIT' =>
+      'This phone’s model cannot fit the current app context. Start a new chat without included findings, or use App guidance.',
+    'INVALID_RESPONSE' =>
+      'The model returned a reply the app could not verify. Try again or use App guidance.',
+    'INVALID_INPUT' =>
+      'The app could not prepare this request. Use App guidance or reopen the assistant.',
+    'UNAVAILABLE' =>
+      'The on-device model is unavailable. Check availability, or use App guidance.',
     'LANGUAGE' => 'The model cannot answer in that language on this phone.',
     'TIMEOUT' =>
       'The response took too long. Your question is still here to retry.',
@@ -586,6 +606,89 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     _ =>
       'The response could not be completed. Check availability and try again.',
   };
+
+  Widget _appGuidance(AssistantController c) {
+    final current = widget.appContextProvider?.call();
+    final topic = _guidanceTopic;
+    final reply = current == null || topic == null
+        ? null
+        : topic == _AppHelpTopic.prepareDraft
+        ? current.draftPreparationReply()
+        : current.deterministicReply();
+    final enabled = !c.busy && c.context != null;
+    return Column(
+      key: const ValueKey('assistant-app-guidance'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.tr('App guidance'),
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 8),
+        Text(context.tr('These app steps do not use a language model.')),
+        const SizedBox(height: 8),
+        for (final (item, label) in [
+          (_AppHelpTopic.nextStep, 'What should I do next?'),
+          (_AppHelpTopic.prepareDraft, 'How do I prepare a draft?'),
+        ])
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: OutlinedButton(
+              key: ValueKey('assistant-app-help-${item.name}'),
+              onPressed: !enabled
+                  ? null
+                  : () {
+                      _focus.unfocus();
+                      setState(() => _guidanceTopic = item);
+                    },
+              child: Text(context.tr(label)),
+            ),
+          ),
+        if (reply != null && current!.authorized)
+          _sourceActions(current, reply, guidance: true)
+        else if (topic != null && c.context != null && current == null) ...[
+          Text(
+            context.tr(
+              topic == _AppHelpTopic.prepareDraft
+                  ? 'Open Help, choose a program, then open Prepare forms. Review the required answers and documents. Saving or sharing a draft does not submit an application.'
+                  : 'Open Plan to create or select a plan.',
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: () =>
+                _openSection(topic == _AppHelpTopic.prepareDraft ? 2 : 0),
+            icon: const Icon(Icons.open_in_new),
+            label: Text(
+              context.tr('Open {section}', {
+                'section': context.tr(
+                  topic == _AppHelpTopic.prepareDraft ? 'Help' : 'Plan',
+                ),
+              }),
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _responseRecovery(AssistantController c) => Wrap(
+    spacing: 8,
+    children: [
+      TextButton.icon(
+        key: const ValueKey('assistant-check-availability'),
+        onPressed: c.busy || c.checking ? null : c.check,
+        icon: const Icon(Icons.refresh),
+        label: Text(context.tr('Check availability')),
+      ),
+      if (c.interruptedQuestion != null)
+        OutlinedButton(
+          key: const ValueKey('assistant-retry-question'),
+          onPressed: c.canSend ? () => _send(c.interruptedQuestion!) : null,
+          child: Text(context.tr('Retry question')),
+        ),
+    ],
+  );
 
   Widget _savedSources(AssistantTurn turn) {
     final app = widget.appContextProvider?.call();
@@ -697,6 +800,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
           _sourceActions(app, app.deterministicReply(), guidance: true),
           const SizedBox(height: 16),
         ],
+        _appGuidance(c),
         for (var i = 0; i < c.turns.length; i++) ...[
           _ChatMessage(text: c.turns[i].question, reply: false),
           if (c.turns[i].answer.isEmpty)
@@ -742,8 +846,9 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
           if (c.errorCode != null)
             SahNotice(message: context.tr(_errorText(c.errorCode!))),
           OutlinedButton(
+            key: const ValueKey('assistant-check-availability'),
             onPressed: c.busy ? null : () => c.check(),
-            child: Text(context.tr('Check again')),
+            child: Text(context.tr('Check availability')),
           ),
           const SizedBox(height: 20),
           _shortcuts(),
@@ -782,19 +887,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 24),
-                  for (final prompt in [
-                    'What should I do next?',
-                    'How do I prepare a draft?',
-                  ])
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: OutlinedButton(
-                        onPressed: c.canSend
-                            ? () => _send(context.tr(prompt))
-                            : null,
-                        child: Text(context.tr(prompt)),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -816,6 +908,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
               liveRegion: true,
               child: SahNotice(message: context.tr(_errorText(c.errorCode!))),
             ),
+          if (c.errorCode != null) _responseRecovery(c),
         ],
       ],
     );
@@ -992,6 +1085,8 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     );
   }
 }
+
+enum _AppHelpTopic { nextStep, prepareDraft }
 
 class _ChatMessage extends StatelessWidget {
   const _ChatMessage({

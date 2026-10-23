@@ -313,7 +313,7 @@ void main() {
         find.text('A professional must review medical necessity.'),
         findsOneWidget,
       );
-      await tap('Prepare a draft');
+      await tap('Prepare forms');
       await tap('Save and continue');
       expect(revision(), 3);
       await tester.scrollUntilVisible(

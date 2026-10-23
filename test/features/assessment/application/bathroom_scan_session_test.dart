@@ -302,6 +302,9 @@ void main() {
         await session.capture();
         expect((await persisted()).scene!.fingerprint, previous.fingerprint);
         expect((await persisted()).labels, {'door-1': ScanElementKind.door});
+        if (code != 'scan_permission_denied') {
+          expect(session.notice, contains('previous model is retained'));
+        }
       }
       scanner.onStart = (id) async => BathroomScanScene.fromJson(
         scanSceneJson(source: 'arkit')
@@ -710,6 +713,37 @@ void main() {
       expect(session.review.reviewed, {'door-1'});
       expect(session.notice, contains('interrupted'));
       expect(scanner.starts, isEmpty);
+      expect((await persisted()).pendingScanId, isNull);
+    },
+  );
+
+  test('first capture failures never claim a previous model exists', () async {
+    final session = make();
+    await session.initialize();
+    for (final code in ['scan_cancelled', 'scan_interrupted', 'scan_failed']) {
+      scanner.onStart = (_) async => throw PlatformException(code: code);
+      await session.capture();
+      expect(session.review.scene, isNull);
+      expect(session.notice, isNot(contains('retained')));
+      expect(session.notice, isNot(contains('previous model')));
+      expect(
+        session.notice,
+        contains(code == 'scan_failed' ? 'Try again' : 'new scan'),
+      );
+    }
+  });
+
+  test(
+    'restart after a first interrupted scan reports no saved model',
+    () async {
+      await seed(BathroomScanReview(pendingScanId: interruptedId));
+      final session = make();
+      await session.initialize();
+      expect(
+        session.notice,
+        'The previous scan was interrupted. Start a new scan when ready.',
+      );
+      expect(session.review.scene, isNull);
       expect((await persisted()).pendingScanId, isNull);
     },
   );

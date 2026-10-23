@@ -37,7 +37,13 @@ class _FeatureAvailabilitySectionState
       );
       if (current()) setState(() => _backend = result);
     } catch (error) {
-      if (current()) setState(() => _error = safeOperationMessage(error));
+      if (current()) {
+        setState(
+          () => _error = error is FeatureCheckUnsupported
+              ? 'This service does not support availability checks yet. You can still try the enabled features.'
+              : safeOperationMessage(error),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -47,7 +53,12 @@ class _FeatureAvailabilitySectionState
   Widget build(BuildContext context) {
     final config = widget.services.config;
     final rows = <(String, String?, bool)>[
-      ('Rooms', 'structuredRooms', config.homeSafetyEnabled),
+      ('Room photos and measurements', null, true),
+      (
+        'Named rooms and checklists',
+        'structuredRooms',
+        config.homeSafetyEnabled,
+      ),
       ('Tasks', 'tracking', config.trackingEnabled),
       ('Local providers', null, config.localHelpEnabled),
       ('Saved scan sync', 'scanSync', config.scanSyncEnabled),

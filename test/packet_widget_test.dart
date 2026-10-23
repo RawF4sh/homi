@@ -31,6 +31,61 @@ Future<void> openChecklist(WidgetTester tester) async {
 
 void main() {
   testWidgets(
+    'RTP checklist calls its app-generated artifact a preparation worksheet',
+    (tester) async {
+      final example = scenarios().first;
+      final scenarioJson =
+          (jsonDecode(
+                        File(
+                          'contracts/v1/fixtures/scenarios.json',
+                        ).readAsStringSync(),
+                      )
+                      as List)
+                  .first
+              as Map;
+      final packetJson =
+          (jsonDecode(
+                        File(
+                          'contracts/v1/fixtures/packets.json',
+                        ).readAsStringSync(),
+                      )
+                      as List)
+                  .first['packet']
+              as Map;
+      final program = ProgramMatch.fromJson({
+        ...Map<String, Object?>.from(
+          ((scenarioJson['match'] as Map)['matches'] as List).first as Map,
+        ),
+        'programId': 'rtp-home-repair',
+      });
+      final packet = DraftPacket.fromJson({
+        ...Map<String, Object?>.from(packetJson),
+        'programId': 'rtp-home-repair',
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DraftPacketScreen(
+            snapshot: example.caseSnapshot,
+            program: program,
+            service: _PacketService(pending: Future.value(packet)),
+            currentCase: () => example.caseSnapshot,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Preparation worksheet'), findsOneWidget);
+      expect(
+        find.text(
+          'App-generated worksheet, not an RTP application. Complete the official intake separately.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Application form'), findsNothing);
+      expect(find.textContaining('Official form not prepared.'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
     'each example opens its own draft and preserves unknown/failed tasks',
     (tester) async {
       final examples = scenarios();

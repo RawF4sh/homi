@@ -44,6 +44,29 @@ void main() {
       );
       await tester.tap(find.text('Feature availability'));
       await tester.pumpAndSettle();
+      final photos = find.ancestor(
+        of: find.text('Room photos and measurements'),
+        matching: find.byType(ListTile),
+      );
+      final named = find.ancestor(
+        of: find.text('Named rooms and checklists'),
+        matching: find.byType(ListTile),
+      );
+      expect(
+        find.descendant(
+          of: photos,
+          matching: find.text('Enabled in this build'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: named,
+          matching: find.text('Disabled in this build'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Rooms'), findsNothing);
       final check = find.text('Check backend availability');
       await tester.ensureVisible(check);
       await tester.tap(check);

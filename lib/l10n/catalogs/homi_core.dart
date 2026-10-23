@@ -110,6 +110,20 @@ const homiCoreTranslations = <String, Map<String, String>>{
     "vi": "Nhập số đo",
     "fil": "Ilagay ang sukat",
   },
+  "Room photos and measurements": {
+    "es": "Fotos y medidas de habitaciones",
+    "zh-Hans": "房间照片和测量",
+    "zh-Hant": "房間照片和測量",
+    "vi": "Ảnh và số đo phòng",
+    "fil": "Mga larawan at sukat ng silid",
+  },
+  "Named rooms and checklists": {
+    "es": "Habitaciones con nombre y listas de revisión",
+    "zh-Hans": "命名房间和检查清单",
+    "zh-Hant": "命名房間和檢查清單",
+    "vi": "Phòng có tên và danh sách kiểm tra",
+    "fil": "Mga silid na may pangalan at checklist",
+  },
   "Feature availability": {
     "es": "Disponibilidad de funciones",
     "zh-Hans": "功能可用性",
@@ -130,6 +144,16 @@ const homiCoreTranslations = <String, Map<String, String>>{
     "zh-Hant": "此版本未啟用",
     "vi": "Đã tắt trong bản này",
     "fil": "Naka-off sa build na ito",
+  },
+  "This service does not support availability checks yet. You can still try the enabled features.": {
+    "es":
+        "Este servicio aún no permite comprobar la disponibilidad. Puede probar las funciones activadas.",
+    "zh-Hans": "此服务尚不支持可用性检查。您仍可尝试已启用的功能。",
+    "zh-Hant": "此服務尚不支援可用性檢查。您仍可嘗試已啟用的功能。",
+    "vi":
+        "Dịch vụ này chưa hỗ trợ kiểm tra tính khả dụng. Bạn vẫn có thể thử các tính năng đã bật.",
+    "fil":
+        "Hindi pa sinusuportahan ng serbisyong ito ang pagsusuri ng availability. Maaari mo pa ring subukan ang mga naka-on na tampok.",
   },
   "Check backend availability": {
     "es": "Comprobar disponibilidad del servicio",

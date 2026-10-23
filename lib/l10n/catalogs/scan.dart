@@ -828,17 +828,17 @@ const scanTranslations = <String, Map<String, String>>{
     "vi": "Đã chọn: {label}",
     "fil": "Napili: {label}",
   },
-  "Partial bathroom model. {features} detected features and {samples} point samples. This model is optional. Use the feature list below to identify an item if needed.": {
+  "Partial room model. {features} detected features and {samples} point samples. This model is optional. Use the feature list below to identify an item if needed.": {
     "es":
-        "Modelo parcial del baño. {features} elementos detectados y {samples} muestras de puntos. El modelo es opcional. Usa la lista inferior para identificar un elemento si hace falta.",
+        "Modelo parcial de la habitación. {features} elementos detectados y {samples} muestras de puntos. El modelo es opcional. Usa la lista inferior para identificar un elemento si hace falta.",
     "zh-Hans":
-        "浴室局部模型。检测到{features}个特征和{samples}个采样点。模型为可选功能。如有需要，可使用下方特征列表识别物品。",
+        "房间局部模型。检测到{features}个特征和{samples}个采样点。模型为可选功能。如有需要，可使用下方特征列表识别物品。",
     "zh-Hant":
-        "浴室局部模型。偵測到{features}個特徵和{samples}個取樣點。模型為選用功能。如有需要，可使用下方特徵清單識別物品。",
+        "房間局部模型。偵測到{features}個特徵和{samples}個取樣點。模型為選用功能。如有需要，可使用下方特徵清單識別物品。",
     "vi":
-        "Mô hình một phần phòng tắm. {features} đặc điểm và {samples} mẫu điểm. Mô hình là tùy chọn. Dùng danh sách bên dưới để xác định vật khi cần.",
+        "Mô hình một phần căn phòng. {features} đặc điểm và {samples} mẫu điểm. Mô hình là tùy chọn. Dùng danh sách bên dưới để xác định vật khi cần.",
     "fil":
-        "Bahagyang modelo ng banyo. May {features} natukoy na bahagi at {samples} point sample. Opsyonal ang modelo. Gamitin ang listahan sa ibaba upang tukuyin ang bagay kung kailangan.",
+        "Bahagyang modelo ng kuwarto. May {features} natukoy na bahagi at {samples} point sample. Opsyonal ang modelo. Gamitin ang listahan sa ibaba upang tukuyin ang bagay kung kailangan.",
   },
   "PARTIAL 3D MODEL": {
     "es": "MODELO 3D PARCIAL",

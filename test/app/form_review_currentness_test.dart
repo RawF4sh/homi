@@ -14,7 +14,9 @@ class DelayedFormStore extends MemoryPrivateStore {
   final release = Completer<void>();
   @override
   Future<void> writeJson(String key, Map<String, Object?> value) async {
-    if (key.startsWith('form.') && !entered.isCompleted) {
+    if (key.startsWith('form.') &&
+        value['uncertain'] == true &&
+        !entered.isCompleted) {
       entered.complete();
       await release.future;
     }

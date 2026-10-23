@@ -1,4 +1,78 @@
 const programsTranslations = <String, Map<String, String>>{
+  "Prepare forms": {
+    "es": "Preparar formularios",
+    "zh-Hans": "准备表格",
+    "zh-Hant": "準備表格",
+    "vi": "Chuẩn bị biểu mẫu",
+    "fil": "Ihanda ang mga form",
+  },
+  "Preparation worksheet": {
+    "es": "Hoja de preparación",
+    "zh-Hans": "准备工作表",
+    "zh-Hant": "準備工作表",
+    "vi": "Phiếu chuẩn bị",
+    "fil": "Worksheet sa paghahanda",
+  },
+  "App-generated worksheet, not an RTP application. Complete the official intake separately.": {
+    "es":
+        "Hoja generada por la app, no una solicitud de RTP. Complete la admisión oficial por separado.",
+    "zh-Hans": "这是应用生成的准备工作表，并非 RTP 申请表。请另行完成官方申请流程。",
+    "zh-Hant": "這是應用程式產生的準備工作表，並非 RTP 申請表。請另行完成官方申請流程。",
+    "vi":
+        "Phiếu do ứng dụng tạo, không phải đơn đăng ký RTP. Hoàn tất quy trình tiếp nhận chính thức riêng.",
+    "fil":
+        "Worksheet na ginawa ng app, hindi aplikasyon sa RTP. Kumpletuhin nang hiwalay ang opisyal na intake.",
+  },
+  "Enter a date on or before today.": {
+    "es": "Ingrese una fecha de hoy o anterior.",
+    "zh-Hans": "请输入今天或之前的日期。",
+    "zh-Hant": "請輸入今天或之前的日期。",
+    "vi": "Nhập ngày hôm nay hoặc trước đó.",
+    "fil": "Maglagay ng petsa ngayon o bago ngayon.",
+  },
+  "Enter a valid date as YYYY-MM-DD, or leave blank.": {
+    "es": "Ingrese una fecha válida como AAAA-MM-DD o déjela en blanco.",
+    "zh-Hans": "请输入有效日期（YYYY-MM-DD），或留空。",
+    "zh-Hant": "請輸入有效日期（YYYY-MM-DD），或留空。",
+    "vi": "Nhập ngày hợp lệ theo dạng YYYY-MM-DD hoặc để trống.",
+    "fil": "Maglagay ng wastong petsa sa YYYY-MM-DD, o iwang blangko.",
+  },
+  "Enter a valid email address, or leave blank.": {
+    "es": "Ingrese un correo electrónico válido o déjelo en blanco.",
+    "zh-Hans": "请输入有效的电子邮件地址，或留空。",
+    "zh-Hant": "請輸入有效的電子郵件地址，或留空。",
+    "vi": "Nhập địa chỉ email hợp lệ hoặc để trống.",
+    "fil": "Maglagay ng wastong email address, o iwang blangko.",
+  },
+  "Birth date must be on or before the referral date.": {
+    "es":
+        "La fecha de nacimiento debe ser igual o anterior a la fecha de derivación.",
+    "zh-Hans": "出生日期不得晚于转介日期。",
+    "zh-Hant": "出生日期不得晚於轉介日期。",
+    "vi": "Ngày sinh phải cùng hoặc trước ngày giới thiệu.",
+    "fil":
+        "Ang petsa ng kapanganakan ay dapat kapareho o mas maaga kaysa sa petsa ng referral.",
+  },
+  "These answers are kept on this device. Reconnect and reload before saving online.": {
+    "es":
+        "Estas respuestas están guardadas en este dispositivo. Vuelva a conectarse y recargue antes de guardar en línea.",
+    "zh-Hans": "这些答案保存在此设备上。请重新联网并重新加载后再在线保存。",
+    "zh-Hant": "這些答案儲存在此裝置上。請重新連線並重新載入後再線上儲存。",
+    "vi":
+        "Các câu trả lời được lưu trên thiết bị này. Kết nối lại và tải lại trước khi lưu trực tuyến.",
+    "fil":
+        "Naka-save sa device na ito ang mga sagot. Kumonekta at mag-reload bago mag-save online.",
+  },
+  "Enter what you know. Leave unknown answers blank, then review each value you enter.": {
+    "es":
+        "Ingrese lo que sabe. Deje en blanco lo que desconoce y revise cada valor ingresado.",
+    "zh-Hans": "填写您知道的信息。不确定的答案请留空，并逐项核对所填内容。",
+    "zh-Hant": "填寫您知道的資訊。不確定的答案請留空，並逐項核對所填內容。",
+    "vi":
+        "Nhập thông tin bạn biết. Để trống câu trả lời chưa biết, rồi kiểm tra từng giá trị đã nhập.",
+    "fil":
+        "Ilagay ang alam mo. Iwang blangko ang hindi alam, at suriin ang bawat inilagay.",
+  },
   "Could help with accessibility changes at home.": {
     "es": "Podría ayudar con adaptaciones de accesibilidad en el hogar.",
     "zh-Hans": "可能提供居家无障碍改造方面的帮助。",

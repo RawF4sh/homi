@@ -168,7 +168,7 @@ void main() {
       );
       expect(
         (jsonDecode(request['appContext']!) as Map)['sources'],
-        hasLength(AssistantContextV2.maxSources),
+        hasLength(appContext.sources.length),
       );
       expect(request['locale'], 'zh-Hant');
       expect(request['findings'], '[]');

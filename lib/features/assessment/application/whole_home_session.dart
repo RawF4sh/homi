@@ -203,7 +203,31 @@ class WholeHomeSession extends ChangeNotifier {
     guard();
   });
 
-  Future<void> initialize() async {
+  /// Reads only saved, currently valid placements. Does not check hardware,
+  /// clear an interrupted capture, or change any stored record.
+  static Future<Set<String>> readSavedConnectedRoomIds({
+    required LocalPrivateStore store,
+    required String caseId,
+    required List<RoomInstance> rooms,
+    required bool Function() isCurrent,
+    bool localPlaces = false,
+  }) async {
+    final reader = WholeHomeSession(
+      store: store,
+      caseId: caseId,
+      currentRooms: () => rooms,
+      isCurrent: isCurrent,
+      localPlaces: localPlaces,
+    );
+    try {
+      await reader._restoreSavedModels();
+      return reader.connected().map((r) => r.roomId).toSet();
+    } finally {
+      reader.dispose();
+    }
+  }
+
+  Future<void> _restoreSavedModels() async {
     guard();
     scans.clear();
     unreadable.clear();
@@ -236,12 +260,17 @@ class WholeHomeSession extends ChangeNotifier {
         unreadable.add(room.id);
       }
     }
+  }
+
+  Future<void> initialize() async {
+    await _restoreSavedModels();
     proposal = await _read(draftKey);
     if (await store.readJson(intentKey) != null) {
       guard();
       await store.delete(intentKey);
-      notice =
-          'The connected capture was interrupted. Your saved models are retained.';
+      notice = model != null || scans.isNotEmpty
+          ? 'The connected capture was interrupted. Your saved models are retained.'
+          : 'The connected capture was interrupted. Start a new capture when ready.';
     }
     try {
       supported = await adapter.supported().timeout(const Duration(seconds: 5));

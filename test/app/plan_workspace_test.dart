@@ -106,6 +106,23 @@ void main() {
         tester,
       ) async {
         narrowLargeText(tester, scale: 3.2);
+        // Model availability is a native boundary, not a widget-test timer.
+        // Supply the intended unavailable state instead of relying on a missing
+        // plugin's timeout being advanced by incidental scroll animations.
+        const assistantChannel = MethodChannel('safe_at_home/assistant');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        var availabilityChecks = 0;
+        messenger.setMockMethodCallHandler(assistantChannel, (call) async {
+          if (call.method == 'availability') {
+            availabilityChecks++;
+            return 'unavailable';
+          }
+          return null;
+        });
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(assistantChannel, null),
+        );
         final h = await safetyHarness(loadedCatalog: catalog, homeSafety: true);
         addTearDown(h.services.dispose);
         await tester.pumpWidget(
@@ -133,14 +150,35 @@ void main() {
         expect(find.byKey(const ValueKey('case-room-scans')), findsNothing);
         await tapKey(tester, 'ask-homi');
         expect(find.byType(PlanAssistantScreen), findsOneWidget);
-        expect(
-          find.text(
-            words.text(
-              'Plan chat is unavailable right now. You can still use the help tools below.',
-            ),
-          ),
-          findsOneWidget,
+        // At 3.2x, the context and App guidance occupy multiple viewports.
+        // Exercise the lazy list as a reader does instead of requiring every
+        // translated status to be mounted immediately when the screen opens.
+        final assistantScroll = find.descendant(
+          of: find.byKey(const ValueKey('assistant-messages')),
+          matching: find.byType(Scrollable),
         );
+        final unavailable = find.text(
+          words.text(
+            'Plan chat is unavailable right now. You can still use the help tools below.',
+          ),
+        );
+        await tester.scrollUntilVisible(
+          unavailable,
+          180,
+          scrollable: assistantScroll,
+          maxScrolls: 60,
+        );
+        await tester.pumpAndSettle();
+        expect(unavailable, findsOneWidget);
+        expect(
+          tester.getRect(unavailable).overlaps(tester.getRect(assistantScroll)),
+          isTrue,
+          reason: 'The translated status must be reachable in the viewport.',
+        );
+        expect(find.byType(TextField), findsNothing);
+        expect(availabilityChecks, 1);
+        await tapKey(tester, 'assistant-check-availability');
+        expect(availabilityChecks, 2);
         expect(find.byType(TextField), findsNothing);
         await tapKey(tester, 'assistant-rooms');
         expect(find.byType(PlanAssistantScreen), findsNothing);

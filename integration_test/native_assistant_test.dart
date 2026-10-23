@@ -3,6 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/assistant/assistant_model.dart';
+import 'package:safe_at_home/features/assistant/assistant_context_v2.dart';
+import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
+import 'package:safe_at_home/shared/navigation/homi_destination.dart';
 import 'package:safe_at_home/features/assistant/plan_assistant_screen.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:safe_at_home/shared/models/case_draft.dart';
@@ -14,19 +17,27 @@ void main() {
     (tester) async {
       expect(const bool.fromEnvironment('SAH_ASSISTANT_ISOLATED_APP'), isTrue);
       const model = OnDeviceAssistantModel();
+      const contextualOnly = bool.fromEnvironment(
+        'SAH_ASSISTANT_CONTEXTUAL_ONLY',
+      );
+      final context = _fictionalContext();
       await tester.pumpWidget(
         MaterialApp(
           theme: SafeAtHomeTheme.light(),
           supportedLocales: AppLocalizations.supportedLocales,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
-          home: PlanAssistantScreen(onSection: (_) {}),
+          home: PlanAssistantScreen(
+            onSection: (_) {},
+            appContextProvider: contextualOnly ? () => context : null,
+          ),
         ),
       );
       await tester.pumpAndSettle();
       var status = await model.availability('en');
       for (
         var attempt = 0;
-        status == AssistantAvailability.modelNotReady && attempt < 8;
+        status == AssistantAvailability.modelNotReady &&
+            attempt < (contextualOnly ? 1 : 8);
         attempt++
       ) {
         debugPrint('ASSISTANT_WAITING_FOR_MODEL ${attempt + 1}/8');
@@ -42,8 +53,47 @@ void main() {
       );
       final input = find.byKey(const ValueKey('assistant-input'));
       if (input.evaluate().isEmpty) {
-        await tester.tap(find.text('Check again'));
+        final check = find.byKey(
+          const ValueKey('assistant-check-availability'),
+        );
+        await tester.ensureVisible(check);
+        await tester.tap(check);
         await tester.pumpAndSettle();
+      }
+      // This exercises the real typed native path, then the same Dart source
+      // validator used by production. It never uses App guidance as evidence of
+      // a generated reply. All inputs and printed answers are fictional.
+      final raw = await model.respondWithContext(
+        requestId: newUuidV4(),
+        locale: 'en',
+        question: 'What should I review before preparing my draft?',
+        history: '[]',
+        findings: '[]',
+        appContext: context.modelJson,
+        guide: AssistantContextV2.trustedGuide,
+      );
+      final generated = context.decodeReply(raw);
+      expect(generated.text, isNotEmpty);
+      expect(generated.sourceIds, isNotEmpty);
+      expect(context.isReplyCurrent(generated), isTrue);
+      if (generated.openSourceId != null) {
+        expect(context.resolveOpen(generated), isNotNull);
+      }
+      debugPrint('ASSISTANT_FICTIONAL_CONTEXTUAL_REPLY: $raw');
+      if (contextualOnly) {
+        final builtin = find.byKey(
+          const ValueKey('assistant-app-help-prepareDraft'),
+        );
+        await tester.ensureVisible(builtin);
+        await tester.tap(builtin);
+        await tester.pumpAndSettle();
+        expect(find.text('App guidance'), findsOneWidget);
+        expect(
+          find.textContaining('Saving or sharing a draft does not submit'),
+          findsOneWidget,
+        );
+        debugPrint('ASSISTANT_CONTEXTUAL_CHECK_COMPLETE');
+        return;
       }
       await tester.enterText(input, 'Where do I view my saved room scan?');
       await tester.testTextInput.receiveAction(TextInputAction.send);
@@ -145,3 +195,54 @@ void main() {
     timeout: const Timeout(Duration(minutes: 8)),
   );
 }
+
+AssistantContextV2 _fictionalContext() =>
+    AssistantContextV2.fromAuthorizedRecords(
+      scopeKey: 'isolated-fictional-account',
+      authorized: true,
+      access: const AssistantRecordAccess.owner(),
+      destination: HomiDestination.help,
+      capabilities: {
+        for (final destination in HomiDestination.values)
+          destination: FeatureAvailability.supported,
+      },
+      caseId: 'fictional-plan',
+      caseRevision: 1,
+      filteredRecords: AssistantFilteredRecords(
+        caseId: 'fictional-plan',
+        caseRevision: 1,
+        revisionKey: '1',
+        records: [
+          AssistantRecord.room(
+            id: 'room-one',
+            type: AssessmentLocation.bathroom,
+            answeredQuestions: 4,
+            concerns: 1,
+            hasSavedScan: true,
+          ),
+          AssistantRecord.concern(
+            id: 'concern-one',
+            roomId: 'room-one',
+            reviewState: 'needs_review',
+          ),
+          AssistantRecord.task(
+            id: 'task-one',
+            kind: 'draft_review',
+            state: 'pending',
+          ),
+          AssistantRecord.program(
+            id: 'scfhp-eaa',
+            status: 'needs_confirmation',
+            availability: 'unverified',
+            passed: 2,
+            unknown: 3,
+            professionalReview: 2,
+          ),
+          AssistantRecord.preparation(
+            programId: 'scfhp-eaa',
+            intake: 'incomplete',
+            draft: 'stale',
+          ),
+        ],
+      ),
+    );

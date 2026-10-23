@@ -101,7 +101,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('plan controls are labelled and Rename is beside the title', (
+  testWidgets('Switch plan stays top-right without a visible Rename control', (
     tester,
   ) async {
     phoneSize(tester);
@@ -132,9 +132,13 @@ void main() {
     expect(find.text('Switch plan'), findsOneWidget);
     expect(find.text('Suggested next step'), findsNothing);
     final title = tester.getRect(find.byKey(const ValueKey('case-plan-title')));
-    final rename = tester.getRect(find.byKey(const ValueKey('plan-rename')));
-    expect(rename.left, greaterThan(title.right));
-    expect(rename.center.dy, closeTo(title.center.dy, 1));
+    expect(find.byKey(const ValueKey('plan-rename')), findsNothing);
+    expect(find.text('Rename'), findsNothing);
+    final selector = tester.getRect(
+      find.byKey(const ValueKey('active-plan-selector')),
+    );
+    expect(selector.right, closeTo(370, 1));
+    expect(selector.bottom, lessThan(title.top));
     await capture(tester, 'plan');
     await tester.tap(find.byKey(const ValueKey('plan-tab-rooms')));
     await tester.pumpAndSettle();

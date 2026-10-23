@@ -486,18 +486,6 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
           ),
         ..._requirements(context, match, same),
         const SizedBox(height: 16),
-        OutlinedButton(
-          key: ValueKey('program-${match.programId}-start'),
-          onPressed: same ? () => _start(match) : null,
-          child: Text(
-            context.tr(
-              hasFormWorkflow
-                  ? 'Prepare a draft'
-                  : 'Homi preparation checklist',
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
         Padding(
           padding: const EdgeInsets.only(top: 12, bottom: 4),
           child: Text(
@@ -768,6 +756,21 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
                       ],
                       if (match.status == 'does_not_meet_criterion')
                         Text(context.tr('A known criterion is not met')),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: OutlinedButton.icon(
+                          key: ValueKey('program-${match.programId}-start'),
+                          onPressed: same ? () => _start(match) : null,
+                          icon: const Icon(Icons.description_outlined),
+                          label: Text(
+                            context.tr(
+                              _hasFormWorkflow(match)
+                                  ? 'Prepare forms'
+                                  : 'Homi preparation checklist',
+                            ),
+                          ),
+                        ),
+                      ),
                       _details(context, match, same),
                     ],
                   ),

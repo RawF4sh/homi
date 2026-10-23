@@ -35,6 +35,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
   int _validationAttempt = 0;
   bool _feedbackAtAction = false;
   final _booleans = <String, bool?>{};
+  final _unmappedAnswers = <String, Object?>{};
   ProgramIntakeResponse? _response;
   Map<String, Object?>? _restoredDraft;
   bool _busy = true, _uncertain = false, _restoring = true;
@@ -44,6 +45,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
   late final DraftSaveTracker _draftSaves;
   bool _leaving = false;
   bool _justSaved = false;
+  bool _onlineContext = false;
   String get _key => 'intake.$_caseId.${widget.program.programId}';
   @override
   void initState() {
@@ -93,15 +95,21 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
     'uncertain': _uncertain,
     'questionnaireVersion': _response?.definition.questionnaireVersion,
     'caseRevision': _response?.caseRevision,
+    'response': _response?.toJson(),
+    'unmappedAnswers': Map<String, Object?>.of(_unmappedAnswers),
   };
   Future<void> _persist() async {
     _screenCase();
     final value = _raw();
+    if (!_onlineContext) _restoredDraft = value;
     await _draftSaves.track(() => widget.services.store.writeJson(_key, value));
   }
 
   void _stash() {
-    if (_leaving || _restoring || !_current(_response?.caseRevision ?? -1)) {
+    if (_leaving ||
+        _restoring ||
+        !_scopeCurrent ||
+        (_onlineContext && !_current(_response?.caseRevision ?? -1))) {
       return;
     }
     if ((_feedbackAtAction && _notice != null) || _justSaved) {
@@ -140,18 +148,54 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
         : value;
   }
 
+  void _restoreCached(Map<String, Object?> local) {
+    final raw = local['response'];
+    if (raw == null) return; // Older journals need one online reload.
+    final response = ProgramIntakeResponse.fromJson(raw);
+    if (response.caseId != _caseId ||
+        response.definition.programId != widget.program.programId ||
+        response.caseRevision > _screenCase().revision) {
+      throw const FormatException('Private questions do not match this plan.');
+    }
+    final values = local['values'] as Map;
+    final booleans = local['booleans'] as Map;
+    for (final q in response.definition.questions) {
+      final value = q.kind == 'boolean' ? booleans[q.key] : values[q.key];
+      if (q.kind == 'boolean') {
+        if (value != null && value is! bool) throw const FormatException();
+        _booleans[q.key] = value as bool?;
+      } else {
+        if (value != null && value is! String) throw const FormatException();
+        _text.putIfAbsent(q.key, () => TextEditingController()).text =
+            value as String? ?? '';
+        _fieldAnchors.putIfAbsent(q.key, () => GlobalKey());
+        _fieldFocus.putIfAbsent(q.key, () => FocusNode());
+      }
+    }
+    _response = response;
+  }
+
   Future<void> _read({bool initial = false}) async {
     if (_leaving) return;
     setState(() {
       _busy = true;
       _feedbackAtAction = false;
+      _onlineContext = false;
     });
     try {
       final opening = _screenCase();
       if (initial) _restoredDraft = await widget.services.store.readJson(_key);
       _screenCase(revision: opening.revision);
       final local = _restoredDraft;
-      if (local != null) _uncertain = local['uncertain'] == true;
+      if (local != null) {
+        if (initial) _restoreCached(local);
+        if (local['unmappedAnswers'] is Map) {
+          _unmappedAnswers.addAll(
+            Map<String, Object?>.from(local['unmappedAnswers'] as Map),
+          );
+        }
+        _uncertain = local['uncertain'] == true;
+      }
       final c = widget.services.coordinator;
       if (!initial || _uncertain) {
         final remote = await widget.services.answers.reloadCase(
@@ -169,7 +213,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
       );
       if (!_current(snapshot.revision)) return;
       final previous = _response;
+      final changed =
+          previous != null &&
+          previous.definition.questionnaireVersion !=
+              response.definition.questionnaireVersion;
+      final restored = local ?? (changed ? _raw() : null);
       _response = response;
+      _onlineContext = true;
       _errors.clear();
       for (final q in response.definition.questions) {
         if (q.kind != 'boolean') {
@@ -178,28 +228,64 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
           _fieldFocus.putIfAbsent(q.key, () => FocusNode());
         }
       }
-      if (initial || previous == null) {
-        for (final answer in response.saved?.answers ?? <IntakeAnswer>[]) {
-          if (_text.containsKey(answer.key)) {
-            _text[answer.key]!.text = answer.value?.toString() ?? '';
+      if (initial || previous == null || changed) {
+        final saved = {
+          for (final answer in response.saved?.answers ?? <IntakeAnswer>[])
+            answer.key: answer.value,
+        };
+        for (final question in response.definition.questions) {
+          if (question.kind != 'boolean') {
+            _text[question.key]!.text = saved[question.key]?.toString() ?? '';
           } else {
-            _booleans[answer.key] = answer.value as bool?;
+            _booleans[question.key] = saved[question.key] as bool?;
           }
         }
-        if (local != null &&
-            local['questionnaireVersion'] ==
-                response.definition.questionnaireVersion) {
-          final values = local['values'] as Map;
-          final booleans = local['booleans'] as Map;
-          for (final key in _text.keys) {
-            _text[key]!.text = values[key] as String? ?? '';
+        if (restored != null) {
+          final values = restored['values'] as Map;
+          final booleans = restored['booleans'] as Map;
+          final sameVersion =
+              restored['questionnaireVersion'] ==
+              response.definition.questionnaireVersion;
+          final oldQuestions =
+              previous?.definition.questions ??
+              (sameVersion
+                  ? response.definition.questions
+                  : <IntakeQuestion>[]);
+          final oldKinds = {
+            for (final question in oldQuestions) question.key: question.kind,
+          };
+          final newKinds = {
+            for (final question in response.definition.questions)
+              question.key: question.kind,
+          };
+          for (final key in {...values.keys, ...booleans.keys}) {
+            final kind = oldKinds[key];
+            final source =
+                kind == 'boolean' || (kind == null && !values.containsKey(key))
+                ? booleans
+                : values;
+            if (!source.containsKey(key)) continue;
+            if (kind == null || newKinds[key] != kind) {
+              _unmappedAnswers['${restored['questionnaireVersion']}:$key'] = {
+                'key': key,
+                'kind': kind ?? 'unknown',
+                'value': source[key],
+              };
+            }
           }
-          for (final q in response.definition.questions.where(
-            (q) => q.kind == 'boolean',
-          )) {
-            _booleans[q.key] = booleans[q.key] as bool?;
+          for (final question in response.definition.questions) {
+            if (oldKinds[question.key] != question.kind) continue;
+            if (question.kind == 'boolean') {
+              if (booleans.containsKey(question.key)) {
+                _booleans[question.key] = booleans[question.key] as bool?;
+              }
+            } else if (values.containsKey(question.key)) {
+              _text[question.key]!.text = values[question.key] as String? ?? '';
+            }
           }
-          _notice = 'Recovered unfinished answers. Review them before saving.';
+          _notice = sameVersion
+              ? 'Recovered unfinished answers. Review them before saving.'
+              : 'The questionnaire changed. Review all questions before saving.';
         }
       }
       _restoredDraft = null;
@@ -228,8 +314,8 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
           _notice =
               'The questionnaire changed. Review all questions before saving.';
         }
-        await _persist();
       }
+      await _persist();
     } catch (error) {
       if (mounted) _notice = safeOperationMessage(error);
     } finally {
@@ -272,7 +358,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
   }
 
   Future<void> _save() async {
-    if (_leaving || _busy || _uncertain || _response == null) return;
+    if (_leaving ||
+        !_onlineContext ||
+        _busy ||
+        _uncertain ||
+        _response == null) {
+      return;
+    }
     final errors = <String, String>{};
     for (final question in _response!.definition.questions) {
       final error = _validateQuestion(question);
@@ -349,6 +441,13 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       SahPageHeader(title: widget.program.programName),
+                      if (!_onlineContext && _response != null)
+                        SahNotice(
+                          key: const ValueKey('intake-offline-context'),
+                          message: context.tr(
+                            'These answers are kept on this device. Reconnect and reload before saving online.',
+                          ),
+                        ),
                       if (Localizations.localeOf(context).languageCode != 'en')
                         SahNotice(
                           message: context.tr(
@@ -559,7 +658,11 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                       FilledButton(
                         key: const ValueKey('intake-save'),
                         onPressed:
-                            _busy || _uncertain || _response == null || exiting
+                            _busy ||
+                                !_onlineContext ||
+                                _uncertain ||
+                                _response == null ||
+                                exiting
                             ? null
                             : () async {
                                 await _save();

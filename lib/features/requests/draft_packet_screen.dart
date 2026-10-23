@@ -306,11 +306,18 @@ class _Checklist extends StatelessWidget {
               SahSectionHeading(title: context.tr('Your draft materials')),
               _MaterialSummary(
                 icon: Icons.description_outlined,
-                title: context.tr('Application form'),
-                message:
-                    packet.formVersion == null ||
-                        packet.mappingVersion == null ||
-                        packet.storageReference == null
+                title: context.tr(
+                  program.programId == 'rtp-home-repair'
+                      ? 'Preparation worksheet'
+                      : 'Application form',
+                ),
+                message: program.programId == 'rtp-home-repair'
+                    ? context.tr(
+                        'App-generated worksheet, not an RTP application. Complete the official intake separately.',
+                      )
+                    : packet.formVersion == null ||
+                          packet.mappingVersion == null ||
+                          packet.storageReference == null
                     ? context.tr(
                         'Official form not prepared. Its fields are unverified.',
                       )

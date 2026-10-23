@@ -8,6 +8,8 @@ import 'package:safe_at_home/features/assessment/application/whole_home_capture_
 import 'package:safe_at_home/features/assessment/domain/scan/bathroom_scan_scene.dart';
 import '../domain/scan/scan_test_fixtures.dart';
 import 'package:safe_at_home/features/assessment/domain/home_safety/home_safety.dart';
+import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
+import 'package:safe_at_home/features/assessment/domain/local_place_rooms.dart';
 import 'package:safe_at_home/features/assessment/domain/scan/whole_home_model.dart';
 import 'package:safe_at_home/features/assessment/presentation/whole_home_screen.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
@@ -117,6 +119,80 @@ Future<void> tapVisible(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  testWidgets(
+    'eight named rooms of one type remain distinct through connected capture',
+    (tester) async {
+      final h = _Harness();
+      h.rooms = [
+        for (var i = 1; i <= 8; i++)
+          RoomInstance(
+            id: 'bedroom-$i',
+            type: AssessmentLocation.bedroom,
+            name: 'Bedroom $i',
+          ),
+      ];
+      await h.init();
+      addTearDown(h.dispose);
+      final requestedNames = <String>[];
+      h.capture.onStart = (id, rooms) async {
+        requestedNames.addAll(rooms.map((room) => room.name));
+        expect(rooms.map((r) => r.token).toSet(), hasLength(8));
+        return h.capture.result(id, rooms);
+      };
+      await tester.pumpWidget(h.app());
+      await tester.pumpAndSettle();
+      await tapVisible(tester, find.byKey(const ValueKey('home-capture')));
+      expect(find.textContaining('Choose 2–8 rooms'), findsOneWidget);
+      for (final room in h.rooms.reversed) {
+        await tapVisible(
+          tester,
+          find.widgetWithText(CheckboxListTile, room.name!),
+        );
+      }
+      await tapVisible(tester, find.text('Start connected capture'));
+      expect(requestedNames, h.rooms.reversed.map((room) => room.name));
+      expect(h.saved(), isNull);
+      await tapVisible(
+        tester,
+        find.widgetWithText(
+          CheckboxListTile,
+          'I checked the connected room positions.',
+        ),
+      );
+      await tapVisible(tester, find.text('Save reviewed home model'));
+      expect(
+        h.saved()!.rooms.map((room) => room.roomId),
+        h.rooms.reversed.map((room) => room.id),
+      );
+      expect(h.saved()!.captures, hasLength(8));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(h.app());
+      await tester.pumpAndSettle();
+      expect(h.saved()!.rooms, hasLength(8));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('legacy chooser states the six available indoor places', (
+    tester,
+  ) async {
+    final h = _Harness()..rooms = LocalPlaceRooms.all;
+    await h.init();
+    addTearDown(h.dispose);
+    await tester.pumpWidget(h.app());
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.byKey(const ValueKey('home-capture')));
+    expect(find.textContaining('Choose 2–6 rooms'), findsOneWidget);
+    expect(find.byType(CheckboxListTile), findsNWidgets(6));
+    expect(
+      find.widgetWithText(CheckboxListTile, 'Outdoor paths'),
+      findsNothing,
+    );
+    expect(find.textContaining('2–8 rooms'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
     'manual alignment previews, keeps input on failed save, retries and resumes',
     (tester) async {

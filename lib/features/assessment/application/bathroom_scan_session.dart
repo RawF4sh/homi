@@ -111,8 +111,9 @@ class BathroomScanSession extends ChangeNotifier {
     guard();
     if (saved != null) review = saved;
     if (review.pendingScanId != null) {
-      notice =
-          'The previous scan was interrupted. Your saved model is retained. Start a new scan when ready.';
+      notice = review.scene == null
+          ? 'The previous scan was interrupted. Start a new scan when ready.'
+          : 'The previous scan was interrupted. Your saved model is retained. Start a new scan when ready.';
       await _save(review.copyWith(clearPending: true));
     }
     await synchronization?.initialize();
@@ -258,6 +259,7 @@ class BathroomScanSession extends ChangeNotifier {
         await _save(previous.copyWith(clearPending: true));
         notice = scanErrorMessage(
           attempt.cancelled ? PlatformException(code: 'scan_cancelled') : error,
+          hasSavedModel: previous.scene != null,
         );
         _changed();
         return;
@@ -284,7 +286,10 @@ class BathroomScanSession extends ChangeNotifier {
     guard();
     attempt.acceptingResult = true;
     await _save(previous.copyWith(clearPending: true));
-    notice = scanErrorMessage(PlatformException(code: 'scan_cancelled'));
+    notice = scanErrorMessage(
+      PlatformException(code: 'scan_cancelled'),
+      hasSavedModel: previous.scene != null,
+    );
     _changed();
   }
 
@@ -408,8 +413,9 @@ class BathroomScanSession extends ChangeNotifier {
         await adapter.cancel(attempt.id);
       } catch (_) {
         if (!_disposed && isCurrent()) {
-          notice =
-              'Cancellation was requested. If the camera stays open, close the native scan. Its result will not replace your saved model.';
+          notice = review.scene == null
+              ? 'Cancellation was requested. If the camera stays open, close the native scan. Its result will not be saved.'
+              : 'Cancellation was requested. If the camera stays open, close the native scan. Its result will not replace your saved model.';
           _changed();
         }
       }
@@ -426,12 +432,17 @@ class BathroomScanSession extends ChangeNotifier {
   }
 }
 
-String scanErrorMessage(Object error) {
+String scanErrorMessage(Object error, {bool hasSavedModel = false}) {
   final code = error is PlatformException ? error.code : 'scan_failed';
   return switch (code) {
-    'scan_cancelled' => 'Scan cancelled. Your previous model is retained.',
+    'scan_cancelled' =>
+      hasSavedModel
+          ? 'Scan cancelled. Your previous model is retained.'
+          : 'Scan cancelled. Start a new scan when ready.',
     'scan_interrupted' =>
-      'Scanning was interrupted. Your previous model is retained; start a new scan when ready.',
+      hasSavedModel
+          ? 'Scanning was interrupted. Your previous model is retained; start a new scan when ready.'
+          : 'Scanning was interrupted. Start a new scan when ready.',
     'scan_permission_denied' =>
       'Camera access is off. Enable it in device Settings, or continue with manual assessment.',
     'scan_unavailable' =>
@@ -440,6 +451,8 @@ String scanErrorMessage(Object error) {
     'scan_limit' =>
       'This scan reached its limit. Try a shorter room scan with fewer objects.',
     _ =>
-      'The scan could not be processed. Your previous model is retained. Try again in good light, or use photos and manual measurements.',
+      hasSavedModel
+          ? 'The scan could not be processed. Your previous model is retained. Try again in good light, or use photos and manual measurements.'
+          : 'The scan could not be processed. Try again in good light, or use photos and manual measurements.',
   };
 }

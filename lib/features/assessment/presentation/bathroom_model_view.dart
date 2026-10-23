@@ -101,7 +101,7 @@ class _BathroomModelViewState extends State<BathroomModelView> {
                   label: context.tr(
                     widget.homeModel
                         ? 'Partial connected home model. Review room positions in the room list below. Unscanned space remains unknown.'
-                        : 'Partial bathroom model. {features} detected features and {samples} point samples. This model is optional. Use the feature list below to identify an item if needed.',
+                        : 'Partial room model. {features} detected features and {samples} point samples. This model is optional. Use the feature list below to identify an item if needed.',
                     {
                       'features': widget.scene.elements.length,
                       'samples': widget.scene.points.length,

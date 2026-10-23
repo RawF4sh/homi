@@ -78,10 +78,7 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
       await action();
     } catch (_) {
       if (mounted && session.current) {
-        setState(
-          () => error =
-              'This model step could not finish. Your saved models are retained.',
-        );
+        setState(() => error = _modelStepFailure);
       }
     } finally {
       if (mounted) setState(() => syncing = false);
@@ -113,6 +110,10 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
       false;
 
   String? error;
+  String get _modelStepFailure =>
+      session.model != null || session.scans.isNotEmpty
+      ? 'This model step could not finish. Your saved models are retained.'
+      : 'This model step could not finish. Try again when ready.';
   String? selectedFeature, selectedProposalFeature;
   bool reviewedCapture = false, refreshing = false;
   @override
@@ -236,10 +237,7 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => error =
-              'This model step could not finish. Your saved models are retained.',
-        );
+        setState(() => error = _modelStepFailure);
       }
     }
   }
@@ -326,7 +324,8 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
             [
               Text(
                 ctx.tr(
-                  'Choose 2–8 rooms on one level, in walking order. Keep a safe, clear path between rooms. Do not walk on stairs while scanning.',
+                  'Choose 2–{count} rooms on one level, in walking order. Keep a safe, clear path between rooms. Do not walk on stairs while scanning.',
+                  {'count': session.rooms.length.clamp(2, 8)},
                 ),
               ),
               for (final room in session.rooms)
@@ -669,11 +668,7 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
             return ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                Text(
-                  ctx.tr(
-                    'The saved home model could not be opened. Your saved scans are retained.',
-                  ),
-                ),
+                Text(ctx.tr('The home model could not be opened. Try again.')),
                 TextButton(
                   onPressed: () => setState(() => ready = session.initialize()),
                   child: Text(ctx.tr('Try again')),
@@ -846,7 +841,7 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
                   ),
                   Text(
                     ctx.tr(
-                      'Compatible iPhones and Android phones can capture 2–8 rooms in one continuous tracking session. Android captures approximate surfaces and points, not identified fixtures. Existing independent scans use reviewed alignment below.',
+                      'Continuous capture connects the rooms you choose in one tracking session. Android captures approximate surfaces and points, not identified fixtures. Existing independent scans use reviewed alignment below.',
                     ),
                   ),
                   if (session.supported)

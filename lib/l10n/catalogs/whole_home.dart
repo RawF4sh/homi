@@ -248,15 +248,15 @@ const wholeHomeTranslations = <String, Map<String, String>>{
     "vi": "Chọn các phòng kết nối",
     "fil": "Pumili ng magkakonektang kuwarto",
   },
-  "Choose 2–8 rooms on one level, in walking order. Keep a safe, clear path between rooms. Do not walk on stairs while scanning.": {
+  "Choose 2–{count} rooms on one level, in walking order. Keep a safe, clear path between rooms. Do not walk on stairs while scanning.": {
     "es":
-        "Elija de 2 a 8 habitaciones del mismo nivel en el orden de recorrido. Mantenga un camino seguro y despejado. No camine por escaleras al escanear.",
-    "zh-Hans": "按行走顺序选择同一楼层的 2–8 个房间。房间之间保持安全畅通的路线。扫描时不要在楼梯上行走。",
-    "zh-Hant": "按行走順序選擇同一樓層的 2–8 個房間。房間之間保持安全暢通的路線。掃描時不要在樓梯上行走。",
+        "Elija de 2 a {count} habitaciones del mismo nivel en el orden de recorrido. Mantenga un camino seguro y despejado. No camine por escaleras al escanear.",
+    "zh-Hans": "按行走顺序选择同一楼层的 2–{count} 个房间。房间之间保持安全畅通的路线。扫描时不要在楼梯上行走。",
+    "zh-Hant": "按行走順序選擇同一樓層的 2–{count} 個房間。房間之間保持安全暢通的路線。掃描時不要在樓梯上行走。",
     "vi":
-        "Chọn 2–8 phòng cùng một tầng theo thứ tự di chuyển. Giữ lối đi an toàn, thông thoáng giữa các phòng. Không đi trên cầu thang khi quét.",
+        "Chọn 2–{count} phòng cùng một tầng theo thứ tự di chuyển. Giữ lối đi an toàn, thông thoáng giữa các phòng. Không đi trên cầu thang khi quét.",
     "fil":
-        "Pumili ng 2–8 kuwarto sa iisang palapag ayon sa pagkakasunod ng paglakad. Panatilihing ligtas at maluwag ang daan. Huwag maglakad sa hagdan habang nag-scan.",
+        "Pumili ng 2–{count} kuwarto sa iisang palapag ayon sa pagkakasunod ng paglakad. Panatilihing ligtas at maluwag ang daan. Huwag maglakad sa hagdan habang nag-scan.",
   },
   "Start connected capture": {
     "es": "Iniciar captura conectada",

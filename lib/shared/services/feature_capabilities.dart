@@ -3,6 +3,11 @@ import 'dart:convert';
 
 import 'matching_api_client.dart';
 
+/// Older deployed services may implement features without this diagnostic route.
+class FeatureCheckUnsupported implements Exception {
+  const FeatureCheckUnsupported();
+}
+
 /// Authenticated route availability. This does not grant case authorization.
 class FeatureCapabilities {
   const FeatureCapabilities(this.features);
@@ -40,6 +45,7 @@ class FeatureCapabilities {
         const Duration(seconds: 15),
       );
       guard();
+      if (response.statusCode == 404) throw const FeatureCheckUnsupported();
       if (response.statusCode != 200 ||
           response.body.length > 4096 ||
           response.contentType?.split(';').first.trim().toLowerCase() !=

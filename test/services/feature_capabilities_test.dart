@@ -5,6 +5,18 @@ import '../app/case_coordinator_test.dart' show FakeTransport;
 import 'case_evidence_api_client_test.dart' as http;
 
 void main() {
+  test('an older service cannot be mistaken for disabled features', () async {
+    await expectLater(
+      FeatureCapabilities.read(
+        origin: Uri.parse('https://example.org'),
+        transport: FakeTransport((_) async => http.apiError('NOT_FOUND', 404)),
+        token: () async => 'fictional',
+        isCurrent: () => true,
+      ),
+      throwsA(isA<FeatureCheckUnsupported>()),
+    );
+  });
+
   test(
     'capabilities require current account and exact boolean response',
     () async {
