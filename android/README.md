@@ -81,8 +81,8 @@ open a camera or establish physical scanning accuracy.
 The standard Flutter Android debug build and `tool/check_android_apk.py` remain
 the packaging/privacy checks. The merged manifest must retain optional camera
 hardware and disabled application backup; ARCore must not become required.
-See the [native validation loop](../docs/native-capture-validation.md) for the
-installed-channel harness and packaged-manifest regression checks.
+The installed-channel harness and packaged-manifest checks are in
+`integration_test/native_scan_contract_test.dart` and `tool/check_android_apk.py`.
 
 ## Physical Android acceptance
 

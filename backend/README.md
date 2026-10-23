@@ -129,7 +129,7 @@ The disposable repository is bounded to 64 MiB, 64 evidence records and 16 artif
 
 ## SCFHP research and form preview
 
-See [form preparation](../docs/form-preparation.md) for the exact content pin, local commands, mapping boundaries, and API adapter handoff. See [Person 3 progress](../docs/person3-progress.md) for remaining work and [SCFHP source review](../docs/program-verification/scfhp-eaa.md) for policy conflicts.
+See [form preparation](../docs/form-preparation.md) for the exact content pin, local commands, mapping boundaries, and API adapter handoff. See [SCFHP source review](../docs/program-verification/scfhp-eaa.md) for policy conflicts.
 
 `npm run research:scfhp -- --template /absolute/path/41567.pdf` verifies an externally downloaded public template and prints an explained result, field decisions and checklist for one built-in fictional case. Add `--preview /absolute/path/new-draft.pdf` to create a local incomplete PDF preview, and optionally `--reviewed-example` at the end to populate the 18 built-in fictional reviewed answers. Preview output includes `renderIssues`; do not treat a logically mapped field as rendered when an issue is present. The command never overwrites an existing file, does not fetch the template automatically and accepts no personal case file. Downloads and generated artifacts belong outside Git or in ignored `backend/local-artifacts/`.
 

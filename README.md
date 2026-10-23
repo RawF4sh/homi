@@ -1,51 +1,45 @@
 # Safe at Home
 
-The `integration/ios-beta` working tree contains the integrated Flutter app, native camera/media bridges and Node/TypeScript backend. See [iOS beta implementation and validation](docs/ios-beta-implementation.md) for setup, current test results and remaining device/cloud gates. This is a team beta using fictional cases; applications remain incomplete drafts.
+An iPhone and Android app for reviewing home safety concerns, comparing possible assistance programs and preparing draft applications. Built with Flutter/Dart, native Apple/Android capture, a Node/TypeScript API and Supabase Auth/PostgreSQL.
 
-A Flutter app for iPhone and Android that helps residents document home concerns, explore possible assistance programs, and prepare draft applications.
+The team beta uses fictional cases. Program matches are not approvals, scans are not professional assessments, and application packets remain drafts.
 
-Without private connection configuration the app opens the labelled fictional demo. The configured app supports Supabase sign-in, saved cases, encrypted offline work, photo/manual assessment, program-specific intake and form review, PDF preview/sharing, manual history and deletion. The three-route backend bundle supports SCFHP and HPSM referral drafts plus an RTP preparation worksheet, with unresolved rules and professional decisions visibly preserved. Additive [v2 contracts](contracts/v2/README.md) coexist with the strict [v1 contracts](contracts/v1/README.md). Run `bash tool/verify_project.sh all` for local checks; deployment and physical-device acceptance are separate.
+## Run locally
 
-See [getting started and first commits](docs/getting-started.md) for run commands, the two local work areas and the manual commit order.
+Use the team's Flutter 3.41.5 / Dart 3.11.3 toolchain and Node 24.12 or later. Install Xcode for iOS or the Android SDK for Android, then check the device setup with `flutter doctor`.
 
-The [iPhone beta handoff](docs/iphone-beta-handoff.md) summarizes this session's
-results, remaining acceptance gates and human-run commit commands. The
-[October 23 iPhone workflow record](docs/iphone-workflow-session.md) covers
-the updated ivory/teal interface, accessible forms and PDF navigation, encrypted
-capture recovery, account isolation and measured native checks. Use the
-[installed-app acceptance guide](integration_test/README.md) to run the complete
-fictional workflow with a disposable local backend. It distinguishes simulator
-and controlled-provider evidence from physical-camera and live-account checks.
-Development and testing have a **$0 out-of-pocket budget**; cloud jobs and paid
-device services are not required for these local checks.
+```sh
+flutter pub get
+npm --prefix backend ci --ignore-scripts
+flutter run
+```
 
-The four-feature expansion has a [Phase 5 acceptance record](docs/phase5-acceptance.md)
-and a [physical iPhone/Android checklist](docs/phase5-device-checklist.md).
-Local automated results, device observations, qualified content review and hosted
-verification are separate gates; the checklist includes the required test build
-configuration and a results matrix for each platform.
+The default build opens bundled fictional examples. To use the connected app, supply an ignored configuration file with `SAH_LIVE_BACKEND`, `SAH_API_URL`, `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`:
 
-The optional [bathroom scanning workflow](docs/bathroom-scanning.md) adds iPhone
-LiDAR/RoomPlan and Android ARCore capture, a private 3D model review, and
-resident-confirmed improvement observations. The model stays encrypted on the
-device; confirmed findings use the existing assessment save and draft workflow.
-Real-room capture accuracy remains a separate physical-device acceptance gate.
-The [native capture validation loop](docs/native-capture-validation.md) records
-local lifecycle, geometry, accessibility and installed-bridge checks.
+```sh
+flutter run --dart-define-from-file=backend/local-artifacts/mobile-config.json
+```
 
-PDF previews use a pinned, licensed [pdfrx 2.4.7 compatibility patch](third_party/pdfrx/PATCHES.md)
-that disposes images decoded after their viewer or document has left. Keep the
-local package with the app; do not patch a shared pub cache or upgrade the native
-PDF engine to work around this fix.
+Set `SAH_LIVE_BACKEND` to `true`. The API URL must identify the configured HTTPS backend. Enable optional feature flags only after the corresponding backend setup is complete. Database passwords and elevated keys never belong in a mobile configuration file.
 
-## Team setup
+See [Android setup](docs/android-local-setup.md), [backend setup](backend/README.md) and [account configuration](docs/public-account-access.md) for platform and server details.
 
-| Area | Owner | Handoff |
-| --- | --- | --- |
-| App and integration | Person 1 | Profile/case data, shared UI, storage and result screens |
-| Home assessment | Person 2 | Reviewed findings, measurements and annotated evidence |
-| Benefits and applications | Person 3 | Program rules, explained matches and draft packets |
+## Checks
 
-Flutter/Dart is the team's chosen mobile framework. See [framework and backend recommendation](docs/framework.md) for the proposed architecture and first milestone.
+After resolving dependencies, run:
 
-Start development with the [Person 3 backend implementation plan](docs/backend-implementation-plan.md) and the [three-person Git worktree and integration workflow](docs/team-workflow.md). The workflow covers separate computers, the shared baseline, each person's branch, and human-reviewed merges.
+```sh
+bash tool/verify_project.sh all
+```
+
+This runs the existing Flutter, backend and shared HTTP checks. [Installed-app checks](integration_test/README.md), native builds, physical-device capture and hosted verification are separate.
+
+## Shared references
+
+- [Contracts v1](contracts/v1/README.md), [v2](contracts/v2/README.md) and [v3](contracts/v3/README.md): case data, assessments, drafts, rooms and sharing.
+- [Scanning](docs/bathroom-scanning.md): Apple LiDAR/ARKit and Android ARCore integration.
+- [Program sources](docs/program-verification/): source reviews and unresolved requirements.
+- [Operations and recovery](docs/maintenance-and-recovery.md): maintenance controls, backups and restore limits.
+- [PDF viewer patch](third_party/pdfrx/PATCHES.md), [font license/build notes](backend/assets/fonts/README.md) and [form provenance](backend/assets/forms/README.md): required bundled assets.
+
+Commit source code, tests, migrations, lockfiles and essential technical references. Keep plans, reports, team guides, wireframes, backups and personal tool settings local. Do not commit resident data, credentials or generated private packets. Development stays within the team's $0 out-of-pocket budget.

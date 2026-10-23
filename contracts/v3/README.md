@@ -85,7 +85,7 @@ additive selected-data operations. Owner previews and exact permission/source
 bindings cover individual photos, measurements and private answers. Filtered PDFs
 require independent opt-in and exclude photo bytes and full application packets.
 Migration 012 and a separate default-off flag are required; see
-[implementation and remaining acceptance](../../docs/sensitive-sharing-implementation.md).
+[authorization and activation requirements](../../docs/sensitive-sharing-design.md).
 
 ## Additive referral tasks
 
@@ -95,10 +95,10 @@ read/write the optional task `referral` object (`providerId`, optional immutable
 import provenance). Legacy writes omit it without erasing an existing referral.
 The import's canonical original-task digest and unique source ID are validated at
 runtime, including during backup restore. No benefit-program or status report is
-created by a referral. See `fixtures/referral-progress.json` and
-`docs/local-help-implementation.md` for source retention/retry and rollout rules.
+created by a referral. See [referral fixtures](fixtures/referral-progress.json)
+for saved source provenance and the request/response shapes.
 
-## Phase 1 completion
+## Notes, photo references and addressed reports
 
 History adds `annotate_answer` (question note and up to six owned revision-bound
 photo references) and `set_addressed` (explicit reversible resident report, not
@@ -109,4 +109,4 @@ readable. New operations require upgraded readers; never silently drop history.
 `home-safety-report-request.schema.json` and `home-safety-report.schema.json`
 define owner-only `POST /v3/export-home-safety`. Optional notes/reference inclusion
 is explicit. No image bytes, public URL or application submission is created.
-See `docs/phase1-completion.md` for local validation and separate release gates.
+Hosted rollout and physical-device acceptance require separate verification.
