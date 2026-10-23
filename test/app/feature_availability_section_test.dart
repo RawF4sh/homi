@@ -67,7 +67,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Rooms'), findsNothing);
-      final check = find.text('Check backend availability');
+      final check = find.text('Check service availability');
       await tester.ensureVisible(check);
       await tester.tap(check);
       await tester.pumpAndSettle();

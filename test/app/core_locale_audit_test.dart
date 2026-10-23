@@ -14,6 +14,7 @@ import 'package:safe_at_home/l10n/app_language.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:safe_at_home/main.dart' show DemoEntry;
 import 'package:safe_at_home/shared/presentation/draft_exit_guard.dart';
+import 'package:safe_at_home/shared/presentation/sah_components.dart';
 import 'package:safe_at_home/shared/presentation/startup_error_screen.dart';
 import 'package:safe_at_home/shared/services/draft_save_tracker.dart';
 
@@ -239,7 +240,25 @@ void main() {
           localized(locale, AccountSettingsScreen(services: app)),
         );
         await tester.pumpAndSettle();
+        _translatedText(tester, l10n, 'Language and display');
+        _translatedText(tester, l10n, 'Privacy and data');
+        // Rows can be taller than the screen at 3.2x; tap their titles.
+        await _tap(
+          tester,
+          find.descendant(
+            of: find.byKey(const ValueKey('account-display')),
+            matching: find.text(l10n.text('Language and display')),
+          ),
+        );
         _translatedText(tester, l10n, 'Match phone setting');
+        await _tap(tester, find.byType(BackButton));
+        await _tap(
+          tester,
+          find.descendant(
+            of: find.byKey(const ValueKey('account-privacy')),
+            matching: find.text(l10n.text('Privacy and data')),
+          ),
+        );
         await reveal(
           tester,
           find.byKey(const ValueKey('settings-delete-account')),
@@ -394,10 +413,16 @@ void main() {
           await tester.pumpAndSettle();
           await reveal(tester, title);
           expect(
-            tester.widget<Text>(title).data,
+            tester.widget<SahPageHeader>(title).title,
             l10n.text('Home safety plan'),
           );
-          await _readFullWorkspaceText(tester, title);
+          await _readFullWorkspaceText(
+            tester,
+            find.descendant(
+              of: title,
+              matching: find.text(l10n.text('Home safety plan')),
+            ),
+          );
           expect(
             transport.requests.where(
               (request) => request.endpoint.path == '/v1/create-case',

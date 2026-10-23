@@ -21,7 +21,7 @@ FEATURES = {
     'SAH_SIMPLE_INVITATIONS_ENABLED': 'simpleInvitations',
 }
 PUBLIC = set(FEATURES) | {
-    'SAH_LIVE_BACKEND', 'SAH_LOCAL_HELP_ENABLED',
+    'SAH_LIVE_BACKEND', 'SAH_LOCAL_HELP_ENABLED', 'SAH_SHARING_LABELS_ENABLED',
     'SAH_EMAIL_DELIVERY_ENABLED', 'SAH_PUBLIC_SIGNUP_ENABLED',
 }
 READ_ROUTES = {
@@ -52,7 +52,8 @@ def _validate_profile(profile):
             or any(type(value) is not bool for value in profile.values())):
         raise ValueError('Profile must contain exactly the documented public boolean controls.')
     if (any(profile[flag] for flag in [
-            'SAH_SENSITIVE_SHARING_ENABLED', 'SAH_SIMPLE_INVITATIONS_ENABLED'])
+            'SAH_SENSITIVE_SHARING_ENABLED', 'SAH_SIMPLE_INVITATIONS_ENABLED',
+            'SAH_SHARING_LABELS_ENABLED'])
             and not profile['SAH_PERMISSION_SHARING_ENABLED']):
         raise ValueError('Detailed sharing/invitations require permission sharing.')
     if profile['SAH_PUBLIC_SIGNUP_ENABLED'] and not profile['SAH_EMAIL_DELIVERY_ENABLED']:

@@ -256,4 +256,78 @@ void main() {
       );
     },
   );
+
+  test(
+    'resident state and ZIP stay device-only and follow the entered place',
+    () async {
+      const located = ProfileResponseState(
+        coverage: ProfileCoverageChoice.notSure,
+        stateCode: 'CA',
+        zip: '95112',
+      );
+      final facts = profile({
+        'city': 'Fictional city',
+        'county': 'Santa Clara',
+      });
+      // Never part of v1 and not counted as a v1 answer.
+      expect(located.answeredCount(facts), 3);
+      expect(facts.toJson().keys, isNot(contains('zip')));
+      expect(const ProfileResponseState().toJson().keys, {
+        'coverage',
+        'tenureNotSure',
+        'consentNotSure',
+      });
+      for (final bad in [
+        {...located.toJson(), 'stateCode': 'ca'},
+        {...located.toJson(), 'stateCode': 'ZZ'},
+        {...located.toJson(), 'zip': '9511'},
+        {...located.toJson(), 'zip': '95112-1234'},
+        {...located.toJson(), 'zip': 95112},
+      ]) {
+        expect(() => ProfileResponseState.fromJson(bad), throwsFormatException);
+      }
+
+      final disk = MemoryPrivateStore();
+      final responses = ProfileResponseStore(
+        store: disk,
+        isCurrentCase: (id) => id == 'fictional-case',
+      );
+      addTearDown(responses.dispose);
+      await responses.write('fictional-case', facts, located);
+      expect(disk.records['profile-response.fictional-case']!['version'], 2);
+      final read = await responses.read('fictional-case', facts);
+      expect((read.stateCode, read.zip), ('CA', '95112'));
+
+      // Another answer changed elsewhere: uncertainty resets, location stays.
+      final incomeChanged = profile({...facts.toJson(), 'annualIncomeUsd': 0});
+      final kept = await responses.read('fictional-case', incomeChanged);
+      expect((kept.stateCode, kept.zip, kept.coverage), ('CA', '95112', null));
+
+      // The city changed elsewhere: state and ZIP become unknown, not stale.
+      final moved = profile({...facts.toJson(), 'city': 'Another city'});
+      final dropped = await responses.read('fictional-case', moved);
+      expect((dropped.stateCode, dropped.zip), (null, null));
+
+      // Version 1 records written before this change still load.
+      disk.records['profile-response.fictional-case'] = {
+        'version': 1,
+        'caseId': 'fictional-case',
+        'profileFingerprint': ProfileResponseState.fingerprint(facts),
+        'responses': uncertain.toJson(),
+      };
+      final legacy = await responses.read('fictional-case', facts);
+      expect(legacy.toJson(), uncertain.toJson());
+      disk.records['profile-response.fictional-case'] = {
+        'version': 1,
+        'caseId': 'fictional-case',
+        'profileFingerprint': ProfileResponseState.fingerprint(facts),
+        'placeFingerprint': ProfileResponseState.placeFingerprint(facts),
+        'responses': uncertain.toJson(),
+      };
+      await expectLater(
+        responses.read('fictional-case', facts),
+        throwsFormatException,
+      );
+    },
+  );
 }

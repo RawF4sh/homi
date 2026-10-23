@@ -123,3 +123,40 @@ test('enabling the verified artifact leaves policy, availability and clinical re
   assert.ok(packet.missingItems.some(item => item.id === 'program-availability'));
   assert.ok(packet.missingItems.some(item => item.id === 'check:clinical-need'));
 });
+
+test('combined team-beta + nationwide bundle is explicit and serves all five routes with their own versions', async () => {
+  assert.equal(benefitsBundleNameFromEnvironment({ SAFEATHOME_BENEFITS_BUNDLE: 'team-beta-with-nationwide-v1' }),
+    'team-beta-with-nationwide-v1');
+  for (const value of ['team-beta-with-nationwide-v1 ', 'TEAM-BETA-WITH-NATIONWIDE-V1', 'team-beta-with-nationwide-v2',
+    'team-beta-drafts-v2,nationwide-preparation-v1']) {
+    assert.throws(() => benefitsBundleNameFromEnvironment({ SAFEATHOME_BENEFITS_BUNDLE: value }), BenefitsBundleConfigurationError);
+  }
+  const teamBeta = await loadRuntimeBenefitsBundle('team-beta-drafts-v2');
+  const nationwide = await loadRuntimeBenefitsBundle('nationwide-preparation-v1');
+  const combined = await loadRuntimeBenefitsBundle('team-beta-with-nationwide-v1');
+  assert.equal(combined.name, 'team-beta-with-nationwide-v1'); assert.equal(combined.enabled, true);
+  assert.equal(Object.isFrozen(combined), true);
+  // Single bundles are unchanged and the combined registry is exactly their concatenation.
+  const teamPrograms = await teamBeta.loadRegistry(), federalPrograms = await nationwide.loadRegistry();
+  assert.deepEqual(teamPrograms.map(p => p.programId), ['scfhp-eaa', 'hpsm-eaa', 'rtp-home-repair']);
+  assert.deepEqual(federalPrograms.map(p => p.programId), ['usda-section-504', 'va-hisa']);
+  const registry = await combined.loadRegistry();
+  assert.deepEqual(registry, [...teamPrograms, ...federalPrograms]);
+  assert.deepEqual(registry.map(p => [p.programId, p.ruleVersion]), [
+    ['scfhp-eaa', 'referral-draft-2026-10-26-v3'],
+    ['hpsm-eaa', 'hpsm-referral-preparation-2026-10-26-v1'],
+    ['rtp-home-repair', 'rtp-preparation-2026-10-26-v1'],
+    ['usda-section-504', 'usda-504-preparation-2026-10-26-v1'],
+    ['va-hisa', 'va-hisa-preparation-2026-10-26-v1'],
+  ]);
+  for (const program of registry) {
+    assert.equal(program.rulesVerified, false); assert.equal(program.availability, 'unverified');
+  }
+  // Output type is per program: the three team routes keep their pinned forms, federal routes stay checklist-only.
+  for (const id of ['scfhp-eaa', 'hpsm-eaa', 'rtp-home-repair']) {
+    assert.deepEqual(await combined.loadFormTemplate(id), await teamBeta.loadFormTemplate(id));
+  }
+  for (const id of ['usda-section-504', 'va-hisa', 'unknown']) assert.equal(await combined.loadFormTemplate(id), null);
+  const changed = await combined.loadRegistry(); changed[3].criteria.length = 0;
+  assert.deepEqual(await combined.loadRegistry(), registry);
+});

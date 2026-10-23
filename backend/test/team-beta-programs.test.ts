@@ -12,7 +12,7 @@ import { MemoryCaseRepository } from '../src/api/memory-case-repository.ts';
 import type { CaseSnapshot } from '../src/types.ts';
 const snapshot: CaseSnapshot = { schemaVersion: '1', caseId: 'fictional-team-beta-case', revision: 1,
   profile: { city: null, county: null, healthPlan: null, tenure: null, ageYears: null, householdSize: null, annualIncomeUsd: null, ownerConsentReported: null }, unresolvedFields: [], findings: [] };
-const now = '2026-10-22T19:00:00.000Z';
+const now = '2026-10-26T19:00:00.000Z';
 
 test('team bundle exposes three independent draft routes without manufacturing eligibility or availability', async () => {
   const bundle = await loadRuntimeBenefitsBundle('team-beta-drafts-v2');
@@ -25,6 +25,12 @@ test('team bundle exposes three independent draft routes without manufacturing e
   const exception = hpsm.criteria.find(c => c.id === 'cost-exception')!;
   assert.equal(exception.rule.kind, 'manual_review');
   assert.match(JSON.stringify(exception), /not an automatic rejection/);
+  // Published area, membership and income wording stays descriptive: every criterion remains manual review.
+  assert.match(hpsm.intake!, /HPSM Medi-Cal or CareAdvantage members in San Mateo County/);
+  const rtp = programs.find(p => p.programId === 'rtp-home-repair')!;
+  assert.match(rtp.intake!, /San Mateo County, Palo Alto, Mountain View and Los Altos.*80% of area median income/);
+  assert.match(rtp.intake!, /intake availability remains unverified/);
+  assert.ok(rtp.criteria.every(c => c.rule.kind === 'manual_review'));
 });
 
 test('HPSM and RTP field mappings reject SCFHP names and preserve semantic allowlists', async () => {

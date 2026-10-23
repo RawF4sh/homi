@@ -10,6 +10,7 @@ import '../domain/home_safety/home_safety.dart';
 import '../domain/scan/whole_home_model.dart';
 import '../domain/scan/bathroom_scan_scene.dart';
 import 'bathroom_model_view.dart';
+import '../../../shared/presentation/sah_components.dart';
 
 class WholeHomeScreen extends StatefulWidget {
   const WholeHomeScreen({
@@ -314,7 +315,10 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
   );
 
   Future<void> capture() async {
+    // Insertion order is the walking order the resident tapped.
     final selected = <String>{};
+    final limit = session.rooms.length.clamp(2, 8);
+    var limitReached = false;
     final result = await showDialog<List<String>>(
       context: context,
       builder: (ctx) => scopedDialog(
@@ -322,26 +326,63 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
           builder: (ctx, change) => captureChooser(
             ctx,
             [
-              Text(
-                ctx.tr(
+              SahNotice(
+                title: ctx.tr('One level, in walking order'),
+                message: ctx.tr(
                   'Choose 2–{count} rooms on one level, in walking order. Keep a safe, clear path between rooms. Do not walk on stairs while scanning.',
-                  {'count': session.rooms.length.clamp(2, 8)},
+                  {'count': limit},
+                ),
+                liveRegion: false,
+              ),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  ctx.tr('{count} of {total} chosen', {
+                    'count': selected.length,
+                    'total': limit,
+                  }),
+                  key: const ValueKey('home-capture-count'),
+                  style: Theme.of(ctx).textTheme.titleMedium,
                 ),
               ),
+              if (limitReached)
+                SahNotice(
+                  message: ctx.tr(
+                    'You can connect up to {count} rooms in one scan. Remove a room to choose another.',
+                    {'count': limit},
+                  ),
+                  tone: SahNoticeTone.warning,
+                ),
               for (final room in session.rooms)
                 CheckboxListTile(
                   title: Text(name(room)),
+                  secondary: selected.contains(room.id)
+                      ? CircleAvatar(
+                          radius: 16,
+                          child: Text(
+                            '${selected.toList().indexOf(room.id) + 1}',
+                            semanticsLabel: ctx.tr('Stop {number}', {
+                              'number': selected.toList().indexOf(room.id) + 1,
+                            }),
+                          ),
+                        )
+                      : const SizedBox(width: 32),
                   subtitle: selected.contains(room.id)
                       ? Text(
-                          '${selected.toList().indexOf(room.id) + 1} / ${selected.length}',
+                          ctx.tr('Stop {number} of {total}', {
+                            'number': selected.toList().indexOf(room.id) + 1,
+                            'total': selected.length,
+                          }),
                         )
                       : null,
                   value: selected.contains(room.id),
                   onChanged: (v) => change(() {
                     if (v == true) {
-                      if (selected.length < 8) selected.add(room.id);
+                      limitReached = selected.length >= limit;
+                      if (!limitReached) selected.add(room.id);
                     } else {
                       selected.remove(room.id);
+                      limitReached = false;
                     }
                   }),
                 ),
@@ -859,7 +900,7 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
                   else
                     Text(
                       ctx.tr(
-                        'Continuous capture is unavailable on this device. It requires supported LiDAR RoomPlan on iPhone or ARCore on Android. Saved-scan alignment is still available.',
+                        'Continuous capture is unavailable on this phone. It needs an iPhone with LiDAR, or an Android phone with ARCore. You can still align saved room scans.',
                       ),
                     ),
                   if (session.busy)

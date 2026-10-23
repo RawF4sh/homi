@@ -13,6 +13,7 @@ import 'package:safe_at_home/features/assessment/domain/capture/capture_adapter.
 import 'package:safe_at_home/features/assessment/presentation/saved_photo_with_marks.dart';
 import 'package:safe_at_home/features/cases/case_home_screen.dart';
 import 'package:safe_at_home/features/programs/live_programs_screen.dart';
+import 'package:safe_at_home/features/requests/application_workspace_screen.dart';
 import 'package:safe_at_home/shared/services/case_evidence_api_client.dart';
 import 'package:safe_at_home/shared/services/local_private_store.dart';
 import 'package:safe_at_home/shared/services/matching_api_client.dart';
@@ -435,46 +436,67 @@ void main() {
               .any((element) => ModalRoute.of(element)?.isCurrent == true),
           'program screen is the current route after leaving its editor',
         );
-        final before = h.transport.paths
-            .where((p) => p == '/v1/match-case')
-            .length;
-        final programList = find.descendant(
-          of: find.byType(LiveProgramsScreen),
-          matching: find.byType(ListView),
-        );
-        expect(programList, findsOneWidget);
-        final outerScrollable = find
-            .descendant(of: programList, matching: find.byType(Scrollable))
-            .first;
-        final position = tester
-            .state<ScrollableState>(outerScrollable)
-            .position;
-        debugPrint(
-          'LOCAL_PROGRAM_SCROLL: before=${position.pixels.toStringAsFixed(1)} '
-          'min=${position.minScrollExtent.toStringAsFixed(1)} '
-          'max=${position.maxScrollExtent.toStringAsFixed(1)} '
-          'viewport=${position.viewportDimension.toStringAsFixed(1)} '
-          'axis=${position.axisDirection.name}',
-        );
-        position.jumpTo(position.minScrollExtent);
-        await settle();
-        await tapFinder(find.byKey(const ValueKey('program-refresh')));
         await until(
           () =>
-              h.transport.paths.where((p) => p == '/v1/match-case').length >
-                  before &&
               h.transport.responseBodies['/v1/match-case']?['caseRevision'] ==
-                  h.services!.coordinator.snapshot!.revision,
-          'current program checks',
+                  h.services!.coordinator.snapshot!.revision &&
+              find
+                  .descendant(
+                    of: find.byType(LiveProgramsScreen),
+                    matching: find.byType(LinearProgressIndicator),
+                  )
+                  .evaluate()
+                  .isEmpty,
+          'program checks update automatically for the saved revision',
         );
       }
 
-      Future<void> programAction(String id, String action) async {
-        final card = find.byKey(ValueKey('program-$id'));
+      Future<void> workspaceReady() => until(
+        () =>
+            find
+                .byType(ApplicationWorkspaceScreen)
+                .evaluate()
+                .any((element) => ModalRoute.of(element)?.isCurrent == true) &&
+            find.byKey(const ValueKey('workspace-now')).evaluate().isNotEmpty &&
+            find
+                .descendant(
+                  of: find.byType(ApplicationWorkspaceScreen),
+                  matching: find.byType(LinearProgressIndicator),
+                )
+                .evaluate()
+                .isEmpty,
+        'application workspace is current and its steps are checked',
+      );
+
+      Future<void> openWorkspace(String id) async {
+        await tapFinder(find.byKey(ValueKey('program-$id-start')));
+        await workspaceReady();
+      }
+
+      // Numbered steps are disabled while the workspace reloads; target the
+      // InkWell so tapFinder waits for the enabled tap handler.
+      Future<void> workspaceStep(String key) async {
+        await workspaceReady();
         await tapFinder(
-          find.descendant(of: card, matching: find.text(ui(action))),
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(InkWell),
+          ),
         );
       }
+
+      Finder intakeField(String key) => find.descendant(
+        of: find
+            .ancestor(
+              of: find.byKey(ValueKey('intake-question-$key')),
+              matching: find.byType(Column),
+            )
+            .first,
+        matching: find.byType(TextField),
+      );
+
+      Future<void> tab(String name) =>
+          tapFinder(find.byKey(ValueKey('plan-tab-$name')));
 
       Future<void> login() async {
         await enter('Email', 'alice@example.invalid');
@@ -560,7 +582,7 @@ void main() {
         const CapturePermissionDenied(canAskAgain: true),
         const CaptureCancelled(),
       ]);
-      await tap('Home assessment');
+      await tab('rooms');
       await until(
         () => find.byKey(const ValueKey('area-entrance')).evaluate().isNotEmpty,
         'assessment loaded',
@@ -627,27 +649,25 @@ void main() {
           matching: find.text(ui('in')),
         ),
       );
-      await tapFinder(find.byKey(const ValueKey('assessment-review')));
-      final continueAssessment = find.byKey(
-        const ValueKey('assessment-continue'),
-      );
+      final finishFinding = find.byKey(const ValueKey('assessment-review'));
       expect(
-        find.descendant(
-          of: continueAssessment,
-          matching: find.text(ui('Confirm and continue')),
-        ),
+        find.descendant(of: finishFinding, matching: find.text(ui('Done'))),
         findsOneWidget,
       );
-      await screenshot('finding-review');
-      await tapFinder(continueAssessment);
+      await tapFinder(finishFinding);
       await until(
         () {
           final coordinator = h.services!.coordinator;
           final findings = coordinator.snapshot?.findings;
+          // The embedded Rooms tab returns to its place list after saving.
           return findings?.length == 1 &&
               findings!.single.reviewState == 'confirmed' &&
               !coordinator.busy &&
-              continueAssessment.evaluate().isEmpty;
+              finishFinding.evaluate().isEmpty &&
+              find
+                  .byKey(ValueKey('finding-${findings.single.id}'))
+                  .evaluate()
+                  .isNotEmpty;
         },
         'assessment and photo saved before returning to the plan',
         seconds: 55,
@@ -674,7 +694,6 @@ void main() {
       expect(original['originalText'], ' .5 ');
       expect(original['originalUnit'], 'in');
       final evidenceId = caseAfterPhoto.findings.single.evidenceIds.single;
-      await tap('Home assessment');
       final savedFinding = find.byKey(
         ValueKey('finding-${caseAfterPhoto.findings.single.id}'),
       );
@@ -724,16 +743,19 @@ void main() {
         'durable annotations saved',
         seconds: 55,
       );
-      await tapFinder(find.byTooltip(ui('Save on device and close')));
+      // The embedded Rooms tab has no close action; leaving the tab is only
+      // allowed once the assessment and photo marks are durably flushed.
+      await tab('plan');
       await until(
-        () => find.byTooltip(ui('Save on device and close')).evaluate().isEmpty,
-        'assessment route closes after durable flush',
+        () => find.text(ui('Resident details')).evaluate().isNotEmpty,
+        'Rooms tab is left after durable flush',
       );
       checkpoint(
         'fictional capture failures, native redaction, measurement and durable box',
       );
 
       h.transport.offline = true;
+      await tab('plan');
       await tap('Resident details');
       await enter('City', 'Fictional offline city');
       await finishProfile();
@@ -758,7 +780,8 @@ void main() {
         contains(caseAfterPhoto.caseId),
         reason: 'The exact encrypted case must survive service recreation.',
       );
-      await tapFinder(find.byKey(const ValueKey('nav-plans')));
+      await tapFinder(find.byKey(const ValueKey('active-plan-selector')));
+      await tap('Manage plans');
       await tapFinder(
         find.byKey(ValueKey('local-case-${caseAfterPhoto.caseId}')),
       );
@@ -793,7 +816,7 @@ void main() {
         'cold service reopen decrypts local draft; explicit reconcile',
       );
 
-      await tap('Possible assistance and drafts');
+      await tab('help');
       await until(
         () => h.transport.responseBodies['/v1/match-case'] != null,
         'three-program checks',
@@ -801,7 +824,19 @@ void main() {
       final programs = ['scfhp-eaa', 'hpsm-eaa', 'rtp-home-repair'];
       await screenshot('programs');
       for (final program in programs) {
-        await programAction(program, 'Draft checklist');
+        await refreshPrograms();
+        await openWorkspace(program);
+        final workspaceStatus = find.byKey(const ValueKey('workspace-status'));
+        expect(
+          find.descendant(
+            of: workspaceStatus,
+            matching: find.text(ui('Draft · not sent')),
+          ),
+          findsOneWidget,
+        );
+        // The checklist of what others must still confirm is opened from the
+        // workspace's "Waiting on others" row.
+        await workspaceStep('workspace-waiting');
         await until(
           () =>
               h.transport.responseBodies['/v1/prepare-packet']?['programId'] ==
@@ -826,7 +861,7 @@ void main() {
         expect(find.text(ui('What is needed next')), findsOneWidget);
         await screenshot('$program-checklist');
         await back();
-        await programAction(program, 'Review program questions');
+        await workspaceStep('workspace-step-questions');
         await until(
           () =>
               (h
@@ -840,28 +875,35 @@ void main() {
         final questions = (response['definition'] as Map)['questions'] as List;
         final firstBoolean =
             questions.firstWhere((q) => q['kind'] == 'boolean') as Map;
-        final booleanField = find.byWidgetPredicate(
-          (widget) =>
-              widget is DropdownButtonFormField<String> &&
-              widget.decoration.labelText ==
-                  l10n.text(firstBoolean['label'] as String),
+        final booleanNo = find.byKey(ValueKey('${firstBoolean['key']}-false'));
+        await visible(booleanNo);
+        await until(
+          () =>
+              tester.widget<RadioListTile<String>>(booleanNo).enabled != false,
+          'program questions ready for answers',
         );
-        await tapFinder(booleanField);
-        await tap('No');
+        await tapFinder(booleanNo);
         await screenshot('$program-questions');
+        Future<void> answer(String key, String text) async {
+          await visible(intakeField(key));
+          await tester.enterText(intakeField(key), text);
+          await settle();
+        }
+
         final money = questions.where((q) => q['kind'] == 'money');
         if (money.isNotEmpty) {
-          await enter(
-            (money.first as Map)['label'] as String,
-            '0',
-            sourceLabel: true,
-          );
+          await answer((money.first as Map)['key'] as String, '0');
         }
         if (program == programs.last) {
-          await enter(
-            'What repairs would you like RTP to consider?',
+          await answer(
+            (questions.firstWhere(
+                      (q) =>
+                          q['label'] ==
+                          'What repairs would you like RTP to consider?',
+                    )
+                    as Map)['key']
+                as String,
             packetText.repairRequest,
-            sourceLabel: true,
           );
         }
         final beforeRevision = h.services!.coordinator.snapshot!.revision;
@@ -871,7 +913,7 @@ void main() {
         if (program == programs.first) {
           h.transport.loseNextSuccessfulResponse = '/v2/save-program-intake';
         }
-        await tap('Save these reported answers');
+        await tapFinder(find.byKey(const ValueKey('intake-save')));
         if (program == programs.first) {
           await until(
             () => h.transport.loseNextSuccessfulResponse == null,
@@ -923,9 +965,15 @@ void main() {
             0,
           );
         }
-        await back();
-        await refreshPrograms();
-        await programAction(program, 'Review administrative answers');
+        if (program == programs.first) {
+          await back();
+        } else {
+          await until(
+            () => find.byKey(const ValueKey('intake-save')).evaluate().isEmpty,
+            'saved program questions return to the workspace',
+          );
+        }
+        await workspaceStep('workspace-step-check');
         await until(
           () =>
               (h.transport.responseBodies['/v2/read-form-answers']?['context']
@@ -933,23 +981,57 @@ void main() {
               program,
           'route-specific administrative fields',
         );
-        await enter('Given name', packetText.residentName, sourceLabel: true);
-        await tapFinder(
-          find.byKey(const ValueKey('form-review-memberFirstName')),
+        final givenName = find.descendant(
+          of: find.byKey(const ValueKey('form-field-memberFirstName')),
+          matching: find.byType(TextField),
+        );
+        await visible(givenName);
+        await tester.enterText(givenName, packetText.residentName);
+        await settle();
+        // An edited value stays unreviewed until the one explicit confirmation.
+        await visible(
+          find.byKey(const ValueKey('form-unconfirmed-memberFirstName')),
+        );
+        expect(
+          find.byKey(const ValueKey('form-unconfirmed-memberFirstName')),
+          findsOneWidget,
         );
         await screenshot('$program-form');
         final beforeForm = h.services!.coordinator.snapshot!.revision;
-        await tap('Save reviewed administrative answers');
+        await tapFinder(find.byKey(const ValueKey('form-save')));
         await until(
           () => h.services!.coordinator.snapshot!.revision == beforeForm + 1,
           'reviewed administrative answers saved',
         );
-        await back();
-        await refreshPrograms();
+        final savedForm =
+            ((h.transport.responseBodies['/v2/save-form-answers']!['saved']
+                        as Map)['answers']
+                    as List)
+                .cast<Map>();
+        expect(
+          savedForm.singleWhere(
+            (a) => a['key'] == 'memberFirstName',
+          )['reviewState'],
+          'reviewed',
+          reason: 'Confirming records a per-field review for the given name.',
+        );
+        expect(
+          savedForm.every(
+            (a) => a['value'] == null || a['reviewState'] == 'reviewed',
+          ),
+          true,
+          reason:
+              'Every provided administrative answer is individually reviewed.',
+        );
+        await until(
+          () => find.byKey(const ValueKey('form-save')).evaluate().isEmpty,
+          'saved administrative answers return to the workspace',
+        );
+        await workspaceReady();
         final priorExportFormReads = h.transport.paths
             .where((path) => path == '/v2/read-form-answers')
             .length;
-        await programAction(program, 'Review evidence and draft PDF');
+        await workspaceStep('workspace-step-create');
         await until(
           () =>
               h
@@ -969,7 +1051,20 @@ void main() {
                   program,
           'draft review loads both current evidence and administrative answers',
         );
-        await tapFinder(find.text(ui('Photo {number}', {'number': 1})));
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('export-status')),
+            matching: find.text(ui('Draft · not sent')),
+          ),
+          findsOneWidget,
+        );
+        // Only the confirmed concern's photo is selectable for the draft.
+        await tapFinder(
+          find.descendant(
+            of: find.byKey(ValueKey('export-photo-$evidenceId')),
+            matching: find.byType(InkWell),
+          ),
+        );
         await until(
           () => find.text(ui('Review private photo')).evaluate().isNotEmpty,
           'canonical evidence preview',
@@ -1003,8 +1098,13 @@ void main() {
         expect(noteLegend, findsOneWidget);
         await screenshot('$program-photo-review');
         await tap('Include this reviewed photo');
+        await visible(find.text(ui('Included · {number}', {'number': 1})));
+        expect(
+          find.text(ui('Included · {number}', {'number': 1})),
+          findsOneWidget,
+        );
         final pdfCount = h.transport.pdfs.length;
-        await tap('Prepare or recover this draft');
+        await tapFinder(find.byKey(const ValueKey('export-create')));
         await until(
           () => h.transport.pdfs.length == pdfCount + 1,
           'real annotated PDF downloaded',
@@ -1175,20 +1275,35 @@ void main() {
           expect(text.toString().toLowerCase(), contains('worksheet'));
           expect(text.toString(), contains(packetText.repairRequest));
         }
-        await tap('Share or save draft', direction: -300);
+        await tapFinder(
+          find.byKey(const ValueKey('export-share')),
+          direction: -300,
+        );
         await until(
-          () =>
-              find.text(ui('Share an incomplete draft?')).evaluate().isNotEmpty,
+          () => find.text(ui('Share the draft file?')).evaluate().isNotEmpty,
           'draft-sharing warning',
+        );
+        expect(
+          find.text(
+            ui(
+              'Sharing sends a file. It doesn’t send your application. The app or person you choose can keep a copy.',
+            ),
+          ),
+          findsOneWidget,
         );
         await tap('Cancel');
         await back();
-        await programAction(program, 'Manual request history');
+        await workspaceStep('workspace-step-updates');
+        await tapFinder(find.byKey(const ValueKey('history-add')));
+        expect(
+          find.text(ui('Reported by you · not agency status')),
+          findsOneWidget,
+        );
         await enter(
           'Optional note',
           'Fictional resident will ask the program about missing documents.',
         );
-        await tap('Save manual update');
+        await tapFinder(find.byKey(const ValueKey('history-save')));
         await until(
           () =>
               h
@@ -1208,6 +1323,16 @@ void main() {
                   as List)
               .single['status'],
           'preparing',
+        );
+        await back();
+        await workspaceReady();
+        // A "preparing" note is not a submission; the app never marks it sent.
+        expect(
+          find.descendant(
+            of: workspaceStatus,
+            matching: find.text(ui('Draft · not sent')),
+          ),
+          findsOneWidget,
         );
         await back();
         checkpoint(
@@ -1246,18 +1371,17 @@ void main() {
         ),
       );
       bob.dispose();
-      await back();
-      await back();
-      await tapFinder(find.byKey(const ValueKey('nav-settings')));
+      await tapFinder(find.byKey(const ValueKey('open-account')));
       await screenshot('settings');
-      await tap('Delete selected case');
+      await tapFinder(find.byKey(const ValueKey('account-privacy')));
+      await tap('Delete this plan');
       await tap('Continue');
       await until(
         () => h.services!.coordinator.snapshot == null,
         'case and evidence deletion',
       );
-      await visible(find.text(ui('Selected case deleted.')), direction: -260);
-      expect(find.text(ui('Selected case deleted.')), findsOneWidget);
+      await visible(find.text(ui('Plan deleted.')), direction: -260);
+      expect(find.text(ui('Plan deleted.')), findsOneWidget);
       var status = await config.control('status', {});
       expect(status['cases'], 0);
       expect(status['evidence'], 0);
@@ -1288,8 +1412,8 @@ void main() {
         'new case for account-deletion check',
       );
       await idle();
-      await back();
-      await tapFinder(find.byKey(const ValueKey('nav-settings')));
+      await tapFinder(find.byKey(const ValueKey('open-account')));
+      await tapFinder(find.byKey(const ValueKey('account-privacy')));
       var durableReceiptBeforeConfirm = false;
       h.transport.beforeRequest = (path) async {
         if (path == '/v1/confirm-account-deletion') {

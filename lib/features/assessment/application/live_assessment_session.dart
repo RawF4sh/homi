@@ -817,6 +817,52 @@ class LiveAssessmentSession extends ChangeNotifier {
     return id;
   }
 
+  /// Reverses a scan suggestion the resident already kept, or keeps it again.
+  /// The same finding ID is dismissed or restored and confirmed; no new
+  /// finding is created.
+  Future<void> setScanImportActive(String suggestionId, bool active) async {
+    guard();
+    if (flow.isBusy ||
+        !sync.canSave ||
+        localConflict ||
+        pendingRequest != null ||
+        sync.recoveryConflict != null) {
+      throw StateError('Resolve the current assessment operation first.');
+    }
+    final id = _scanImports[suggestionId];
+    if (id == null || controller.draftOf(id) == null) {
+      throw StateError('This scan observation is no longer in the assessment.');
+    }
+    final before = controller.toLocalJson();
+    _replacingLocal = true;
+    try {
+      if (!active) {
+        controller.dismiss(id);
+      } else {
+        if (controller.reviewOf(id)?.state == FindingReviewState.dismissed) {
+          controller.restore(id);
+        }
+        if (!controller.confirm(id).applied) {
+          throw StateError('The observation needs review.');
+        }
+      }
+    } catch (_) {
+      controller.restoreLocal(before);
+      rethrow;
+    } finally {
+      _replacingLocal = false;
+    }
+    try {
+      await flush();
+    } catch (_) {
+      localSaveFailed = true;
+      notifyListeners();
+      rethrow;
+    }
+    guard();
+    notifyListeners();
+  }
+
   Future<void> flush() {
     if (!_ready) return Future.value();
     guard();

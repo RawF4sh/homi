@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/cases/case_home_screen.dart';
 import 'package:safe_at_home/features/cases/case_workspace_screen.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
-import 'package:safe_at_home/shared/navigation/homi_destination.dart';
+import 'package:safe_at_home/shared/presentation/sah_floating_nav.dart';
 import 'case_coordinator_test.dart' show FakeTransport;
 import 'live_workflows_test.dart' show MemoryPrivateStore, services;
 import '../services/case_evidence_api_client_test.dart' as http;
+import '../features/assessment/home_safety/home_safety_support.dart'
+    show SafetyStore;
 
 void main() {
   for (final locale in AppLocalizations.supportedLocales) {
     testWidgets(
-      'five destinations and app guidance without implicit creation: $locale',
+      'five labelled tabs including Assistant without implicit creation: $locale',
       (tester) async {
         tester.view.physicalSize = const Size(320, 700);
         tester.view.devicePixelRatio = 1;
@@ -22,6 +25,16 @@ void main() {
           tester.view.resetDevicePixelRatio();
           tester.platformDispatcher.clearTextScaleFactorTestValue();
         });
+        const assistantChannel = MethodChannel('safe_at_home/assistant');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(
+          assistantChannel,
+          (call) async => call.method == 'availability' ? 'unavailable' : null,
+        );
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(assistantChannel, null),
+        );
         final transport = FakeTransport((request) async {
           if (request.endpoint.path == '/v2/list-cases') {
             return http.jsonResponse({
@@ -32,7 +45,9 @@ void main() {
           }
           throw StateError('Tab selection must not mutate or create a case');
         });
-        final app = services(MemoryPrivateStore(), transport);
+        // SafetyStore keeps encrypted bytes in memory; the Assistant tab
+        // reads its app-help history through readBytes.
+        final app = services(SafetyStore(), transport);
         addTearDown(app.dispose);
         await tester.pumpWidget(
           MaterialApp(
@@ -45,13 +60,13 @@ void main() {
         );
         await tester.pumpAndSettle();
         final generation = app.coordinator.generation;
-        for (final tab in HomiDestination.values) {
+        for (final tab in HomiTab.values) {
           await tester.tap(find.byKey(ValueKey('plan-tab-${tab.name}')));
           await tester.pumpAndSettle();
           expect(app.coordinator.draft, isNull);
           expect(app.coordinator.generation, generation);
-          expect(find.byKey(const ValueKey('ask-homi')), findsOneWidget);
-          for (final destination in HomiDestination.values) {
+          expect(find.byKey(const ValueKey('ask-homi')), findsNothing);
+          for (final destination in HomiTab.values) {
             expect(
               find.byKey(ValueKey('plan-tab-${destination.name}')),
               findsOneWidget,

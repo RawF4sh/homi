@@ -71,6 +71,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('account-privacy')));
+    await tester.pumpAndSettle();
   }
 
   Future<void> tap(WidgetTester tester, String label) async {
@@ -91,7 +93,7 @@ void main() {
     initialize();
     final (original, other) = await twoCases();
     await open(tester);
-    await tap(tester, 'Delete selected case');
+    await tap(tester, 'Delete this plan');
     await app.coordinator.restoreLocal(other);
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
@@ -147,11 +149,11 @@ void main() {
     pendingRead = Completer<void>();
     await open(tester);
     await tester.scrollUntilVisible(
-      find.text('Check whether case deletion completed'),
+      find.text('Check whether plan deletion finished'),
       250,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(find.text('Check whether case deletion completed'));
+    await tester.tap(find.text('Check whether plan deletion finished'));
     await tester.pump();
     expect(transport.requests.last.endpoint.path, '/v1/read-case');
     await app.coordinator.restoreLocal(other);
@@ -169,7 +171,7 @@ void main() {
     initialize();
     final (original, other) = await twoCases();
     await open(tester);
-    await tap(tester, 'Delete selected case');
+    await tap(tester, 'Delete this plan');
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     final deletions = transport.requests
@@ -180,7 +182,7 @@ void main() {
     expect(app.coordinator.draft, isNull);
     expect(store.records.containsKey('case.$original'), false);
     expect(store.records.containsKey('case.$other'), true);
-    expect(find.text('Selected case deleted.'), findsOneWidget);
+    expect(find.text('Plan deleted.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

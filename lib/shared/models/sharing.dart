@@ -22,6 +22,26 @@ int _revision(Object? v) {
 }
 
 String _id(Object? v) => ExportContractValues.id(v);
+
+/// Owner-typed sharing label: trimmed, 1-80 characters, no control or
+/// direction-override characters. Not a verified identity.
+bool validSharingLabel(String v) =>
+    v.isNotEmpty &&
+    v.trim() == v &&
+    v.runes.length <= 80 &&
+    !RegExp(
+      r'[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]',
+    ).hasMatch(v);
+
+/// Labels are omitted when absent; a present label must be valid (not null).
+String? _label(Json j, String key) {
+  if (!j.containsKey(key)) return null;
+  final v = j[key];
+  if (v is! String || !validSharingLabel(v)) throw const FormatException();
+  return v;
+}
+
+const _labelKeys = {'recipientLabel', 'ownerLabel'};
 String _time(Object? v) {
   final s = _text(v, 40);
   if (DateTime.tryParse(s) == null || !s.endsWith('Z')) {
@@ -72,6 +92,8 @@ class CaseMembership {
     this.expiresAt,
     this.invitationExpiresAt,
     this.state,
+    this.recipientLabel,
+    this.ownerLabel,
   );
   final String id,
       caseId,
@@ -81,9 +103,18 @@ class CaseMembership {
       invitationExpiresAt,
       state;
   final String? expiresAt;
+
+  /// "Who is this for?", typed by the owner; only present in owner views.
+  final String? recipientLabel;
+
+  /// The name the owner chose to show the people they share with.
+  final String? ownerLabel;
   final ShareScope scope;
   final int revision;
-  factory CaseMembership.fromJson(Object? v) {
+
+  /// [ownerView] allows the owner-only [recipientLabel]; a recipient-facing
+  /// membership carrying it is rejected.
+  factory CaseMembership.fromJson(Object? v, {bool ownerView = false}) {
     final j = _object(v, {
       'membershipId',
       'caseId',
@@ -95,6 +126,9 @@ class CaseMembership {
       'expiresAt',
       'invitationExpiresAt',
       'state',
+      if (v is Map && v.containsKey('ownerLabel')) 'ownerLabel',
+      if (ownerView && v is Map && v.containsKey('recipientLabel'))
+        'recipientLabel',
     });
     if (!{'viewer', 'helper'}.contains(j['role']) ||
         !{'pending', 'active', 'expired', 'revoked'}.contains(j['state'])) {
@@ -115,6 +149,8 @@ class CaseMembership {
       j['expiresAt'] == null ? null : _time(j['expiresAt']),
       _time(j['invitationExpiresAt']),
       j['state'] as String,
+      _label(j, 'recipientLabel'),
+      _label(j, 'ownerLabel'),
     );
   }
 }
@@ -243,6 +279,8 @@ class OwnerShare {
       'notes',
       'audit',
       if (v is Map && v.containsKey('invitedEmail')) 'invitedEmail',
+      for (final key in _labelKeys)
+        if (v is Map && v.containsKey(key)) key,
     });
     final email = j['invitedEmail'];
     if (email != null &&
@@ -275,7 +313,7 @@ class OwnerShare {
       return a;
     }).toList();
     return OwnerShare._(
-      CaseMembership.fromJson(member),
+      CaseMembership.fromJson(member, ownerView: true),
       j['projection'] == null
           ? null
           : SharedCaseProjection.fromJson(j['projection']),

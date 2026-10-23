@@ -55,3 +55,15 @@ test('HTTP routes use the sharing authenticator, enforce body/method/auth bounda
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));}
  const disabled=createMatchingServer(dependencies);await new Promise<void>(r=>disabled.listen(0,'127.0.0.1',r));const a=disabled.address();if(!a||typeof a==='string')throw Error();try{assert.equal((await fetch('http://127.0.0.1:'+a.port+'/v3/list-shared-cases',{method:'POST'})).status,404);}finally{await new Promise<void>(r=>disabled.close(()=>r()));}
 });
+test('owner-typed labels are optional, bounded and only opted into on list/review routes',async()=>{
+ const {readFileSync}=await import('node:fs');
+ for(const fixture of JSON.parse(readFileSync(new URL('../../contracts/v3/fixtures/sharing-labels.json',import.meta.url),'utf8')))assert.deepEqual(parseSharingRequest(fixture.route,fixture.request),fixture.request);
+ const request={schemaVersion:'3',caseId:'fictional-case',expectedCaseRevision:1,invitationId:recipientId,recipientId,role:'viewer',scope,expiresAt:null};
+ assert.deepEqual(parseSharingRequest('create-invitation',{...request,recipientLabel:'Fictional Ana'}),{...request,recipientLabel:'Fictional Ana'});
+ for(const bad of ['',' padded','x'.repeat(81),'new\nline','‮flip',null,7])for(const key of ['recipientLabel','ownerLabel'])assert.throws(()=>parseSharingRequest('create-invitation',{...request,[key]:bad}),String(bad));
+ assert.throws(()=>parseSharingRequest('change-sharing',{schemaVersion:'3',caseId:'fictional-case',expectedCaseRevision:1,invitationId:recipientId,expectedPermissionRevision:1,role:'viewer',scope,expiresAt:null,recipientLabel:'Fictional Ana'}));
+ assert.deepEqual(parseSharingRequest('list-shared-cases',{schemaVersion:'3',includeLabels:true}),{schemaVersion:'3',includeLabels:true});
+ for(const value of [false,'true',null])assert.throws(()=>parseSharingRequest('list-shared-cases',{schemaVersion:'3',includeLabels:value}));
+ assert.throws(()=>parseSharingRequest('read-shared-case',{schemaVersion:'3',membershipId:recipientId,expectedPermissionRevision:1,includeLabels:true}));
+ assert.throws(()=>parseSharingRequest('list-shared-cases',null));
+});

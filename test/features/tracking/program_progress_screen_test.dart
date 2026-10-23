@@ -20,6 +20,8 @@ Future<AppServices> app({
   List<Map<String, Object?>> programs = const [],
   List<Map<String, Object?>>? initialTasks,
   Future<MatchingHttpResponse?> Function()? readResponse,
+  FakeNotificationDevice? device,
+  List<Map<String, Object?>>? saved,
 }) async {
   final store = MemoryPrivateStore(),
       tasks = (initialTasks ?? [task('one').data, task('two').data])
@@ -43,6 +45,7 @@ Future<AppServices> app({
       expect(store.records['progress-pending.$_caseId'], isNotNull);
       final operation = body['operation'] as Map,
           incoming = Map<String, Object?>.from(operation['task'] as Map);
+      saved?.add(Map<String, Object?>.from(operation));
       final index = tasks.indexWhere((t) => t['id'] == incoming['id']);
       incoming['needsReview'] = false;
       if (index < 0) {
@@ -75,7 +78,7 @@ Future<AppServices> app({
     session: FakeSession(),
     store: store,
     transport: transport,
-    notificationDevice: FakeNotificationDevice(),
+    notificationDevice: device ?? FakeNotificationDevice(),
   );
   await services.progressReady;
   final draft = CaseDraft.fromJson({
@@ -189,9 +192,10 @@ void main() {
   );
 
   testWidgets(
-    'dashboard completes one task, creates another with a journal, and retains the others',
+    'checkbox completes one task and quick add creates another with defaults',
     (tester) async {
-      final services = await app();
+      final saved = <Map<String, Object?>>[];
+      final services = await app(saved: saved);
       addTearDown(() {
         services.dispose();
         services.session.dispose();
@@ -203,33 +207,34 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Pending'), findsNWidgets(2));
-      await tester.ensureVisible(find.text('Complete task').first);
-      await tester.tap(find.text('Complete task').first);
+      expect(find.byType(Checkbox), findsNWidgets(2));
+      expect(find.text('Complete task'), findsNothing);
+      await tester.tap(find.byType(Checkbox).first);
       await tester.pumpAndSettle();
-      expect(find.text('Completed'), findsOneWidget);
-      expect(find.text('Pending'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('Add next step'),
-        -250,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.text('Add next step'));
-      await tester.pumpAndSettle();
+      expect(find.text('Done (1)'), findsOneWidget);
+      expect(saved.last['task'], containsPair('state', 'completed'));
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Next step'),
-        'Fictional provider call',
+        find.byKey(const ValueKey('task-quick-add')),
+        '  Fictional provider call  ',
       );
-      tester.testTextInput.hide();
+      await tester.tap(find.byKey(const ValueKey('task-quick-add-button')));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.text('Save task'),
-        250,
-        scrollable: find.byType(Scrollable).first,
+      final added = saved.last;
+      expect(added['type'], 'put_task');
+      expect(added['expectedTaskRevision'], 0);
+      expect(added['task'], containsPair('title', 'Fictional provider call'));
+      expect(added['task'], containsPair('kind', 'other'));
+      expect(added['task'], containsPair('state', 'pending'));
+      expect(added['task'], containsPair('dueOn', null));
+      expect(added['task'], containsPair('responsiblePerson', null));
+      expect(added['task'], containsPair('revision', 1));
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const ValueKey('task-quick-add')))
+            .controller!
+            .text,
+        isEmpty,
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Save task'));
-      await tester.pumpAndSettle();
       expect(services.progress!.cached[_caseId]!.tasks.length, 3);
       expect(
         services.progress!.cached[_caseId]!.tasks.where((t) => t.open).length,
@@ -255,18 +260,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Complete task').first);
-    await tester.tap(find.text('Complete task').first);
+    await tester.tap(find.byType(Checkbox).first);
     await tester.pumpAndSettle();
     final completed = services.progress!.cached[_caseId]!.tasks.firstWhere(
       (t) => !t.open,
     );
-    await tester.scrollUntilVisible(
-      find.text('Reopen task'),
-      250,
-      scrollable: find.byType(Scrollable).first,
+    expect(find.text(completed.title), findsNothing, reason: 'Done collapses');
+    await tester.tap(find.text('Done (1)'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(ValueKey('task-done-${completed.id}')),
+      warnIfMissed: false,
     );
-    await tester.tap(find.text('Reopen task'));
     await tester.pumpAndSettle();
     final tasks = services.progress!.cached[_caseId]!.tasks;
     expect(tasks.every((t) => t.open), isTrue);
@@ -304,16 +309,16 @@ void main() {
       );
       await tester.pump();
       expect(find.text('Loading tasks and program progress'), findsOneWidget);
-      expect(find.textContaining('No next steps yet.'), findsNothing);
+      expect(find.text('Nothing to do yet'), findsNothing);
       expect(find.byType(Scaffold), findsOneWidget);
       expect(find.byType(AppBar), findsNothing);
       gate.complete(null);
       await tester.pumpAndSettle();
-      expect(find.textContaining('No next steps yet.'), findsOneWidget);
+      expect(find.text('Nothing to do yet'), findsOneWidget);
       expect(
         tester
             .widget<FilledButton>(
-              find.widgetWithText(FilledButton, 'Add next step'),
+              find.byKey(const ValueKey('task-quick-add-button')),
             )
             .onPressed,
         isNotNull,
@@ -359,7 +364,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text(message), findsOneWidget);
-      expect(find.textContaining('No next steps yet.'), findsNothing);
+      expect(find.text('Nothing to do yet'), findsNothing);
       expect(find.textContaining('Private server'), findsNothing);
       fail = false;
       await tester.ensureVisible(
@@ -367,7 +372,7 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('progress-retry-load')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('No next steps yet.'), findsOneWidget);
+      expect(find.text('Nothing to do yet'), findsOneWidget);
       expect(find.text(message), findsNothing);
       expect(tester.takeException(), isNull);
     });
@@ -407,33 +412,24 @@ void main() {
       expect(
         tester
             .widget<FilledButton>(
-              find.widgetWithText(FilledButton, 'Add next step'),
+              find.byKey(const ValueKey('task-quick-add-button')),
             )
             .onPressed,
         isNull,
       );
-      await tester.scrollUntilVisible(
-        find.text('Complete task').first,
-        250,
-        scrollable: find.byType(Scrollable).first,
+      expect(
+        tester.widget<Checkbox>(find.byType(Checkbox).first).onChanged,
+        isNull,
       );
       expect(
-        tester
-            .widget<TextButton>(
-              find.widgetWithText(TextButton, 'Complete task').first,
-            )
-            .onPressed,
+        tester.widget<ListTile>(find.byType(ListTile).first).onTap,
         isNull,
       );
       fail = false;
       await tester.tap(find.byTooltip('Refresh'));
       await tester.pumpAndSettle();
       expect(
-        tester
-            .widget<TextButton>(
-              find.widgetWithText(TextButton, 'Complete task').first,
-            )
-            .onPressed,
+        tester.widget<Checkbox>(find.byType(Checkbox).first).onChanged,
         isNotNull,
       );
       expect(tester.takeException(), isNull);
@@ -472,7 +468,7 @@ void main() {
       find.text('This case is unavailable to the signed-in user.'),
       findsOneWidget,
     );
-    expect(find.textContaining('No next steps yet.'), findsNothing);
+    expect(find.text('Nothing to do yet'), findsNothing);
     expect(tester.takeException(), isNull);
   });
   testWidgets(
@@ -507,10 +503,187 @@ void main() {
       );
       expect(find.text('Fictional private health paperwork one'), findsWidgets);
       expect(services.progress!.cached[_caseId]!.tasks.length, 2);
-      expect(find.text('Pendiente'), findsWidgets);
+      expect(find.byType(Checkbox), findsNWidgets(2));
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets(
+    'Tasks tab suggests a task from a tracked program and keeps program progress secondary',
+    (tester) async {
+      final saved = <Map<String, Object?>>[];
+      final services = await app(
+        saved: saved,
+        initialTasks: [],
+        programs: [
+          {
+            'programId': 'fictional-program',
+            'name': 'Fictional repair grant',
+            'trackedAt': '2026-10-24T12:00:00.000Z',
+            'trackedBy': 'fictional-owner',
+            'latest': null,
+            'proposal': null,
+            'retired': false,
+            'ruleVersion': 'fictional-r1',
+            'unresolvedRequirements': 2,
+            'requirements': null,
+          },
+        ],
+      );
+      addTearDown(() {
+        services.dispose();
+        services.session.dispose();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: SafeAtHomeTheme.light(),
+          home: Scaffold(
+            body: ProgramProgressScreen(
+              services: services,
+              tasksFirst: true,
+              workspaceMode: true,
+              embedded: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Tasks'), findsOneWidget);
+      expect(find.text('Program progress'), findsNothing);
+      expect(find.byType(SegmentedButton<bool>), findsNothing);
+      expect(find.text('Suggested for you'), findsOneWidget);
+      expect(find.text('Nothing to do yet'), findsOneWidget);
+      const title = 'Confirm what Fictional repair grant still needs';
+      expect(find.text(title), findsOneWidget);
+      expect(saved, isEmpty, reason: 'suggestions are never added silently');
+      await tester.tap(
+        find.descendant(
+          of: find.widgetWithText(ListTile, title),
+          matching: find.widgetWithText(TextButton, 'Add'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final task = saved.single['task'] as Map;
+      expect(task['title'], title);
+      expect(task['programId'], 'fictional-program');
+      expect(task['basedOnRuleVersion'], 'fictional-r1');
+      expect(task['kind'], 'documents');
+      expect(
+        find.text(title),
+        findsOneWidget,
+        reason: 'now a task, not a suggestion',
+      );
+      expect(find.text('Suggested for you'), findsNothing);
+      await tester.scrollUntilVisible(
+        find.text('Tracked programs'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Fictional repair grant'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'task page edits the date with a picker, keeps ISO on the wire, and manages the device reminder',
+    (tester) async {
+      final saved = <Map<String, Object?>>[];
+      final device = FakeNotificationDevice();
+      final services = await app(saved: saved, device: device);
+      addTearDown(() {
+        services.dispose();
+        services.session.dispose();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: SafeAtHomeTheme.light(),
+          home: ProgramProgressScreen(services: services, tasksFirst: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final first = services.progress!.cached[_caseId]!.tasks.first;
+      await tester.tap(find.text(first.title));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(AppBar, 'Task'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, 'What needs doing?'), findsOne);
+      expect(find.text('Saturday, January 5, 2030'), findsOneWidget);
+
+      await tester.tap(find.text('Device reminder'));
+      await tester.pumpAndSettle();
+      expect(find.text('Saturday, January 5, 2030'), findsNWidgets(2));
+      expect(find.text('9:00 AM'), findsOneWidget);
+      await tester.tap(find.text('Enable reminder'));
+      await tester.pumpAndSettle();
+      final reminder = services.progress!.reminders.forTask(_caseId, first.id)!;
+      expect(reminder.enabled, isTrue);
+      expect(reminder.data['date'], '2030-01-05');
+      expect(reminder.data['time'], '09:00');
+      expect(reminder.zone, 'America/Los_Angeles');
+      expect(device.scheduled, hasLength(1));
+      expect(find.text('Snooze reminder'), findsOneWidget);
+      await tester.tap(find.text('Disable reminder'));
+      await tester.pumpAndSettle();
+      expect(
+        services.progress!.reminders.forTask(_caseId, first.id)!.enabled,
+        isFalse,
+      );
+      expect(device.scheduled, isEmpty);
+      expect(saved, isEmpty, reason: 'reminders stay on this phone');
+
+      await tester.tap(find.text('Saturday, January 5, 2030'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('20'));
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sunday, January 20, 2030'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'For (optional note)'),
+        'Fictional neighbor',
+      );
+      await tester.scrollUntilVisible(
+        find.text('Save task'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Save task'));
+      await tester.pumpAndSettle();
+      final task = saved.single['task'] as Map;
+      expect(task['id'], first.id);
+      expect(task['dueOn'], '2030-01-20');
+      expect(task['responsiblePerson'], 'Fictional neighbor');
+      expect(task['kind'], first.kind);
+      expect(saved.single['expectedTaskRevision'], first.revision);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('new task page is titled New task and defers reminders', (
+    tester,
+  ) async {
+    final services = await app();
+    addTearDown(() {
+      services.dispose();
+      services.session.dispose();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: SafeAtHomeTheme.light(),
+        home: ProgramProgressScreen(services: services, tasksFirst: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add with details'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'New task'), findsOneWidget);
+    expect(find.text('No target date'), findsOneWidget);
+    expect(
+      find.text(
+        'You can set a reminder on this phone after the task is saved.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Device reminder'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
   test('all new catalogs preserve placeholders in all five translations', () {
     final placeholders = RegExp(r'\{[a-zA-Z]+\}');
     for (final entry in trackingTranslations.entries) {

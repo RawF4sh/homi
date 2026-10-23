@@ -112,6 +112,9 @@
             "revoked",
             "expired"
           ]
+        },
+        "ownerLabel": {
+          "$ref": "#/$defs/SharingLabel"
         }
       }
     },
@@ -407,6 +410,12 @@
           "items": {
             "$ref": "#/$defs/AccessAuditEvent"
           }
+        },
+        "recipientLabel": {
+          "$ref": "#/$defs/SharingLabel"
+        },
+        "ownerLabel": {
+          "$ref": "#/$defs/SharingLabel"
         }
       }
     },
@@ -511,6 +520,12 @@
               "type": "null"
             }
           ]
+        },
+        "recipientLabel": {
+          "$ref": "#/$defs/SharingLabel"
+        },
+        "ownerLabel": {
+          "$ref": "#/$defs/SharingLabel"
         }
       },
       "if": {
@@ -580,6 +595,9 @@
           "minLength": 1,
           "maxLength": 200,
           "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
+        },
+        "includeLabels": {
+          "const": true
         }
       }
     },
@@ -768,6 +786,9 @@
         "code": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "includeLabels": {
+          "const": true
         }
       }
     },
@@ -835,6 +856,9 @@
       "properties": {
         "schemaVersion": {
           "const": "3"
+        },
+        "includeLabels": {
+          "const": true
         }
       }
     },
@@ -1029,6 +1053,12 @@
           "minLength": 3,
           "maxLength": 254,
           "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$"
+        },
+        "recipientLabel": {
+          "$ref": "#/$defs/SharingLabel"
+        },
+        "ownerLabel": {
+          "$ref": "#/$defs/SharingLabel"
         }
       },
       "if": {
@@ -1069,6 +1099,9 @@
           "minLength": 1,
           "maxLength": 200,
           "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
+        },
+        "includeLabels": {
+          "const": true
         }
       }
     },
@@ -1187,6 +1220,12 @@
               "type": "null"
             }
           ]
+        },
+        "recipientLabel": {
+          "$ref": "#/$defs/SharingLabel"
+        },
+        "ownerLabel": {
+          "$ref": "#/$defs/SharingLabel"
         }
       }
     },
@@ -1220,7 +1259,14 @@
           }
         }
       }
+    },
+    "SharingLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[^\\s\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069](?:[^\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]*[^\\s\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069])?$",
+      "description": "Optional owner-typed label, trimmed, at most 80 characters. Not a verified identity."
     }
   },
-  "description": "Raw profile, photos, intake, forms, PDFs, exports, measurements and unselected programs are excluded. Viewer never grants helper notes. Relationship confers no professional authority."
+  "description": "Raw profile, photos, intake, forms, PDFs, exports, measurements and unselected programs are excluded. Viewer never grants helper notes. Relationship confers no professional authority. Optional labels are owner-typed: recipientLabel is returned only to the owner, ownerLabel only when a list/review request opts in with includeLabels; legacy shapes stay exact."
 }

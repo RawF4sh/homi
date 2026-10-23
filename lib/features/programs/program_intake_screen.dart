@@ -10,6 +10,7 @@ import '../../shared/presentation/sah_components.dart';
 import '../../shared/presentation/draft_exit_guard.dart';
 import '../../shared/services/draft_save_tracker.dart';
 import '../../shared/services/matching_api_client.dart';
+import '../requests/application_workspace_screen.dart';
 
 class ProgramIntakeScreen extends StatefulWidget {
   const ProgramIntakeScreen({
@@ -35,6 +36,9 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
   int _validationAttempt = 0;
   bool _feedbackAtAction = false;
   final _booleans = <String, bool?>{};
+  // Local only: v2 stores "Not sure" and unanswered both as unknown (null).
+  // This set lets this device show which unknowns were chosen on purpose.
+  final _notSure = <String>{};
   final _unmappedAnswers = <String, Object?>{};
   ProgramIntakeResponse? _response;
   Map<String, Object?>? _restoredDraft;
@@ -92,6 +96,10 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
   Map<String, Object?> _raw() => {
     'values': {for (final entry in _text.entries) entry.key: entry.value.text},
     'booleans': Map<String, bool?>.of(_booleans),
+    'notSure': [
+      for (final key in _notSure)
+        if (_booleans[key] == null) key,
+    ],
     'uncertain': _uncertain,
     'questionnaireVersion': _response?.definition.questionnaireVersion,
     'caseRevision': _response?.caseRevision,
@@ -195,6 +203,8 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
           );
         }
         _uncertain = local['uncertain'] == true;
+        final notSure = local['notSure'];
+        if (notSure is List) _notSure.addAll(notSure.whereType<String>());
       }
       final c = widget.services.coordinator;
       if (!initial || _uncertain) {
@@ -440,7 +450,21 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SahPageHeader(title: widget.program.programName),
+                      SahPageHeader(
+                        title: programShortName(widget.program),
+                        description: _response == null
+                            ? null
+                            : context.tr('{answered} of {total} answered', {
+                                'answered': _response!.definition.questions
+                                    .where(
+                                      (q) =>
+                                          _value(q) != null ||
+                                          _notSure.contains(q.key),
+                                    )
+                                    .length,
+                                'total': _response!.definition.questions.length,
+                              }),
+                      ),
                       if (!_onlineContext && _response != null)
                         SahNotice(
                           key: const ValueKey('intake-offline-context'),
@@ -473,35 +497,40 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                           ),
                           tone: SahNoticeTone.warning,
                         ),
-                      const SizedBox(height: 8),
-                      TextButton(
-                        key: const ValueKey('intake-reconcile'),
-                        onPressed: _busy || exiting ? null : () => _read(),
-                        child: Text(
-                          context.tr('Check saved answers and reconcile'),
-                          textAlign: TextAlign.center,
+                      if (_needsReconcile) ...[
+                        const SizedBox(height: 8),
+                        TextButton(
+                          key: const ValueKey('intake-reconcile'),
+                          onPressed: _busy || exiting ? null : () => _read(),
+                          child: Text(
+                            context.tr('Check saved answers and reconcile'),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                      ),
-                      if (_response?.saved != null)
-                        ExpansionTile(
-                          title: Text(context.tr('Compare saved answers')),
-                          children: [
-                            for (final q in _response!.definition.questions)
-                              ListTile(
-                                title: Text(
-                                  programQuestionLabel(
-                                    context,
-                                    _response!.definition,
-                                    q,
+                        if (_response?.saved != null)
+                          ExpansionTile(
+                            title: Text(context.tr('Compare saved answers')),
+                            children: [
+                              for (final q in _response!.definition.questions)
+                                ListTile(
+                                  title: Text(
+                                    programQuestionLabel(
+                                      context,
+                                      _response!.definition,
+                                      q,
+                                    ),
                                   ),
+                                  subtitle: Text(_savedLabel(q.key)),
                                 ),
-                                subtitle: Text(_savedLabel(q.key)),
-                              ),
-                          ],
-                        ),
+                            ],
+                          ),
+                      ],
                       if (_response != null)
                         SahSectionHeading(
                           title: context.tr('Reported answers'),
+                          description: context.tr(
+                            'Answer what you know. “Not sure” leaves it for the program to confirm.',
+                          ),
                         ),
                       for (final q
                           in _response?.definition.questions ??
@@ -511,7 +540,8 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              ExcludeSemantics(
+                              Semantics(
+                                header: true,
                                 child: Text(
                                   programQuestionLabel(
                                     context,
@@ -524,90 +554,100 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
                                   ).textTheme.titleMedium,
                                 ),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 8),
                               if (q.kind == 'boolean')
-                                DropdownButtonFormField<String>(
-                                  key: ValueKey('${q.key}-$_restoring'),
-                                  initialValue:
-                                      _booleans[q.key]?.toString() ?? 'unknown',
-                                  isExpanded: true,
-                                  isDense: false,
-                                  itemHeight: null,
-                                  decoration: InputDecoration(
-                                    labelText: programQuestionLabel(
-                                      context,
-                                      _response!.definition,
-                                      q,
-                                    ),
-                                  ),
-                                  items: [
-                                    DropdownMenuItem(
-                                      value: 'unknown',
-                                      child: Text(context.tr('Unknown')),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'true',
-                                      child: Text(context.tr('Yes')),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'false',
-                                      child: Text(context.tr('No')),
-                                    ),
-                                  ],
-                                  onChanged: _busy || _uncertain || exiting
-                                      ? null
-                                      : (v) {
-                                          if (_leaving || _busy || _uncertain) {
-                                            return;
-                                          }
-                                          setState(
-                                            () => _booleans[q.key] =
-                                                v == 'unknown'
-                                                ? null
-                                                : v == 'true',
-                                          );
-                                          _stash();
-                                        },
-                                )
-                              else
-                                TextFormField(
-                                  key: _fieldAnchors[q.key],
-                                  controller: _text[q.key],
-                                  focusNode: _fieldFocus[q.key],
-                                  forceErrorText: _errors[q.key] == null
-                                      ? null
-                                      : context.tr(_errors[q.key]!),
-                                  enabled: !_busy && !_uncertain && !exiting,
-                                  decoration: InputDecoration(
-                                    labelText: programQuestionLabel(
-                                      context,
-                                      _response!.definition,
-                                      q,
-                                    ),
-                                  ),
-                                  keyboardType: q.kind == 'money'
-                                      ? const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        )
-                                      : TextInputType.text,
-                                  textInputAction: TextInputAction.next,
-                                  maxLength: q.maxLength ?? 20,
-                                  onChanged: (_) {
-                                    if (_leaving || _busy || _uncertain) return;
-                                    if (_errors.containsKey(q.key)) {
-                                      setState(() {
-                                        final error = _validateQuestion(q);
-                                        if (error == null) {
-                                          _errors.remove(q.key);
-                                        } else {
-                                          _errors[q.key] = error;
-                                        }
-                                      });
-                                    } else if (q.kind == 'money') {
-                                      setState(() {});
+                                RadioGroup<String>(
+                                  key: ValueKey('intake-choices-${q.key}'),
+                                  groupValue: switch (_booleans[q.key]) {
+                                    true => 'true',
+                                    false => 'false',
+                                    null =>
+                                      _notSure.contains(q.key)
+                                          ? 'notSure'
+                                          : null,
+                                  },
+                                  onChanged: (v) {
+                                    if (v == null ||
+                                        _leaving ||
+                                        _busy ||
+                                        _uncertain ||
+                                        exiting) {
+                                      return;
                                     }
+                                    setState(() {
+                                      _booleans[q.key] = v == 'notSure'
+                                          ? null
+                                          : v == 'true';
+                                      if (v == 'notSure') {
+                                        _notSure.add(q.key);
+                                      } else {
+                                        _notSure.remove(q.key);
+                                      }
+                                    });
                                     _stash();
                                   },
+                                  child: Column(
+                                    children: [
+                                      for (final (value, label) in const [
+                                        ('true', 'Yes'),
+                                        ('false', 'No'),
+                                        ('notSure', 'Not sure'),
+                                      ])
+                                        RadioListTile<String>(
+                                          key: ValueKey('${q.key}-$value'),
+                                          value: value,
+                                          enabled:
+                                              !_busy && !_uncertain && !exiting,
+                                          contentPadding: EdgeInsets.zero,
+                                          title: Text(context.tr(label)),
+                                        ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                MergeSemantics(
+                                  child: Semantics(
+                                    label: programQuestionLabel(
+                                      context,
+                                      _response!.definition,
+                                      q,
+                                    ),
+                                    child: TextFormField(
+                                      key: _fieldAnchors[q.key],
+                                      controller: _text[q.key],
+                                      focusNode: _fieldFocus[q.key],
+                                      forceErrorText: _errors[q.key] == null
+                                          ? null
+                                          : context.tr(_errors[q.key]!),
+                                      enabled:
+                                          !_busy && !_uncertain && !exiting,
+                                      keyboardType: q.kind == 'money'
+                                          ? const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            )
+                                          : TextInputType.text,
+                                      textInputAction: TextInputAction.next,
+                                      maxLength: q.maxLength ?? 20,
+                                      onChanged: (_) {
+                                        if (_leaving || _busy || _uncertain) {
+                                          return;
+                                        }
+                                        if (_errors.containsKey(q.key)) {
+                                          setState(() {
+                                            final error = _validateQuestion(q);
+                                            if (error == null) {
+                                              _errors.remove(q.key);
+                                            } else {
+                                              _errors[q.key] = error;
+                                            }
+                                          });
+                                        } else {
+                                          setState(() {});
+                                        }
+                                        _stash();
+                                      },
+                                    ),
+                                  ),
                                 ),
                               if (q.kind == 'money')
                                 Align(
@@ -690,6 +730,16 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
       );
     },
   );
+  // Reconcile tools are for conflicts only: an uncertain save, an offline or
+  // older saved context, a failed load, or a recovery notice.
+  bool get _needsReconcile =>
+      !_busy &&
+      (_uncertain ||
+          _response == null ||
+          !_onlineContext ||
+          (_response!.saved != null && !_response!.isCurrent) ||
+          (_notice != null && !_savedOnline));
+
   bool get _savedOnline =>
       _notice == 'Answers saved. Program checks update on their own.' ||
       _notice == 'The submitted answers are confirmed saved.';

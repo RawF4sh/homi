@@ -126,15 +126,10 @@ void main() {
             .join(' | '),
       );
       expect(find.text('Unrelated follow-up'), findsNothing);
-      await reveal(find.text('Add next step'));
-      await tester.tap(find.text('Add next step'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byType(TextFormField).first,
-        'Fictional check of the bedroom lamp',
-      );
-      await reveal(find.text('Save task'));
-      await tester.tap(find.text('Save task'));
+      final quickAdd = find.byKey(const ValueKey('task-quick-add'));
+      await reveal(quickAdd);
+      await tester.enterText(quickAdd, 'Fictional check of the bedroom lamp');
+      await tester.tap(find.byKey(const ValueKey('task-quick-add-button')));
       await tester.pumpAndSettle();
       expect(
         h.server.tasks.where((t) => t['findingId'] == 'new-concern').length,
@@ -146,8 +141,13 @@ void main() {
             .single['kind'],
         'room_review',
       );
-      await reveal(find.text('Complete task'));
-      await tester.tap(find.text('Complete task'));
+      final task = h.server.tasks.singleWhere(
+        (t) => t['findingId'] == 'new-concern',
+      );
+      expect(task['title'], 'Fictional check of the bedroom lamp');
+      final done = find.byKey(ValueKey('task-done-${task['id']}'));
+      await reveal(done);
+      await tester.tap(done);
       await tester.pumpAndSettle();
       expect(
         h.server.tasks

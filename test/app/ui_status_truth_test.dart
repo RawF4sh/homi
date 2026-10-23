@@ -243,24 +243,43 @@ void main() {
     expect(paragraph.maxLines, isNull);
     expect(paragraph.didExceedMaxLines, false);
     expect(paragraph.size.height, greaterThan(100));
-    expect(
-      find.ancestor(of: fullQuestion, matching: find.byType(ExcludeSemantics)),
-      findsOneWidget,
-    );
-    final menu = find.byKey(const ValueKey('remainingAtHome-false'));
-    await reveal(tester, menu);
+    // The question is a heading spoken once; each choice is its own radio.
+    final no = find.byKey(const ValueKey('remainingAtHome-false'));
+    await reveal(tester, no);
     expect(
       find.bySemanticsLabel(RegExp(RegExp.escape(question))),
       findsOneWidget,
     );
-    await tester.tap(menu);
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('No').last);
-    await tester.tap(find.text('No').last);
+    expect(find.byType(RadioListTile<String>), findsNWidgets(3));
+    expect(find.text('Not sure'), findsOneWidget);
+    expect(find.text('Unknown'), findsNothing);
+    await tester.tap(no);
     await tester.pumpAndSettle();
     final key = 'intake.${app.coordinator.draft!.caseId}.fictional-program';
     expect((store.records[key]!['booleans'] as Map)['remainingAtHome'], false);
-    expect(transport.requests, hasLength(2));
+    // "Not sure" sends the same unknown (null) value, while this device keeps
+    // it distinct from a question nobody has answered yet (N-01).
+    await tester.tap(find.byKey(const ValueKey('remainingAtHome-notSure')));
+    await tester.pumpAndSettle();
+    expect((store.records[key]!['booleans'] as Map)['remainingAtHome'], isNull);
+    expect(store.records[key]!['notSure'], ['remainingAtHome']);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: SafeAtHomeTheme.light(),
+        home: ProgramIntakeScreen(services: app, program: program()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<RadioGroup<String>>(
+            find.byKey(const ValueKey('intake-choices-remainingAtHome')),
+          )
+          .groupValue,
+      'notSure',
+    );
+    expect(transport.requests, hasLength(3));
     expect(tester.takeException(), isNull);
     semantics.dispose();
   });

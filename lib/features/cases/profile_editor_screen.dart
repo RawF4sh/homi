@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
+import '../local_help/referral_geography.dart';
+import '../local_help/zip_states.dart';
 import 'profile_suggestion_field.dart';
 import 'profile_suggestions.dart';
 import 'profile_response_state.dart';
@@ -40,6 +43,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
   VoidCallback? _requestExit;
   String? _notice;
   String? _countyAutofillCity;
+  String? _stateHelp;
   bool _confirmingCounty = false;
   late final String _caseId;
   late final int _generation;
@@ -67,6 +71,11 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     'householdSize': 'People in household',
     'annualIncomeUsd': 'Annual household income (USD)',
   };
+
+  /// Device-only location answers; never part of the strict v1 profile.
+  static const _locationLabels = {'zip': 'ZIP code', 'stateCode': 'State'};
+  static final _zipPattern = RegExp(r'^[0-9]{5}$');
+  String _labelOf(String key) => labels[key] ?? _locationLabels[key]!;
   @override
   void initState() {
     super.initState();
@@ -83,6 +92,9 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       _fieldAnchors[key] = GlobalKey();
       _fieldFocus[key] = FocusNode();
     }
+    _fields['zip'] = TextEditingController();
+    _fieldAnchors['zip'] = GlobalKey();
+    _fieldFocus['zip'] = FocusNode();
     _tenure = p['tenure'] as String?;
     _consent = p['ownerConsentReported'] as bool?;
     c.addListener(_caseChanged);
@@ -190,20 +202,26 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       }
       restored[key] = value ?? '';
     }
+    final responses = saved['responses'] == null
+        ? const ProfileResponseState()
+        : ProfileResponseState.fromJson(saved['responses']);
+    final zip = values['zip'];
+    if (zip != null && (zip is! String || zip.length > 5)) {
+      throw const FormatException('Invalid private profile value.');
+    }
+    restored['zip'] = zip ?? responses.zip ?? '';
     return {
       'values': restored,
       'tenure': saved['tenure'],
       'consent': saved['consent'],
       // Old journals did not distinguish explicit uncertainty from no response.
-      'responses': saved['responses'] == null
-          ? const ProfileResponseState().toJson()
-          : ProfileResponseState.fromJson(saved['responses']).toJson(),
+      'responses': responses.toJson(),
     };
   }
 
   void _applyEdits(Map<String, Object?> value) {
     final values = value['values'] as Map;
-    for (final key in labels.keys) {
+    for (final key in [...labels.keys, 'zip']) {
       _fields[key]!.text = values[key] as String;
     }
     _tenure = value['tenure'] as String?;
@@ -218,7 +236,10 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     'baseProfileFingerprint': _baseFingerprint,
     ...?edits,
     if (edits == null) ...{
-      'values': {for (final key in labels.keys) key: _fields[key]!.text},
+      'values': {
+        for (final key in labels.keys) key: _fields[key]!.text,
+        'zip': _fields['zip']!.text,
+      },
       'tenure': _tenure,
       'consent': _consent,
       'responses': _responses.toJson(),
@@ -234,6 +255,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       );
       _requireBase();
       _baseResponses = _responses;
+      _fields['zip']!.text = _responses.zip ?? '';
       responsesLoaded = true;
       final saved = await widget.services.store.readJson(_editKey);
       _requireBase();
@@ -386,6 +408,124 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     return null;
   }
 
+  String? _validateZip() {
+    final text = _fields['zip']!.text.trim();
+    return text.isEmpty || _zipPattern.hasMatch(text)
+        ? null
+        : 'Enter a 5-digit ZIP code.';
+  }
+
+  ProfileResponseState _withLocation(String? stateCode, String? zip) =>
+      ProfileResponseState(
+        coverage: _responses.coverage,
+        tenureNotSure: _responses.tenureNotSure,
+        consentNotSure: _responses.consentNotSure,
+        stateCode: stateCode,
+        zip: zip,
+      );
+
+  /// A complete ZIP fills the state; the person can still choose another.
+  void _zipChanged(String value) {
+    if (!_editable) return;
+    final zip = value.trim();
+    final complete = _zipPattern.hasMatch(zip);
+    final inferred = complete ? stateForZip(zip) : null;
+    setState(() {
+      _stateHelp = !complete
+          ? null
+          : inferred == null
+          ? 'Choose the state. This ZIP code doesn’t tell us which one.'
+          : 'Filled from ZIP code {zip}. You can change it.';
+      _responses = _withLocation(
+        inferred ?? _responses.stateCode,
+        complete ? zip : null,
+      );
+      if (_errors.containsKey('zip')) {
+        final error = _validateZip();
+        if (error == null) {
+          _errors.remove('zip');
+        } else {
+          _errors['zip'] = error;
+        }
+      }
+    });
+    _stash();
+  }
+
+  Widget _locationFields() {
+    final help = _stateHelp;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          key: const ValueKey('profile-field-zip'),
+          padding: const EdgeInsets.only(bottom: 16),
+          child: TextFormField(
+            key: _fieldAnchors['zip'],
+            controller: _fields['zip'],
+            focusNode: _fieldFocus['zip'],
+            forceErrorText: _errors['zip'] == null
+                ? null
+                : context.tr(_errors['zip']!),
+            errorBuilder: (context, error) => Text(error),
+            enabled: _editable,
+            onChanged: _zipChanged,
+            keyboardType: TextInputType.number,
+            textInputAction: TextInputAction.next,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(5),
+            ],
+            decoration: InputDecoration(labelText: context.tr('ZIP code')),
+          ),
+        ),
+        Padding(
+          key: const ValueKey('profile-field-stateCode'),
+          padding: const EdgeInsets.only(bottom: 8),
+          child: DropdownButtonFormField<String?>(
+            key: const ValueKey('profile-state'),
+            initialValue: _responses.stateCode,
+            isExpanded: true,
+            itemHeight: null,
+            decoration: InputDecoration(
+              labelText: context.tr('State'),
+              helper: help == null
+                  ? null
+                  : Text(
+                      context.tr(help, {'zip': _fields['zip']!.text.trim()}),
+                      key: const ValueKey('profile-state-help'),
+                    ),
+            ),
+            items: [
+              DropdownMenuItem(child: Text(context.tr('Not answered'))),
+              for (final state in [...usStates, ...usTerritories])
+                DropdownMenuItem(value: state.code, child: Text(state.name)),
+            ],
+            onChanged: _editable
+                ? (value) {
+                    setState(() {
+                      _stateHelp = null;
+                      _responses = _withLocation(value, _responses.zip);
+                    });
+                    _stash();
+                  }
+                : null,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Text(
+            context.tr(
+              'Saved on this phone. ZIP code and state help find local help near the resident; they are not synced with the plan.',
+            ),
+            key: const ValueKey('profile-location-device-note'),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      ],
+    );
+  }
+
   void _reviewInvalid() {
     if (!_editable || _errors.isEmpty) return;
     final key = _errors.keys.first;
@@ -417,6 +557,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       final error = _validateField(key);
       if (error != null) errors[key] = error;
     }
+    final zipError = _validateZip();
+    if (zipError != null) errors['zip'] = zipError;
     setState(() {
       _validationAttempt++;
       _errors
@@ -642,10 +784,17 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       'ownerConsentReported' => state.consentNotSure,
       _ => false,
     };
+    String? stateName(String? code) => referralState(code)?.name;
     final values = <String, Object?>{
       ...Map<String, Object?>.from(edits['values'] as Map),
+      'stateCode': stateName(recoveredResponses.stateCode),
       'tenure': edits['tenure'],
       'ownerConsentReported': edits['consent'],
+    };
+    final current = <String, Object?>{
+      ..._baseProfile,
+      'zip': _baseResponses.zip,
+      'stateCode': stateName(_baseResponses.stateCode),
     };
     return Column(
       key: const ValueKey('profile-recovery-comparison'),
@@ -659,6 +808,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
         ),
         for (final entry in {
           ...labels,
+          ..._locationLabels,
           'tenure': 'Own or rent',
           'ownerConsentReported': 'Owner permission reported',
         }.entries)
@@ -676,7 +826,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                 Text(
                   context.tr('Current: {value}', {
                     'value': _display(
-                      _baseProfile[entry.key],
+                      current[entry.key],
                       housing: entry.key == 'tenure',
                       notSure: notSure(entry.key, _baseResponses),
                       planChosen:
@@ -880,7 +1030,12 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                   'city': _countyAutofillCity,
                 }),
               )
-            : null,
+            : _suggestionCoverage[key] == null || _errors[key] != null
+            ? null
+            : Text(
+                context.tr(_suggestionCoverage[key]!),
+                key: ValueKey('profile-suggestion-coverage-$key'),
+              ),
       ),
       textInputAction: TextInputAction.next,
       keyboardType:
@@ -911,6 +1066,64 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       ],
     );
   }
+
+  /// Suggestions are a short local list; say so at the field (UI-040).
+  static const _suggestionCoverage = {
+    'healthPlan':
+        'Suggestions cover some California plans only. You can type any plan name.',
+  };
+
+  bool _answered(String key) => switch (key) {
+    'coverage' => _coverage() != null,
+    'tenure' => _tenure != null || _responses.tenureNotSure,
+    'consent' => _consent != null || _responses.consentNotSure,
+    _ => _fields[key]!.text.trim().isNotEmpty,
+  };
+
+  static const _sections = {
+    'Health coverage': ['coverage'],
+    'Home': ['tenure', 'consent'],
+    'Location': ['city', 'county'],
+    'Household': ['ageYears', 'householdSize', 'annualIncomeUsd'],
+  };
+
+  String _answeredText(List<String> keys) => context.tr(
+    '{answered} of {total} answered',
+    {'answered': keys.where(_answered).length, 'total': keys.length},
+  );
+
+  Widget _sectionHeading(String title) => ListenableBuilder(
+    listenable: Listenable.merge(_fields.values),
+    builder: (context, _) => SahSectionHeading(
+      key: ValueKey('profile-section-$title'),
+      title: context.tr(title),
+      description: _answeredText(_sections[title]!),
+    ),
+  );
+
+  Widget _answerState(String key) {
+    final answered = _answered(key);
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        context.tr(answered ? 'Answered' : 'Not answered'),
+        key: ValueKey('profile-answer-state-$key'),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: answered
+              ? theme.colorScheme.onSurfaceVariant
+              : theme.colorScheme.tertiary,
+          fontWeight: answered ? null : FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _whyWeAsk(String key, String text) => SahMoreInfo(
+    key: ValueKey('profile-why-$key'),
+    label: context.tr('Why we ask'),
+    details: [context.tr(text)],
+  );
 
   static final _noCoverageAnswers = {
     for (final locale in AppLocalizations.supportedLocales)
@@ -944,6 +1157,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
           },
           tenureNotSure: _responses.tenureNotSure,
           consentNotSure: _responses.consentNotSure,
+          stateCode: _responses.stateCode,
+          zip: _responses.zip,
         );
       });
       if (choice == _Coverage.plan) {
@@ -1070,6 +1285,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
         coverage: _responses.coverage,
         tenureNotSure: choice == 'notSure',
         consentNotSure: _responses.consentNotSure,
+        stateCode: _responses.stateCode,
+        zip: _responses.zip,
       );
     },
   );
@@ -1090,6 +1307,8 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
         coverage: _responses.coverage,
         tenureNotSure: _responses.tenureNotSure,
         consentNotSure: choice == 'notSure',
+        stateCode: _responses.stateCode,
+        zip: _responses.zip,
       );
     },
   );
@@ -1194,36 +1413,99 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                           semanticsLabel: context.tr('Restoring private edits'),
                         ),
                       if (_recovered != null) _comparison(),
+                      Text(
+                        context.tr(
+                          'Skip anything you don’t know. “Not sure” counts as an answer; a blank question is not answered yet.',
+                        ),
+                      ),
+                      ListenableBuilder(
+                        listenable: Listenable.merge(_fields.values),
+                        builder: (context, _) {
+                          final keys = [
+                            for (final section in _sections.values) ...section,
+                          ];
+                          final missing =
+                              keys.length - keys.where(_answered).length;
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              [
+                                _answeredText(keys),
+                                if (missing > 0)
+                                  context.tr('{count} not answered', {
+                                    'count': missing,
+                                  }),
+                              ].join(' · '),
+                              key: const ValueKey('profile-answered-total'),
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          );
+                        },
+                      ),
+                      _sectionHeading('Health coverage'),
                       _questionCard(
                         'coverage',
-                        'Health coverage',
+                        'What health coverage does the resident have?',
                         Padding(
                           key: const ValueKey('profile-field-healthPlan'),
                           padding: EdgeInsets.zero,
-                          child: _profileField('healthPlan'),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _profileField('healthPlan'),
+                              _answerState('coverage'),
+                            ],
+                          ),
                         ),
                       ),
+                      _sectionHeading('Home'),
                       _questionCard(
                         'tenure',
                         'Do you own or rent?',
-                        _housingChoices(),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [_housingChoices(), _answerState('tenure')],
+                        ),
                       ),
                       _questionCard(
                         'consent',
                         'Owner permission reported?',
-                        _consentChoices(),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _consentChoices(),
+                            _answerState('consent'),
+                            _whyWeAsk(
+                              'consent',
+                              'Some home repair programs need the owner’s permission before work can start. Saying it was reported is not the owner’s signature or consent.',
+                            ),
+                          ],
+                        ),
                       ),
                       for (final key in labels.keys.where(
                         (key) => key != 'healthPlan',
                       )) ...[
-                        if (key == 'city')
-                          SahSectionHeading(title: context.tr('Location')),
-                        if (key == 'ageYears')
-                          SahSectionHeading(title: context.tr('Household')),
+                        if (key == 'city') ...[
+                          _sectionHeading('Location'),
+                          _locationFields(),
+                        ],
+                        if (key == 'ageYears') _sectionHeading('Household'),
                         Padding(
                           key: ValueKey('profile-field-$key'),
                           padding: const EdgeInsets.only(bottom: 16),
-                          child: _profileField(key),
+                          child: key != 'annualIncomeUsd'
+                              ? _profileField(key)
+                              : Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _profileField(key),
+                                    _whyWeAsk(
+                                      'income',
+                                      'Some programs have income limits. If you leave this blank, it stays unknown. It is never treated as zero or as a reason to say no.',
+                                    ),
+                                  ],
+                                ),
                         ),
                       ],
                       const SizedBox(height: 24),
@@ -1232,7 +1514,7 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
                           key: const ValueKey('profile-validation-feedback'),
                           title: context.tr('Check this answer'),
                           message: context.tr('{field}: {error}', {
-                            'field': context.tr(labels[_errors.keys.first]!),
+                            'field': context.tr(_labelOf(_errors.keys.first)),
                             'error': context.tr(_errors.values.first),
                           }),
                           tone: SahNoticeTone.error,

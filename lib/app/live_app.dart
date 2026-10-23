@@ -52,6 +52,7 @@ class LiveAppConfig {
     this.permissionSharingEnabled = false,
     this.sensitiveSharingEnabled = false,
     this.simpleInvitationsEnabled = false,
+    this.sharingLabelsEnabled = false,
     this.trackingEnabled = false,
     this.scanSyncEnabled = false,
     this.homeSafetyEnabled = false,
@@ -87,6 +88,9 @@ class LiveAppConfig {
   final bool permissionSharingEnabled;
   final bool sensitiveSharingEnabled;
   final bool simpleInvitationsEnabled;
+
+  /// Owner-typed sharing labels need a backend that accepts `includeLabels`.
+  final bool sharingLabelsEnabled;
   final bool trackingEnabled;
   final bool scanSyncEnabled;
   final bool homeSafetyEnabled;
@@ -99,6 +103,9 @@ class LiveAppConfig {
     ),
     simpleInvitationsEnabled: const bool.fromEnvironment(
       'SAH_SIMPLE_INVITATIONS_ENABLED',
+    ),
+    sharingLabelsEnabled: const bool.fromEnvironment(
+      'SAH_SHARING_LABELS_ENABLED',
     ),
     apiOrigin: Uri.parse(const String.fromEnvironment('SAH_API_URL')),
     supabaseUrl: Uri.parse(const String.fromEnvironment('SUPABASE_URL')),
@@ -160,6 +167,7 @@ class AppServices {
       baseUri: config.apiOrigin,
       tokenProvider: token,
       transport: this.transport,
+      includeLabels: config.sharingLabelsEnabled,
     );
     scanModels = config.scanSyncEnabled
         ? ScanModelApiClient(

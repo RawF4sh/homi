@@ -12,6 +12,8 @@ import '../../shared/services/io_matching_transport.dart';
 import '../../shared/services/lifecycle_api_client.dart';
 import '../../shared/services/local_private_store.dart';
 import '../../shared/services/matching_api_client.dart';
+import '../../app/appearance.dart';
+import '../../l10n/app_language.dart';
 import 'appearance_section.dart';
 import 'language_section.dart';
 
@@ -29,11 +31,29 @@ class AccountSettingsScreen extends StatefulWidget {
 
 enum _SettingsAction { device, selectedCase, account }
 
+enum _AccountPage { display, privacy, technical }
+
 class AccountSettingsScreenState extends State<AccountSettingsScreen> {
   bool _busy = true, _caseDeletionPending = false;
   bool get canLeave => !_busy;
   String? _error;
   _SettingsAction _feedbackAction = _SettingsAction.selectedCase;
+
+  /// Sub-pages are separate routes built from this state, so they rebuild
+  /// whenever it changes and every action keeps its existing guards.
+  final _revision = ValueNotifier(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _revision.value++;
+  }
+
+  @override
+  void dispose() {
+    _revision.dispose();
+    super.dispose();
+  }
 
   void _beginAction(_SettingsAction action) => setState(() {
     _busy = true;
@@ -112,7 +132,7 @@ class AccountSettingsScreenState extends State<AccountSettingsScreen> {
         setState(() {
           _caseDeletionPending = false;
           _error =
-              'The case still exists. Review it before choosing Delete again.';
+              'The plan still exists. Review it before choosing Delete again.';
         });
       }
     } on MatchingApiException catch (error) {
@@ -122,7 +142,7 @@ class AccountSettingsScreenState extends State<AccountSettingsScreen> {
         if (mounted) {
           setState(() {
             _caseDeletionPending = false;
-            _error = 'The case is deleted. Its local copies were removed.';
+            _error = 'The plan is deleted. Its local copies were removed.';
           });
         }
       } else if (mounted) {
@@ -220,9 +240,9 @@ class AccountSettingsScreenState extends State<AccountSettingsScreen> {
     if (_busy || c.snapshot == null) return;
     final id = c.snapshot!.caseId, generation = c.generation;
     if (!await _confirm(
-      context.tr('Delete selected case?'),
+      context.tr('Delete this plan?'),
       context.tr(
-        'This removes its saved case, photos, answers and generated drafts. Copies already shared outside the app cannot be removed.',
+        'This removes the saved plan, its photos, answers and generated drafts. Copies already shared outside the app cannot be removed.',
       ),
     )) {
       return;
@@ -255,7 +275,7 @@ class AccountSettingsScreenState extends State<AccountSettingsScreen> {
       if (mounted) {
         setState(() {
           _caseDeletionPending = false;
-          _error = 'Selected case deleted.';
+          _error = 'Plan deleted.';
         });
       }
     } catch (error) {
@@ -314,7 +334,7 @@ class AccountSettingsScreenState extends State<AccountSettingsScreen> {
       if (!await _confirm(
         context.tr('Delete this account?'),
         context.tr(
-          'This removes {cases} cases and {photos} photos. Application data is removed first; account-provider cleanup may complete later. This cannot be undone.',
+          'This removes {cases} plans and {photos} photos. Application data is removed first; account-provider cleanup may complete later. This cannot be undone.',
           {'cases': preview.counts.cases, 'photos': preview.counts.evidence},
         ),
       )) {
@@ -352,112 +372,249 @@ class AccountSettingsScreenState extends State<AccountSettingsScreen> {
     }
   }
 
+  Widget _progress(BuildContext ctx) => _busy
+      ? TickerMode(
+          enabled: ModalRoute.of(ctx)?.isCurrent ?? true,
+          child: LinearProgressIndicator(
+            semanticsLabel: ctx.tr('Updating account settings'),
+          ),
+        )
+      : const SizedBox.shrink();
+
+  String _pageTitle(_AccountPage page) => switch (page) {
+    _AccountPage.display => 'Language and display',
+    _AccountPage.privacy => 'Privacy and data',
+    _AccountPage.technical => 'Technical details',
+  };
+
+  void _open(_AccountPage page) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (pageContext) => ValueListenableBuilder<int>(
+          valueListenable: _revision,
+          builder: (pageContext, _, _) => Scaffold(
+            appBar: AppBar(title: Text(pageContext.tr(_pageTitle(page)))),
+            body: SafeArea(
+              child: SahContent(
+                child: SingleChildScrollView(
+                  key: ValueKey('account-page-${page.name}'),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: switch (page) {
+                      _AccountPage.display => _display(pageContext),
+                      _AccountPage.privacy => _privacy(pageContext),
+                      _AccountPage.technical => _technical(pageContext),
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _display(BuildContext ctx) => [
+    const SizedBox(height: 12),
+    const LanguageSection(),
+    const SizedBox(height: 20),
+    const AppearanceSection(),
+    const SizedBox(height: 16),
+    Text(
+      ctx.tr('Text size follows your phone’s settings.'),
+      style: Theme.of(ctx).textTheme.bodySmall,
+    ),
+  ];
+
+  List<Widget> _privacy(BuildContext ctx) {
+    final c = widget.services.coordinator;
+    return [
+      SahListGroup(
+        title: ctx.tr('What’s stored where'),
+        children: [
+          ListTile(
+            leading: const Icon(Icons.cloud_outlined),
+            title: Text(ctx.tr('Stored in your account')),
+            subtitle: Text(
+              ctx.tr(
+                'Plans and the answers, rooms, photos, applications and tasks saved in them',
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.phone_iphone_rounded),
+            title: Text(ctx.tr('Only on this phone')),
+            subtitle: Text(
+              ctx.tr(
+                'Assistant chats, reminders and work that hasn’t synced yet',
+              ),
+            ),
+          ),
+        ],
+      ),
+      _progress(ctx),
+      SahSectionHeading(title: ctx.tr('On this phone')),
+      Text(
+        ctx.tr(
+          'Signing out removes plans, scans and other work stored on this phone. Plans saved to your account come back when you sign in.',
+        ),
+      ),
+      const SizedBox(height: 12),
+      _feedback(_SettingsAction.device),
+      OutlinedButton(
+        key: const ValueKey('settings-sign-out'),
+        onPressed: _busy ? null : _signOut,
+        child: Text(
+          ctx.tr('Sign out and clear local data'),
+          textAlign: TextAlign.center,
+        ),
+      ),
+      SahSectionHeading(title: ctx.tr('This plan')),
+      if (c.draft == null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Text(ctx.tr('Choose a plan from Plan to manage it here.')),
+        ),
+      OutlinedButton(
+        key: const ValueKey('settings-delete-case'),
+        onPressed: _busy || _caseDeletionPending || c.snapshot == null
+            ? null
+            : _deleteCase,
+        child: Text(ctx.tr('Delete this plan')),
+      ),
+      if (c.snapshot == null && c.draft != null)
+        OutlinedButton(
+          onPressed: _busy || c.uncertain || c.conflict
+              ? null
+              : _removeLocalDraft,
+          child: Text(ctx.tr('Remove selected local draft')),
+        ),
+      if (_caseDeletionPending)
+        OutlinedButton(
+          key: const ValueKey('settings-check-case-deletion'),
+          onPressed: _busy ? null : _checkCaseDeletion,
+          child: Text(
+            ctx.tr('Check whether plan deletion finished'),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      _feedback(_SettingsAction.selectedCase),
+      SahSectionHeading(title: ctx.tr('Your account')),
+      TextButton(
+        key: const ValueKey('settings-delete-account'),
+        style: TextButton.styleFrom(
+          foregroundColor: Theme.of(ctx).colorScheme.error,
+        ),
+        onPressed: _busy ? null : _deleteAccount,
+        child: Text(
+          ctx.tr('Delete account and application data'),
+          textAlign: TextAlign.center,
+        ),
+      ),
+      _feedback(_SettingsAction.account),
+      const SizedBox(height: 8),
+      TextButton(
+        onPressed: _busy
+            ? null
+            : () => Navigator.of(ctx).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DeletionReceiptScreen(
+                    config: widget.services.config,
+                    services: widget.services,
+                  ),
+                ),
+              ),
+        child: Text(
+          ctx.tr('Check pending account deletion'),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _technical(BuildContext ctx) => [
+    Text(
+      ctx.tr(
+        'For troubleshooting with the project team. Everyday screens don’t use these terms.',
+      ),
+      style: Theme.of(ctx).textTheme.bodySmall,
+    ),
+    FeatureAvailabilitySection(services: widget.services),
+    if (localAssistantTrial) const LocalModelSettings(),
+  ];
+
+  String _appearanceLabel(ThemeMode mode) => switch (mode) {
+    ThemeMode.system => 'Match phone setting',
+    ThemeMode.light => 'Light',
+    ThemeMode.dark => 'Dark',
+  };
+
   @override
   Widget build(BuildContext context) {
+    final languages = AppLanguageController.instance;
     final body = SahContent(
       child: SingleChildScrollView(
         padding: sahFloatingContentPadding(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const LanguageSection(),
-            const SizedBox(height: 20),
-            const AppearanceSection(),
-            SahSectionHeading(title: context.tr('On this device')),
-            Text(context.tr('Signing out removes work saved on this device.')),
-            const SizedBox(height: 20),
-            if (_busy)
-              TickerMode(
-                enabled: ModalRoute.of(context)?.isCurrent ?? true,
-                child: LinearProgressIndicator(
-                  semanticsLabel: context.tr('Updating account settings'),
-                ),
-              ),
-            _feedback(_SettingsAction.device),
-            OutlinedButton(
-              key: const ValueKey('settings-sign-out'),
-              onPressed: _busy ? null : _signOut,
-              child: Text(
-                context.tr('Sign out and clear local data'),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            SahSectionHeading(title: context.tr('Selected case')),
-            if (widget.services.coordinator.draft == null)
-              Padding(
-                padding: EdgeInsets.only(bottom: 16),
-                child: Text(
-                  context.tr('Choose a plan from Plan to manage it here.'),
-                ),
-              ),
-            OutlinedButton(
-              key: const ValueKey('settings-delete-case'),
-              onPressed:
-                  _busy ||
-                      _caseDeletionPending ||
-                      widget.services.coordinator.snapshot == null
-                  ? null
-                  : _deleteCase,
-              child: Text(context.tr('Delete selected case')),
-            ),
-            if (widget.services.coordinator.snapshot == null &&
-                widget.services.coordinator.draft != null)
-              OutlinedButton(
-                onPressed:
-                    _busy ||
-                        widget.services.coordinator.uncertain ||
-                        widget.services.coordinator.conflict
-                    ? null
-                    : _removeLocalDraft,
-                child: Text(context.tr('Remove selected local draft')),
-              ),
-            if (_caseDeletionPending)
-              OutlinedButton(
-                key: const ValueKey('settings-check-case-deletion'),
-                onPressed: _busy ? null : _checkCaseDeletion,
-                child: Text(
-                  context.tr('Check whether case deletion completed'),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            _feedback(_SettingsAction.selectedCase),
-            SahSectionHeading(title: context.tr('Account deletion')),
-            TextButton(
-              key: const ValueKey('settings-delete-account'),
-              onPressed: _busy ? null : _deleteAccount,
-              child: Text(
-                context.tr('Delete account and application data'),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            _feedback(_SettingsAction.account),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _busy
-                  ? null
-                  : () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => DeletionReceiptScreen(
-                          config: widget.services.config,
-                          services: widget.services,
-                        ),
+            _progress(context),
+            SahListGroup(
+              children: [
+                ListenableBuilder(
+                  listenable: Listenable.merge([
+                    languages,
+                    AppAppearance.instance,
+                  ]),
+                  builder: (context, _) => SahActionTile(
+                    key: const ValueKey('account-display'),
+                    icon: Icons.translate_rounded,
+                    title: context.tr('Language and display'),
+                    subtitle: [
+                      languages.value == AppLanguage.system
+                          ? context.tr(languages.value.nativeName)
+                          : languages.value.nativeName,
+                      context.tr(
+                        _appearanceLabel(AppAppearance.instance.value),
                       ),
-                    ),
-              child: Text(
-                context.tr('Check pending account deletion'),
-                textAlign: TextAlign.center,
-              ),
+                    ].join(' · '),
+                    onTap: () => _open(_AccountPage.display),
+                  ),
+                ),
+                SahActionTile(
+                  key: const ValueKey('account-privacy'),
+                  icon: Icons.lock_outline_rounded,
+                  title: context.tr('Privacy and data'),
+                  subtitle: context.tr(
+                    'Sign out · delete a plan or your account',
+                  ),
+                  onTap: () => _open(_AccountPage.privacy),
+                ),
+                SahActionTile(
+                  key: const ValueKey('account-technical'),
+                  icon: Icons.build_outlined,
+                  title: context.tr('Technical details'),
+                  subtitle: context.tr('For troubleshooting'),
+                  onTap: () => _open(_AccountPage.technical),
+                ),
+              ],
             ),
-            if (localAssistantTrial) const LocalModelSettings(),
-            SahSectionHeading(title: context.tr('About and support')),
-            FeatureAvailabilitySection(services: widget.services),
+            if (_caseDeletionPending)
+              SahNotice(
+                message: context.tr(
+                  'A plan deletion is waiting to be checked. Open Privacy and data to check it.',
+                ),
+              ),
           ],
         ),
       ),
     );
     if (widget.embedded) return body;
     return Scaffold(
-      appBar: AppBar(title: Text(context.tr('Account and privacy'))),
+      appBar: AppBar(title: Text(context.tr('Account'))),
       body: SafeArea(child: body),
     );
   }

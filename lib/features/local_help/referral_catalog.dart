@@ -19,6 +19,9 @@ class ReferralCatalog implements ReferralDirectory {
       organizations.map((p) => p.canonicalOrganizationId),
     );
     ExportContractValues.unique(organizations.map((p) => p.website));
+    final linked = providers.map((p) => p.programId).nonNulls;
+    ExportContractValues.unique(linked);
+    linked.forEach(ExportContractValues.id);
     for (final p in providers) {
       ExportContractValues.id(p.id);
       ExportContractValues.id(p.canonicalOrganizationId);

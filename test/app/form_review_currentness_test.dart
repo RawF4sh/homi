@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/requests/form_review_screen.dart';
+import 'package:safe_at_home/shared/models/contracts.dart';
 import 'case_coordinator_test.dart' show FakeTransport;
 import 'live_workflows_test.dart'
     show MemoryPrivateStore, services, program, input;
@@ -180,14 +181,41 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      final review = find.byKey(const ValueKey('form-review-memberFirstName'));
-      await reveal(review, 250);
-      expect(tester.widget<CheckboxListTile>(review).value, true);
-      await reveal(find.byKey(const ValueKey('form-reconcile')), -250);
-      await tester.tap(find.byKey(const ValueKey('form-reconcile')));
+      // While the saved review is current there is no conflict, so the
+      // reconcile tool stays hidden (N-02) and the value reads as confirmed.
+      expect(find.byKey(const ValueKey('form-confirmed')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('form-unconfirmed-memberFirstName')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('form-reconcile')), findsNothing);
+      // Another device moves the case to revision 2.
+      server = {...server!, 'revision': 2};
+      await app.coordinator.adoptRemoteSnapshot(
+        CaseSnapshot.fromJson({
+          ...app.coordinator.currentCase().toJson(),
+          'revision': 2,
+        }),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: SafeAtHomeTheme.light(),
+          home: FormReviewScreen(services: app, program: match),
+        ),
+      );
       await tester.pumpAndSettle();
-      await reveal(review, 250);
-      expect(tester.widget<CheckboxListTile>(review).value, false);
+      final unconfirmed = find.byKey(
+        const ValueKey('form-unconfirmed-memberFirstName'),
+      );
+      await reveal(unconfirmed, 250);
+      expect(unconfirmed, findsOneWidget);
+      expect(find.byKey(const ValueKey('form-confirmed')), findsNothing);
+      // The read-only summary opens the existing editor from "Change".
+      await tester.tap(
+        find.byKey(const ValueKey('form-change-memberFirstName')),
+      );
+      await tester.pumpAndSettle();
       expect(
         tester.widget<TextField>(input('Given name')).controller!.text,
         'Fictional',
@@ -196,6 +224,11 @@ void main() {
       expect(answerReads, 2);
       final draft = store.records['form.${server!['caseId']}.scfhp-eaa']!;
       expect((draft['reviewed'] as Map)['memberFirstName'], false);
+      final reconcile = find.byKey(const ValueKey('form-reconcile'));
+      await reveal(reconcile, -250);
+      await tester.tap(reconcile);
+      await tester.pumpAndSettle();
+      expect(answerReads, 3);
       await reveal(
         find.textContaining('Saved answers are from an earlier case or form.'),
         -250,

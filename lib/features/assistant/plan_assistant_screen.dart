@@ -5,6 +5,7 @@ import '../../l10n/app_language.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../../shared/services/case_coordinator.dart';
+import '../assessment/domain/assessment_location.dart';
 import 'assistant_context.dart';
 import 'assistant_context_v2.dart';
 import '../../shared/navigation/homi_destination.dart';
@@ -21,7 +22,11 @@ class PlanAssistantScreen extends StatefulWidget {
     this.appContextProvider,
     this.onTarget,
     this.model = const OnDeviceAssistantModel(),
+    this.embedded = false,
   });
+
+  /// True when shown as the shell's Assistant tab rather than a pushed page.
+  final bool embedded;
   final ValueChanged<int> onSection;
   final CaseCoordinator? coordinator;
   final AssistantModel model;
@@ -277,7 +282,8 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     if (mounted) Navigator.maybePop(context);
   }
 
-  Future<void> _openSection(int index) async {
+  Future<void> _openSection(int index, {VoidCallback? beforeNavigate}) async {
+    beforeNavigate?.call();
     if (!await _saveBeforeLeaving() || !mounted) return;
     widget.onSection(index);
   }
@@ -343,9 +349,17 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                   ),
                 ),
                 subtitle: Text(
-                  MaterialLocalizations.of(context).formatMediumDate(
-                    DateTime.parse(conversation.updatedAt).toLocal(),
-                  ),
+                  [
+                    MaterialLocalizations.of(context).formatMediumDate(
+                      DateTime.parse(conversation.updatedAt).toLocal(),
+                    ),
+                    context.tr(
+                      conversation.turns.length >= 12
+                          ? '{count} of 12 exchanges · full'
+                          : '{count} of 12 exchanges',
+                      {'count': conversation.turns.length},
+                    ),
+                  ].join(' · '),
                 ),
                 selected: conversation.id == c.conversationId,
                 onTap: () async {
@@ -357,6 +371,13 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
               ),
             if (c.conversations.isEmpty)
               Text(context.tr('No saved chats yet.')),
+            const SizedBox(height: 8),
+            Text(
+              context.tr(
+                'This phone can save 10 chats with 12 replies each. Saved chats stay available until you clear history.',
+              ),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             TextButton(
               onPressed: () => Navigator.pop(sheetContext),
               child: Text(context.tr('Close')),
@@ -367,152 +388,299 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     );
   }
 
-  Future<void> _options() async {
+  Future<T?> _sheet<T>(Widget Function(BuildContext sheetContext) body) {
     _focus.unfocus();
-    final c = _controller!;
-    await showModalBottomSheet<void>(
+    return showModalBottomSheet<T>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
       builder: (sheetContext) => ListenableBuilder(
-        listenable: c,
+        listenable: _controller!,
         builder: (_, _) => ConstrainedBox(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(sheetContext).height * .85,
           ),
-          child: ListView(
-            key: const ValueKey('assistant-options-list'),
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      context.tr('Chat options'),
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: context.tr('Close'),
-                    onPressed: () => Navigator.pop(sheetContext),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_square),
-                title: Text(context.tr('New chat')),
-                onTap:
-                    c.historyLoading ||
-                        c.historyLoadFailed ||
-                        c.clearing ||
-                        c.saveFailed
-                    ? null
-                    : () async {
-                        Navigator.pop(sheetContext);
-                        _draftEpoch++;
-                        await c.newChat();
-                        if (mounted) _setInput(c.draft);
-                      },
-              ),
-              ListTile(
-                leading: const Icon(Icons.history),
-                title: Text(context.tr('Previous conversations')),
-                onTap: c.historyLoading
-                    ? null
-                    : () {
-                        Navigator.pop(sheetContext);
-                        _history();
-                      },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: Text(context.tr('Clear history')),
-                onTap: c.historyLoading || c.clearing
-                    ? null
-                    : () {
-                        Navigator.pop(sheetContext);
-                        _clearHistory();
-                      },
-              ),
-              if (c.context?.findings.isNotEmpty == true) ...[
-                SwitchListTile.adaptive(
-                  title: Text(context.tr('Use confirmed findings (up to 4)')),
-                  subtitle: Text(
-                    context.tr('Changing this starts a new chat.'),
-                  ),
-                  value: c.includeFindings,
-                  onChanged:
-                      c.busy ||
-                          c.historyLoading ||
-                          c.historyLoadFailed ||
-                          c.clearing ||
-                          c.saveFailed
-                      ? null
-                      : c.useFindings,
-                ),
-                if (c.includeFindings)
-                  ExpansionTile(
-                    title: Text(context.tr('Included findings')),
-                    children: [
-                      for (final finding in c.context!.findings)
-                        ListTile(title: Text(finding)),
-                    ],
+          child: body(sheetContext),
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetTitle(BuildContext sheetContext, String title) => Row(
+    children: [
+      Expanded(
+        child: Semantics(
+          header: true,
+          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+        ),
+      ),
+      IconButton(
+        tooltip: context.tr('Close'),
+        onPressed: () => Navigator.pop(sheetContext),
+        icon: const Icon(Icons.close),
+      ),
+    ],
+  );
+
+  Future<void> _options() async {
+    final c = _controller!;
+    await _sheet<void>(
+      (sheetContext) => SingleChildScrollView(
+        key: const ValueKey('assistant-options-list'),
+
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _sheetTitle(sheetContext, context.tr('Chat options')),
+            ListTile(
+              leading: const Icon(Icons.edit_square),
+              title: Text(context.tr('New chat')),
+              onTap:
+                  c.historyLoading ||
+                      c.historyLoadFailed ||
+                      c.clearing ||
+                      c.saveFailed
+                  ? null
+                  : () async {
+                      Navigator.pop(sheetContext);
+                      _draftEpoch++;
+                      await c.newChat();
+                      if (mounted) _setInput(c.draft);
+                    },
+            ),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: Text(context.tr('Previous conversations')),
+              onTap: c.historyLoading
+                  ? null
+                  : () {
+                      Navigator.pop(sheetContext);
+                      _history();
+                    },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: Text(context.tr('Clear history')),
+              onTap: c.historyLoading || c.clearing
+                  ? null
+                  : () {
+                      Navigator.pop(sheetContext);
+                      _clearHistory();
+                    },
+            ),
+            ListTile(
+              key: const ValueKey('assistant-options-context'),
+              leading: const Icon(Icons.info_outline),
+              title: Text(context.tr('What the assistant uses')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _contextSheet();
+              },
+            ),
+            ListTile(
+              key: const ValueKey('assistant-options-guide'),
+              leading: const Icon(Icons.menu_book_outlined),
+              title: Text(context.tr('App guide — not AI')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _guideSheet();
+              },
+            ),
+            ExpansionTile(
+              title: Text(context.tr('Privacy and limits')),
+              children: [
+                for (final text in [
+                  'Generated replies can be wrong. Confirm details in your plan.',
+                  'Replies use this phone’s on-device model. Saved chats are encrypted on this phone for your account and plan. They are not shared or included in exports. Only two recent exchanges from unchanged plan context are used for follow-up questions. The assistant cannot change your plan, decide eligibility, or submit an application.',
+                  if (defaultTargetPlatform == TargetPlatform.android)
+                    'Google ML Kit handles Android model updates and sends device, app, diagnostic and usage metrics to Google. Chat text and replies stay on this phone.',
+                ])
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(context.tr(text)),
                   ),
               ],
-              ExpansionTile(
-                title: Text(context.tr('Privacy and limits')),
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(
-                      context.tr(
-                        'Generated replies can be wrong. Confirm details in your plan.',
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(
-                      context.tr(
-                        'Replies use this phone’s on-device model. Saved chats are encrypted on this phone for your account and plan. They are not shared or included in exports. Only two recent exchanges from unchanged plan context are used for follow-up questions. The assistant cannot change your plan, decide eligibility, or submit an application.',
-                      ),
-                    ),
-                  ),
-                  if (defaultTargetPlatform == TargetPlatform.android)
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        context.tr(
-                          'Google ML Kit handles Android model updates and sends device, app, diagnostic and usage metrics to Google. Chat text and replies stay on this phone.',
-                        ),
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(
-                      context.tr(
-                        'App steps are included automatically. Confirmed finding excerpts are optional and may contain notes you entered. Photos, scans, measurements, resident details, and documents are not included.',
-                      ),
-                    ),
-                  ),
-                ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool get _usesApp => widget.appContextProvider != null;
+
+  String _contextLabel(AssistantController c) => context.tr(
+    !_usesApp
+        ? 'Uses: your question and recent messages'
+        : c.includeFindings
+        ? 'Uses: plan counts, statuses and concern notes'
+        : 'Uses: plan counts and statuses',
+  );
+
+  /// Lists exactly what [AssistantController.send] passes to the model:
+  /// the enum-only app context, the question, two recent exchanges and,
+  /// only when turned on, confirmed finding excerpts.
+  Future<void> _contextSheet() async {
+    final c = _controller!;
+    Widget item(String text, bool included) => ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        included ? Icons.check_rounded : Icons.block_rounded,
+        color: included
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      title: Text(context.tr(text)),
+    );
+    final findings = c.context?.findings ?? const <String>[];
+    final canToggle =
+        findings.isNotEmpty &&
+        !c.busy &&
+        !c.historyLoading &&
+        !c.historyLoadFailed &&
+        !c.clearing &&
+        !c.saveFailed;
+    await _sheet<void>(
+      (sheetContext) => SingleChildScrollView(
+        key: const ValueKey('assistant-context-sheet'),
+
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _sheetTitle(sheetContext, context.tr('What the assistant uses')),
+            Text(
+              context.tr(
+                'It runs on this phone. Your questions and its replies stay on this phone.',
               ),
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  context.tr(
-                    'This phone can save 10 chats with 12 replies each. Saved chats stay available until you clear history.',
-                  ),
+            ),
+            if (defaultTargetPlatform == TargetPlatform.android) ...[
+              const SizedBox(height: 8),
+              Text(
+                context.tr(
+                  'Google ML Kit handles Android model updates and sends device, app, diagnostic and usage metrics to Google. Chat text and replies stay on this phone.',
                 ),
               ),
-              ExpansionTile(
-                title: Text(context.tr('Open app sections')),
-                children: [
-                  _shortcuts(beforeNavigate: () => Navigator.pop(sheetContext)),
-                ],
+            ],
+            SahSectionHeading(title: context.tr('It can use')),
+            if (_usesApp) ...[
+              item('Which app sections and phone features are available', true),
+              item(
+                'Room types, how many questions are answered, how many concerns each room has, and whether a scan is saved',
+                true,
+              ),
+              item('Concern review status', true),
+              item('Task types, statuses and due dates', true),
+              item(
+                'Program check counts, and application and draft status',
+                true,
+              ),
+            ],
+            item('Your question and the last two exchanges in this chat', true),
+            if (c.includeFindings) ...[
+              item('Short notes from up to 4 confirmed concerns', true),
+              for (final finding in findings)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(
+                    start: 40,
+                    bottom: 8,
+                  ),
+                  child: Text(finding),
+                ),
+            ],
+            SahSectionHeading(title: context.tr('It can’t see')),
+            item('Resident details', false),
+            item('Photos, scans and measurements', false),
+            item(
+              c.includeFindings
+                  ? 'Documents and other notes'
+                  : 'Notes and documents',
+              false,
+            ),
+            if (findings.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              SwitchListTile.adaptive(
+                key: const ValueKey('assistant-include-findings'),
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  context.tr(
+                    'Include short notes from confirmed concerns (up to 4)',
+                  ),
+                ),
+                subtitle: Text(context.tr('Changing this starts a new chat.')),
+                value: c.includeFindings,
+                onChanged: canToggle ? _confirmFindings : null,
+              ),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              context.tr(
+                'It can make mistakes, and it doesn’t decide eligibility.',
+              ),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmFindings(bool value) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: Text(
+          context.tr(
+            value
+                ? 'Start a new chat with concern notes?'
+                : 'Start a new chat without concern notes?',
+          ),
+        ),
+        content: Text(
+          context.tr(
+            _controller!.historyStore == null
+                ? 'The current chat will be cleared so earlier answers aren’t mixed up.'
+                : 'The current chat stays in Previous conversations so earlier answers aren’t mixed up.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.tr('Cancel')),
+          ),
+          FilledButton(
+            key: const ValueKey('assistant-confirm-findings'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(context.tr('Start new chat')),
+          ),
+        ],
+      ),
+    );
+    if (accepted == true && mounted) _controller!.useFindings(value);
+  }
+
+  Future<void> _guideSheet() async {
+    _AppHelpTopic? topic;
+    await _sheet<void>(
+      (sheetContext) => StatefulBuilder(
+        builder: (_, setSheet) => SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _sheetTitle(sheetContext, context.tr('App guide')),
+              _appGuidance(
+                _controller!,
+                topic: topic,
+                onTopic: (value) => setSheet(() => topic = value),
+                beforeNavigate: () => Navigator.pop(sheetContext),
               ),
             ],
           ),
@@ -521,37 +689,27 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     );
   }
 
-  Widget _shortcuts({VoidCallback? beforeNavigate}) => Column(
-    children: [
+  List<Widget> _shortcuts({VoidCallback? beforeNavigate}) => [
+    if (!_usesApp)
       SahActionTile(
         key: const ValueKey('assistant-next-step'),
         title: context.tr('What should I do next?'),
         icon: Icons.arrow_forward_rounded,
-        onTap: () {
-          beforeNavigate?.call();
-          _openSection(0);
-        },
+        onTap: () => _openSection(0, beforeNavigate: beforeNavigate),
       ),
-      SahActionTile(
-        key: const ValueKey('assistant-rooms'),
-        title: context.tr('Where are my scans and concerns?'),
-        icon: Icons.view_in_ar,
-        onTap: () {
-          beforeNavigate?.call();
-          _openSection(1);
-        },
-      ),
-      SahActionTile(
-        key: const ValueKey('assistant-help'),
-        title: context.tr('Where can I find assistance?'),
-        icon: Icons.support_agent_outlined,
-        onTap: () {
-          beforeNavigate?.call();
-          _openSection(2);
-        },
-      ),
-    ],
-  );
+    SahActionTile(
+      key: const ValueKey('assistant-rooms'),
+      title: context.tr('Where are my scans and concerns?'),
+      icon: Icons.view_in_ar,
+      onTap: () => _openSection(1, beforeNavigate: beforeNavigate),
+    ),
+    SahActionTile(
+      key: const ValueKey('assistant-help'),
+      title: context.tr('Where can I find assistance?'),
+      icon: Icons.support_agent_outlined,
+      onTap: () => _openSection(2, beforeNavigate: beforeNavigate),
+    ),
+  ];
 
   String _availabilityText(AssistantAvailability value) => switch (value) {
     AssistantAvailability.ready => 'On-device chat',
@@ -607,45 +765,66 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       'The response could not be completed. Check availability and try again.',
   };
 
-  Widget _appGuidance(AssistantController c) {
+  /// App-authored steps. These never call a language model.
+  Widget _appGuidance(
+    AssistantController c, {
+    required _AppHelpTopic? topic,
+    required ValueChanged<_AppHelpTopic> onTopic,
+    VoidCallback? beforeNavigate,
+  }) {
     final current = widget.appContextProvider?.call();
-    final topic = _guidanceTopic;
     final reply = current == null || topic == null
         ? null
         : topic == _AppHelpTopic.prepareDraft
         ? current.draftPreparationReply()
         : current.deterministicReply();
     final enabled = !c.busy && c.context != null;
+    final topics = [
+      if (_usesApp)
+        (
+          _AppHelpTopic.nextStep,
+          'What should I do next?',
+          Icons.arrow_forward_rounded,
+        ),
+      (
+        _AppHelpTopic.prepareDraft,
+        'How do I prepare a draft?',
+        Icons.description_outlined,
+      ),
+    ];
     return Column(
       key: const ValueKey('assistant-app-guidance'),
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          context.tr('App guidance'),
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        const SizedBox(height: 8),
-        Text(context.tr('These app steps do not use a language model.')),
-        const SizedBox(height: 8),
-        for (final (item, label) in [
-          (_AppHelpTopic.nextStep, 'What should I do next?'),
-          (_AppHelpTopic.prepareDraft, 'How do I prepare a draft?'),
-        ])
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: OutlinedButton(
-              key: ValueKey('assistant-app-help-${item.name}'),
-              onPressed: !enabled
-                  ? null
-                  : () {
-                      _focus.unfocus();
-                      setState(() => _guidanceTopic = item);
-                    },
-              child: Text(context.tr(label)),
-            ),
+        SahSectionHeading(
+          title: context.tr('App guide — not AI'),
+          description: context.tr(
+            'These app steps do not use a language model.',
           ),
+        ),
+        SahListGroup(
+          children: [
+            for (final (item, label, icon) in topics)
+              SahActionTile(
+                key: ValueKey('assistant-app-help-${item.name}'),
+                title: context.tr(label),
+                icon: icon,
+                enabled: enabled,
+                onTap: () {
+                  _focus.unfocus();
+                  onTopic(item);
+                },
+              ),
+            ..._shortcuts(beforeNavigate: beforeNavigate),
+          ],
+        ),
         if (reply != null && current!.authorized)
-          _sourceActions(current, reply, guidance: true)
+          _sourceActions(
+            current,
+            reply,
+            guidance: true,
+            beforeNavigate: beforeNavigate,
+          )
         else if (topic != null && c.context != null && current == null) ...[
           Text(
             context.tr(
@@ -654,16 +833,22 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                   : 'Open Plan to create or select a plan.',
             ),
           ),
-          OutlinedButton.icon(
-            onPressed: () =>
-                _openSection(topic == _AppHelpTopic.prepareDraft ? 2 : 0),
-            icon: const Icon(Icons.open_in_new),
-            label: Text(
-              context.tr('Open {section}', {
-                'section': context.tr(
-                  topic == _AppHelpTopic.prepareDraft ? 'Help' : 'Plan',
-                ),
-              }),
+          const SizedBox(height: 8),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: OutlinedButton.icon(
+              onPressed: () => _openSection(
+                topic == _AppHelpTopic.prepareDraft ? 2 : 0,
+                beforeNavigate: beforeNavigate,
+              ),
+              icon: const Icon(Icons.open_in_new),
+              label: Text(
+                context.tr('Open {section}', {
+                  'section': context.tr(
+                    topic == _AppHelpTopic.prepareDraft ? 'Help' : 'Plan',
+                  ),
+                }),
+              ),
             ),
           ),
         ],
@@ -671,24 +856,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       ],
     );
   }
-
-  Widget _responseRecovery(AssistantController c) => Wrap(
-    spacing: 8,
-    children: [
-      TextButton.icon(
-        key: const ValueKey('assistant-check-availability'),
-        onPressed: c.busy || c.checking ? null : c.check,
-        icon: const Icon(Icons.refresh),
-        label: Text(context.tr('Check availability')),
-      ),
-      if (c.interruptedQuestion != null)
-        OutlinedButton(
-          key: const ValueKey('assistant-retry-question'),
-          onPressed: c.canSend ? () => _send(c.interruptedQuestion!) : null,
-          child: Text(context.tr('Retry question')),
-        ),
-    ],
-  );
 
   Widget _savedSources(AssistantTurn turn) {
     final app = widget.appContextProvider?.call();
@@ -699,6 +866,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
           context.tr(
             'This reply uses an earlier app state. Ask again for current sources.',
           ),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
       );
     }
@@ -711,43 +879,283 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     }
   }
 
+  String _sectionLabel(HomiDestination d) => switch (d) {
+    HomiDestination.plan => 'Plan',
+    HomiDestination.rooms => 'Rooms',
+    HomiDestination.help => 'Help',
+    HomiDestination.tasks => 'Tasks',
+    HomiDestination.settings => 'Account',
+  };
+
+  static const _programNames = {
+    'scfhp-eaa': 'SCFHP',
+    'hpsm-eaa': 'HPSM',
+    'rtp-home-repair': 'RTP',
+  };
+
+  String _roomLabel(AssistantContextV2 app, String? roomId) {
+    final type = app.sources
+        .where(
+          (s) =>
+              s.kind == AssistantSourceKind.room && s.target.roomId == roomId,
+        )
+        .firstOrNull
+        ?.facts['type'];
+    final location = AssessmentLocation.values
+        .where((l) => l.name == type)
+        .firstOrNull;
+    return context.tr(location?.title ?? 'Room');
+  }
+
+  /// Names the record from its enum-only facts; never from notes or names.
+  String _sourceLabel(AssistantContextV2 app, AssistantSource s) {
+    final program = _programNames[s.facts['program']];
+    return switch (s.kind) {
+      AssistantSourceKind.guide => context.tr(
+        _sectionLabel(s.target.destination),
+      ),
+      AssistantSourceKind.room => _roomLabel(app, s.target.roomId),
+      AssistantSourceKind.concern => context.tr('{room} concern', {
+        'room': _roomLabel(app, s.target.roomId),
+      }),
+      AssistantSourceKind.task => context.tr('Task'),
+      AssistantSourceKind.program => program ?? context.tr('Program'),
+      AssistantSourceKind.preparation => context.tr('{program} application', {
+        'program': program ?? context.tr('Program'),
+      }),
+    };
+  }
+
+  IconData _sourceIcon(AssistantSourceKind kind) => switch (kind) {
+    AssistantSourceKind.guide => Icons.open_in_new,
+    AssistantSourceKind.room => Icons.meeting_room_outlined,
+    AssistantSourceKind.concern => Icons.report_outlined,
+    AssistantSourceKind.task => Icons.checklist_rounded,
+    AssistantSourceKind.program => Icons.support_agent_outlined,
+    AssistantSourceKind.preparation => Icons.description_outlined,
+  };
+
+  /// Revalidates at tap with the same checks as [AssistantContextV2.resolveOpen].
+  Future<void> _openSource(
+    AssistantReply reply,
+    String sourceId, {
+    VoidCallback? beforeNavigate,
+  }) async {
+    HomiTarget? validated() {
+      final current = widget.appContextProvider?.call();
+      if (current == null || !current.isReplyCurrent(reply)) return null;
+      final source = current.sources.where((s) => s.id == sourceId).firstOrNull;
+      return source == null ||
+              !source.available ||
+              source.target.caseId != current.caseId
+          ? null
+          : source.target;
+    }
+
+    if (validated() == null) return;
+    beforeNavigate?.call();
+    if (!await _saveBeforeLeaving() || !mounted) return;
+    final target = validated();
+    if (target != null) widget.onTarget?.call(target);
+  }
+
   Widget _sourceActions(
     AssistantContextV2 app,
     AssistantReply reply, {
     bool guidance = false,
+    VoidCallback? beforeNavigate,
   }) {
     final target = app.resolveOpen(reply);
-    String label(HomiDestination d) => switch (d) {
-      HomiDestination.plan => 'Plan',
-      HomiDestination.rooms => 'Rooms',
-      HomiDestination.help => 'Help',
-      HomiDestination.tasks => 'Tasks',
-      HomiDestination.settings => 'Settings',
-    };
+    final sources = [
+      for (final id in reply.sourceIds)
+        ?app.sources.where((s) => s.id == id).firstOrNull,
+    ];
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (guidance) Text(context.tr(reply.text)),
-          if (!guidance && reply.sourceIds.isNotEmpty)
-            Text(
-              '${context.tr('Sources')}: ${reply.sourceIds.map((id) => app.sources.firstWhere((s) => s.id == id)).map((s) => context.tr(label(s.target.destination))).toSet().join(', ')}',
-            ),
-          if (target != null && widget.onTarget != null)
-            OutlinedButton.icon(
-              icon: const Icon(Icons.open_in_new),
-              label: Text(
-                context.tr('Open {section}', {
-                  'section': context.tr(label(target.destination)),
-                }),
+          if (guidance) ...[
+            Text(context.tr(reply.text)),
+            const SizedBox(height: 8),
+            if (target != null && widget.onTarget != null)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.open_in_new),
+                label: Text(
+                  context.tr('Open {section}', {
+                    'section': context.tr(_sectionLabel(target.destination)),
+                  }),
+                ),
+                onPressed: () => _openSource(
+                  reply,
+                  reply.openSourceId!,
+                  beforeNavigate: beforeNavigate,
+                ),
               ),
-              onPressed: () async {
-                if (!await _saveBeforeLeaving() || !mounted) return;
-                final current = widget.appContextProvider?.call();
-                final validated = current?.resolveOpen(reply);
-                if (validated != null) widget.onTarget?.call(validated);
-              },
+          ] else if (sources.isNotEmpty)
+            Semantics(
+              container: true,
+              label: context.tr('Sources'),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final source in sources)
+                    ActionChip(
+                      key: ValueKey('assistant-source-${source.id}'),
+                      avatar: Icon(_sourceIcon(source.kind), size: 18),
+                      label: Text(_sourceLabel(app, source)),
+                      tooltip: context.tr('Open {section}', {
+                        'section': context.tr(
+                          _sectionLabel(source.target.destination),
+                        ),
+                      }),
+                      onPressed:
+                          widget.onTarget == null ||
+                              !source.available ||
+                              source.target.caseId != app.caseId
+                          ? null
+                          : () => _openSource(reply, source.id),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _notCompleted(AssistantController c, {bool retry = false}) => Padding(
+    padding: const EdgeInsets.only(bottom: 20),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.tr(
+            'This response was not completed. Send the question again when you are ready.',
+          ),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        if (retry && c.availability == AssistantAvailability.ready) ...[
+          const SizedBox(height: 4),
+          OutlinedButton.icon(
+            key: const ValueKey('assistant-retry-question'),
+            onPressed: c.canSend ? () => _send(c.interruptedQuestion!) : null,
+            icon: const Icon(Icons.refresh),
+            label: Text(context.tr('Retry question')),
+          ),
+        ],
+      ],
+    ),
+  );
+
+  Widget _contextChip(AssistantController c) => Align(
+    alignment: AlignmentDirectional.centerStart,
+    child: Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: ActionChip(
+        key: const ValueKey('assistant-context'),
+        avatar: const Icon(Icons.info_outline, size: 18),
+        label: Text(_contextLabel(c)),
+        tooltip: context.tr('What the assistant uses'),
+        onPressed: _contextSheet,
+      ),
+    ),
+  );
+
+  /// The one place availability, checking and recovery are shown.
+  Widget _statusArea(AssistantController c) {
+    if (c.checking) {
+      return Semantics(
+        liveRegion: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const LinearProgressIndicator(),
+            const SizedBox(height: 12),
+            Text(context.tr('Checking on-device chat…')),
+          ],
+        ),
+      );
+    }
+    return SahNotice(
+      key: const ValueKey('assistant-status'),
+      title: context.tr('The assistant isn’t available'),
+      message: context.tr(_availabilityText(c.availability)),
+      action: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (c.errorCode != null && !c.busy) ...[
+            Text(context.tr(_errorText(c.errorCode!))),
+            const SizedBox(height: 8),
+          ],
+          if (c.busy) ...[
+            const LinearProgressIndicator(),
+            TextButton(onPressed: c.stop, child: Text(context.tr('Cancel'))),
+          ],
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (c.availability == AssistantAvailability.modelDownloadable)
+                FilledButton(
+                  key: const ValueKey('assistant-download-model'),
+                  onPressed: c.busy ? null : c.downloadModel,
+                  child: Text(context.tr('Download on-device model')),
+                ),
+              OutlinedButton(
+                key: const ValueKey('assistant-check-availability'),
+                onPressed: c.busy ? null : () => c.check(),
+                child: Text(context.tr('Check availability')),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyState(AssistantController c) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            context.tr('How can I help?'),
+            style: theme.textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            context.tr(
+              'Ask about your plan or how to use the app. It can make mistakes, so check important answers.',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            context.tr(
+              c.historyStore == null
+                  ? 'Chat stays on this phone and isn’t saved.'
+                  : 'Chats save privately on this phone. You can reopen or clear them in Chat options.',
+            ),
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 16),
+          for (final (i, question) in const [
+            'What should I do next?',
+            'What does “Not sure” mean?',
+            'How do drafts and sending work?',
+          ].indexed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ActionChip(
+                key: ValueKey('assistant-starter-$i'),
+                label: Text(context.tr(question)),
+                onPressed: c.canSend ? () => _send(context.tr(question)) : null,
+              ),
             ),
         ],
       ),
@@ -760,15 +1168,9 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       key: const ValueKey('assistant-messages'),
       controller: _scroll,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
       children: [
         if (c.historyLoading || c.clearing) const LinearProgressIndicator(),
-        if (c.conversationFull)
-          SahNotice(
-            message: context.tr(
-              'This chat is full. Start a new chat or clear history to send more questions.',
-            ),
-          ),
         if (c.historyLoadFailed || c.saveFailed) ...[
           SahNotice(
             tone: SahNoticeTone.error,
@@ -785,73 +1187,40 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
             child: Text(context.tr('Retry')),
           ),
         ],
-        if (widget.appContextProvider?.call() case final app?) ...[
-          Text(
-            context.tr('Current app context'),
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            context.tr(
-              'Uses recorded statuses and available sections on this phone. Notes, photos and documents are excluded.',
+        if (!c.checking && available) _contextChip(c),
+        // One status area, above any saved messages it affects.
+        if (c.checking || !available) _statusArea(c),
+        if (c.conversationFull)
+          SahNotice(
+            message: context.tr(
+              'This chat is full. Start a new chat or clear history to send more questions.',
             ),
           ),
-          const SizedBox(height: 8),
-          _sourceActions(app, app.deterministicReply(), guidance: true),
-          const SizedBox(height: 16),
-        ],
-        _appGuidance(c),
         for (var i = 0; i < c.turns.length; i++) ...[
           _ChatMessage(text: c.turns[i].question, reply: false),
           if (c.turns[i].answer.isEmpty)
-            Text(
-              context.tr(
-                'This response was not completed. Send the question again when you are ready.',
-              ),
-            )
+            _notCompleted(c)
           else
             _ChatMessage(
               text: c.turns[i].answer,
               reply: true,
               announce: i == c.turns.length - 1,
+              footer: c.turns[i].appReplyJson != null
+                  ? _savedSources(c.turns[i])
+                  : null,
             ),
-          if (c.turns[i].appReplyJson != null) _savedSources(c.turns[i]),
         ],
-
         if (c.interruptedQuestion != null && !c.busy) ...[
           _ChatMessage(text: c.interruptedQuestion!, reply: false),
-          Text(
-            context.tr(
-              'This response was not completed. Send the question again when you are ready.',
-            ),
-          ),
+          _notCompleted(c, retry: true),
         ],
-        if (c.checking) ...[
-          const LinearProgressIndicator(),
-          const SizedBox(height: 12),
-          Text(context.tr('Checking on-device chat…')),
-        ] else if (!available) ...[
-          SahNotice(message: context.tr(_availabilityText(c.availability))),
-          const SizedBox(height: 12),
-          if (c.availability == AssistantAvailability.modelDownloadable)
-            FilledButton(
-              key: const ValueKey('assistant-download-model'),
-              onPressed: c.busy ? null : c.downloadModel,
-              child: Text(context.tr('Download on-device model')),
+        if (c.checking || !available) ...[
+          if (!c.checking)
+            _appGuidance(
+              c,
+              topic: _guidanceTopic,
+              onTopic: (value) => setState(() => _guidanceTopic = value),
             ),
-          if (c.busy) ...[
-            const LinearProgressIndicator(),
-            TextButton(onPressed: c.stop, child: Text(context.tr('Cancel'))),
-          ],
-          if (c.errorCode != null)
-            SahNotice(message: context.tr(_errorText(c.errorCode!))),
-          OutlinedButton(
-            key: const ValueKey('assistant-check-availability'),
-            onPressed: c.busy ? null : () => c.check(),
-            child: Text(context.tr('Check availability')),
-          ),
-          const SizedBox(height: 20),
-          _shortcuts(),
         ] else if (c.context == null)
           SahNotice(
             message: context.tr(
@@ -859,37 +1228,11 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
             ),
           )
         else ...[
-          if (c.turns.isEmpty && !c.busy && c.errorCode == null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ExcludeSemantics(
-                    child: Icon(
-                      Icons.chat_bubble_outline_rounded,
-                      size: 32,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    context.tr('How can I help?'),
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    context.tr(
-                      c.historyStore == null
-                          ? 'Chat stays on this phone and isn’t saved.'
-                          : 'Chats save privately on this phone. You can reopen or clear them in Chat options.',
-                    ),
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
+          if (c.turns.isEmpty &&
+              c.interruptedQuestion == null &&
+              !c.busy &&
+              c.errorCode == null)
+            _emptyState(c),
           if (c.busy) ...[
             _ChatMessage(text: c.pendingQuestion!, reply: false),
             Semantics(
@@ -906,9 +1249,16 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
           if (c.errorCode != null)
             Semantics(
               liveRegion: true,
-              child: SahNotice(message: context.tr(_errorText(c.errorCode!))),
+              child: SahNotice(
+                message: context.tr(_errorText(c.errorCode!)),
+                action: TextButton.icon(
+                  key: const ValueKey('assistant-check-availability'),
+                  onPressed: c.busy || c.checking ? null : c.check,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(context.tr('Check availability')),
+                ),
+              ),
             ),
-          if (c.errorCode != null) _responseRecovery(c),
         ],
       ],
     );
@@ -918,101 +1268,86 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     color: Theme.of(context).colorScheme.surface,
     child: Padding(
       padding: EdgeInsets.fromLTRB(12, compact ? 4 : 12, 12, compact ? 4 : 12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (c.includeFindings && !compact)
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                onPressed: _options,
-                icon: const Icon(Icons.fact_check_outlined, size: 18),
-                label: Text(context.tr('Included findings')),
+          Expanded(
+            child: TextField(
+              key: const ValueKey('assistant-input'),
+              controller: _input,
+              focusNode: _focus,
+              readOnly:
+                  c.busy ||
+                  c.historyLoading ||
+                  c.historyLoadFailed ||
+                  c.clearing ||
+                  c.clearFailed,
+              minLines: 1,
+              maxLines: compact ? 1 : 4,
+              maxLength: 600,
+              textInputAction: TextInputAction.send,
+              enableSuggestions: false,
+              autocorrect: false,
+              decoration: InputDecoration(
+                // One-line compact composer: the long hint clips at large
+                // text, so use a short one there.
+                hintText: context.tr(
+                  compact ? 'Ask…' : 'Message the assistant…',
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 1.5,
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+              ),
+              buildCounter:
+                  (
+                    _, {
+                    required currentLength,
+                    required isFocused,
+                    maxLength,
+                  }) => !compact && isFocused && currentLength >= 500
+                  ? Text('$currentLength / $maxLength')
+                  : null,
+              onEditingComplete: () {},
+              onSubmitted: (_) => _send(),
+              onTapOutside: (_) => _focus.unfocus(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _input,
+              builder: (_, value, _) => IconButton.filled(
+                key: ValueKey(c.busy ? 'assistant-stop' : 'assistant-send'),
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                tooltip: context.tr(c.busy ? 'Stop response' : 'Send question'),
+                onPressed: c.busy
+                    ? _stop
+                    : c.canSend && value.text.trim().isNotEmpty
+                    ? () => _send()
+                    : null,
+                icon: Icon(
+                  c.busy ? Icons.stop_rounded : Icons.arrow_upward_rounded,
+                ),
               ),
             ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const ValueKey('assistant-input'),
-                  controller: _input,
-                  focusNode: _focus,
-                  readOnly:
-                      c.busy ||
-                      c.historyLoading ||
-                      c.historyLoadFailed ||
-                      c.clearing ||
-                      c.clearFailed,
-                  minLines: 1,
-                  maxLines: compact ? 1 : 4,
-                  maxLength: 600,
-                  textInputAction: TextInputAction.send,
-                  enableSuggestions: false,
-                  autocorrect: false,
-                  decoration: InputDecoration(
-                    hintText: context.tr('Message the assistant…'),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide(
-                        color: Theme.of(context).colorScheme.primary,
-                        width: 1.5,
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                      ),
-                    ),
-                  ),
-                  buildCounter:
-                      (
-                        _, {
-                        required currentLength,
-                        required isFocused,
-                        maxLength,
-                      }) => !compact && isFocused && currentLength >= 500
-                      ? Text('$currentLength / $maxLength')
-                      : null,
-                  onEditingComplete: () {},
-                  onSubmitted: (_) => _send(),
-                  onTapOutside: (_) => _focus.unfocus(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: _input,
-                  builder: (_, value, _) => IconButton.filled(
-                    key: ValueKey(c.busy ? 'assistant-stop' : 'assistant-send'),
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
-                    ),
-                    tooltip: context.tr(
-                      c.busy ? 'Stop response' : 'Send question',
-                    ),
-                    onPressed: c.busy
-                        ? _stop
-                        : c.canSend && value.text.trim().isNotEmpty
-                        ? () => _send()
-                        : null,
-                    icon: Icon(
-                      c.busy ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-                    ),
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -1025,18 +1360,21 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     return ListenableBuilder(
       listenable: c,
       builder: (context, _) => PopScope(
-        canPop: _canPop,
+        canPop: widget.embedded || _canPop,
         onPopInvokedWithResult: (didPop, result) {
-          if (!didPop) _close();
+          if (!didPop && !widget.embedded) _close();
         },
         child: Scaffold(
           appBar: AppBar(
-            title: Text(context.tr('Plan assistant')),
-            leading: IconButton(
-              tooltip: context.tr('Close'),
-              onPressed: c.clearing || c.historyLoading ? null : _close,
-              icon: const Icon(Icons.close),
-            ),
+            title: Text(context.tr('Assistant')),
+            automaticallyImplyLeading: false,
+            leading: widget.embedded
+                ? null
+                : IconButton(
+                    tooltip: context.tr('Close'),
+                    onPressed: c.clearing || c.historyLoading ? null : _close,
+                    icon: const Icon(Icons.close),
+                  ),
             actions: [
               if (MediaQuery.viewInsetsOf(context).bottom > 0)
                 IconButton(
@@ -1093,9 +1431,11 @@ class _ChatMessage extends StatelessWidget {
     required this.text,
     required this.reply,
     this.announce = false,
+    this.footer,
   });
   final String text;
   final bool reply, announce;
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -1108,39 +1448,49 @@ class _ChatMessage extends StatelessWidget {
             : AlignmentDirectional.centerEnd,
         child: FractionallySizedBox(
           widthFactor: reply ? 1 : .88,
-          child: Semantics(
-            container: true,
-            liveRegion: announce,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  context.tr(reply ? 'Plan assistant' : 'You'),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: reply ? 0 : 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: reply ? null : theme.colorScheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: SelectableText.rich(
-                    reply ? assistantMessageText(text) : TextSpan(text: text),
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: reply
-                          ? theme.colorScheme.onSurface
-                          : theme.colorScheme.onSecondaryContainer,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                container: true,
+                liveRegion: announce,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.tr(reply ? 'Assistant' : 'You'),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: reply ? 0 : 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: reply
+                            ? null
+                            : theme.colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: SelectableText.rich(
+                        reply
+                            ? assistantMessageText(text)
+                            : TextSpan(text: text),
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: reply
+                              ? theme.colorScheme.onSurface
+                              : theme.colorScheme.onSecondaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              ?footer,
+            ],
           ),
         ),
       ),

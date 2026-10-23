@@ -47,6 +47,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('account-privacy')));
+    await tester.tap(find.byKey(const ValueKey('account-privacy')));
+    await tester.pumpAndSettle();
     final remove = find.text('Delete account and application data');
     await tester.ensureVisible(remove);
     await tester.pumpAndSettle();
@@ -109,6 +112,11 @@ void main() {
             home: AccountSettingsScreen(services: app),
           ),
         );
+        await tester.pumpAndSettle();
+        // At 3.2x the row is taller than this phone; tap its title.
+        await tester.ensureVisible(find.text('Privacy and data'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Privacy and data'));
         await tester.pumpAndSettle();
         final remove = find.text('Delete account and application data');
         await tester.scrollUntilVisible(

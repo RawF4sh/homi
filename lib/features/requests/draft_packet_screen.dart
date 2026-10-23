@@ -10,6 +10,7 @@ import '../../shared/models/draft_packet.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../../shared/services/matching_api_client.dart';
 import '../../shared/services/packet_preparation_service.dart';
+import 'application_workspace_screen.dart';
 
 class DraftPacketScreen extends StatefulWidget {
   const DraftPacketScreen({
@@ -20,6 +21,10 @@ class DraftPacketScreen extends StatefulWidget {
     required this.currentCase,
     this.caseChanges,
     this.now,
+    this.onContact,
+    this.onUpdates,
+    this.onResidentDetails,
+    this.onAddTask,
   });
 
   final CaseSnapshot snapshot;
@@ -29,6 +34,14 @@ class DraftPacketScreen extends StatefulWidget {
 
   final Listenable? caseChanges;
   final DateTime Function()? now;
+
+  /// Optional next steps that make checklist items lead somewhere.
+  final VoidCallback? onContact, onUpdates;
+
+  /// Resident items open resident details; resident and professional items
+  /// can become a task titled with the item's own text.
+  final VoidCallback? onResidentDetails;
+  final void Function(String title)? onAddTask;
 
   @override
   State<DraftPacketScreen> createState() => _DraftPacketScreenState();
@@ -178,7 +191,15 @@ class _DraftPacketScreenState extends State<DraftPacketScreen>
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(context.tr('Draft checklist'))),
+    appBar: AppBar(
+      title: Text(
+        context.tr(
+          programHasFormWorkflow(widget.program)
+              ? 'What’s still needed'
+              : 'Checklist',
+        ),
+      ),
+    ),
 
     body: SafeArea(
       child: FutureBuilder<DraftPacket>(
@@ -208,6 +229,10 @@ class _DraftPacketScreenState extends State<DraftPacketScreen>
             snapshot: current,
             now: _now(),
             savedExample: widget.service.isSavedExample,
+            onContact: widget.onContact,
+            onUpdates: widget.onUpdates,
+            onResidentDetails: widget.onResidentDetails,
+            onAddTask: widget.onAddTask,
           );
         },
       ),
@@ -222,7 +247,13 @@ class _Checklist extends StatelessWidget {
     required this.snapshot,
     required this.savedExample,
     required this.now,
+    this.onContact,
+    this.onUpdates,
+    this.onResidentDetails,
+    this.onAddTask,
   });
+  final VoidCallback? onContact, onUpdates, onResidentDetails;
+  final void Function(String title)? onAddTask;
   final DraftPacket packet;
   final ProgramMatch program;
   final CaseSnapshot snapshot;
@@ -232,6 +263,7 @@ class _Checklist extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final checklistRoute = !programHasFormWorkflow(program);
     final fresh = packet.isFreshFor(
       snapshot,
       programId: program.programId,
@@ -249,11 +281,18 @@ class _Checklist extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SahFeaturePanel(
-                title: program.programName,
+                title: programShortName(program),
                 description: context.tr(
-                  'Draft only · Nothing has been submitted.',
+                  checklistRoute
+                      ? 'Checklist — no form in this app'
+                      : 'Draft only · Nothing has been submitted.',
                 ),
               ),
+              if (programShortName(program) != program.programName)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(program.programName),
+                ),
               if (Localizations.localeOf(context).languageCode != 'en')
                 SahNotice(
                   message: context.tr(
@@ -315,6 +354,10 @@ class _Checklist extends StatelessWidget {
                     ? context.tr(
                         'App-generated worksheet, not an RTP application. Complete the official intake separately.',
                       )
+                    : checklistRoute
+                    ? context.tr(
+                        'This route has no form in the app. Use this checklist, then apply with the program.',
+                      )
                     : packet.formVersion == null ||
                           packet.mappingVersion == null ||
                           packet.storageReference == null
@@ -332,7 +375,9 @@ class _Checklist extends StatelessWidget {
                 message: packet.attachments.isEmpty
                     ? context.tr('No evidence files attached.')
                     : context.tr(
-                        '{count} evidence references recorded. Files are not shown here.',
+                        packet.attachments.length == 1
+                            ? '1 evidence reference recorded. Files are not shown here.'
+                            : '{count} evidence references recorded. Files are not shown here.',
                         {'count': packet.attachments.length},
                       ),
               ),
@@ -355,14 +400,85 @@ class _Checklist extends StatelessWidget {
                   for (final item in packet.missingItems.where(
                     (i) => i.resolvedBy == role,
                   ))
-                    Padding(
-                      padding: const EdgeInsets.only(left: 36, bottom: 12),
-                      child: Text(
-                        item.description,
-                        style: theme.textTheme.bodyLarge,
+                    if (role == 'program' && onContact != null)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 24),
+                        child: ListTile(
+                          key: ValueKey('checklist-item-${item.id}'),
+                          contentPadding: const EdgeInsets.only(left: 12),
+                          title: Text(
+                            item.description,
+                            style: theme.textTheme.bodyLarge,
+                          ),
+                          subtitle: Text(context.tr('Ask the program')),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: onContact,
+                        ),
+                      )
+                    else if (role != 'program' && onAddTask != null)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 24),
+                        child: ListTile(
+                          key: ValueKey('checklist-item-${item.id}'),
+                          contentPadding: const EdgeInsets.only(left: 12),
+                          title: Text(
+                            item.description,
+                            style: theme.textTheme.bodyLarge,
+                          ),
+                          subtitle: Text(
+                            context.tr(
+                              role == 'professional'
+                                  ? 'Ask a doctor or therapist'
+                                  : onResidentDetails != null
+                                  ? 'Update resident details or add a task'
+                                  : 'Add it to your tasks',
+                            ),
+                          ),
+                          onTap: role == 'resident'
+                              ? onResidentDetails ??
+                                    () => onAddTask!(item.description)
+                              : () => onAddTask!(item.description),
+                          trailing: TextButton.icon(
+                            key: ValueKey('checklist-add-task-${item.id}'),
+                            onPressed: () => onAddTask!(item.description),
+                            icon: const Icon(Icons.add_task_rounded),
+                            label: Text(context.tr('Add task')),
+                          ),
+                        ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.only(left: 36, bottom: 12),
+                        child: Text(
+                          item.description,
+                          style: theme.textTheme.bodyLarge,
+                        ),
                       ),
-                    ),
                 ],
+              if (onContact != null || onUpdates != null) ...[
+                SahSectionHeading(title: context.tr('Apply with the program')),
+                if (onContact != null)
+                  FilledButton.icon(
+                    key: const ValueKey('checklist-contact'),
+                    onPressed: onContact,
+                    icon: const Icon(Icons.call_outlined),
+                    label: Text(context.tr('Contact program')),
+                  ),
+                if (onUpdates != null) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    key: const ValueKey('checklist-updates'),
+                    onPressed: onUpdates,
+                    child: Text(context.tr('Record an update')),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  context.tr(
+                    'The app doesn’t apply for you. Record what happens after you contact the program.',
+                  ),
+                ),
+              ],
             ],
           ),
         ),

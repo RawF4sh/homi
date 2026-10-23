@@ -195,7 +195,8 @@ void main() {
         }
 
         final selection = find.text(tr('Included · {number}', {'number': 1}));
-        final prepare = find.text(tr('Prepare or recover this draft'));
+        // An unfinished journal is offered only as "Finish draft" (UI-035).
+        final prepare = find.text(tr('Finish draft'));
         for (var attempt = 1; attempt <= 2; attempt++) {
           await tester.pumpWidget(screen());
           await tester.pumpAndSettle();
@@ -234,7 +235,7 @@ void main() {
             matching: find.byType(FilledButton),
           );
           expect(tester.widget<FilledButton>(button).onPressed, isNotNull);
-          expect(find.text(tr('Share or save draft')), findsNothing);
+          expect(find.text(tr('Share draft file')), findsNothing);
           expect(tester.takeException(), isNull);
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pumpAndSettle();
@@ -253,8 +254,18 @@ void main() {
         );
         await tester.pumpAndSettle();
         final givenNameLabel = tr('Given name');
-        final field = find.byWidgetPredicate(
-          (w) => w is TextField && w.decoration?.labelText == givenNameLabel,
+        expect(find.text(givenNameLabel), findsOneWidget);
+        // Saved values open as a read-only summary; "Change" opens the editor.
+        final change = find.byKey(
+          const ValueKey('form-change-memberFirstName'),
+        );
+        await tester.ensureVisible(change);
+        await tester.tap(change);
+        await tester.pumpAndSettle();
+        expect(find.text(givenNameLabel), findsOneWidget);
+        final field = find.descendant(
+          of: find.byKey(const ValueKey('form-field-memberFirstName')),
+          matching: find.byType(TextField),
         );
         expect(tester.widget<TextField>(field).controller!.text, originalName);
         expect(tester.takeException(), isNull);

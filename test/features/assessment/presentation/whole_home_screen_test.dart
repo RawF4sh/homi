@@ -253,6 +253,68 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+  testWidgets(
+    'connected-room chooser numbers walking order and explains the 8-room limit',
+    (tester) async {
+      final h = _Harness()
+        ..rooms = [
+          for (var i = 1; i <= 9; i++)
+            RoomInstance(
+              id: 'room-$i',
+              type: AssessmentLocation.bedroom,
+              name: 'Fictional room $i',
+            ),
+        ];
+      await h.init();
+      addTearDown(h.dispose);
+      await tester.pumpWidget(h.app());
+      await tester.pumpAndSettle();
+      await tapVisible(tester, find.byKey(const ValueKey('home-capture')));
+      expect(find.text('One level, in walking order'), findsOneWidget);
+      expect(find.text('0 of 8 chosen'), findsOneWidget);
+      for (var i = 1; i <= 8; i++) {
+        await tapVisible(
+          tester,
+          find.widgetWithText(CheckboxListTile, 'Fictional room $i'),
+        );
+      }
+      expect(find.text('8 of 8 chosen'), findsOneWidget);
+      expect(find.text('Stop 1 of 8'), findsOneWidget);
+      await tapVisible(
+        tester,
+        find.widgetWithText(CheckboxListTile, 'Fictional room 9'),
+      );
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.widgetWithText(CheckboxListTile, 'Fictional room 9'),
+            )
+            .value,
+        isFalse,
+      );
+      expect(
+        find.textContaining('You can connect up to 8 rooms in one scan.'),
+        findsOneWidget,
+      );
+      await tapVisible(
+        tester,
+        find.widgetWithText(CheckboxListTile, 'Fictional room 1'),
+      );
+      expect(find.text('7 of 8 chosen'), findsOneWidget);
+      expect(find.textContaining('You can connect up to 8'), findsNothing);
+      // Room 2 moves up to the first stop once room 1 is removed.
+      expect(
+        find.descendant(
+          of: find.widgetWithText(CheckboxListTile, 'Fictional room 2'),
+          matching: find.text('Stop 1 of 7'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   for (final (source, scale) in [
     ('roomplan', 1.0),
     ('roomplan', 3.2),

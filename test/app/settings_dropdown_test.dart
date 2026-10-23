@@ -130,7 +130,7 @@ void main() {
   });
 
   testWidgets(
-    'embedded settings keep one scaffold and a measured 24px privacy gap',
+    'embedded account hub keeps one scaffold and separates routine settings',
     (tester) async {
       final transport = FakeTransport(
         (_) async => throw StateError('No request'),
@@ -151,11 +151,20 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(Scaffold), findsOneWidget);
       expect(find.byType(AppBar), findsNothing);
-      final preference = tester.getRect(
-        find.byKey(const ValueKey('appearance-selection')),
+      // Routine preferences and deletion live on separate pages.
+      for (final key in [
+        'account-display',
+        'account-privacy',
+        'account-technical',
+      ]) {
+        expect(find.byKey(ValueKey(key)), findsOneWidget);
+      }
+      expect(find.byKey(const ValueKey('appearance-selection')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('settings-delete-account')),
+        findsNothing,
       );
-      final privacy = tester.getRect(find.text('On this device'));
-      expect(privacy.top - preference.bottom, closeTo(24, .01));
+      expect(find.text('Feature availability'), findsNothing);
       expect(transport.requests, isEmpty);
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));

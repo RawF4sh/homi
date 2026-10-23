@@ -210,18 +210,6 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: SahStatusBadge(
-                    label: context.tr(
-                      _signupAvailable
-                          ? 'Your Safe at Home account'
-                          : 'Private team beta',
-                    ),
-                    icon: Icons.lock_outline_rounded,
-                  ),
-                ),
-                const SizedBox(height: 18),
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final showIllustration =
@@ -232,15 +220,20 @@ class _LoginScreenState extends State<LoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
-                          child: Semantics(
-                            header: true,
-                            child: Text(
-                              recovering
-                                  ? context.tr('Choose a new password')
-                                  : _signingUp
-                                  ? context.tr('Create your account')
-                                  : context.tr('Welcome back'),
-                              style: theme.textTheme.headlineLarge,
+                          // Large titles stop growing before body text so
+                          // words never break mid-word at accessibility sizes.
+                          child: MediaQuery.withClampedTextScaling(
+                            maxScaleFactor: 1.6,
+                            child: Semantics(
+                              header: true,
+                              child: Text(
+                                recovering
+                                    ? context.tr('Choose a new password')
+                                    : _signingUp
+                                    ? context.tr('Create your account')
+                                    : context.tr('Welcome back'),
+                                style: theme.textTheme.headlineLarge,
+                              ),
                             ),
                           ),
                         ),
@@ -276,176 +269,216 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(SahRadius.large),
                     border: Border.all(color: theme.colorScheme.outlineVariant),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (!recovering)
-                        TextField(
-                          key: const ValueKey('login-email'),
-                          controller: _email,
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.next,
-                          autocorrect: false,
-                          textCapitalization: TextCapitalization.none,
-                          autofillHints: const [AutofillHints.username],
-                          enabled: !_busy,
-                          onChanged: (value) {
-                            _clearFeedback(value);
-                            if (_confirmationRequested) {
-                              setState(() => _confirmationRequested = false);
-                            }
-                          },
-                          decoration: InputDecoration(
-                            label: Text(context.tr('Email')),
-                            prefixIcon: Icon(Icons.alternate_email_rounded),
-                          ),
-                        ),
-                      if (!recovering) const SizedBox(height: 20),
-                      if (!awaitingConfirmation)
-                        TextField(
-                          key: const ValueKey('login-password'),
-                          controller: _password,
-                          obscureText: !_passwordVisible,
-                          textInputAction: TextInputAction.done,
-                          enableSuggestions: false,
-                          autocorrect: false,
-                          autofillHints: [
-                            recovering || _signingUp
-                                ? AutofillHints.newPassword
-                                : AutofillHints.password,
-                          ],
-                          enabled: !_busy,
-                          onChanged: _clearFeedback,
-                          decoration: InputDecoration(
-                            label: Text(
-                              recovering
-                                  ? context.tr('New password (12+ characters)')
-                                  : _signingUp
-                                  ? context.tr('Password (12+ characters)')
-                                  : context.tr('Password'),
+                  // Field labels and entries stay legible without
+                  // splitting words like "Password" inside the field.
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 2.0,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (!recovering)
+                          TextField(
+                            key: const ValueKey('login-email'),
+                            controller: _email,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            autocorrect: false,
+                            textCapitalization: TextCapitalization.none,
+                            autofillHints: const [AutofillHints.username],
+                            enabled: !_busy,
+                            onChanged: (value) {
+                              _clearFeedback(value);
+                              if (_confirmationRequested) {
+                                setState(() => _confirmationRequested = false);
+                              }
+                            },
+                            decoration: InputDecoration(
+                              label: Text(context.tr('Email')),
+                              prefixIcon: Icon(Icons.alternate_email_rounded),
                             ),
-                            prefixIcon: const Icon(Icons.lock_outline_rounded),
-                            suffixIcon: IconButton(
-                              tooltip: _passwordVisible
-                                  ? context.tr('Hide password')
-                                  : context.tr('Show password'),
-                              onPressed: _busy
-                                  ? null
-                                  : () => setState(
-                                      () =>
-                                          _passwordVisible = !_passwordVisible,
-                                    ),
-                              icon: Icon(
-                                _passwordVisible
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
+                          ),
+                        if (!recovering) const SizedBox(height: 20),
+                        if (!awaitingConfirmation)
+                          TextField(
+                            key: const ValueKey('login-password'),
+                            controller: _password,
+                            obscureText: !_passwordVisible,
+                            textInputAction: TextInputAction.done,
+                            enableSuggestions: false,
+                            autocorrect: false,
+                            autofillHints: [
+                              recovering || _signingUp
+                                  ? AutofillHints.newPassword
+                                  : AutofillHints.password,
+                            ],
+                            enabled: !_busy,
+                            onChanged: _clearFeedback,
+                            decoration: InputDecoration(
+                              label: Text(
+                                recovering
+                                    ? context.tr(
+                                        'New password (12+ characters)',
+                                      )
+                                    : _signingUp
+                                    ? context.tr('Password (12+ characters)')
+                                    : context.tr('Password'),
+                              ),
+                              prefixIcon: const Icon(
+                                Icons.lock_outline_rounded,
+                              ),
+                              suffixIcon: IconButton(
+                                tooltip: _passwordVisible
+                                    ? context.tr('Hide password')
+                                    : context.tr('Show password'),
+                                onPressed: _busy
+                                    ? null
+                                    : () => setState(
+                                        () => _passwordVisible =
+                                            !_passwordVisible,
+                                      ),
+                                icon: Icon(
+                                  _passwordVisible
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                ),
+                              ),
+                            ),
+                            onSubmitted: _signingUp && !recovering
+                                ? null
+                                : (_) => _submit(),
+                          ),
+                        if (_signingUp &&
+                            !recovering &&
+                            !awaitingConfirmation) ...[
+                          const SizedBox(height: 20),
+                          TextField(
+                            key: const ValueKey('signup-confirm-password'),
+                            controller: _confirmation,
+                            obscureText: !_passwordVisible,
+                            enableSuggestions: false,
+                            autocorrect: false,
+                            autofillHints: const [AutofillHints.newPassword],
+                            textInputAction: TextInputAction.done,
+                            enabled: !_busy,
+                            onChanged: _clearFeedback,
+                            onSubmitted: (_) => _submit(),
+                            decoration: InputDecoration(
+                              label: Text(context.tr('Confirm password')),
+                              prefixIcon: const Icon(
+                                Icons.lock_outline_rounded,
                               ),
                             ),
                           ),
-                          onSubmitted: _signingUp && !recovering
-                              ? null
-                              : (_) => _submit(),
-                        ),
-                      if (_signingUp &&
-                          !recovering &&
-                          !awaitingConfirmation) ...[
-                        const SizedBox(height: 20),
-                        TextField(
-                          key: const ValueKey('signup-confirm-password'),
-                          controller: _confirmation,
-                          obscureText: !_passwordVisible,
-                          enableSuggestions: false,
-                          autocorrect: false,
-                          autofillHints: const [AutofillHints.newPassword],
-                          textInputAction: TextInputAction.done,
-                          enabled: !_busy,
-                          onChanged: _clearFeedback,
-                          onSubmitted: (_) => _submit(),
-                          decoration: InputDecoration(
-                            label: Text(context.tr('Confirm password')),
-                            prefixIcon: const Icon(Icons.lock_outline_rounded),
+                        ],
+                        const SizedBox(height: 24),
+                        if (!awaitingConfirmation)
+                          FilledButton(
+                            key: const ValueKey('auth-sign-in'),
+                            onPressed:
+                                _busy ||
+                                    (_signingUp &&
+                                        !recovering &&
+                                        _secondsRemaining > 0)
+                                ? null
+                                : () => _submit(),
+                            child: Text(
+                              _busy
+                                  ? context.tr('Please wait…')
+                                  : recovering
+                                  ? context.tr('Save password')
+                                  : _signingUp
+                                  ? context.tr('Create account')
+                                  : context.tr('Sign in'),
+                            ),
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 24),
-                      if (!awaitingConfirmation)
-                        FilledButton(
-                          key: const ValueKey('auth-sign-in'),
-                          onPressed:
-                              _busy ||
-                                  (_signingUp &&
-                                      !recovering &&
-                                      _secondsRemaining > 0)
-                              ? null
-                              : () => _submit(),
-                          child: Text(
-                            _busy
-                                ? context.tr('Please wait…')
-                                : recovering
-                                ? context.tr('Save password')
-                                : _signingUp
-                                ? context.tr('Create account')
-                                : context.tr('Sign in'),
-                          ),
-                        ),
-                      if (widget.emailDeliveryEnabled &&
-                          !recovering &&
-                          !_signingUp)
-                        TextButton(
-                          onPressed: _busy || _secondsRemaining > 0
-                              ? null
-                              : () => _submit(recovery: true),
-                          child: Text(context.tr('Forgot password')),
-                        ),
-                      if (_signupAvailable && !recovering) ...[
-                        if (_confirmationRequested ||
-                            widget.session.callbackNotice != null)
+                        if (widget.emailDeliveryEnabled &&
+                            !recovering &&
+                            !_signingUp)
                           TextButton(
-                            key: const ValueKey('auth-resend-confirmation'),
                             onPressed: _busy || _secondsRemaining > 0
                                 ? null
-                                : () => _submit(resend: true),
+                                : () => _submit(recovery: true),
+                            child: Text(context.tr('Forgot password')),
+                          ),
+                        if (_signupAvailable && !recovering) ...[
+                          if (_confirmationRequested ||
+                              widget.session.callbackNotice != null)
+                            TextButton(
+                              key: const ValueKey('auth-resend-confirmation'),
+                              onPressed: _busy || _secondsRemaining > 0
+                                  ? null
+                                  : () => _submit(resend: true),
+                              child: Text(
+                                context.tr('Resend confirmation email'),
+                              ),
+                            ),
+                          TextButton(
+                            key: const ValueKey('auth-switch-mode'),
+                            onPressed: _busy ? null : _switchMode,
                             child: Text(
-                              context.tr('Resend confirmation email'),
+                              context.tr(
+                                _signingUp
+                                    ? 'Back to sign in'
+                                    : 'Create account',
+                              ),
                             ),
                           ),
-                        TextButton(
-                          key: const ValueKey('auth-switch-mode'),
-                          onPressed: _busy ? null : _switchMode,
-                          child: Text(
+                        ],
+                        if (_secondsRemaining > 0 && !recovering)
+                          Text(
                             context.tr(
-                              _signingUp ? 'Back to sign in' : 'Create account',
+                              'You can request another email in {seconds} seconds.',
+                              {'seconds': _secondsRemaining},
                             ),
                           ),
-                        ),
+                        if (!recovering &&
+                            (_confirmationRequested || _emailInstructions))
+                          Text(
+                            context.tr(
+                              'Open the newest email link on this device. Check spam or junk mail too.',
+                            ),
+                          ),
+                        if (_message != null)
+                          SahActionFeedback(
+                            key: const ValueKey('auth-action-feedback'),
+                            message: context.tr(_message!),
+                            revealRevision: _feedbackRevision,
+                            tone: _success
+                                ? SahNoticeTone.info
+                                : SahNoticeTone.warning,
+                          ),
                       ],
-                      if (_secondsRemaining > 0 && !recovering)
-                        Text(
-                          context.tr(
-                            'You can request another email in {seconds} seconds.',
-                            {'seconds': _secondsRemaining},
-                          ),
-                        ),
-                      if (!recovering &&
-                          (_confirmationRequested || _emailInstructions))
-                        Text(
-                          context.tr(
-                            'Open the newest email link on this device. Check spam or junk mail too.',
-                          ),
-                        ),
-                      if (_message != null)
-                        SahActionFeedback(
-                          key: const ValueKey('auth-action-feedback'),
-                          message: context.tr(_message!),
-                          revealRevision: _feedbackRevision,
-                          tone: _success
-                              ? SahNoticeTone.info
-                              : SahNoticeTone.warning,
-                        ),
-                    ],
+                    ),
                   ),
                 ),
+                if (!_signupAvailable && !recovering)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: ExpansionTile(
+                      key: const ValueKey('auth-get-account'),
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: const EdgeInsets.only(bottom: 12),
+                      expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                      title: Text(context.tr('How do I get an account?')),
+                      children: [
+                        Text(
+                          context.tr(
+                            'During the beta, the project team creates accounts by invitation. Ask the team if you need one.',
+                          ),
+                        ),
+                        if (!widget.emailDeliveryEnabled) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            context.tr(
+                              'If you forget your password, ask the project team. Password reset appears here once email is turned on.',
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 20),
+                // The one beta line while the beta lasts.
                 Text(
                   context.tr('Team beta: use fictional information only.'),
                   style: theme.textTheme.bodyMedium?.copyWith(

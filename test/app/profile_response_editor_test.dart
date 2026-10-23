@@ -268,4 +268,112 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'sections count answers, keep unanswered visible and explain sensitive asks',
+    (tester) async {
+      final app = await appFor(ProfileTestStore());
+      await showProfile(tester, app);
+      Finder text(String key) => find.byKey(ValueKey(key));
+      String shown(String key) => tester.widget<Text>(text(key)).data!;
+      expect(
+        shown('profile-answered-total'),
+        '0 of 8 answered · 8 not answered',
+      );
+      expect(shown('profile-answer-state-tenure'), 'Not answered');
+      expect(
+        find.descendant(
+          of: text('profile-section-Home'),
+          matching: find.text('0 of 2 answered'),
+        ),
+        findsOneWidget,
+      );
+      await choose(tester, 'tenure', 'Not sure');
+      // "Not sure" is an explicit answer, never a blank.
+      expect(shown('profile-answer-state-tenure'), 'Answered');
+      expect(selected(tester, 'tenure'), 'notSure');
+      expect(
+        find.descendant(
+          of: text('profile-section-Home'),
+          matching: find.text('1 of 2 answered'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        shown('profile-answered-total'),
+        '1 of 8 answered · 7 not answered',
+      );
+      await press(tester, 'profile-has-health-plan');
+      expect(text('profile-suggestion-coverage-healthPlan'), findsOneWidget);
+      for (final key in ['profile-why-consent', 'profile-why-income']) {
+        await reveal(tester, text(key));
+        expect(text(key), findsOneWidget);
+      }
+      // The fields themselves did not move out of resident details.
+      expect(text('profile-consent-card'), findsOneWidget);
+      expect(text('profile-field-annualIncomeUsd'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'ZIP fills the state, stays correctable and saves only on this phone',
+    (tester) async {
+      final disk = ProfileTestStore();
+      final app = await appFor(disk);
+      await showProfile(tester, app);
+      final zip = find.widgetWithText(TextFormField, 'ZIP code');
+      String? state() => tester
+          .widget<DropdownButtonFormField<String?>>(
+            find.byKey(const ValueKey('profile-state')),
+          )
+          .initialValue;
+      await reveal(tester, zip);
+      expect(
+        tester.getTopLeft(zip).dy,
+        lessThan(tester.getTopLeft(cityField()).dy),
+      );
+      expect(state(), isNull);
+      await tester.enterText(zip, '96910');
+      await tester.pumpAndSettle();
+      expect(state(), isNull);
+      expect(
+        find.text('Choose the state. This ZIP code doesn’t tell us which one.'),
+        findsOneWidget,
+      );
+      await tester.enterText(zip, '951');
+      await press(tester, 'profile-keep-edits');
+      await reveal(tester, find.text('Enter a 5-digit ZIP code.'));
+
+      await tester.enterText(zip, '95112');
+      await tester.pumpAndSettle();
+      expect(state(), 'CA');
+      expect(
+        find.text('Filled from ZIP code 95112. You can change it.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('profile-state')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Arizona').last);
+      await tester.pumpAndSettle();
+      expect(state(), 'AZ');
+      expect(find.textContaining('Filled from ZIP code'), findsNothing);
+      await autosave(tester);
+      final draft = app.coordinator.currentDraft();
+      expect((responses(app).stateCode, responses(app).zip), ('AZ', '95112'));
+      expect(draft.profile.toJson().values, everyElement(isNull));
+      expect(draft.profile.toJson().keys, isNot(contains('zip')));
+      expect((app.transport as FakeTransport).requests, isEmpty);
+      expect(
+        find.byKey(const ValueKey('profile-location-device-note')),
+        findsOneWidget,
+      );
+
+      await reopen(tester, app);
+      await reveal(tester, zip);
+      expect(find.text('95112'), findsOneWidget);
+      expect(state(), 'AZ');
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

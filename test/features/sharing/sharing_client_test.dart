@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/shared/services/sharing_api_client.dart';
 import '../../case_discovery_api_client_test.dart'
@@ -6,11 +8,13 @@ import '../../case_discovery_api_client_test.dart'
 import 'sharing_contract_test.dart' show sharedFixture;
 
 void main() {
-  SharingApiClient client(FakeTransport transport) => SharingApiClient(
-    baseUri: Uri.parse('https://fictional.example'),
-    tokenProvider: () async => 'fictional-token',
-    transport: transport,
-  );
+  SharingApiClient client(FakeTransport transport, {bool labels = false}) =>
+      SharingApiClient(
+        baseUri: Uri.parse('https://fictional.example'),
+        tokenProvider: () async => 'fictional-token',
+        transport: transport,
+        includeLabels: labels,
+      );
   const id = '11111111-1111-4111-8111-111111111111';
   const fields = {'membershipId': id, 'expectedPermissionRevision': 2};
   test(
@@ -97,5 +101,101 @@ void main() {
       ),
       throwsArgumentError,
     );
+  });
+  group('sharing labels flag', () {
+    final fixtures =
+        (jsonDecode(
+                  File(
+                    'contracts/v3/fixtures/sharing-labels.json',
+                  ).readAsStringSync(),
+                )
+                as List)
+            .cast<Map<String, Object?>>();
+    Map<String, Object?> labelled(String route) =>
+        fixtures.firstWhere((f) => f['route'] == route)['response']!
+            as Map<String, Object?>;
+    Map<String, Object?> legacy(String route) {
+      final value = jsonDecode(jsonEncode(labelled(route))) as Map;
+      for (final row in [
+        ...(value['memberships'] as List? ?? const []),
+        ...(value['shares'] as List? ?? const []),
+        ?value['membership'],
+      ]) {
+        (row as Map)
+          ..remove('ownerLabel')
+          ..remove('recipientLabel');
+      }
+      return value.cast<String, Object?>();
+    }
+
+    const routes = {
+      'list-sharing': {'caseId': 'fictional-shared-case'},
+      'list-shared-cases': <String, Object?>{},
+      'review-invitation': {
+        'code': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
+    };
+    test(
+      'off (default): no label key is sent and labelled replies fail',
+      () async {
+        for (final MapEntry(key: route, value: body) in routes.entries) {
+          final sent = FakeTransport((_) async => jsonResponse(legacy(route)));
+          final response = await client(
+            sent,
+          ).request(route, body, isCurrent: () => true);
+          expect(requestJson(sent.requests.single), {
+            'schemaVersion': '3',
+            ...body,
+          }, reason: route);
+          expect(
+            [
+              ...response.memberships,
+              ...response.shares.map((s) => s.membership),
+              ?response.membership,
+            ].every((m) => m.ownerLabel == null && m.recipientLabel == null),
+            isTrue,
+          );
+          await expectLater(
+            client(
+              FakeTransport((_) async => jsonResponse(labelled(route))),
+            ).request(route, body, isCurrent: () => true),
+            throwsA(failure('UNEXPECTED_RESPONSE')),
+            reason: route,
+          );
+        }
+        for (final key in ['recipientLabel', 'ownerLabel', 'includeLabels']) {
+          final none = FakeTransport((_) async => throw StateError('sent'));
+          expect(
+            () => client(none).request('create-invitation', {
+              key: 'Fictional',
+            }, isCurrent: () => true),
+            throwsArgumentError,
+          );
+          expect(none.requests, isEmpty);
+        }
+      },
+    );
+    test('on: list/review opt in and labels parse', () async {
+      for (final MapEntry(key: route, value: body) in routes.entries) {
+        final sent = FakeTransport((_) async => jsonResponse(labelled(route)));
+        final response = await client(
+          sent,
+          labels: true,
+        ).request(route, body, isCurrent: () => true);
+        expect(requestJson(sent.requests.single), {
+          'schemaVersion': '3',
+          ...body,
+          'includeLabels': true,
+        });
+        expect(
+          [
+            ...response.memberships,
+            ...response.shares.map((s) => s.membership),
+            ?response.membership,
+          ].map((m) => m.ownerLabel),
+          everyElement('Fictional Sam'),
+        );
+      }
+    });
   });
 }

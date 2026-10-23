@@ -143,6 +143,8 @@ class _Harness {
                   importedFinding: (id) => imports.any((s) => s.id == id)
                       ? 'fictional-finding'
                       : null,
+                  onSetImportActive: (id, active) async =>
+                      active ? removed.remove(id) : removed.add(id),
                   activeImports: () => {
                     for (final s in imports)
                       if (!removed.contains(s.id)) s.id,
@@ -244,30 +246,35 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
   await tester.pump();
 }
 
-final _suggestionBox = find.byWidgetPredicate(
+final _suggestionCard = find.byWidgetPredicate(
   (w) =>
-      w is CheckboxListTile &&
+      w is Card &&
       w.key is ValueKey<String> &&
       (w.key! as ValueKey<String>).value.startsWith('scan-suggestion-'),
 );
 
+/// The unselected Keep choice of a scan suggestion.
+final _suggestionBox = find.descendant(
+  of: _suggestionCard,
+  matching: find.widgetWithText(OutlinedButton, 'Keep'),
+);
+final _notConcern = find.descendant(
+  of: _suggestionCard,
+  matching: find.widgetWithText(OutlinedButton, 'Not a concern'),
+);
+
+/// Selects the doorway from the visible "In this scan" list, which every
+/// user sees (not only screen-reader users).
 Future<void> _openModel(WidgetTester tester) async {
-  tester.platformDispatcher.accessibilityFeaturesTestValue =
-      const FakeAccessibilityFeatures(accessibleNavigation: true);
-  addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
   await tester.pumpAndSettle();
-  final list = find.byKey(const ValueKey('scan-selection-door-1'));
-  await _reveal(tester, list);
-  await tester.tap(list);
+  final item = find.byKey(const ValueKey('scan-item-door-1'));
+  await _reveal(tester, item);
+  await tester.tap(item);
   await tester.pumpAndSettle();
-  await tester.tap(
-    find
-        .byWidgetPredicate(
-          (w) => w is DropdownMenuItem<String> && w.value == 'door-1',
-        )
-        .last,
+  expect(
+    find.descendant(of: item, matching: find.text('Selected')),
+    findsOneWidget,
   );
-  await tester.pumpAndSettle();
 }
 
 Future<void> _check(WidgetTester tester, _Harness harness, String label) async {
@@ -375,11 +382,26 @@ void main() {
       expect(find.text('Camera-only scan'), findsOneWidget);
       final start = find.byKey(const ValueKey('bathroom-start-scan'));
       await _reveal(tester, start);
-      expect(find.text('Start camera scan'), findsOneWidget);
+      expect(find.text('Start scan'), findsOneWidget);
       await tester.tap(start);
       await _idle(tester, harness);
       final fingerprint = harness.session.review.scene!.fingerprint;
       expect(harness.session.review.scene!.source, ScanSource.arkit);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, 3000));
+      await tester.pumpAndSettle();
+      expect(find.text('Camera scans can’t recognise objects'), findsOneWidget);
+      // Camera-only items never borrow LiDAR object names.
+      final first = harness.session.review.scene!.elements.first;
+      final item = find.byKey(ValueKey('scan-item-${first.id}'));
+      await _reveal(tester, item);
+      expect(
+        find.descendant(of: item, matching: find.text('Surface 1')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: item, matching: find.textContaining('estimate')),
+        findsNothing,
+      );
       expect(harness.imports, isEmpty);
       await _reveal(tester, find.text('Estimated distances'));
       await tester.tap(find.text('Estimated distances'));
@@ -437,10 +459,9 @@ void main() {
     'supported LiDAR device explains readiness without starting capture',
     (tester) async {
       await _open(tester, harness);
-      await _reveal(
-        tester,
-        find.textContaining('LiDAR scanning is ready on this iPhone.'),
-      );
+      await _reveal(tester, find.text('LiDAR 3D scan'));
+      expect(find.textContaining('RoomPlan'), findsNothing);
+      expect(find.text('Less precise'), findsNothing);
       expect(harness.scanner.starts, isEmpty);
       final fallback = find.byKey(const ValueKey('bathroom-use-manual'));
       await _reveal(tester, fallback);
@@ -832,16 +853,58 @@ void main() {
   );
 
   testWidgets(
-    'an import dismissed or removed in the assessment is not offered again',
+    'Undo after Not a concern on a new suggestion restores it unanswered',
+    (tester) async {
+      await tester.runAsync(() => harness.seed(doorReview()));
+      await _open(tester, harness);
+      await _reveal(tester, _notConcern);
+      await tester.tap(_notConcern);
+      await _idle(tester, harness);
+      expect(harness.session.review.dismissed, {doorSuggestion().id});
+      await tester.tap(find.widgetWithText(SnackBarAction, 'Undo'));
+      await _idle(tester, harness);
+      expect(harness.session.review.dismissed, isEmpty);
+      expect(harness.imports, isEmpty);
+      await _reveal(tester, _notConcern);
+      expect(_suggestionBox, findsOneWidget, reason: 'Neither is selected');
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'a removed import shows Not a concern and stays reversible without a new ID',
     (tester) async {
       await tester.runAsync(() => harness.seed(doorReview()));
       harness.imports.add(doorSuggestion());
       harness.removed.add(doorSuggestion().id);
       await _open(tester, harness);
       await _reveal(tester, find.text('Removed from your plan'));
-      expect(tester.widget<CheckboxListTile>(_suggestionBox).onChanged, isNull);
+      expect(_notConcern, findsNothing, reason: 'Not a concern is selected');
+      await _reveal(tester, _suggestionBox);
+      await tester.tap(_suggestionBox);
+      await _idle(tester, harness);
+      expect(harness.removed, isEmpty);
+      expect(find.text('Added to your plan'), findsOneWidget);
+      await _reveal(tester, _notConcern);
+      await tester.tap(_notConcern);
+      await _idle(tester, harness);
+      expect(harness.removed, {doorSuggestion().id});
+      expect(find.text('Removed from your plan'), findsOneWidget);
+      expect(find.text('Marked not a concern'), findsOneWidget);
+      await tester.tap(find.widgetWithText(SnackBarAction, 'Undo'));
+      await _idle(tester, harness);
+      expect(harness.removed, isEmpty, reason: 'Undo restores Keep');
+      expect(find.text('Added to your plan'), findsOneWidget);
+      await _reveal(tester, _notConcern);
+      await tester.tap(_notConcern);
+      await _idle(tester, harness);
+      expect(harness.removed, {doorSuggestion().id});
       expect(earlierNotice, findsNothing);
-      expect(harness.imports, hasLength(1));
+      expect(harness.imports, hasLength(1), reason: 'No new finding IDs');
+      ScaffoldMessenger.of(
+        tester.element(find.byType(Scaffold).first),
+      ).removeCurrentSnackBar();
+      await tester.pumpAndSettle();
       expect(find.text('Continue'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('bathroom-continue')));
       await tester.pumpAndSettle();
@@ -919,9 +982,15 @@ void main() {
       expect(tester.widget<OutlinedButton>(fallback).onPressed, isNotNull);
       expect(tester.takeException(), isNull);
       await _openModel(tester);
-      await _reveal(tester, find.byTooltip('Rotate model right'));
-      await tester.tap(find.byTooltip('Rotate model right'));
+      await _reveal(tester, find.text('Top-down'));
+      await tester.tap(find.text('Top-down'));
       await tester.pump();
+      expect(tester.takeException(), isNull);
+      await _reveal(tester, find.byTooltip('More view controls'));
+      await tester.tap(find.byTooltip('More view controls'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Rotate model right'));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(harness.session.review.reviewed, isEmpty);
       await _check(tester, harness, ScanDifficulty.enteringBathroom.label);

@@ -111,7 +111,7 @@ void main() {
             ),
           );
           await tester.pumpAndSettle();
-          final prepare = find.text('Prepare or recover this draft');
+          final prepare = find.text('Create draft PDF');
           await tester.scrollUntilVisible(
             prepare,
             250,

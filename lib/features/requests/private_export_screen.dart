@@ -12,6 +12,7 @@ import '../../shared/models/contracts.dart';
 import '../../shared/models/annotated_export.dart';
 import '../../shared/models/evidence_annotations.dart';
 import '../../shared/presentation/sah_components.dart';
+import 'application_workspace_screen.dart';
 import 'reviewed_photo_screen.dart';
 import 'private_draft_preview.dart';
 import '../../shared/models/evidence.dart';
@@ -40,6 +41,9 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
   bool _busy = false, _sharing = false;
   String? _error;
   String? _notice;
+  // The local operation journal: a draft whose download never finished is
+  // offered as "Finish draft"; a finished one for older inputs is out of date.
+  Map<String, Object?>? _prior;
   Timer? _timer;
   late final String _caseId;
   late final int _caseGeneration;
@@ -219,6 +223,7 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
     final fingerprint = _fingerprint();
     final prior = await widget.services.store.readJson(_operationKey);
     if (!_guard(fingerprint)) return;
+    setState(() => _prior = prior);
     final request = prior?['request'];
     if (request is! Map || !_current || _answers == null) return;
     final current = _request('fingerprint');
@@ -256,8 +261,10 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
     if (_guard(fingerprint)) {
       setState(() {
         _selected.addAll(recovered);
-        _notice =
-            'Recovered the exact reviewed selection. Prepare or recover this draft to continue.';
+        if (prior?['completed'] != true) {
+          _notice =
+              'Recovered the exact reviewed selection. Prepare or recover this draft to continue.';
+        }
       });
     }
   }
@@ -368,11 +375,13 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
           ? prior!['generation'] as String
           : newUuidV4();
       final request = _request(generation);
-      await widget.services.store.writeJson(_operationKey, {
+      final journal = <String, Object?>{
         'fingerprint': fingerprint,
         'generation': generation,
         'request': request,
-      });
+      };
+      await widget.services.store.writeJson(_operationKey, journal);
+      _prior = journal;
       if (!_guard(fingerprint)) return;
       final artifact = await widget.services.annotatedExports.createDraftExport(
         request,
@@ -385,6 +394,20 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
         isCurrent: () => _guard(fingerprint) && identical(_artifact, artifact),
       );
       if (mounted) setState(() => _pdf = Uint8List.fromList(bytes));
+      try {
+        final done = {
+          'fingerprint': fingerprint,
+          'generation': generation,
+          'request': request,
+          'completed': true,
+        };
+        if (_guard(fingerprint)) {
+          await widget.services.store.writeJson(_operationKey, done);
+          _prior = done;
+        }
+      } catch (_) {
+        // The draft is ready; only the recovery wording depends on this note.
+      }
     } catch (error) {
       if (mounted) {
         setState(
@@ -428,14 +451,14 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
                 Semantics(
                   header: true,
                   child: Text(
-                    ctx.tr('Share an incomplete draft?'),
+                    ctx.tr('Share the draft file?'),
                     style: Theme.of(ctx).textTheme.headlineSmall,
                   ),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   ctx.tr(
-                    'The selected app or recipient can keep this copy. Sharing does not submit an application or confirm receipt.',
+                    'Sharing sends a file. It doesn’t send your application. The app or person you choose can keep a copy.',
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -540,156 +563,307 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
     });
   }
 
+  String? _currentFingerprint() {
+    if (!_current || _answers == null) return null;
+    try {
+      return _fingerprint();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool get _worksheet => _answers?.artifactKind == 'preparation_worksheet';
+
+  String _photoTitle(BuildContext context, EvidenceDescriptor evidence) {
+    final findings = widget.services.coordinator.snapshot?.findings ?? [];
+    final finding = findings.where((f) => f.id == evidence.findingId);
+    if (finding.isEmpty) {
+      return context.tr('Photo {number}', {
+        'number': _catalog!.evidence.indexOf(evidence) + 1,
+      });
+    }
+    return context.tr('{room} · {concern}', {
+      'room': context.tr(switch (finding.single.room) {
+        'bathroom' => 'Bathroom',
+        'entrance' => 'Entrance',
+        _ => 'Other area',
+      }),
+      'concern': finding.single.observation,
+    });
+  }
+
+  // Only evidence linked to a confirmed concern can be exported; the server
+  // enforces the same rule. Unknown links stay selectable for server review.
+  bool _photoAllowed(EvidenceDescriptor evidence) {
+    final findings = widget.services.coordinator.snapshot?.findings ?? [];
+    final finding = findings.where((f) => f.id == evidence.findingId);
+    return finding.isEmpty || finding.single.reviewState == 'confirmed';
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(context.tr('Private draft review'))),
-    body: SafeArea(
-      child: SahContent(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            SahPageHeader(
-              title: context.tr('Review your draft'),
-              eyebrow: widget.program.programName,
-            ),
-            if (Localizations.localeOf(context).languageCode != 'en')
-              SahNotice(
-                message: context.tr(
-                  'Program information and official forms may remain in English. Your saved answers are not translated.',
-                ),
-              ),
-            SahStatusBadge(
-              label: context.tr('Incomplete draft · nothing is submitted'),
-              icon: Icons.info_outline_rounded,
-              tone: SahNoticeTone.warning,
-            ),
-            if (_busy)
-              LinearProgressIndicator(
-                semanticsLabel: context.tr('Preparing your private draft'),
-              ),
-            if (_error != null)
-              SahNotice(
-                message: context.tr(_error!),
-                tone: SahNoticeTone.error,
-              ),
-            if (_notice != null) SahNotice(message: context.tr(_notice!)),
-            SahSectionHeading(title: context.tr('Photo attachments')),
-            if (_catalog != null && _catalog!.evidence.isEmpty)
-              SahNotice(
-                message: context.tr(
-                  'No saved photos. You can prepare a draft without them.',
-                ),
-                icon: Icons.photo_outlined,
-              ),
-            if (_catalog != null)
-              for (final evidence in _catalog!.evidence)
-                SahActionTile(
-                  title: context.tr('Photo {number}', {
-                    'number': _catalog!.evidence.indexOf(evidence) + 1,
-                  }),
-                  subtitle: _selected.containsKey(evidence.evidenceId)
-                      ? context.tr('Included · {number}', {
-                          'number':
-                              _selected.keys.toList().indexOf(
-                                evidence.evidenceId,
-                              ) +
-                              1,
-                        })
-                      : null,
-                  icon: _selected.containsKey(evidence.evidenceId)
-                      ? Icons.check_circle_outline_rounded
-                      : Icons.photo_outlined,
-                  enabled: !_busy && !_sharing && _current,
-                  onTap: () => _review(evidence),
-                ),
-            if (_error != null)
-              TextButton.icon(
-                onPressed: _busy || _sharing ? null : _load,
-                icon: const Icon(Icons.refresh_rounded),
-                label: Text(context.tr('Reload current evidence and answers')),
-              ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: _busy || _sharing || !_current || _answers == null
-                  ? null
-                  : () => _prepare(),
-              icon: const Icon(Icons.description_outlined),
-              label: Text(context.tr('Prepare or recover this draft')),
-            ),
-            if (_error != null)
-              TextButton(
-                onPressed: _busy || _sharing || !_current
-                    ? null
-                    : () => _prepare(newAttempt: true),
-                child: Text(context.tr('Start a newly reviewed draft attempt')),
-              ),
-            if (_artifact != null) ...[
-              const SizedBox(height: 12),
-              SahNotice(
-                title: context.tr('Not ready to submit'),
-                message: context.tr(
-                  '{count} items still needed. Nothing has been submitted.',
-                  {'count': _artifact!.base.missingItems.length},
-                ),
-                tone: SahNoticeTone.warning,
-              ),
-              if (_artifact!.base.warnings.any(
-                (w) => w != 'INCOMPLETE_DRAFT' && w != 'NOT_SUBMITTED',
-              ))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    context.tr(
-                      'Program availability or requirements still need confirmation.',
-                    ),
-                  ),
-                ),
-              Text(
-                context.tr('Download expires {expiry}.', {
-                  'expiry': _expiryLabel(context),
-                }),
-              ),
-            ],
-            if (_pdf != null) ...[
-              SahSectionHeading(title: context.tr('Your PDF')),
-              Builder(
-                builder: (ctx) => FilledButton.icon(
-                  onPressed: _busy || _sharing ? null : () => _share(ctx),
-                  icon: const Icon(Icons.ios_share),
-                  label: Text(
-                    _sharing
-                        ? context.tr('Opening sharing…')
-                        : context.tr('Share or save draft'),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              widget.services.pdfPreviewBuilder?.call(_pdf!) ??
-                  PrivateDraftPreview(bytes: _pdf!),
-              const SizedBox(height: 24),
-            ],
-            if (_artifact != null)
-              ExpansionTile(
-                key: const ValueKey('draft-unresolved-items'),
-                tilePadding: EdgeInsets.zero,
-                title: Text(context.tr('Unresolved draft items')),
-                subtitle: Text(
-                  context.tr('{count} items to review', {
-                    'count': _artifact!.base.missingItems.length,
-                  }),
-                ),
-                children: [
-                  for (final item in _artifact!.base.missingItems)
-                    Padding(
-                      key: ValueKey('draft-unresolved-${item.id}'),
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Text(item.description),
-                    ),
-                ],
-              ),
-          ],
+  Widget build(BuildContext context) {
+    final fingerprint = _currentFingerprint();
+    final prior = _prior;
+    final interrupted =
+        _pdf == null &&
+        prior != null &&
+        prior['completed'] != true &&
+        fingerprint != null &&
+        prior['fingerprint'] == fingerprint;
+    final outdated =
+        _pdf == null &&
+        prior != null &&
+        prior['completed'] == true &&
+        fingerprint != null &&
+        prior['fingerprint'] != fingerprint;
+    final reopen =
+        _pdf == null &&
+        prior != null &&
+        prior['completed'] == true &&
+        fingerprint != null &&
+        prior['fingerprint'] == fingerprint;
+    final createLabel = context.tr(
+      interrupted
+          ? 'Finish draft'
+          : outdated
+          ? 'Update draft'
+          : reopen
+          ? 'Open draft PDF'
+          : _worksheet
+          ? 'Create worksheet'
+          : 'Create draft PDF',
+    );
+    final short = programShortName(widget.program);
+    final photos = <Widget>[
+      SahSectionHeading(
+        title: context.tr('Photos and measurements'),
+        description: context.tr(
+          'Only photos linked to a confirmed concern can be included.',
         ),
       ),
-    ),
-  );
+      if (_catalog != null && _catalog!.evidence.isEmpty)
+        SahNotice(
+          message: context.tr(
+            'No saved photos. You can prepare a draft without them.',
+          ),
+          icon: Icons.photo_outlined,
+        ),
+      if (_catalog != null)
+        for (final evidence in _catalog!.evidence)
+          SahActionTile(
+            key: ValueKey('export-photo-${evidence.evidenceId}'),
+            title: _photoTitle(context, evidence),
+            subtitle: _selected.containsKey(evidence.evidenceId)
+                ? context.tr('Included · {number}', {
+                    'number':
+                        _selected.keys.toList().indexOf(evidence.evidenceId) +
+                        1,
+                  })
+                : _photoAllowed(evidence)
+                ? context.tr('Not included')
+                : context.tr('Confirm the concern first'),
+            icon: _selected.containsKey(evidence.evidenceId)
+                ? Icons.check_circle_outline_rounded
+                : Icons.photo_outlined,
+            enabled:
+                !_busy &&
+                !_sharing &&
+                _current &&
+                (_photoAllowed(evidence) ||
+                    _selected.containsKey(evidence.evidenceId)),
+            onTap: () => _review(evidence),
+          ),
+    ];
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(context.tr(_worksheet ? 'Worksheet' : 'Draft PDF')),
+      ),
+      body: SafeArea(
+        child: SahContent(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              SahPageHeader(title: short),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SahOutputLabel(
+                    kind: _worksheet
+                        ? SahOutputKind.preparationWorksheet
+                        : programOutputKind(widget.program),
+                  ),
+                  SahTag(
+                    key: const ValueKey('export-status'),
+                    label: context.tr('Draft · not sent'),
+                    tone: SahNoticeTone.warning,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (Localizations.localeOf(context).languageCode != 'en')
+                SahNotice(
+                  message: context.tr(
+                    'Program information and official forms may remain in English. Your saved answers are not translated.',
+                  ),
+                ),
+              if (_busy)
+                LinearProgressIndicator(
+                  semanticsLabel: context.tr('Preparing your private draft'),
+                ),
+              if (_error != null)
+                SahNotice(
+                  message: context.tr(_error!),
+                  tone: SahNoticeTone.error,
+                ),
+              if (_notice != null) SahNotice(message: context.tr(_notice!)),
+              if (_pdf != null) ...[
+                widget.services.pdfPreviewBuilder?.call(_pdf!) ??
+                    PrivateDraftPreview(bytes: _pdf!),
+                const SizedBox(height: 16),
+                Builder(
+                  builder: (ctx) => FilledButton.icon(
+                    key: const ValueKey('export-share'),
+                    onPressed: _busy || _sharing ? null : () => _share(ctx),
+                    icon: const Icon(Icons.ios_share),
+                    label: Text(
+                      _sharing
+                          ? context.tr('Opening sharing…')
+                          : context.tr('Share draft file'),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  context.tr(
+                    'Sharing sends a file. It doesn’t send your application.',
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SahNextStepCard(
+                  label: context.tr('Next'),
+                  title: _worksheet
+                      ? context.tr('Contact {program}', {'program': short})
+                      : context.tr('Send it to {program} yourself', {
+                          'program': short,
+                        }),
+                  message: context.tr(
+                    'The app can’t send it. When you have, record it under Updates.',
+                  ),
+                  secondary: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: OutlinedButton(
+                      key: const ValueKey('export-done'),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: Text(context.tr('Done')),
+                    ),
+                  ),
+                ),
+              ],
+              if (_pdf == null) ...[
+                if (interrupted)
+                  SahNotice(
+                    key: const ValueKey('export-interrupted'),
+                    title: context.tr('The draft wasn’t finished'),
+                    message: context.tr(
+                      'The app closed while making it. Nothing was shared.',
+                    ),
+                    tone: SahNoticeTone.warning,
+                  ),
+                if (outdated)
+                  SahNotice(
+                    key: const ValueKey('export-outdated'),
+                    title: context.tr(
+                      'Something changed after this draft was made',
+                    ),
+                    message: context.tr(
+                      'Answers or concerns changed. Update the draft so it matches before you share or send it.',
+                    ),
+                    tone: SahNoticeTone.warning,
+                  ),
+                ...photos,
+                if (_error != null)
+                  TextButton.icon(
+                    onPressed: _busy || _sharing ? null : _load,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: Text(
+                      context.tr('Reload current evidence and answers'),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  key: const ValueKey('export-create'),
+                  onPressed: _busy || _sharing || !_current || _answers == null
+                      ? null
+                      : () => _prepare(),
+                  icon: const Icon(Icons.description_outlined),
+                  label: Text(createLabel),
+                ),
+                if (_error != null)
+                  TextButton(
+                    onPressed: _busy || _sharing || !_current
+                        ? null
+                        : () => _prepare(newAttempt: true),
+                    child: Text(
+                      context.tr('Start a newly reviewed draft attempt'),
+                    ),
+                  ),
+              ],
+              if (_artifact != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  context.tr(
+                    _artifact!.base.missingItems.length == 1
+                        ? '1 item still needed. Nothing has been submitted.'
+                        : '{count} items still needed. Nothing has been submitted.',
+                    {'count': _artifact!.base.missingItems.length},
+                  ),
+                ),
+                if (_artifact!.base.warnings.any(
+                  (w) => w != 'INCOMPLETE_DRAFT' && w != 'NOT_SUBMITTED',
+                ))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      context.tr(
+                        'Program availability or requirements still need confirmation.',
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  context.tr('Download expires {expiry}.', {
+                    'expiry': _expiryLabel(context),
+                  }),
+                ),
+                ExpansionTile(
+                  key: const ValueKey('draft-unresolved-items'),
+                  tilePadding: EdgeInsets.zero,
+                  title: Text(context.tr('Unresolved draft items')),
+                  subtitle: Text(
+                    context.tr(
+                      _artifact!.base.missingItems.length == 1
+                          ? '1 item to review'
+                          : '{count} items to review',
+                      {'count': _artifact!.base.missingItems.length},
+                    ),
+                  ),
+                  children: [
+                    for (final item in _artifact!.base.missingItems)
+                      Padding(
+                        key: ValueKey('draft-unresolved-${item.id}'),
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Text(item.description),
+                      ),
+                  ],
+                ),
+              ],
+              if (_pdf != null) ...photos,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

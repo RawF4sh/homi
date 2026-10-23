@@ -103,8 +103,8 @@ void main() {
         await revealProgramControl(tester, coverage);
         await tester.tap(coverage);
         await tester.pumpAndSettle();
-        await tester.tap(find.text(tr('No')).last);
-        await tester.pumpAndSettle();
+        expect(find.text(tr('Not sure')), findsNWidgets(2));
+        expect(find.text(tr('Unknown')), findsNothing);
         final cost = input('Official reported cost');
         await revealProgramControl(tester, cost);
         await tester.enterText(cost, '-1');
@@ -246,14 +246,20 @@ void main() {
         final field = input(tr('Given name'));
         await revealProgramControl(tester, field);
         await tester.enterText(field, _original);
-        final review = find.byKey(
-          const ValueKey('form-review-memberFirstName'),
-        );
-        await revealProgramControl(tester, review);
-        await tester.tap(review);
         await tester.pumpAndSettle();
-        expect(tester.widget<CheckboxListTile>(review).value, true);
+        final unconfirmed = find.byKey(
+          const ValueKey('form-unconfirmed-memberFirstName'),
+        );
+        expect(unconfirmed, findsOneWidget);
+        expect(find.text(tr('Not confirmed yet')), findsOneWidget);
         final save = find.byKey(const ValueKey('form-save'));
+        expect(
+          find.descendant(
+            of: save,
+            matching: find.text(tr('Confirm these answers')),
+          ),
+          findsOneWidget,
+        );
         await revealProgramControl(tester, save);
         await tester.tap(save);
         await tester.pumpAndSettle();
@@ -262,10 +268,11 @@ void main() {
         expect(answer['value'], _original);
         expect(answer['reviewState'], 'reviewed');
         expect(find.text(tr('Answers saved.')), findsOneWidget);
+        expect(unconfirmed, findsNothing);
         await revealProgramControl(tester, field);
         await tester.enterText(field, '$_original 2');
         await tester.pumpAndSettle();
-        expect(tester.widget<CheckboxListTile>(review).value, false);
+        expect(unconfirmed, findsOneWidget);
         expect(
           transport.requests.where(
             (r) => r.endpoint.path == '/v2/save-form-answers',
@@ -329,20 +336,38 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        final add = find.byKey(const ValueKey('history-add'));
+        await revealProgramControl(tester, add);
+        await tester.tap(add);
+        await tester.pumpAndSettle();
+        for (final (value, label) in [
+          ('preparing', 'Preparing'),
+          ('submitted', 'Submitted'),
+          ('received', 'Received'),
+          ('needs_information', 'Needs info'),
+          ('approved', 'Approved'),
+          ('denied', 'Denied'),
+          ('withdrawn', 'Withdrawn'),
+        ]) {
+          expect(
+            find.descendant(
+              of: find.byKey(ValueKey('history-status-$value')),
+              matching: find.text(tr(label)),
+            ),
+            findsOneWidget,
+          );
+        }
+        final needsInfo = find.byKey(
+          const ValueKey('history-status-needs_information'),
+        );
+        await revealProgramControl(tester, needsInfo);
+        await tester.tap(needsInfo);
+        await tester.pumpAndSettle();
+        final more = find.text(tr('Follow-up and source'));
+        await revealProgramControl(tester, more);
+        await tester.tap(more);
+        await tester.pumpAndSettle();
         for (final (key, selected, labels) in [
-          (
-            'status-false',
-            'Needs info',
-            [
-              'Preparing',
-              'Submitted',
-              'Received',
-              'Needs info',
-              'Approved',
-              'Denied',
-              'Withdrawn',
-            ],
-          ),
           (
             'source-false',
             'Program contact',

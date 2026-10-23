@@ -53,6 +53,7 @@ class ReferralProvider {
     this.parentNetworkId,
     this.organizationId,
     this.kind,
+    this.programId,
     List<ReferralRole>? roles,
   }) : _roles = roles;
   final String id, name, description, website, reviewedOn, reviewAfter;
@@ -67,6 +68,10 @@ class ReferralProvider {
   final List<ReferralServiceArea> serviceAreas;
   final String? parentNetworkId, organizationId;
   final ReferralProviderKind? kind;
+
+  /// Backend program ID this referral describes, when the app has a route for
+  /// it. Only links Help to a matched result; it never implies eligibility.
+  final String? programId;
   final List<ReferralRole>? _roles;
   List<ReferralRole> get roles =>
       _roles ??
@@ -267,7 +272,7 @@ const officialReferrals = [
   ),
 ];
 
-const localProviderCatalogVersion = 'us-pilot-2026-10-26-v1';
+const localProviderCatalogVersion = 'us-pilot-2026-10-26-v2';
 const localProviderCatalog = [
   ReferralProvider(
     stateCodes: ['CA'],
@@ -792,10 +797,11 @@ const federalProgramReferrals = [
   ReferralProvider(
     id: 'referral-usda-section-504',
     kind: ReferralProviderKind.programReferral,
+    programId: 'usda-section-504',
     name: 'USDA Section 504 Home Repair',
     stateCodes: usStateCodes,
     description:
-        'Official rural home-repair loan and grant route. USDA must confirm address, income, ownership, funding and loan/grant conditions.',
+        'Rural repair loans (1%, must be repaid) for owners who live in the home; grants only for owners 62+. USDA confirms address, income, ownership and funding.',
     website:
         'https://www.rd.usda.gov/programs-services/single-family-housing-programs/single-family-housing-repair-loans-grants',
     areaNote:
@@ -811,10 +817,11 @@ const federalProgramReferrals = [
   ReferralProvider(
     id: 'referral-va-hisa',
     kind: ReferralProviderKind.programReferral,
+    programId: 'va-hisa',
     name: 'VA Home Improvements and Structural Alterations (HISA)',
     stateCodes: usStateCodes,
     description:
-        'Official VA accessibility-adaptation route. VA and your clinician must confirm benefit eligibility, medical necessity, permitted work and remaining benefit.',
+        'Official VA home-change route. A VA physician must write or approve the prescription; VA confirms eligibility and remaining benefit.',
     website: 'https://prosthetics.va.gov/psas/hisa2.asp',
     areaNote:
         'Preparation only. Ask local VA Prosthetics about a prescription, itemized estimate, before-work photo, form and actual property permission. Official form page and PDF revision dates differ; no mapped form is generated. This is not approval or submission.',

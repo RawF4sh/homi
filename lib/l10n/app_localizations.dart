@@ -35,6 +35,12 @@ import 'catalogs/home_model_sync.dart';
 import 'catalogs/room_lifecycle.dart';
 import 'catalogs/programs.dart';
 import 'catalogs/redesign.dart';
+import 'catalogs/redesign_shell.dart';
+import 'catalogs/redesign_rooms.dart';
+import 'catalogs/redesign_help.dart';
+import 'catalogs/redesign_applications.dart';
+import 'catalogs/redesign_tasks.dart';
+import 'catalogs/redesign_account.dart';
 import 'catalogs/scan.dart';
 import 'catalogs/system.dart';
 
@@ -79,6 +85,12 @@ class AppLocalizations {
     systemTranslations,
     journeyTranslations,
     redesignTranslations,
+    redesignShellTranslations,
+    redesignRoomsTranslations,
+    redesignHelpTranslations,
+    redesignApplicationsTranslations,
+    redesignTasksTranslations,
+    redesignAccountTranslations,
     lifecycleTranslations,
     nativeScanTranslations,
     roomScanTranslations,

@@ -46,6 +46,8 @@ class ProfileTests(unittest.TestCase):
         self.assertTrue(self.profile['SAH_LOCAL_HELP_ENABLED'])
         self.assertFalse(self.profile['SAH_EMAIL_DELIVERY_ENABLED'])
         self.assertFalse(self.profile['SAH_PUBLIC_SIGNUP_ENABLED'])
+        # Labels stay off until the hosted backend accepts includeLabels.
+        self.assertFalse(self.profile['SAH_SHARING_LABELS_ENABLED'])
 
     def test_strict_capability_response_still_accepted(self):
         validate(self.profile, self.evidence)
@@ -73,6 +75,8 @@ class ProfileTests(unittest.TestCase):
     def test_sharing_and_signup_dependencies_preserved(self):
         for change in [
             {'SAH_PERMISSION_SHARING_ENABLED': False},
+            {'SAH_PERMISSION_SHARING_ENABLED': False, 'SAH_SIMPLE_INVITATIONS_ENABLED': False,
+             'SAH_SENSITIVE_SHARING_ENABLED': False, 'SAH_SHARING_LABELS_ENABLED': True},
             {'SAH_PUBLIC_SIGNUP_ENABLED': True},
         ]:
             profile = {**self.profile, **change}

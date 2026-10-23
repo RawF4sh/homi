@@ -5,7 +5,7 @@ import { planDraftPacket } from '../src/packets.ts';
 import { createScfhpEaaResearchProgram } from '../src/programs/scfhp-eaa.ts';
 import type { CaseSnapshot } from '../src/types.ts';
 
-const context = { evaluatedAt: '2026-10-17T19:00:00Z', evaluationDate: '2026-10-17' };
+const context = { evaluatedAt: '2026-10-26T19:00:00Z', evaluationDate: '2026-10-26' };
 function fictionalCase(): CaseSnapshot {
   return {
     schemaVersion: '1', caseId: 'fictional-scfhp-research', revision: 1,
@@ -26,7 +26,7 @@ test('official referral draft never declares policy verified, capacity open or f
   assert.equal(program.criteria.length, 10);
   assert.ok(program.criteria.every(criterion => criterion.rule.kind === 'manual_review' && criterion.rule.sourceIds.length > 0));
   assert.match(program.programName, /referral draft/);
-  assert.equal(program.ruleVersion, 'referral-draft-2026-10-17-v2');
+  assert.equal(program.ruleVersion, 'referral-draft-2026-10-26-v3');
   assert.ok(program.sources.every(source => source.effectiveFrom === null && source.effectiveUntil === null));
 });
 
@@ -99,6 +99,7 @@ test('published route evidence does not turn enrollment, cost history or propose
   assert.ok(program.requiredDocuments.some(document => document.includes('evaluation exception')));
   assert.match(program.intake!, /Informational only/);
   assert.match(program.intake!, /does not submit referrals or promise approval/);
+  assert.match(program.intake!, /only for SCFHP Medi-Cal or DualConnect members in Santa Clara County/);
 });
 
 test('research registry returns isolated records and its source links remain explicit', () => {

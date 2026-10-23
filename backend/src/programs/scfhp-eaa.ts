@@ -5,13 +5,13 @@ export const SCFHP_EAA_SOURCES: Source[] = [
     id: 'scfhp-members',
     url: 'https://www.scfhp.com/healthcare-plans/medi-cal/programs/community-supports/',
     title: 'SCFHP member Community Supports page — EAA and access sections',
-    reviewedOn: '2026-10-17', effectiveFrom: null, effectiveUntil: null,
+    reviewedOn: '2026-10-26', effectiveFrom: null, effectiveUntil: null,
   },
   {
     id: 'scfhp-providers',
     url: 'https://www.scfhp.com/for-providers/communitysupports-cs-healthhomes-hhp/',
     title: 'SCFHP provider Community Supports page — EAA and referral FAQs',
-    reviewedOn: '2026-10-17', effectiveFrom: null, effectiveUntil: null,
+    reviewedOn: '2026-10-26', effectiveFrom: null, effectiveUntil: null,
   },
   {
     id: 'scfhp-guide-2026',
@@ -65,9 +65,9 @@ export function createScfhpEaaResearchProgram(): ProgramDefinition {
   return {
     programId: 'scfhp-eaa',
     programName: 'SCFHP Environmental Accessibility Adaptations (referral draft)',
-    ruleVersion: 'referral-draft-2026-10-17-v2',
+    ruleVersion: 'referral-draft-2026-10-26-v3',
     isDemo: false, availability: 'unverified', rulesVerified: false,
-    reviewedOn: '2026-10-17', effectiveFrom: null, effectiveUntil: null, recheckAfter: null,
+    reviewedOn: '2026-10-26', effectiveFrom: null, effectiveUntil: null, recheckAfter: null,
     sources: structuredClone(SCFHP_EAA_SOURCES),
     criteria: [
       review('enrollment', 'Plan product, active enrollment and service area',
@@ -109,6 +109,6 @@ export function createScfhpEaaResearchProgram(): ProgramDefinition {
       'Owner permission and property acknowledgements for applicable installed work; obtain actual documents rather than inferring them from reported permission.',
       'Actual member/representative consent and the referring person’s reviewed attestation and signature; the app does not supply these.',
     ],
-    intake: 'Informational only: SCFHP publishes its Provider Portal and fax 1-408-874-1985 for referrals. Members can ask Medi-Cal Customer Service at 1-800-260-2055 or DualConnect at 1-877-723-4795. Confirm current instructions and applicable documents with the plan; this app does not submit referrals or promise approval.',
+    intake: 'Informational only: this route is only for SCFHP Medi-Cal or DualConnect members in Santa Clara County. SCFHP publishes its Provider Portal and fax 1-408-874-1985 for referrals and says it reviews referrals within five business days. Members can ask Medi-Cal Customer Service at 1-800-260-2055 or DualConnect at 1-877-723-4795. Confirm current instructions and applicable documents with the plan; this app does not submit referrals or promise approval.',
   };
 }

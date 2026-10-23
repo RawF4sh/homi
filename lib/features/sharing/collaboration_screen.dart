@@ -113,6 +113,20 @@ class _CollaborationState extends _OnlineState<CollaborationScreen> {
     _pendingRoute = null;
   }
 
+  /// Names come only from the owner-typed membership labels; IDs never show.
+  String _person(BuildContext context, String id) {
+    if (id == (widget.ownerView ? _grant.grantorId : _grant.recipientId)) {
+      return context.tr('You');
+    }
+    if (id == _grant.recipientId) {
+      return _grant.recipientLabel ?? context.tr('The person you shared with');
+    }
+    if (id == _grant.grantorId) {
+      return _grant.ownerLabel ?? context.tr('The plan owner');
+    }
+    return context.tr('Someone else');
+  }
+
   Map<String, Object?> _writeBinding() => {
     'membershipId': _grant.id,
     'expectedPermissionRevision': work!.permissionRevision,
@@ -285,7 +299,6 @@ class _CollaborationState extends _OnlineState<CollaborationScreen> {
                           title: Text(
                             context.tr('Assign to this signed-in helper'),
                           ),
-                          subtitle: SelectableText(_grant.recipientId),
                           onChanged: busy
                               ? null
                               : (v) => change(() {
@@ -332,7 +345,12 @@ class _CollaborationState extends _OnlineState<CollaborationScreen> {
                   for (final task in value.tasks.where(
                     (t) => selected.contains(t.id),
                   ))
-                    SharedTaskDetails(task: task),
+                    SharedTaskDetails(
+                      task: task,
+                      assignee: task.assigneeUserId == null
+                          ? null
+                          : _person(context, task.assigneeUserId!),
+                    ),
                   FilledButton(
                     onPressed: busy ? null : _configure,
                     child: Text(context.tr('Save task access')),
@@ -340,7 +358,12 @@ class _CollaborationState extends _OnlineState<CollaborationScreen> {
                 ],
               ] else ...[
                 for (final task in value.tasks) ...[
-                  SharedTaskDetails(task: task),
+                  SharedTaskDetails(
+                    task: task,
+                    assignee: task.assigneeUserId == null
+                        ? null
+                        : _person(context, task.assigneeUserId!),
+                  ),
                   if (helper &&
                       value.scope.allowTaskProgress &&
                       task.assigneeUserId == services.store.accountId &&
@@ -448,22 +471,26 @@ class _CollaborationState extends _OnlineState<CollaborationScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(proposal.programId),
+                        Text(
+                          _programNames(context, services, _grant.caseId, [
+                            proposal.programId,
+                          ])[proposal.programId]!,
+                        ),
                         Text(context.tr(proposal.update.status)),
                         Text(context.tr(proposal.state)),
                         Text(
-                          context.tr('Proposed by {id} on {date}', {
-                            'id': proposal.proposedBy,
-                            'date': proposal.proposedAt,
+                          context.tr('Proposed by {name} on {date}', {
+                            'name': _person(context, proposal.proposedBy),
+                            'date': _day(context, proposal.proposedAt),
                           }),
                         ),
                         if (proposal.update.note != null)
                           Text(proposal.update.note!),
                         if (proposal.reviewedBy != null)
                           Text(
-                            context.tr('Reviewed by {id} on {date}', {
-                              'id': proposal.reviewedBy,
-                              'date': proposal.reviewedAt,
+                            context.tr('Reviewed by {name} on {date}', {
+                              'name': _person(context, proposal.reviewedBy!),
+                              'date': _day(context, proposal.reviewedAt!),
                             }),
                           ),
                         if (value.canManage && proposal.state == 'pending')
@@ -504,8 +531,11 @@ class _CollaborationState extends _OnlineState<CollaborationScreen> {
 }
 
 class SharedTaskDetails extends StatelessWidget {
-  const SharedTaskDetails({super.key, required this.task});
+  const SharedTaskDetails({super.key, required this.task, this.assignee});
   final SharedTask task;
+
+  /// Display name for [SharedTask.assigneeUserId]; never the raw ID.
+  final String? assignee;
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -516,14 +546,15 @@ class SharedTaskDetails extends StatelessWidget {
           Text(task.title, style: Theme.of(context).textTheme.titleMedium),
           Text(context.tr(task.state)),
           Text(context.tr(task.kind)),
-          if (task.programId != null) Text(task.programId!),
-          if (task.findingId != null) Text(task.findingId!),
+          if (task.programId != null)
+            Text(context.tr('Linked to a tracked program')),
+          if (task.findingId != null) Text(context.tr('Linked to a concern')),
           if (task.responsiblePerson != null) Text(task.responsiblePerson!),
           if (task.dueOn != null) Text(task.dueOn!),
           if (task.assigneeUserId != null)
             Text(
-              context.tr('Signed-in assignee: {id}', {
-                'id': task.assigneeUserId,
+              context.tr('Assigned to {name}', {
+                'name': assignee ?? context.tr('Someone else'),
               }),
             ),
           if (task.needsReview)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../app/live_app.dart';
 import '../../l10n/app_localizations.dart';
 import '../services/feature_capabilities.dart';
+import 'sah_components.dart';
 
 class FeatureAvailabilitySection extends StatefulWidget {
   const FeatureAvailabilitySection({super.key, required this.services});
@@ -70,9 +71,10 @@ class _FeatureAvailabilitySectionState
       ('Detailed sharing', 'sensitiveSharing', config.sensitiveSharingEnabled),
       ('Invitations', 'simpleInvitations', config.simpleInvitationsEnabled),
     ];
-    return ExpansionTile(
-      title: Text(context.tr('Feature availability')),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        SahSectionHeading(title: context.tr('Feature availability')),
         for (final (label, feature, enabled) in rows)
           ListTile(
             title: Text(context.tr(label)),
@@ -98,7 +100,7 @@ class _FeatureAvailabilitySectionState
         if (_loading) const LinearProgressIndicator(),
         TextButton(
           onPressed: _loading ? null : _check,
-          child: Text(context.tr('Check backend availability')),
+          child: Text(context.tr('Check service availability')),
         ),
       ],
     );

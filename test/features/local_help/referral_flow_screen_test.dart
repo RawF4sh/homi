@@ -48,17 +48,18 @@ void main() {
       await tap(tester, firstProviderAction('Add follow-up'));
       expect(find.byType(ProgramProgressScreen), findsOneWidget);
       expect(h.server.tasks, isEmpty);
-      await tap(tester, find.text('Add next step'));
-      expect(find.byType(TaskEditorScreen), findsOneWidget);
+      await reveal(tester, find.byKey(const ValueKey('task-quick-add')));
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Next step'),
+        find.byKey(const ValueKey('task-quick-add')),
         'Fictional call for repair referrals',
       );
-      await tap(tester, find.text('Save task'));
+      await tap(tester, find.byKey(const ValueKey('task-quick-add-button')));
       expect(h.server.tasks.length, 1);
       final task = h.server.tasks.values.single;
       expect((task['referral'] as Map)['providerId'], 'referral-211-national');
       expect(task['programId'], isNull);
+      expect(task['kind'], 'follow_up');
+      expect(task['title'], 'Fictional call for repair referrals');
       await tester.pageBack();
       await tester.pumpAndSettle();
       await tap(tester, firstProviderAction('Add follow-up'));
@@ -99,24 +100,27 @@ void main() {
       await tap(tester, find.text('Open My next steps'));
       await reveal(tester, find.text(original.title));
       expect(find.text(original.title), findsOneWidget);
-      await reveal(tester, find.text('Device reminder'));
-      await tester.tap(find.text('Device reminder'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Reminder date (YYYY-MM-DD)'),
-        '2030-01-02',
-      );
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Reminder time (HH:MM)'),
-        '09:00',
-      );
+      await tap(tester, find.text(original.title));
+      expect(find.byType(TaskEditorScreen), findsOneWidget);
+      await reveal(tester, find.text('Original local follow-up'));
+      await tap(tester, find.text('Device reminder'));
+      await tap(tester, find.byKey(const ValueKey('reminder-date')));
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
       h.device.permission = false;
       await tester.tap(find.text('Enable reminder'));
       await tester.pumpAndSettle();
       expect(h.device.requests, 1);
       expect(h.server.tasks.length, 1);
       expect(h.device.scheduled, isEmpty);
+      final reminder = h.app.progress!.reminders.forTask(
+        h.app.coordinator.currentCase().caseId,
+        h.server.tasks.keys.single,
+      )!;
+      expect(reminder.enabled, isTrue);
+      expect(reminder.data['date'], matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')));
+      expect(reminder.data['time'], matches(RegExp(r'^\d{2}:\d{2}$')));
+      expect(h.server.tasks.values.single['dueOn'], isNull);
     },
   );
 
@@ -149,7 +153,10 @@ void main() {
       await reveal(tester, find.text('Find my local 211'));
       await reveal(
         tester,
-        find.widgetWithText(TextButton, 'Find a Rebuilding Together affiliate'),
+        find.ancestor(
+          of: find.text('Find a Rebuilding Together affiliate'),
+          matching: find.bySubtype<ButtonStyleButton>(),
+        ),
       );
       expect(tester.takeException(), isNull);
     },

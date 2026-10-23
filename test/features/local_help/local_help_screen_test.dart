@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/live_app.dart';
+import 'package:safe_at_home/features/cases/profile_response_state.dart';
 import 'package:safe_at_home/features/cases/case_workspace_screen.dart';
 import 'package:safe_at_home/features/local_help/local_help_record.dart';
 import 'package:safe_at_home/features/local_help/local_help_repository.dart';
 import 'package:safe_at_home/features/local_help/local_help_screen.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:safe_at_home/l10n/catalogs/local_help.dart';
+import 'package:safe_at_home/shared/models/case_draft.dart';
 
 import '../../app/app_design_test.dart' show narrowLargeText;
 import '../../app/case_coordinator_test.dart' show FakeSession, FakeTransport;
@@ -89,7 +91,9 @@ void main() {
       await tester.pumpAndSettle();
       await tap(tester, find.byKey(const ValueKey('case-local-help')));
       expect(find.byType(LocalHelpScreen), findsOneWidget);
-      expect(find.text('Local providers'), findsOneWidget);
+      expect(find.text('Find help'), findsOneWidget);
+      expect(find.text('Organizations and referrals'), findsOneWidget);
+      expect(find.text('Programs for this plan'), findsOneWidget);
       expect(find.byType(NavigationBar), findsOneWidget);
     },
   );
@@ -152,7 +156,7 @@ void main() {
       localized(const Locale('en'), LocalHelpScreen(services: app)),
     );
     await tester.pumpAndSettle();
-    await tap(tester, firstProviderAction('Save contact'));
+    await tap(tester, firstProviderAction('Save · on this phone'));
     final field = find.widgetWithText(TextFormField, 'Contact note (optional)');
     await tester.enterText(field, 'Fictional note {count}');
     store.fail = true;
@@ -167,6 +171,11 @@ void main() {
     expect(
       (await LocalHelpRepository(app.coordinator).load()).contacts.single.note,
       'Fictional note {count}',
+    );
+    await reveal(tester, firstProviderAction('Saved · on this phone'));
+    await reveal(
+      tester,
+      find.textContaining('Saved on this phone only for this plan.'),
     );
   });
 
@@ -212,6 +221,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tap(tester, find.text('Add county (optional)'));
       await tester.enterText(
         find.widgetWithText(TextFormField, 'County (optional)'),
         'Fictional county',
@@ -221,6 +231,11 @@ void main() {
       tester.widget<DropdownButtonFormField<String>>(state).onChanged!('NY');
       await tester.pumpAndSettle();
       await tap(tester, find.text('Confirm location'));
+      await reveal(
+        tester,
+        find.text('Searching near · Fictional county, New York'),
+      );
+      expect(find.text('Confirm location'), findsNothing);
       await tap(tester, find.text('Find my local 211'));
       expect(
         opened.single.toString(),
@@ -229,6 +244,7 @@ void main() {
       expect(find.byKey(const ValueKey('referral-211-bay-area')), findsNothing);
       await reveal(tester, find.text('8002736222'));
       expect(find.text('8002736222'), findsOneWidget);
+      expect(find.text('https://211bayarea.org/contact/'), findsNothing);
       expect(
         (await LocalHelpRepository(app.coordinator).load()).location!.zip,
         isNull,
@@ -291,6 +307,66 @@ void main() {
           );
         }
       }
+    },
+  );
+
+  testWidgets(
+    'Help starts near the resident and can return after searching elsewhere',
+    (tester) async {
+      final app = await make();
+      final c = app.coordinator;
+      final value = c.currentDraft().toJson();
+      value['profile'] = {
+        ...(value['profile'] as Map<String, Object?>),
+        'city': 'Fictional city',
+        'county': 'Santa Clara',
+      };
+      await c.updateDraft(CaseDraft.fromJson(value));
+      final draft = c.currentDraft();
+      await app.profileResponses.write(
+        draft.caseId,
+        draft.profile,
+        const ProfileResponseState(stateCode: 'CA', zip: '95112'),
+      );
+      await tester.pumpWidget(
+        localized(const Locale('en'), LocalHelpScreen(services: app)),
+      );
+      await tester.pumpAndSettle();
+      const resident =
+          'Near the resident · Fictional city, Santa Clara, California, 95112';
+      await reveal(tester, find.text(resident));
+      expect(find.text('Confirm location'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('help-use-resident-area')),
+        findsNothing,
+      );
+      // Showing the resident's area saves nothing until the user changes it.
+      expect((await LocalHelpRepository(c).load()).location, isNull);
+
+      await tap(tester, find.byKey(const ValueKey('help-location-change')));
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'ZIP code or city (optional)'),
+        '10001',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'County (optional)'),
+        '',
+      );
+      await tap(tester, find.text('Confirm location'));
+      await reveal(tester, find.text('Searching near · New York, 10001'));
+
+      await tap(tester, find.byKey(const ValueKey('help-use-resident-area')));
+      await reveal(tester, find.text(resident));
+      final saved = (await LocalHelpRepository(c).load()).location!;
+      expect(
+        (saved.stateCode, saved.zip, saved.city),
+        ('CA', '95112', 'Fictional city'),
+      );
+      expect(
+        find.byKey(const ValueKey('help-use-resident-area')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
     },
   );
 }

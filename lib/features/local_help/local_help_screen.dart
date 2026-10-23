@@ -1,4 +1,6 @@
 import '../../shared/presentation/sah_floating_nav.dart';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -10,8 +12,7 @@ import '../../shared/presentation/sah_components.dart';
 import 'local_help_record.dart';
 import 'local_help_repository.dart';
 import 'referral_directory.dart';
-import 'referral_coverage_summary.dart';
-import 'provider_search_section.dart';
+import 'help_finder.dart';
 import 'nationwide_help_browser.dart';
 
 class LocalHelpButton extends StatelessWidget {
@@ -53,9 +54,14 @@ class LocalHelpScreen extends StatefulWidget {
     this.now,
     this.embedded = false,
     this.header,
+    this.checklist,
   });
   final AppServices services;
   final String? findingId;
+
+  /// Opens the app's checklist for a linked program when it is in this
+  /// plan's results; null otherwise.
+  final VoidCallback? Function(String programId)? checklist;
 
   final Future<bool> Function(Uri)? openExternal;
   final ReferralDirectory directory;
@@ -86,6 +92,7 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
         directory: widget.directory,
       );
       widget.services.coordinator.addListener(_changed);
+      widget.services.profileResponses.addListener(_changed);
       _load();
     }
   }
@@ -97,11 +104,54 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
   @override
   void dispose() {
     widget.services.coordinator.removeListener(_changed);
+    widget.services.profileResponses.removeListener(_changed);
     super.dispose();
+  }
+
+  HelpLocation? _resident;
+  String? _residentKey;
+
+  /// The resident's entered city, county, state and ZIP. State and ZIP are
+  /// device-only profile answers; nothing is inferred from GPS.
+  HelpLocation? _residentLocation() {
+    final draft = widget.services.coordinator.draft;
+    if (draft == null) return null;
+    final saved = widget.services.profileResponses.currentFor(
+      draft.caseId,
+      draft.profile,
+    );
+    final key = jsonEncode([
+      draft.profile.city,
+      draft.profile.county,
+      saved.stateCode,
+      saved.zip,
+    ]);
+    if (key == _residentKey) return _resident;
+    _residentKey = key;
+    try {
+      _resident = HelpLocation(
+        city: draft.profile.city ?? '',
+        county: draft.profile.county ?? '',
+        zip: saved.zip,
+        stateCode: saved.stateCode,
+      );
+    } on FormatException {
+      _resident = null;
+    }
+    return _resident;
   }
 
   Future<void> _load() async {
     await _run(() async {
+      final draft = widget.services.coordinator.currentDraft();
+      try {
+        await widget.services.profileResponses.read(
+          draft.caseId,
+          draft.profile,
+        );
+      } catch (_) {
+        // Unreadable private answers leave the resident's state unknown.
+      }
       final r = await _repository!.load();
       final receipts = await ReferralTaskImport(
         widget.services,
@@ -141,25 +191,29 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
     setState(() => _record = next);
   }
 
-  Future<void> _open(
-    ReferralProvider provider, {
-    bool phone = false,
-  }) => _run(() async {
-    final uri = referralDestination(provider, phone: phone);
-    try {
-      final opened =
-          await (widget.openExternal?.call(uri) ??
-              launchUrl(uri, mode: LaunchMode.externalApplication));
-      if (!opened) throw StateError('Unavailable external application.');
-    } catch (_) {
-      if (mounted && _current) {
-        setState(
-          () => _error =
-              'Could not open this link or dialer. Check your connection, try the official locator, or use the phone number or website shown below.',
-        );
+  Future<bool> _openUri(Uri uri) async {
+    var opened = false;
+    await _run(() async {
+      try {
+        opened =
+            await (widget.openExternal?.call(uri) ??
+                launchUrl(uri, mode: LaunchMode.externalApplication));
+        if (!opened) throw StateError('Unavailable external application.');
+      } catch (_) {
+        opened = false;
+        if (mounted && _current) {
+          setState(
+            () => _error =
+                'Could not open this link or dialer. Check your connection, try the official locator, or use the phone number or website shown below.',
+          );
+        }
       }
-    }
-  });
+    });
+    return opened;
+  }
+
+  Future<void> _open(ReferralProvider provider, {bool phone = false}) =>
+      _openUri(referralDestination(provider, phone: phone));
   Future<void> _contact(ReferralProvider p, SavedHelpContact? saved) async {
     await showDialog<void>(
       context: context,
@@ -291,22 +345,12 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
 
   String _date(String date) =>
       MaterialLocalizations.of(context).formatMediumDate(DateTime.parse(date));
-  Widget _heading(String text) => Padding(
-    padding: const EdgeInsets.only(top: 20, bottom: 8),
-    child: Semantics(
-      header: true,
-      child: Text(
-        context.tr(text),
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-    ),
-  );
-
   @override
   Widget build(BuildContext context) {
     final r = _record;
     final repository = _repository;
     final available = widget.services.config.localHelpEnabled && _current;
+    final resident = _residentLocation();
     final body = SahContent(
       child: !available
           ? Center(
@@ -318,17 +362,6 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
               padding: sahFloatingContentPadding(context),
               children: [
                 if (widget.header != null) widget.header!,
-                Text(
-                  context.tr(
-                    'Organizations may arrange repair or volunteer help. Confirm your address, costs and intake directly. No worker booking or funding is guaranteed.',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  context.tr(
-                    'Contacts stay on this device for this plan. Signing out removes them. Follow-ups use My next steps and its separate reminder controls.',
-                  ),
-                ),
                 if (_error != null) ...[
                   SahNotice(
                     message: context.tr(_error!),
@@ -342,88 +375,41 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
                 ],
                 if (_working) const LinearProgressIndicator(),
                 if (r != null) ...[
-                  ReferralLocationEditor(
-                    initialLocation:
-                        r.location ??
-                        HelpLocation(
-                          city:
-                              widget.services.coordinator.draft!.profile.city ??
-                              '',
-                          county:
-                              widget
-                                  .services
-                                  .coordinator
-                                  .draft!
-                                  .profile
-                                  .county ??
-                              '',
-                          zip: null,
-                        ),
-                    busy: _working,
-                    onConfirm: (location) => _run(
-                      () => _save(() => repository!.confirmLocation(location)),
-                    ),
-                  ),
-                  if (r.location != null)
-                    Text(
-                      context.tr('Confirmed location: {location}', {
-                        'location': referralLocationLabel(r.location!),
-                      }),
-                    ),
-                  const NationwideHelpNotice(),
-                  ReferralCoverageSummary(
+                  HelpFinder(
                     directory: repository!.directory,
-                    stateCode: r.location?.stateCode,
                     now: widget.now?.call() ?? DateTime.now(),
-                  ),
-                  ExpansionTile(
-                    key: const ValueKey('local-provider-search'),
-                    leading: const Icon(Icons.search),
-                    title: Text(context.tr('Search local providers')),
-                    maintainState: true,
-                    children: [
-                      ProviderSearchSection(
-                        showHeading: false,
-                        directory: repository.directory,
-                        confirmedCounty: r.location?.county,
-                        confirmedStateCode: r.location?.stateCode,
-                        confirmedCountyFips: r.location?.countyFips,
-                        providerCard: (p) => _providerCard(p, r),
-                      ),
-                    ],
-                  ),
-                  _heading('Official referrals'),
-                  if (r.location?.stateCode == null ||
-                      !repository.directory.providers.any(
-                        (p) =>
-                            p.isLocalProvider &&
-                            p.listsCounty(
-                              r.location?.county,
-                              stateCode: r.location?.stateCode,
-                              countyFips: r.location?.countyFips,
-                            ),
-                      ))
-                    Text(
-                      context.tr(
-                        'No reviewed local listing for this location. Use the national locators to ask who serves your address.',
-                      ),
+                    location:
+                        r.location ??
+                        (referralState(resident?.stateCode)?.routingSupported ==
+                                true
+                            ? resident
+                            : null),
+                    residentLocation: resident,
+                    onLocation: (location) => _run(
+                      () => _save(() => repository.confirmLocation(location)),
                     ),
-                  for (final kind in [
-                    ReferralProviderKind.nationalLocator,
-                    ReferralProviderKind.referralContact,
-                    ReferralProviderKind.programReferral,
-                  ]) ...[
-                    ReferralSectionHeading(label: referralKindHeading(kind)),
-                    for (final p in repository.directory.providers.where(
-                      (p) =>
-                          p.providerKind == kind &&
-                          (p.isLocator ||
-                              r.location?.stateCode != null &&
-                                  p.stateCodes.contains(r.location!.stateCode)),
-                    ))
-                      _providerCard(p, r),
-                  ],
-                  _heading('Saved contacts'),
+                    actions: HelpActions(
+                      open: _openUri,
+                      save: (p) => _contact(
+                        p,
+                        _record?.contacts
+                            .where((c) => c.providerId == p.id)
+                            .firstOrNull,
+                      ),
+                      followUp: (p) => _task(p.id),
+                      isSaved: (p) =>
+                          _record?.contacts.any((c) => c.providerId == p.id) ??
+                          false,
+                      busy: _working,
+                      checklist: widget.checklist,
+                    ),
+                  ),
+                  SahSectionHeading(
+                    title: context.tr('Saved contacts'),
+                    description: context.tr(
+                      'Saved on this phone only for this plan. Signing out removes them. Follow-ups use My next steps and its separate reminder controls.',
+                    ),
+                  ),
                   if (r.contacts.isEmpty)
                     Text(context.tr('No contacts saved yet.')),
                   for (final c in r.contacts)
@@ -438,13 +424,12 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
                                       .provider(c.providerId)
                                       ?.name ??
                                   context.tr('Organization no longer listed'),
+                              style: Theme.of(context).textTheme.titleMedium,
                             ),
                             if (c.note.isNotEmpty) Text(c.note),
                             if (repository.directory.provider(c.providerId)
-                                case final p?) ...[
-                              if (p.phone != null) SelectableText(p.phone!),
-                              SelectableText(p.website),
-                            ],
+                                case ReferralProvider(:final phone?))
+                              SelectableText(phone),
                             Wrap(
                               spacing: 8,
                               children: [
@@ -462,7 +447,7 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
                                   TextButton(
                                     onPressed: _working ? null : () => _open(p),
                                     child: Text(
-                                      context.tr('Open official website'),
+                                      context.tr(referralWebsiteLabel(p)),
                                     ),
                                   ),
                                   TextButton(
@@ -500,7 +485,9 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
                         ),
                       ),
                     ),
-                  _heading('Original local follow-ups'),
+                  SahSectionHeading(
+                    title: context.tr('Original local follow-ups'),
+                  ),
                   if (r.tasks.isEmpty) Text(context.tr('No follow-ups yet.')),
                   for (final t in r.tasks) _taskCard(t, repository),
                 ],
@@ -513,42 +500,6 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
       child: Scaffold(
         appBar: AppBar(title: Text(context.tr('Find local help'))),
         body: SafeArea(child: body),
-      ),
-    );
-  }
-
-  Widget _providerCard(ReferralProvider p, LocalHelpRecord r) {
-    final now = widget.now?.call() ?? DateTime.now();
-    final saved = r.contacts.where((c) => c.providerId == p.id).firstOrNull;
-    return NationwideReferralCard(
-      provider: p,
-      location: r.location,
-      now: now,
-      actions: Wrap(
-        spacing: 8,
-        children: [
-          if (p.phone != null)
-            TextButton(
-              onPressed: _working ? null : () => _open(p, phone: true),
-              child: Text(
-                context.tr(p.phone == '211' ? 'Call 211' : 'Call organization'),
-              ),
-            ),
-          TextButton(
-            onPressed: _working ? null : () => _open(p),
-            child: Text(context.tr(referralWebsiteLabel(p))),
-          ),
-          TextButton(
-            onPressed: _working ? null : () => _contact(p, saved),
-            child: Text(
-              context.tr(saved == null ? 'Save contact' : 'Edit contact note'),
-            ),
-          ),
-          TextButton(
-            onPressed: _working ? null : () => _task(p.id),
-            child: Text(context.tr('Add follow-up')),
-          ),
-        ],
       ),
     );
   }

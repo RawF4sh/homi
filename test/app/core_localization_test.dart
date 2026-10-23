@@ -172,11 +172,28 @@ void main() {
         expect(find.text(name), findsWidgets);
         expect(app.coordinator.draft!.caseId, id);
         expect(tester.takeException(), isNull);
-        await tester.tap(find.byKey(const ValueKey('plan-tab-settings')));
+        expect(find.byType(NavigationDestination), findsNWidgets(5));
+        await tester.tap(find.byKey(const ValueKey('open-account')));
         await tester.pumpAndSettle();
-        await reveal(
-          tester,
+        // At 3.2x the row is taller than the screen; tap its visible title.
+        final privacy = find
+            .descendant(
+              of: find.byKey(const ValueKey('account-privacy')),
+              matching: find.byType(Text),
+            )
+            .first;
+        await tester.ensureVisible(privacy);
+        await tester.pumpAndSettle();
+        expect(privacy.hitTestable(), findsOneWidget);
+        await tester.tap(privacy);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
           find.byKey(const ValueKey('settings-delete-account')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('settings-delete-account')).hitTestable(),
+          findsOneWidget,
         );
         expect(app.coordinator.draft!.caseId, id);
         expect(tester.takeException(), isNull);

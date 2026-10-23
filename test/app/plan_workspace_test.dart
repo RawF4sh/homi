@@ -24,7 +24,7 @@ import 'app_design_test.dart' show narrowLargeText;
 
 Future<void> tapKey(WidgetTester tester, String key) async {
   final target = find.byKey(ValueKey(key));
-  if (key.startsWith('plan-tab-') || key == 'ask-homi') {
+  if (key.startsWith('plan-tab-')) {
     await tester.tap(target);
   } else {
     final scroll = find.byType(Scrollable).first;
@@ -142,13 +142,13 @@ void main() {
           'rooms',
           'help',
           'tasks',
-          'settings',
+          'assistant',
         ]) {
           expect(find.byKey(ValueKey('plan-tab-$destination')), findsOneWidget);
         }
         expect(find.byKey(const ValueKey('case-assessment')), findsNothing);
         expect(find.byKey(const ValueKey('case-room-scans')), findsNothing);
-        await tapKey(tester, 'ask-homi');
+        await tapKey(tester, 'plan-tab-assistant');
         expect(find.byType(PlanAssistantScreen), findsOneWidget);
         // At 3.2x, the context and App guidance occupy multiple viewports.
         // Exercise the lazy list as a reader does instead of requiring every
@@ -284,7 +284,7 @@ void main() {
       expect(find.text('View room model'), findsNothing);
       expect(h.store.bytes[modelKey], originalModel);
       await tapKey(tester, 'plan-tab-plan');
-      await tapKey(tester, 'ask-homi');
+      await tapKey(tester, 'plan-tab-assistant');
       expect(find.byType(TextField), findsNothing);
       expect(tester.takeException(), isNull);
     },
@@ -319,9 +319,7 @@ void main() {
         await tapKey(tester, 'plan-tab-rooms');
         await tapKey(tester, 'room-bedroom');
         await tapKey(tester, 'room-continue-questions');
-        await tapKey(tester, 'answer-bedroom.path');
-        await tester.tap(find.text('Not sure').last);
-        await tester.pumpAndSettle();
+        await tapKey(tester, 'answer-bedroom.path-not_sure');
         if (!offline) {
           expect(
             h.server.document.answer('bedroom', 'bedroom.path')?.value,
@@ -335,10 +333,10 @@ void main() {
           150,
           scrollable: find.byType(Scrollable).first,
         );
-        final answer = tester.widget<DropdownButton<String>>(
+        final answer = tester.widget<RadioGroup<String>>(
           find.byKey(const ValueKey('answer-bedroom.path')),
         );
-        expect(answer.value, 'not_sure');
+        expect(answer.groupValue, 'not_sure');
         expect(h.services.coordinator.currentCase().findings, isEmpty);
         if (outcome == 'lost response') expect(h.server.saves, 2);
         expect(tester.takeException(), isNull);
@@ -395,6 +393,8 @@ void main() {
     h.server.beforeRead = () => release.future;
     final refresh = find.widgetWithText(TextButton, 'Check saved state');
     await tester.ensureVisible(refresh);
+    // The tab bar sits below the list; lay out the scroll before tapping.
+    await tester.pumpAndSettle();
     await tester.tap(refresh);
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('plan-tab-plan')));

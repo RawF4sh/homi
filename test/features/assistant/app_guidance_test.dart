@@ -115,11 +115,23 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        if (availability == AssistantAvailability.ready) {
+          // Messages first: the guide is one tap away, not above the chat.
+          expect(guidance(), findsNothing);
+          expect(find.byKey(const ValueKey('assistant-context')), findsOne);
+          await tap(tester, find.byKey(const ValueKey('assistant-options')));
+          await tap(
+            tester,
+            find.byKey(const ValueKey('assistant-options-guide')),
+          );
+        } else {
+          expect(find.byKey(const ValueKey('assistant-status')), findsOne);
+        }
         await tap(
           tester,
           find.byKey(const ValueKey('assistant-app-help-prepareDraft')),
         );
-        expect(find.text('App guidance'), findsOneWidget);
+        expect(find.text('App guide — not AI'), findsOneWidget);
         expect(
           find.text('These app steps do not use a language model.'),
           findsOneWidget,
@@ -241,6 +253,7 @@ void main() {
         find.textContaining('Apple’s on-device model is not ready'),
         findsOneWidget,
       );
+      expect(find.byKey(const ValueKey('assistant-status')), findsOne);
       await tap(
         tester,
         find.byKey(const ValueKey('assistant-app-help-prepareDraft')),

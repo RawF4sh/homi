@@ -56,14 +56,18 @@ class ProfileResponseStore extends ChangeNotifier {
       _requireCurrent(caseId, scope);
       var state = const ProfileResponseState();
       if (saved != null) {
-        if (saved['version'] != 1 ||
+        // Version 2 adds the place binding for the resident state and ZIP.
+        final version = saved['version'];
+        if (!{1, 2}.contains(version) ||
             saved['caseId'] != caseId ||
             saved['profileFingerprint'] is! String ||
+            (version == 2) != (saved['placeFingerprint'] is String) ||
             saved.keys.any(
               (key) => !{
                 'version',
                 'caseId',
                 'profileFingerprint',
+                if (version == 2) 'placeFingerprint',
                 'responses',
               }.contains(key),
             )) {
@@ -72,6 +76,10 @@ class ProfileResponseStore extends ChangeNotifier {
         final parsed = ProfileResponseState.fromJson(saved['responses']);
         if (saved['profileFingerprint'] == fingerprint) {
           state = parsed.forProfile(profile);
+        } else if (saved['placeFingerprint'] ==
+            ProfileResponseState.placeFingerprint(profile)) {
+          // Other answers changed elsewhere; the location still matches.
+          state = parsed.locationOnly;
         }
       }
       // An earlier disk read must not replace a newer read or successful save.
@@ -101,9 +109,10 @@ class ProfileResponseStore extends ChangeNotifier {
     final fingerprint = ProfileResponseState.fingerprint(profile);
     final state = responses.forProfile(profile);
     await store.writeJson('profile-response.$caseId', {
-      'version': 1,
+      'version': 2,
       'caseId': caseId,
       'profileFingerprint': fingerprint,
+      'placeFingerprint': ProfileResponseState.placeFingerprint(profile),
       'responses': state.toJson(),
     });
     _requireCurrent(caseId, scope);

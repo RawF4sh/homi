@@ -27,13 +27,12 @@ Future<void> _openHelp(WidgetTester tester) async {
 }
 
 Future<void> _findProvider(WidgetTester tester) async {
-  await tap(tester, find.byKey(const ValueKey('local-provider-search')));
   final query = find.byKey(const ValueKey('provider-search-query'));
   await reveal(tester, query);
   await tester.enterText(query, 'East Bay');
   await tester.testTextInput.receiveAction(TextInputAction.search);
   await tester.pumpAndSettle();
-  await tap(tester, find.byKey(const ValueKey('provider-result-$_provider')));
+  await reveal(tester, find.byKey(const ValueKey(_provider)));
 }
 
 Finder _providerAction(String label) => find.descendant(
@@ -62,7 +61,7 @@ void main() {
       await tester.pumpAndSettle();
       await _openHelp(tester);
       await _findProvider(tester);
-      await tap(tester, _providerAction('Save contact'));
+      await tap(tester, _providerAction('Save · on this phone'));
       const privateNote = 'Fictional private contact note';
       await _saveNote(tester, privateNote);
       expect(
@@ -75,14 +74,14 @@ void main() {
       await tap(tester, _providerAction('Add follow-up'));
       expect(find.byType(ProgramProgressScreen), findsOneWidget);
       expect(h.server.tasks, isEmpty);
-      await tap(tester, find.text('Add next step'));
-      expect(find.byType(TaskEditorScreen), findsOneWidget);
+      await reveal(tester, find.byKey(const ValueKey('task-quick-add')));
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Next step'),
+        find.byKey(const ValueKey('task-quick-add')),
         'Fictional call about repairs',
       );
-      await tap(tester, find.text('Save task'));
+      await tap(tester, find.byKey(const ValueKey('task-quick-add-button')));
       final taskId = h.server.tasks.keys.single;
+      expect(h.server.tasks[taskId]!['kind'], 'follow_up');
       expect(
         (h.server.tasks[taskId]!['referral'] as Map)['providerId'],
         _provider,
@@ -91,7 +90,7 @@ void main() {
       expect(jsonEncode(h.server.tasks), isNot(contains(privateNote)));
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tap(tester, find.text('Programs'));
+      await tap(tester, find.text('Programs for this plan'));
       expect(
         tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
         2,
@@ -99,14 +98,19 @@ void main() {
       await _tab(tester, 'tasks');
       await reveal(tester, find.text('Fictional call about repairs'));
       await reveal(tester, find.text('Referral: $_organization'));
-      await tap(tester, find.text('Edit task'));
+      await tap(tester, find.text('Fictional call about repairs'));
+      expect(find.byType(TaskEditorScreen), findsOneWidget);
       const edited = 'Fictional ask about address coverage';
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Next step'),
+        find.widgetWithText(TextFormField, 'What needs doing?'),
         edited,
       );
+      await reveal(
+        tester,
+        find.widgetWithText(TextFormField, 'For (optional note)'),
+      );
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Responsible person (optional)'),
+        find.widgetWithText(TextFormField, 'For (optional note)'),
         'Fictional resident',
       );
       await tap(tester, find.text('Save task'));
@@ -115,7 +119,12 @@ void main() {
         (h.server.tasks[taskId]!['referral'] as Map)['providerId'],
         _provider,
       );
-      await tap(tester, find.text('Complete task'));
+      expect(h.server.tasks[taskId]!['title'], edited);
+      expect(
+        h.server.tasks[taskId]!['responsiblePerson'],
+        'Fictional resident',
+      );
+      await tap(tester, find.byKey(ValueKey('task-done-$taskId')));
       expect(h.server.tasks[taskId]!['state'], 'completed');
       expect(h.device.requests, 0);
       expect(h.device.scheduled, isEmpty);
@@ -144,12 +153,16 @@ void main() {
         tester,
         find.descendant(of: savedCard, matching: find.text('Add follow-up')),
       );
+      await tap(tester, find.text('Done (1)'));
       await reveal(tester, find.text(edited));
-      await reveal(tester, find.text('Edit task'));
+      expect(
+        tester.widget<ListTile>(find.byKey(ValueKey('task-$taskId'))).onTap,
+        isNull,
+      );
       expect(
         tester
-            .widget<TextButton>(find.widgetWithText(TextButton, 'Edit task'))
-            .onPressed,
+            .widget<Checkbox>(find.byKey(ValueKey('task-done-$taskId')))
+            .onChanged,
         isNull,
       );
       expect(server.tasks.keys.single, taskId);
@@ -157,8 +170,9 @@ void main() {
       expect(jsonEncode(server.tasks), isNot(contains(offlineNote)));
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tap(tester, find.text('Programs'));
+      await tap(tester, find.text('Programs for this plan'));
       await _tab(tester, 'tasks');
+      await tap(tester, find.text('Done (1)'));
       await reveal(tester, find.text(edited));
       await _tab(tester, 'help');
       await tap(tester, find.byKey(const ValueKey('case-local-help')));
@@ -182,7 +196,7 @@ void main() {
       await tester.pumpAndSettle();
       await _openHelp(tester);
       await _findProvider(tester);
-      await tap(tester, _providerAction('Save contact'));
+      await tap(tester, _providerAction('Save · on this phone'));
       const note = 'Fictional unsynced contact';
       await _saveNote(tester, note);
       await tap(tester, _providerAction('Add follow-up'));
@@ -199,7 +213,7 @@ void main() {
         ).load()).contacts.single.note,
         note,
       );
-      await tap(tester, find.text('Programs'));
+      await tap(tester, find.text('Programs for this plan'));
       await _tab(tester, 'plan');
       await _openHelp(tester);
       await reveal(tester, find.text(note));

@@ -41,14 +41,19 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
   var _workspaceKey = GlobalKey<CaseWorkspaceScreenState>();
   String? _workspaceCase;
   int? _workspaceGeneration;
-  final _settingsKey = GlobalKey<AccountSettingsScreenState>();
+  int _lastWorkTab = 0;
+  bool _visitedAssistant = false;
   bool get _canLeave =>
       !_opening &&
       !_switching &&
       !widget.services.coordinator.busy &&
       !_selectionBlocked &&
-      _workspaceKey.currentState?.canLeave != false &&
-      _settingsKey.currentState?.canLeave != false;
+      _workspaceKey.currentState?.canLeave != false;
+
+  /// The section the assistant should describe: the last work tab, never
+  /// the assistant tab itself.
+  HomiDestination get _contextDestination =>
+      HomiDestination.values[_lastWorkTab];
 
   Future<void> _selectTab(int index) async {
     if ((index == _tab && !_managing) || !_isCurrent) return;
@@ -73,6 +78,9 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       }
       setState(() {
         _tab = index;
+        if (index < HomiTab.assistant.index) _lastWorkTab = index;
+        _visitedAssistant =
+            _visitedAssistant || index == HomiTab.assistant.index;
         _managing = false;
         _query = '';
         _searchController.clear();
@@ -108,51 +116,60 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     }
   }
 
-  void _assistant() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PlanAssistantScreen(
-          coordinator: widget.services.coordinator,
-          model: assistantRuntime(),
-          appContextProvider: () =>
-              _workspaceKey.currentState?.assistantContext ??
-              assistantAppContext(
-                widget.services,
-                destination: HomiDestination.values[_tab],
-              ),
-          onTarget: (target) async {
-            Navigator.of(context).pop();
-            final c = widget.services.coordinator;
-            final generation = c.generation;
-            final previousDestination = HomiDestination.values[_tab];
-            String contextKey() =>
-                (_workspaceKey.currentState?.assistantContextAt(
-                          previousDestination,
-                        ) ??
-                        assistantAppContext(
-                          widget.services,
-                          destination: previousDestination,
-                        ))
-                    .key;
-            final expectedContext = contextKey();
-            if (target.caseId != c.draft?.caseId) return;
-            await _selectTab(target.destination.index);
-            if (!_isCurrent ||
-                generation != c.generation ||
-                target.caseId != c.draft?.caseId ||
-                _tab != target.destination.index ||
-                contextKey() != expectedContext) {
-              return;
-            }
-            _workspaceKey.currentState?.openAssistantTarget(target);
-          },
-          onSection: (index) {
-            Navigator.of(context).pop();
-            _selectTab(index);
-          },
-        ),
-      ),
-    );
+  Widget _assistantTab() => PlanAssistantScreen(
+    embedded: true,
+    coordinator: widget.services.coordinator,
+    model: assistantRuntime(),
+    appContextProvider: () =>
+        _workspaceKey.currentState?.assistantContextAt(_contextDestination) ??
+        assistantAppContext(widget.services, destination: _contextDestination),
+    onTarget: (target) async {
+      final c = widget.services.coordinator;
+      final generation = c.generation;
+      final previousDestination = _contextDestination;
+      String contextKey() =>
+          (_workspaceKey.currentState?.assistantContextAt(
+                    previousDestination,
+                  ) ??
+                  assistantAppContext(
+                    widget.services,
+                    destination: previousDestination,
+                  ))
+              .key;
+      final expectedContext = contextKey();
+      if (target.caseId != c.draft?.caseId) return;
+      if (target.destination == HomiDestination.settings) {
+        _openAccount();
+        return;
+      }
+      await _selectTab(target.destination.index);
+      if (!_isCurrent ||
+          generation != c.generation ||
+          target.caseId != c.draft?.caseId ||
+          _tab != target.destination.index ||
+          contextKey() != expectedContext) {
+        return;
+      }
+      _workspaceKey.currentState?.openAssistantTarget(target);
+    },
+    onSection: (index) => index >= HomiDestination.settings.index
+        ? _openAccount()
+        : _selectTab(index),
+  );
+
+  void _openAccount() {
+    if (!_isCurrent || !_canLeave) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute<void>(
+            builder: (_) => AccountSettingsScreen(services: widget.services),
+          ),
+        )
+        // Account can delete plans; recheck removal receipts on return.
+        .then((_) {
+          if (_isCurrent) unawaited(_refreshLocal());
+        });
   }
 
   String _query = '';
@@ -344,7 +361,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         );
       }
       if (changesSelection &&
-          await _workspaceKey.currentState?.prepareToLeave() == false) {
+          await _workspaceKey.currentState?.prepareToChangePlan() == false) {
         return;
       }
       await action();
@@ -352,6 +369,7 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       setState(() {
         _managing = false;
         _tab = 0;
+        _lastWorkTab = 0;
       });
     } catch (error) {
       if (mounted && _isCurrent) await showOperationError(context, error);
@@ -365,7 +383,9 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
 
   Future<void> _remove(String id, {int? revision}) async {
     if (!_isCurrent || _opening || _selectionBlocked || !_removalsReady) return;
-    if (await _workspaceKey.currentState?.prepareToLeave() == false) return;
+    if (await _workspaceKey.currentState?.prepareToChangePlan() == false) {
+      return;
+    }
     if (!mounted || !_isCurrent) return;
     setState(() => _opening = true);
     try {
@@ -728,39 +748,28 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
 
   Widget _planSelector() {
     final current = widget.services.coordinator.draft?.caseId;
-    final largeText = MediaQuery.textScalerOf(context).scale(14) > 22;
     final ids = {..._local, ..._cases.map((item) => item.caseId), ?current};
+    final theme = Theme.of(context);
+    final onPlan = _tab == HomiTab.plan.index && current != null && !_managing;
+    final label = current == null
+        ? context.tr('Plans')
+        : onPlan
+        ? context.tr('Plans')
+        : _title(current);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
       child: Row(
         children: [
-          if (!largeText)
-            Text(
-              'homi',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          if (widget.services.config.permissionSharingEnabled)
-            IconButton(
-              tooltip: context.tr('Shared with me'),
-              icon: const Icon(Icons.people_outline),
-              onPressed: !_canLeave
-                  ? null
-                  : () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            SharedWithMeScreen(services: widget.services),
-                      ),
-                    ),
-            ),
           Expanded(
             child: Align(
-              alignment: AlignmentDirectional.centerEnd,
+              alignment: AlignmentDirectional.centerStart,
               child: PopupMenuButton<String>(
                 key: const ValueKey('active-plan-selector'),
-                tooltip: context.tr('Switch plan'),
+                tooltip: current == null
+                    ? context.tr('Switch plan')
+                    : context.tr('Current plan: {name}. Switch plan', {
+                        'name': _title(current),
+                      }),
                 enabled: _canChoose,
                 onSelected: (value) {
                   if (value == 'manage') {
@@ -786,45 +795,120 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                 },
                 itemBuilder: (_) => [
                   for (final id in ids)
-                    PopupMenuItem(
+                    CheckedPopupMenuItem(
                       value: id,
+                      checked: id == current,
                       enabled: !_removals.containsKey(id),
                       child: Text(_title(id)),
                     ),
-                  PopupMenuItem(
-                    value: 'manage',
-                    child: Text(context.tr('Manage plans')),
-                  ),
+                  const PopupMenuDivider(),
                   PopupMenuItem(
                     value: 'new',
                     child: Text(context.tr('Start a new plan')),
                   ),
-                ],
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
+                  PopupMenuItem(
+                    value: 'manage',
+                    child: Text(context.tr('Manage plans')),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.swap_horiz, size: 22),
-                        const SizedBox(width: 8),
-                        Flexible(child: Text(context.tr('Switch plan'))),
-                      ],
+                ],
+                // The plan name is a title: it stops growing before body
+                // text so it stays whole at accessibility sizes.
+                child: MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.6,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 48),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              label,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.expand_more_rounded),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
           ),
+          if (widget.services.config.permissionSharingEnabled)
+            IconButton(
+              key: const ValueKey('shared-with-me'),
+              tooltip: context.tr('Shared with me'),
+              icon: const Icon(Icons.people_outline),
+              onPressed: !_canLeave
+                  ? null
+                  : () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            SharedWithMeScreen(services: widget.services),
+                      ),
+                    ),
+            ),
+          IconButton.outlined(
+            key: const ValueKey('open-account'),
+            tooltip: context.tr('Account'),
+            icon: const Icon(Icons.person_outline_rounded),
+            onPressed: _canLeave ? _openAccount : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// No plan yet: each tab explains what it is for instead of repeating the
+  /// same message.
+  Widget _noPlan(BuildContext context) {
+    final (title, message, icon) = switch (HomiTab.values[_tab]) {
+      HomiTab.rooms => (
+        'Rooms belong to a plan',
+        'Create a plan first, then add the rooms you want to check. Bathrooms and entrances are common places to start.',
+        Icons.grid_view_outlined,
+      ),
+      HomiTab.tasks => (
+        'Tasks belong to a plan',
+        'Create a plan to keep follow-ups, dates and reminders together.',
+        Icons.checklist_outlined,
+      ),
+      HomiTab.help => (
+        'Find help',
+        'Create a plan to check program requirements and save contacts.',
+        Icons.support_agent_outlined,
+      ),
+      _ => (
+        _hasPlans ? 'Choose a plan to continue' : 'Start your first home plan',
+        'A plan keeps the resident’s details, the places you check at home, and possible help in one place.',
+        Icons.cottage_outlined,
+      ),
+    };
+    return SahContent(
+      child: ListView(
+        padding: sahFloatingContentPadding(context),
+        children: [
+          ..._status(),
+          SahEmptyState(
+            title: context.tr(title),
+            message: context.tr(message),
+            icon: icon,
+          ),
+          _newPlanButton(),
+          if (_hasPlans)
+            TextButton(
+              key: const ValueKey('home-open-plans'),
+              onPressed: () => setState(() => _managing = true),
+              child: Text(context.tr('Manage plans')),
+            ),
         ],
       ),
     );
@@ -834,6 +918,8 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
   Widget build(BuildContext context) {
     final c = widget.services.coordinator;
     final selected = c.draft != null && !_removals.containsKey(c.draft!.caseId);
+    final assistant = _tab == HomiTab.assistant.index;
+    final workTab = assistant ? _lastWorkTab : _tab;
     final management = Builder(
       builder: (context) => SahContent(
         child: RefreshIndicator(
@@ -855,6 +941,43 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
         ),
       ),
     );
+    final openScreens =
+        !assistant &&
+        selected &&
+        !_managing &&
+        _workspaceKey.currentState?.hasOpenScreensIn(_tab) == true;
+    final work = selected
+        ? IndexedStack(
+            index: _managing ? 1 : 0,
+            children: [
+              IgnorePointer(
+                ignoring: !_removalsReady || _switching || _opening,
+                child: CaseWorkspaceScreen(
+                  key: _workspaceKey,
+                  services: widget.services,
+                  embedded: true,
+                  destination: workTab,
+                  onDestinationSelected: _selectTab,
+                  onOpenScreensChanged: () {
+                    if (mounted) setState(() {});
+                  },
+                  onAccount: _openAccount,
+                  onRename: () => _rename(c.draft!.caseId),
+                ),
+              ),
+              management,
+            ],
+          )
+        : _managing
+        ? management
+        : _tab == HomiTab.help.index && widget.services.config.localHelpEnabled
+        ? NationwideHelpBrowser(
+            embedded: true,
+            onChoosePlan: () => _hasPlans
+                ? setState(() => _managing = true)
+                : unawaited(_create()),
+          )
+        : Builder(builder: _noPlan);
     return PopScope(
       canPop: _tab == 0 && !_managing && _canLeave,
       onPopInvokedWithResult: (didPop, _) {
@@ -869,11 +992,10 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       child: SahFloatingScaffold(
         selectedIndex: _tab,
         onDestinationSelected: _selectTab,
-        onAssistant: _assistant,
         body: Builder(
           builder: (context) => Column(
             children: [
-              _planSelector(),
+              if (!openScreens && !assistant) _planSelector(),
               if (widget.services.reminderOpen.value)
                 TextButton(
                   onPressed: _openReminder,
@@ -888,57 +1010,18 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                   ),
                 ),
               Expanded(
-                child: selected
-                    ? IndexedStack(
-                        index: _managing ? 1 : 0,
-                        children: [
-                          IgnorePointer(
-                            ignoring: !_removalsReady || _switching || _opening,
-                            child: CaseWorkspaceScreen(
-                              key: _workspaceKey,
-                              services: widget.services,
-                              embedded: true,
-                              destination: _tab,
-                              onDestinationSelected: _selectTab,
-                            ),
-                          ),
-                          management,
-                        ],
-                      )
-                    : _managing
-                    ? management
-                    : _tab == 2 && widget.services.config.localHelpEnabled
-                    ? const NationwideHelpBrowser(embedded: true)
-                    : _tab == 4
-                    ? AccountSettingsScreen(
-                        key: _settingsKey,
-                        services: widget.services,
-                        embedded: true,
-                      )
-                    : SahContent(
-                        child: ListView(
-                          padding: sahFloatingContentPadding(context),
-                          children: [
-                            ..._status(),
-                            SahEmptyState(
-                              title: context.tr(
-                                _hasPlans
-                                    ? 'Choose a plan to continue'
-                                    : 'Start your first home plan',
-                              ),
-                              icon: Icons.cottage_outlined,
-                            ),
-                            _newPlanButton(),
-                            if (_hasPlans)
-                              TextButton(
-                                key: const ValueKey('home-open-plans'),
-                                onPressed: () =>
-                                    setState(() => _managing = true),
-                                child: Text(context.tr('Manage plans')),
-                              ),
-                          ],
-                        ),
-                      ),
+                child: IndexedStack(
+                  index: assistant ? 1 : 0,
+                  children: [
+                    TickerMode(enabled: !assistant, child: work),
+                    TickerMode(
+                      enabled: assistant,
+                      child: _visitedAssistant || assistant
+                          ? _assistantTab()
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

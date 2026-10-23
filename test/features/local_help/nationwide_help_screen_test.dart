@@ -8,6 +8,7 @@ import 'package:safe_at_home/features/local_help/provider_search.dart';
 import 'package:safe_at_home/features/local_help/referral_directory.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import 'package:safe_at_home/l10n/catalogs/nationwide_help.dart';
+import 'package:safe_at_home/l10n/catalogs/redesign_help.dart';
 
 import '../../app/app_design_test.dart' show narrowLargeText;
 import '../../app/core_localization_test.dart' show localized;
@@ -52,18 +53,30 @@ void main() {
         find.text('Choose your state or DC. No GPS is needed.'),
         findsOneWidget,
       );
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'City (optional)'),
-        'Fictional city',
+      final place = find.widgetWithText(
+        TextFormField,
+        'ZIP code or city (optional)',
       );
+      await selectState(tester, 'OR');
+      await tester.enterText(place, '1234');
+      await tap(tester, find.text('Confirm location'));
+      expect(confirmed, isEmpty);
+      expect(find.text('Enter a 5-digit ZIP or ZIP+4.'), findsOneWidget);
+      await tester.enterText(place, 'Fictional city');
+      await tap(tester, find.text('Confirm location'));
+      expect(confirmed.single.city, 'Fictional city');
+      expect(confirmed.single.zip, isNull);
+      confirmed.clear();
+      expect(
+        find.widgetWithText(TextFormField, 'County (optional)'),
+        findsNothing,
+      );
+      await tap(tester, find.text('Add county (optional)'));
       await tester.enterText(
         find.widgetWithText(TextFormField, 'County (optional)'),
         'Washington',
       );
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'ZIP code (optional)'),
-        '12345-6789',
-      );
+      await tester.enterText(place, '12345-6789');
       for (final state in usStates) {
         await selectState(tester, state.code);
         await tap(tester, find.text('Confirm location'));
@@ -71,6 +84,7 @@ void main() {
         expect(confirmed.last.county, 'Washington');
         expect(confirmed.last.countyFips, isNull);
         expect(confirmed.last.zip, '12345-6789');
+        expect(confirmed.last.city, isEmpty);
       }
       expect(confirmed, hasLength(51));
       expect(tester.takeException(), isNull);
@@ -81,11 +95,13 @@ void main() {
     'read-only browser opens exact official locators and never sends browsing inputs',
     (tester) async {
       final opened = <Uri>[];
+      var choosePlan = 0;
       await tester.pumpWidget(
         localized(
           const Locale('en'),
           NationwideHelpBrowser(
             now: () => DateTime(2026, 10, 26),
+            onChoosePlan: () => choosePlan++,
             openExternal: (uri) async {
               opened.add(uri);
               return true;
@@ -95,37 +111,74 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(opened, isEmpty);
-      await selectState(tester, 'WY');
+      // A ZIP alone is enough: it fills the state, which stays correctable.
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'City (optional)'),
-        'Fictional private city',
-      );
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'ZIP code (optional)'),
+        find.widgetWithText(TextFormField, 'ZIP code or city (optional)'),
         '82001',
       );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Filled from ZIP code 82001. You can change it.'),
+        findsOneWidget,
+      );
       await tap(tester, find.text('Confirm location'));
+      await reveal(tester, find.text('Searching near · Wyoming, 82001'));
+      expect(find.text('Providers found: 0'), findsOneWidget);
+      final empty = find.byKey(const ValueKey('help-empty-results'));
+      await reveal(tester, empty);
+      expect(
+        find.descendant(
+          of: empty,
+          matching: find.text('No listed organizations near Wyoming yet'),
+        ),
+        findsOneWidget,
+      );
+      await tap(
+        tester,
+        find.descendant(of: empty, matching: find.text('Eldercare Locator')),
+      );
+      expect(opened.single.toString(), 'https://eldercare.acl.gov/home');
       for (final entry in const {
         'Find my local 211': 'https://211.org/about-us/your-local-211',
         'Find a Rebuilding Together affiliate':
             'https://rebuildingtogether.org/find-your-local-affiliate',
         'Open Eldercare Locator': 'https://eldercare.acl.gov/home',
       }.entries) {
-        await tap(tester, find.widgetWithText(TextButton, entry.key));
+        await tap(
+          tester,
+          find.ancestor(
+            of: find.text(entry.key),
+            matching: find.bySubtype<ButtonStyleButton>(),
+          ),
+        );
         expect(opened.last.toString(), entry.value);
         expect(opened.last.hasQuery, isFalse);
         expect(opened.last.hasFragment, isFalse);
       }
+      for (final uri in opened) {
+        expect(uri.toString(), isNot(contains('82001')));
+        expect(uri.toString(), isNot(contains('Wyoming')));
+      }
       final save = find.descendant(
         of: find.byKey(const ValueKey('referral-211-national')),
-        matching: find.text('Save contact'),
+        matching: find.text('Save · on this phone'),
       );
       await tap(tester, save);
       expect(
         find.text('Create or open a plan to save contacts and add follow-ups.'),
-        findsWidgets,
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Saved contacts stay on this phone and are removed when you sign out.',
+        ),
+        findsOneWidget,
       );
       expect(find.byType(AlertDialog), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('help-choose-plan')));
+      await tester.pumpAndSettle();
+      expect(choosePlan, 1);
+      expect(find.text('Save to a plan'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -160,14 +213,37 @@ void main() {
       );
       await tap(
         tester,
-        find.descendant(
-          of: find.byKey(const ValueKey('referral-211-national')),
-          matching: find.text('Coverage and source details'),
+        find.byKey(const ValueKey('help-details-referral-211-national')),
+      );
+      expect(find.text('Where they work'), findsOneWidget);
+      expect(
+        find.text('https://211.org/about-us/your-local-211'),
+        findsNothing,
+      );
+      final source = find.byKey(
+        const ValueKey(
+          'referral-source-referral-211-national-https://211.org/about-us/your-local-211',
         ),
+      );
+      await reveal(tester, source);
+      expect(
+        find.descendant(of: source, matching: find.text('211.org')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: source, matching: find.textContaining('Checked ')),
+        findsOneWidget,
+      );
+      await tap(tester, source);
+      await reveal(
+        tester,
+        find.textContaining('Could not open this link or dialer.'),
       );
       await reveal(
         tester,
-        find.text('https://211.org/about-us/your-local-211'),
+        find.text(
+          'Saved contacts stay on this phone and are removed when you sign out.',
+        ),
       );
       expect(tester.takeException(), isNull);
     },
@@ -197,13 +273,21 @@ void main() {
             .initialValue,
         isNull,
       );
+      expect(
+        find.widgetWithText(TextFormField, 'County (optional)'),
+        findsOneWidget,
+      );
       await tap(tester, find.text('Confirm location'));
+      expect(
+        find.text('Choose your state or DC. No GPS is needed.'),
+        findsOneWidget,
+      );
       expect((await repo.load()).location!.stateCode, isNull);
       await selectState(tester, 'TX');
       await tap(tester, find.text('Confirm location'));
       expect((await repo.load()).location!.stateCode, 'TX');
       expect((await repo.load()).location!.county, 'Santa Clara');
-      await tap(tester, find.byKey(const ValueKey('local-provider-search')));
+      expect((await repo.load()).location!.zip, '95050');
       await reveal(tester, find.text('Providers found: 0'));
       await reveal(tester, find.text('Find my local 211'));
       expect(tester.takeException(), isNull);
@@ -313,21 +397,13 @@ void main() {
         await tester.pumpAndSettle();
         await selectState(tester, 'DC');
         await tap(tester, find.text(tr.text('Confirm location')));
-        await reveal(
-          tester,
-          find.widgetWithText(
-            ReferralSectionHeading,
-            tr.text('National locators'),
-          ),
-        );
+        await reveal(tester, find.text(tr.text('Ask who serves this address')));
         await reveal(tester, find.text(tr.text('Open Eldercare Locator')));
         await reveal(
           tester,
-          find.widgetWithText(
-            ReferralSectionHeading,
-            tr.text('Program research and preparation'),
-          ),
+          find.text(tr.text('Program research and preparation')),
         );
+        await reveal(tester, find.text(tr.text('About this list')));
         await reveal(
           tester,
           find.byKey(const ValueKey('provider-search-query')),
@@ -338,7 +414,10 @@ void main() {
   }
 
   test('nationwide copy has five translations with preserved placeholders', () {
-    for (final entry in nationwideHelpTranslations.entries) {
+    for (final entry in {
+      ...nationwideHelpTranslations,
+      ...redesignHelpTranslations,
+    }.entries) {
       expect(entry.value.keys.toSet(), {
         'es',
         'zh-Hans',

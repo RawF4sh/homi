@@ -4,6 +4,7 @@ import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/cases/profile_editor_screen.dart';
 import 'package:safe_at_home/features/programs/program_intake_screen.dart';
 import 'package:safe_at_home/features/requests/form_review_screen.dart';
+import 'package:safe_at_home/features/requests/application_workspace_screen.dart';
 import 'package:safe_at_home/features/requests/request_history_screen.dart';
 import 'package:safe_at_home/shared/presentation/sah_components.dart';
 import 'package:safe_at_home/shared/services/matching_api_client.dart';
@@ -354,14 +355,18 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        final field = tester.widget<TextField>(
-          input('Date it happened (YYYY-MM-DD)'),
+        // The timeline comes first; the editor opens on demand (UI-038).
+        expect(find.byKey(const ValueKey('history-editor')), findsNothing);
+        await _tap(tester, find.byKey(const ValueKey('history-add')));
+        final date = tester.widget<IsoDateField>(
+          find.byKey(const ValueKey('history-date')),
         );
-        expect(field.decoration!.helperText, contains('2026-10-23'));
-        final follow = tester.widget<TextField>(
-          input('Optional follow-up date (YYYY-MM-DD)'),
+        expect(
+          date.controller.text,
+          DateTime.now().toIso8601String().substring(0, 10),
         );
-        expect(follow.decoration!.helperText, contains('next action'));
+        // Follow-up details stay folded until needed.
+        expect(find.byKey(const ValueKey('history-follow-up')), findsNothing);
         await _tap(tester, find.byKey(const ValueKey('history-save')));
         final message = tester
             .widget<SahActionFeedback>(
@@ -375,6 +380,9 @@ void main() {
         if (failure) {
           expect(find.text('Retry exact pending update'), findsOneWidget);
         } else {
+          expect(find.byKey(const ValueKey('history-editor')), findsNothing);
+          expect(find.textContaining('You recorded'), findsOneWidget);
+          await _tap(tester, find.byKey(const ValueKey('history-add')));
           await tester.ensureVisible(input('Optional note'));
           await tester.enterText(input('Optional note'), 'A new unsaved note');
           await tester.pumpAndSettle();

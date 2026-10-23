@@ -70,7 +70,10 @@ void main() {
     await tester.pumpWidget(_tasks(app, key));
     await tester.pumpAndSettle();
     expect(find.text('Fictional navigation task-0'), findsOneWidget);
-    expect(find.text('Fictional navigation task-19'), findsNothing);
+    expect(
+      find.text('Fictional navigation task-19').hitTestable(),
+      findsNothing,
+    );
 
     key.currentState!.openAssistantTask('task-19');
     await tester.pumpAndSettle();

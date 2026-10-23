@@ -86,13 +86,29 @@ AppServices services(MemoryPrivateStore store, FakeTransport transport) =>
       store: store,
       transport: transport,
     );
-Finder input(String label) => find.byWidgetPredicate(
-  (w) =>
-      w is TextField &&
-      (w.decoration?.labelText == label ||
-          (w.decoration?.label is Text &&
-              (w.decoration!.label! as Text).data == label)),
-);
+
+/// Finds a text field by its accessible label: a decoration label, or (for
+/// redesigned questions whose label is shown once above the control) the
+/// nearest enclosing `Semantics` label.
+Finder input(String label) => find.byElementPredicate((element) {
+  final w = element.widget;
+  if (w is! TextField) return false;
+  if (w.decoration?.labelText == label ||
+      (w.decoration?.label is Text &&
+          (w.decoration!.label! as Text).data == label)) {
+    return true;
+  }
+  var labelled = false;
+  element.visitAncestorElements((ancestor) {
+    final widget = ancestor.widget;
+    if (widget is Semantics && widget.properties.label != null) {
+      labelled = widget.properties.label == label;
+      return false;
+    }
+    return true;
+  });
+  return labelled;
+});
 
 void main() {
   testWidgets(
@@ -130,6 +146,8 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).first,
       );
+      await tester.ensureVisible(find.text('Sign in'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Sign in'));
       await tester.pumpAndSettle();
       expect(session.attempts, 1);

@@ -9,15 +9,21 @@ import '../../shared/presentation/sah_components.dart';
 import '../../shared/presentation/draft_exit_guard.dart';
 import '../../shared/services/draft_save_tracker.dart';
 import '../../shared/services/matching_api_client.dart';
+import 'application_workspace_screen.dart';
 
 class RequestHistoryScreen extends StatefulWidget {
   const RequestHistoryScreen({
     super.key,
     required this.services,
     required this.program,
+    this.initialStatus,
   });
   final AppServices services;
   final ProgramMatch program;
+
+  /// Preselects a status (for example `submitted` after "I sent it") and opens
+  /// the Add update sheet when no unfinished edit is waiting.
+  final String? initialStatus;
   @override
   State<RequestHistoryScreen> createState() => _RequestHistoryScreenState();
 }
@@ -27,6 +33,7 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
   PendingRequestUpdate? _pending;
   bool _busy = false, _reconciledPending = false, _restoring = true;
   bool _feedbackAtAction = false;
+  bool _editing = false;
   late final String _caseId;
   late final int _generation;
   late final DraftSaveTracker _draftSaves;
@@ -104,6 +111,9 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
           _status = edit['status'] as String? ?? 'preparing';
           _source = edit['source'] as String? ?? 'self_report';
           _party = edit['party'] as String? ?? 'resident';
+          _editing = true;
+        } else if (widget.initialStatus != null) {
+          _status = widget.initialStatus!;
         }
       }
       final history = await widget.services.history.readHistory(
@@ -132,6 +142,15 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
           _busy = false;
           _restoring = false;
         });
+        if (initial &&
+            widget.initialStatus != null &&
+            _pending == null &&
+            _history != null &&
+            _history!.requestRevision < 50) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _isCurrent) setState(() => _editing = true);
+          });
+        }
       }
     }
   }
@@ -240,7 +259,10 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
       _status = u.status;
       _source = u.source;
       _party = u.responsibleParty ?? 'resident';
-      setState(() => _pending = null);
+      setState(() {
+        _pending = null;
+        _editing = true;
+      });
     } catch (error) {
       if (mounted) setState(() => _error = safeOperationMessage(error));
     } finally {
@@ -303,287 +325,419 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
     }
   }
 
+  String _date10(BuildContext context, String iso) {
+    final parsed = DateTime.tryParse(iso);
+    return parsed == null
+        ? iso
+        : MaterialLocalizations.of(context).formatFullDate(parsed);
+  }
+
+  Widget _choices<T>({
+    required Key key,
+    required String label,
+    required T value,
+    required List<T> options,
+    required bool enabled,
+    required ValueChanged<T> onChanged,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(label, style: Theme.of(context).textTheme.titleMedium),
+      DropdownButtonFormField<T>(
+        key: key,
+        initialValue: value,
+        isExpanded: true,
+        isDense: false,
+        itemHeight: null,
+        decoration: InputDecoration(
+          labelText: label,
+          floatingLabelBehavior: FloatingLabelBehavior.never,
+        ),
+        items: [
+          for (final option in options)
+            DropdownMenuItem(
+              value: option,
+              child: Text(_label(context, option as String)),
+            ),
+        ],
+        onChanged: enabled
+            ? (v) {
+                if (v != null) onChanged(v);
+              }
+            : null,
+      ),
+    ],
+  );
+
+  bool get _saved =>
+      _error == 'Manual update saved. This is not verified agency status.' ||
+      _error == 'The pending update was already saved.';
+
+  // Shown on demand below the timeline, so the screen reads as a record of
+  // what happened rather than an always-open editor. Unfinished edits reopen
+  // it automatically.
+  Widget _editor(BuildContext context, bool exiting) {
+    final enabled = !_busy && !exiting;
+    void changed(VoidCallback update) {
+      setState(update);
+      _stash();
+    }
+
+    final theme = Theme.of(context);
+    return Column(
+      key: const ValueKey('history-editor'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
+            context.tr('Add update'),
+            style: theme.textTheme.titleLarge,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          context.tr(
+            'This is your own record. The app doesn’t receive agency decisions.',
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(context.tr('What happened?'), style: theme.textTheme.titleMedium),
+        RadioGroup<String>(
+          key: const ValueKey('history-status'),
+          groupValue: _status,
+          onChanged: (v) {
+            if (!enabled || v == null) return;
+            changed(() => _status = v);
+          },
+          child: Column(
+            children: [
+              for (final value in const [
+                'preparing',
+                'submitted',
+                'received',
+                'needs_information',
+                'approved',
+                'denied',
+                'withdrawn',
+              ])
+                RadioListTile<String>(
+                  key: ValueKey('history-status-$value'),
+                  value: value,
+                  enabled: enabled,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(_label(context, value)),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          context.tr('Date it happened'),
+          style: theme.textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        IsoDateField(
+          key: const ValueKey('history-date'),
+          controller: _date,
+          label: context.tr('Date it happened'),
+          enabled: enabled,
+          onChanged: () => changed(() {}),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _note,
+          onChanged: (_) => _stash(),
+          enabled: enabled,
+          maxLength: 500,
+          minLines: 2,
+          maxLines: 5,
+          decoration: InputDecoration(labelText: context.tr('Optional note')),
+        ),
+        ExpansionTile(
+          key: const ValueKey('history-more'),
+          tilePadding: EdgeInsets.zero,
+          initiallyExpanded:
+              _action.text.isNotEmpty ||
+              _follow.text.isNotEmpty ||
+              _source != 'self_report',
+          title: Text(context.tr('Follow-up and source')),
+          expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _choices<String>(
+              key: ValueKey('source-$_restoring'),
+              label: context.tr('Your source'),
+              value: _source,
+              options: const ['self_report', 'program_contact', 'document'],
+              enabled: enabled,
+              onChanged: (v) => changed(() => _source = v),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _action,
+              onChanged: (_) => _stash(),
+              enabled: enabled,
+              maxLength: 250,
+              minLines: 1,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: context.tr('Optional next action'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            _choices<String>(
+              key: ValueKey('party-$_restoring'),
+              label: context.tr('Who handles the next action?'),
+              value: _party,
+              options: const [
+                'resident',
+                'caregiver',
+                'program',
+                'clinician',
+                'contractor',
+                'other',
+              ],
+              enabled: enabled,
+              onChanged: (v) => changed(() => _party = v),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              context.tr('Optional follow-up date'),
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            IsoDateField(
+              key: const ValueKey('history-follow-up'),
+              controller: _follow,
+              label: context.tr('Optional follow-up date'),
+              optional: true,
+              enabled: enabled,
+              onChanged: () => changed(() {}),
+            ),
+            Text(
+              context.tr('Needs a next action too'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_error != null && _feedbackAtAction)
+          SahActionFeedback(
+            key: const ValueKey('history-save-feedback'),
+            message: context.tr(_error!),
+          ),
+        FilledButton(
+          key: const ValueKey('history-save'),
+          onPressed:
+              !enabled ||
+                  _history == null ||
+                  _history!.requestRevision >= 50 ||
+                  _pending != null
+              ? null
+              : () async {
+                  await _append();
+                  if (mounted && _pending == null && _saved) {
+                    setState(() => _editing = false);
+                  }
+                },
+          child: Text(context.tr('Save update')),
+        ),
+        TextButton(
+          key: const ValueKey('history-cancel'),
+          onPressed: _busy ? null : () => setState(() => _editing = false),
+          child: Text(context.tr('Cancel')),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => DraftExitGuard(
     tracker: _draftSaves,
-    builder: (context, requestExit, exiting) => Scaffold(
-      appBar: AppBar(
-        leading: BackButton(onPressed: requestExit),
-        title: Text(context.tr('Manual request history')),
-      ),
-      body: SafeArea(
-        child: SahContent(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SahPageHeader(title: widget.program.programName),
-                SahStatusBadge(
-                  label: context.tr('Reported by you · not agency status'),
-                  icon: Icons.edit_note_rounded,
-                ),
-                if (_busy)
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: LinearProgressIndicator(
-                      semanticsLabel: context.tr('Updating request history'),
+    builder: (context, requestExit, exiting) {
+      final events = [...?_history?.events]
+        ..sort((a, b) => b.revision.compareTo(a.revision));
+      final success =
+          _error ==
+              'Manual update saved. This is not verified agency status.' ||
+          _error == 'The pending update was already saved.';
+      return Scaffold(
+        appBar: AppBar(
+          leading: BackButton(onPressed: requestExit),
+          title: Text(context.tr('Updates')),
+        ),
+        body: SafeArea(
+          child: SahContent(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SahPageHeader(
+                    title: context.tr('Updates'),
+                    eyebrow: programShortName(widget.program),
+                    description: context.tr(
+                      'What you’ve recorded. The app doesn’t receive agency decisions.',
                     ),
                   ),
-                if (_error != null && !_feedbackAtAction)
-                  SahNotice(message: context.tr(_error!)),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  key: const ValueKey('history-reconcile'),
-                  onPressed: _busy || exiting ? null : () => _load(),
-                  child: Text(
-                    context.tr('Reload history and check pending update'),
-                    textAlign: TextAlign.center,
+                  SahStatusBadge(
+                    label: context.tr('Reported by you · not agency status'),
+                    icon: Icons.edit_note_rounded,
                   ),
-                ),
-                if (_history != null)
-                  SahSectionHeading(title: context.tr('Saved updates')),
-                if (_history?.events.isEmpty == true)
-                  Text(context.tr('No updates yet.')),
-                for (final event in _history?.events ?? <RequestEvent>[])
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: ExcludeSemantics(
-                      child: Icon(
-                        Icons.history_rounded,
-                        color: Theme.of(context).colorScheme.primary,
+                  if (_busy)
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: LinearProgressIndicator(
+                        semanticsLabel: context.tr('Updating request history'),
                       ),
                     ),
-                    title: Text(
-                      context.tr('{status} · {date}', {
-                        'status': _label(context, event.update.status),
-                        'date': event.update.occurredOn,
-                      }),
-                    ),
-                    subtitle: Text(
-                      [
-                        event.update.note,
-                        if (event.update.nextAction != null)
-                          context.tr('Next action: {action}', {
-                            'action': event.update.nextAction,
-                          }),
-                        if (event.update.responsibleParty != null)
-                          context.tr('Responsible: {party}', {
-                            'party': _label(
-                              context,
-                              event.update.responsibleParty!,
-                            ),
-                          }),
-                        if (event.update.followUpOn != null)
-                          context.tr('Follow-up: {date}', {
-                            'date': event.update.followUpOn,
-                          }),
-                      ].whereType<String>().join('\n'),
-                    ),
-                  ),
-                if (_pending != null) ...[
-                  SahSectionHeading(title: context.tr('Pending update')),
-                  SahNotice(
-                    message: context.tr(
-                      'An update may already have been saved. Reload history before retrying the exact pending update.',
-                    ),
-                    tone: SahNoticeTone.warning,
-                  ),
-                  Text(
-                    context.tr('{status} · {date}', {
-                      'status': _label(context, _pending!.update.status),
-                      'date': _pending!.update.occurredOn,
-                    }),
-                  ),
-                  Text(_pending!.update.note ?? ''),
-                  if (_error != null && _feedbackAtAction)
-                    SahActionFeedback(
-                      key: const ValueKey('history-save-feedback'),
-                      message: context.tr(_error!),
-                    ),
-                  FilledButton(
-                    onPressed: _busy || exiting || !_canRetry ? null : _append,
-                    child: Text(
-                      context.tr('Retry exact pending update'),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  if (_reconciledPending && !_canRetry)
-                    TextButton(
-                      onPressed: _busy || exiting ? null : _discardPending,
+                  if (_error != null && !_feedbackAtAction)
+                    SahNotice(message: context.tr(_error!)),
+                  if (!_busy &&
+                      (_pending != null ||
+                          _history == null ||
+                          (_error != null && !success))) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      key: const ValueKey('history-reconcile'),
+                      onPressed: _busy || exiting ? null : () => _load(),
                       child: Text(
-                        context.tr('Review against changed history and edit'),
+                        context.tr('Reload history and check pending update'),
+                        textAlign: TextAlign.center,
                       ),
                     ),
-                ] else if (_history != null) ...[
-                  SahSectionHeading(title: context.tr('Add a reported update')),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey('status-$_restoring'),
-                    initialValue: _status,
-                    isExpanded: true,
-                    isDense: false,
-                    itemHeight: null,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Reported status'),
+                  ],
+                  if (_history != null)
+                    SahSectionHeading(title: context.tr('Timeline')),
+                  if (_history?.events.isEmpty == true)
+                    Text(context.tr('No updates yet.')),
+                  if (events.isNotEmpty)
+                    SahListGroup(
+                      children: [
+                        for (final event in events)
+                          ListTile(
+                            key: ValueKey(
+                              'history-event-${event.update.updateId}',
+                            ),
+                            leading: ExcludeSemantics(
+                              child: Icon(
+                                event.update.status == 'submitted'
+                                    ? Icons.send_outlined
+                                    : Icons.event_note_outlined,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                            title: Text(
+                              context.tr('{status} · {date}', {
+                                'status': _label(context, event.update.status),
+                                'date': _date10(
+                                  context,
+                                  event.update.occurredOn,
+                                ),
+                              }),
+                            ),
+                            subtitle: Text(
+                              [
+                                context.tr('You recorded'),
+                                event.update.note,
+                                if (event.update.nextAction != null)
+                                  context.tr('Next action: {action}', {
+                                    'action': event.update.nextAction,
+                                  }),
+                                if (event.update.responsibleParty != null)
+                                  context.tr('Responsible: {party}', {
+                                    'party': _label(
+                                      context,
+                                      event.update.responsibleParty!,
+                                    ),
+                                  }),
+                                if (event.update.followUpOn != null)
+                                  context.tr('Follow-up: {date}', {
+                                    'date': _date10(
+                                      context,
+                                      event.update.followUpOn!,
+                                    ),
+                                  }),
+                              ].whereType<String>().join('\n'),
+                            ),
+                          ),
+                      ],
                     ),
-                    items: [
-                      for (final value in [
-                        'preparing',
-                        'submitted',
-                        'received',
-                        'needs_information',
-                        'approved',
-                        'denied',
-                        'withdrawn',
-                      ])
-                        DropdownMenuItem(
-                          value: value,
-                          child: Text(_label(context, value)),
-                        ),
-                    ],
-                    onChanged: _busy || exiting
-                        ? null
-                        : (v) {
-                            setState(() => _status = v!);
-                            _stash();
-                          },
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _date,
-                    onChanged: (_) => _stash(),
-                    enabled: !_busy && !exiting,
-                    keyboardType: TextInputType.datetime,
-                    textInputAction: TextInputAction.next,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Date it happened (YYYY-MM-DD)'),
-                      helperText: context.tr('For example 2026-10-23'),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey('source-$_restoring'),
-                    initialValue: _source,
-                    isExpanded: true,
-                    isDense: false,
-                    itemHeight: null,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Your source'),
-                    ),
-                    items: [
-                      for (final value in [
-                        'self_report',
-                        'program_contact',
-                        'document',
-                      ])
-                        DropdownMenuItem(
-                          value: value,
-                          child: Text(_label(context, value)),
-                        ),
-                    ],
-                    onChanged: _busy || exiting
-                        ? null
-                        : (v) {
-                            setState(() => _source = v!);
-                            _stash();
-                          },
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _note,
-                    onChanged: (_) => _stash(),
-                    enabled: !_busy && !exiting,
-                    maxLength: 500,
-                    minLines: 2,
-                    maxLines: 5,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Optional note'),
-                    ),
-                  ),
-                  SahSectionHeading(title: context.tr('Next action')),
-                  TextField(
-                    controller: _action,
-                    onChanged: (_) => _stash(),
-                    enabled: !_busy && !exiting,
-                    maxLength: 250,
-                    minLines: 1,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Optional next action'),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey('party-$_restoring'),
-                    initialValue: _party,
-                    isExpanded: true,
-                    isDense: false,
-                    itemHeight: null,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Who handles the next action?'),
-                    ),
-                    items: [
-                      for (final value in [
-                        'resident',
-                        'caregiver',
-                        'program',
-                        'clinician',
-                        'contractor',
-                        'other',
-                      ])
-                        DropdownMenuItem(
-                          value: value,
-                          child: Text(_label(context, value)),
-                        ),
-                    ],
-                    onChanged: _busy || exiting
-                        ? null
-                        : (v) {
-                            setState(() => _party = v!);
-                            _stash();
-                          },
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _follow,
-                    onChanged: (_) => _stash(),
-                    enabled: !_busy && !exiting,
-                    keyboardType: TextInputType.datetime,
-                    decoration: InputDecoration(
-                      labelText: context.tr(
-                        'Optional follow-up date (YYYY-MM-DD)',
-                      ),
-                      helperText: context.tr('Needs a next action too'),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  if (_history!.requestRevision >= 50)
+                  if (_pending != null) ...[
+                    SahSectionHeading(title: context.tr('Pending update')),
                     SahNotice(
                       message: context.tr(
-                        'This request history has reached its limit of 50 updates. Your saved history remains available.',
+                        'An update may already have been saved. Reload history before retrying the exact pending update.',
                       ),
                       tone: SahNoticeTone.warning,
                     ),
-                  if (_error != null && _feedbackAtAction)
-                    SahActionFeedback(
-                      key: const ValueKey('history-save-feedback'),
-                      message: context.tr(_error!),
+                    Text(
+                      context.tr('{status} · {date}', {
+                        'status': _label(context, _pending!.update.status),
+                        'date': _date10(context, _pending!.update.occurredOn),
+                      }),
                     ),
-                  FilledButton(
-                    key: const ValueKey('history-save'),
-                    onPressed:
-                        _busy || exiting || _history!.requestRevision >= 50
-                        ? null
-                        : _append,
-                    child: Text(context.tr('Save manual update')),
-                  ),
+                    Text(_pending!.update.note ?? ''),
+                    if (_error != null && _feedbackAtAction)
+                      SahActionFeedback(
+                        key: const ValueKey('history-save-feedback'),
+                        message: context.tr(_error!),
+                      ),
+                    FilledButton(
+                      onPressed: _busy || exiting || !_canRetry
+                          ? null
+                          : _append,
+                      child: Text(
+                        context.tr('Retry exact pending update'),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    if (_reconciledPending && !_canRetry)
+                      TextButton(
+                        onPressed: _busy || exiting ? null : _discardPending,
+                        child: Text(
+                          context.tr('Review against changed history and edit'),
+                        ),
+                      ),
+                  ] else if (_history != null) ...[
+                    const SizedBox(height: 16),
+                    if (_history!.requestRevision >= 50)
+                      SahNotice(
+                        message: context.tr(
+                          'This request history has reached its limit of 50 updates. Your saved history remains available.',
+                        ),
+                        tone: SahNoticeTone.warning,
+                      ),
+                    if (_editing)
+                      _editor(context, exiting)
+                    else ...[
+                      if (_error != null && _feedbackAtAction)
+                        SahActionFeedback(
+                          key: const ValueKey('history-save-feedback'),
+                          message: context.tr(_error!),
+                        ),
+                      FilledButton.icon(
+                        key: const ValueKey('history-add'),
+                        onPressed:
+                            _busy || exiting || _history!.requestRevision >= 50
+                            ? null
+                            : () => setState(() {
+                                _editing = true;
+                                _error = null;
+                                _feedbackAtAction = false;
+                              }),
+                        icon: const Icon(Icons.add_rounded),
+                        label: Text(context.tr('Add update')),
+                      ),
+                    ],
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 

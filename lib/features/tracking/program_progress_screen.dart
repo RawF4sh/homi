@@ -1,6 +1,5 @@
 import '../../shared/presentation/sah_floating_nav.dart';
 import 'package:flutter/material.dart';
-import 'package:timezone/timezone.dart' as tz;
 import '../../app/live_app.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/models/case_draft.dart';
@@ -53,6 +52,7 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
 
   String? _error;
   String? _loadError, _loadFailureCode;
+  final _quick = TextEditingController();
   ProgressService get service => widget.services.progress!;
   ProgressSnapshot? get saved => service.cached[_caseId];
   bool get current =>
@@ -94,6 +94,7 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
   @override
   void dispose() {
     service.removeListener(_progressChanged);
+    _quick.dispose();
     super.dispose();
   }
 
@@ -177,48 +178,6 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
     });
   }
 
-  Future<void> _remind(NextStepTask task, {bool snooze = false}) async {
-    final reminders = service.reminders;
-    final old = reminders.forTask(_caseId, task.id);
-    final zone = old?.zone ?? await reminders.device.timeZone();
-    if (!mounted || !current) return;
-    final initial = tz.TZDateTime.from(
-      DateTime.now().add(Duration(hours: snooze ? 24 : 1)),
-      tz.getLocation(zone),
-    );
-    try {
-      final values = await showDialog<Map<String, String>>(
-        context: context,
-        builder: (_) => _ReminderDialog(
-          snooze: snooze,
-          date: initial.toIso8601String().substring(0, 10),
-          zone: zone,
-          time: snooze
-              ? '${initial.hour.toString().padLeft(2, '0')}:${initial.minute.toString().padLeft(2, '0')}'
-              : old?.data['time'] as String? ??
-                    '${initial.hour.toString().padLeft(2, '0')}:${initial.minute.toString().padLeft(2, '0')}',
-        ),
-      );
-      if (!current || values == null) return;
-      await reminders.configure(
-        _caseId,
-        task.id,
-        values['date']!,
-        values['time']!,
-        values['zone']!,
-      );
-      if (!current) return;
-      await service.reconcileReminders();
-    } on FormatException {
-      if (current) {
-        setState(
-          () =>
-              _error = 'Choose a valid future date, time, and IANA time zone.',
-        );
-      }
-    }
-  }
-
   Future<void> _history(TrackedProgram program) async {
     if (!editable) return;
     await _run(() async {
@@ -295,6 +254,8 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
   Future<void> _report(TrackedProgram program) async {
     final note = TextEditingController();
     String status = 'preparing', source = 'self_report';
+    final today = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+    String occurredOn = today;
     try {
       final confirmed = await showDialog<bool>(
         context: context,
@@ -348,6 +309,21 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
                   ],
                   onChanged: (v) => change(() => source = v!),
                 ),
+                ListTile(
+                  key: const ValueKey('report-date'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.event_outlined),
+                  title: Text(ctx.tr('When did this happen?')),
+                  subtitle: Text(localDay(ctx, occurredOn)),
+                  onTap: () async {
+                    final picked = await pickIsoDay(
+                      ctx,
+                      initial: occurredOn,
+                      last: DateTime.parse(today),
+                    );
+                    if (picked != null) change(() => occurredOn = picked);
+                  },
+                ),
                 TextField(
                   controller: note,
                   maxLength: 500,
@@ -374,7 +350,7 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
       final update = RequestUpdate(
         updateId: newUuidV4(),
         status: status,
-        occurredOn: DateTime.now().toUtc().toIso8601String().substring(0, 10),
+        occurredOn: occurredOn,
         source: source,
         note: note.text.trim().isEmpty ? null : note.text.trim(),
       );
@@ -388,6 +364,340 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
     } finally {
       note.dispose();
     }
+  }
+
+  String? get _contextFinding =>
+      widget.findingId != null &&
+          widget.services.coordinator.currentCase().findings.any(
+            (f) => f.id == widget.findingId,
+          )
+      ? widget.findingId
+      : null;
+
+  String? _organization(String? id) =>
+      id == null ? null : const OfficialReferralDirectory().provider(id)?.name;
+
+  /// Creates a task from just a title. Context (concern, referral or
+  /// program) fills the defaults; everything else stays optional.
+  Future<bool> _add(String title, {String? programId, String? kind}) async {
+    final text = String.fromCharCodes(title.trim().runes.take(200)).trim();
+    if (!editable || text.isEmpty) return false;
+    final referral = widget.referralId;
+    await _run(
+      () => _save(
+        putTaskOperation(
+          snapshot: saved!,
+          id: newUuidV4(),
+          title: text,
+          kind:
+              kind ??
+              (referral != null
+                  ? 'follow_up'
+                  : _contextFinding != null
+                  ? 'room_review'
+                  : 'other'),
+          programId: programId,
+          findingId: _contextFinding,
+          referralId: referral,
+        ),
+      ),
+    );
+    return _error == null;
+  }
+
+  Future<void> _quickAdd() async {
+    if (await _add(_quick.text) && mounted) _quick.clear();
+  }
+
+  Future<void> _toggle(NextStepTask task) => _run(
+    () => _save({
+      'type': 'put_task',
+      'expectedTaskRevision': task.revision,
+      'task': {
+        ...task.toJson(),
+        'state': task.open ? 'completed' : 'pending',
+        'revision': task.revision + 1,
+      },
+    }),
+  );
+
+  /// Suggestions only use facts this screen already has: tracked programs
+  /// with unconfirmed requirements, earlier proposed next actions, and the
+  /// help contact the screen was opened for. Nothing is added until tapped.
+  List<_Suggestion> _suggestions(BuildContext context, ProgressSnapshot state) {
+    final titles = state.tasks.map((t) => t.title).toSet();
+    final out = <_Suggestion>[];
+    final organization = _organization(widget.referralId);
+    if (organization != null &&
+        !state.tasks.any((t) => t.open && t.referralId == widget.referralId)) {
+      final title = context.tr('Contact {organization}', {
+        'organization': organization,
+      });
+      if (!titles.contains(title)) {
+        out.add(
+          _Suggestion(
+            title: title,
+            why: context.tr('From a help contact you saved'),
+            add: () => _add(title, kind: 'contact'),
+          ),
+        );
+      }
+    }
+    if (widget.findingId == null && widget.referralId == null) {
+      for (final p in state.programs.where((p) => !p.retired)) {
+        if (p.proposal != null) {
+          out.add(
+            _Suggestion(
+              title: p.proposal!['title'] as String,
+              why: context.tr(
+                'Suggested from an earlier update for {program}',
+                {'program': p.name},
+              ),
+              add: () => _edit(program: p, proposal: p.proposal),
+              dismiss: () => _run(
+                () => _save({
+                  'type': 'dismiss_proposal',
+                  'eventId': p.proposal!['eventId'],
+                }),
+              ),
+            ),
+          );
+        } else if (p.unresolved > 0 &&
+            !state.tasks.any((t) => t.open && t.programId == p.id)) {
+          final title = context.tr('Confirm what {program} still needs', {
+            'program': p.name,
+          });
+          if (titles.contains(title)) continue;
+          out.add(
+            _Suggestion(
+              title: title,
+              why: context.tr('Unresolved program requirements: {count}', {
+                'count': p.unresolved,
+              }),
+              add: () => _add(title, programId: p.id, kind: 'documents'),
+            ),
+          );
+        }
+      }
+    }
+    return out.take(3).toList();
+  }
+
+  Widget _taskRow(
+    BuildContext context,
+    ProgressSnapshot? state,
+    NextStepTask task,
+    String today,
+  ) {
+    final reminder =
+        task.open &&
+        service.reminders.forTask(_caseId, task.id)?.enabled == true;
+    final program = task.programId == null
+        ? null
+        : state?.programs.where((p) => p.id == task.programId).firstOrNull;
+    final details = [
+      if (task.dueOn != null)
+        context.tr(
+          task.open && task.dueOn!.compareTo(today) < 0
+              ? 'Overdue target: {date}'
+              : 'Target date: {date}',
+          {'date': localDay(context, task.dueOn!)},
+        ),
+      if (task.state != 'pending' && task.state != 'completed')
+        context.tr(taskStateLabel(task.state)),
+      if (reminder) context.tr('Reminder on this phone'),
+      if (task.responsiblePerson != null)
+        context.tr('For: {person}', {'person': task.responsiblePerson}),
+      ?program?.name,
+      if (_organization(task.referralId) case final organization?)
+        context.tr('Referral: {organization}', {'organization': organization}),
+    ];
+    final canToggle = editable && !task.needsReview;
+    return ListTile(
+      key: ValueKey('task-${task.id}'),
+      contentPadding: const EdgeInsetsDirectional.only(start: 4, end: 12),
+      leading: Checkbox(
+        key: ValueKey('task-done-${task.id}'),
+        value: !task.open,
+        semanticLabel: context.tr(
+          task.open ? 'Mark done: {task}' : 'Mark not done: {task}',
+          {'task': task.title},
+        ),
+        onChanged: canToggle ? (_) => _toggle(task) : null,
+      ),
+      title: Text(
+        task.title,
+        style: task.open
+            ? null
+            : const TextStyle(decoration: TextDecoration.lineThrough),
+      ),
+      subtitle: details.isEmpty && !task.needsReview
+          ? null
+          : Text(
+              [
+                ...details,
+                if (task.needsReview)
+                  context.tr('Plan changed. Review this task.'),
+              ].join(' · '),
+            ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: editable ? () => _edit(task: task) : null,
+    );
+  }
+
+  List<Widget> _taskSection(
+    BuildContext context,
+    ProgressSnapshot? state,
+    List<NextStepTask> tasks,
+    String today,
+  ) {
+    final open = tasks.where((t) => t.open).toList(),
+        done = tasks.where((t) => !t.open).toList();
+    final suggestions = state == null || !_fresh || !editable
+        ? const <_Suggestion>[]
+        : _suggestions(context, state);
+    return [
+      if (_assistantTaskId != null)
+        TextButton(
+          onPressed: () => setState(() => _assistantTaskId = null),
+          child: Text(context.tr('All tasks')),
+        ),
+      const SizedBox(height: 8),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: TextField(
+              key: const ValueKey('task-quick-add'),
+              controller: _quick,
+              enabled: editable,
+              maxLength: 200,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                hintText: context.tr('Add a task…'),
+                labelText: context.tr('Add a task…'),
+                floatingLabelBehavior: FloatingLabelBehavior.never,
+                counterText: '',
+              ),
+              onSubmitted: (_) => _quickAdd(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            key: const ValueKey('task-quick-add-button'),
+            onPressed: editable ? _quickAdd : null,
+            child: Text(context.tr('Add')),
+          ),
+        ],
+      ),
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton(
+          onPressed: editable ? () => _edit() : null,
+          child: Text(context.tr('Add with details')),
+        ),
+      ),
+      if (suggestions.isNotEmpty)
+        SahListGroup(
+          title: context.tr('Suggested for you'),
+          children: [
+            for (final s in suggestions)
+              ListTile(
+                leading: const Icon(Icons.lightbulb_outline),
+                title: Text(s.title),
+                subtitle: Text(s.why),
+                trailing: Wrap(
+                  children: [
+                    if (s.dismiss != null)
+                      IconButton(
+                        tooltip: context.tr('No longer needed'),
+                        onPressed: editable ? s.dismiss : null,
+                        icon: const Icon(Icons.close),
+                      ),
+                    TextButton(
+                      onPressed: editable ? s.add : null,
+                      child: Text(context.tr('Add')),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      if (_fresh && state != null && tasks.isEmpty)
+        SahEmptyState(
+          icon: Icons.checklist_rounded,
+          title: context.tr('Nothing to do yet'),
+          message: context.tr(
+            'Suggestions appear here from programs you track and help contacts you save. You can also add your own task above.',
+          ),
+        ),
+      if (open.isNotEmpty)
+        SahListGroup(
+          title: context.tr('To do'),
+          children: [
+            for (final task in open) _taskRow(context, state, task, today),
+          ],
+        ),
+      if (done.isNotEmpty)
+        ExpansionTile(
+          key: const ValueKey('tasks-done'),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+          title: Text(context.tr('Done ({count})', {'count': done.length})),
+          children: [
+            SahListGroup(
+              children: [
+                for (final task in done) _taskRow(context, state, task, today),
+              ],
+            ),
+          ],
+        ),
+      if (widget.workspaceMode && (state?.programs.isNotEmpty ?? false))
+        SahListGroup(
+          title: context.tr('Tracked programs'),
+          children: [
+            for (final p in state!.programs)
+              ListTile(
+                leading: const Icon(Icons.assignment_outlined),
+                title: Text(p.name),
+                subtitle: Text(
+                  [
+                    context.tr(
+                      p.latest == null
+                          ? 'Not started / no update recorded'
+                          : requestStatusLabel(p.latest!['status'] as String),
+                    ),
+                    if (p.unresolved > 0)
+                      context.tr('Unresolved program requirements: {count}', {
+                        'count': p.unresolved,
+                      }),
+                  ].join(' · '),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        ProgramProgressScreen(services: widget.services),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      const SizedBox(height: 16),
+      ExpansionTile(
+        title: Text(context.tr('About tasks and reminders')),
+        children: [
+          for (final text in [
+            'Manual reports do not verify submission, eligibility, approval, or completed repairs.',
+            'Due dates are personal targets. They are not verified agency deadlines. A responsible person label does not share this plan or assign a signed-in helper.',
+            'Reminders are local to this device. Open the app to sync remote changes. Device settings may delay or prevent delivery.',
+          ])
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(context.tr(text)),
+            ),
+        ],
+      ),
+    ];
   }
 
   @override
@@ -451,6 +761,8 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
       child: ListView(
         padding: sahFloatingContentPadding(context),
         children: [
+          if (widget.embedded && widget.workspaceMode)
+            SahPageHeader(title: context.tr('Tasks')),
           if (widget.embedded)
             Align(
               alignment: AlignmentDirectional.centerEnd,
@@ -619,227 +931,9 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
                 ],
               ),
             ),
-          if (_tasks) ...[
-            if (_assistantTaskId != null)
-              TextButton(
-                onPressed: () => setState(() => _assistantTaskId = null),
-                child: Text(context.tr('All tasks')),
-              ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: editable ? () => _edit() : null,
-              icon: const Icon(Icons.add),
-              label: Text(context.tr('Add next step')),
-            ),
-            if (_fresh && state != null && tasks.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  context.tr(
-                    'No next steps yet. Add a task for this plan or a tracked program.',
-                  ),
-                ),
-              ),
-            for (final task in tasks)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: _ProgressCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        task.title,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(context.tr(taskStateLabel(task.state))),
-                      if (task.referralId != null)
-                        Text(
-                          context.tr('Referral: {organization}', {
-                            'organization':
-                                const OfficialReferralDirectory()
-                                    .provider(task.referralId!)
-                                    ?.name ??
-                                task.referralId!,
-                          }),
-                        ),
-                      if (task.referral?['imported'] case final Map imported)
-                        ExpansionTile(
-                          title: Text(context.tr('Original local follow-up')),
-                          children: [
-                            Text(
-                              (imported['original'] as Map)['title'] as String,
-                            ),
-                            Text(imported['contactNote'] as String),
-                            if ((imported['original'] as Map)['dueDate'] !=
-                                null)
-                              Text(
-                                context.tr('Original target: {date}', {
-                                  'date':
-                                      (imported['original'] as Map)['dueDate'],
-                                }),
-                              ),
-                            if ((imported['original'] as Map)['completedAt'] !=
-                                null)
-                              Text(
-                                context.tr('Originally completed: {date}', {
-                                  'date':
-                                      (imported['original']
-                                          as Map)['completedAt'],
-                                }),
-                              ),
-                          ],
-                        ),
-                      if (task.programId != null)
-                        Text(
-                          state!.programs
-                                  .where((p) => p.id == task.programId)
-                                  .firstOrNull
-                                  ?.name ??
-                              task.programId!,
-                        ),
-                      Text(
-                        context.tr('Responsible person: {person}', {
-                          'person':
-                              task.responsiblePerson ??
-                              context.tr('Unassigned'),
-                        }),
-                      ),
-                      if (task.dueOn != null)
-                        Text(
-                          context.tr(
-                            task.open && task.dueOn!.compareTo(today) < 0
-                                ? 'Overdue target: {date}'
-                                : 'Target date: {date}',
-                            {'date': task.dueOn},
-                          ),
-                        ),
-                      if (task.needsReview)
-                        Text(context.tr('Plan changed. Review this task.')),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          TextButton(
-                            onPressed: editable
-                                ? () => _edit(task: task)
-                                : null,
-                            child: Text(context.tr('Edit task')),
-                          ),
-                          if (task.open)
-                            TextButton(
-                              onPressed: editable && !task.needsReview
-                                  ? () => _run(
-                                      () => _save({
-                                        'type': 'put_task',
-                                        'expectedTaskRevision': task.revision,
-                                        'task': {
-                                          ...task.toJson(),
-                                          'state': 'completed',
-                                          'revision': task.revision + 1,
-                                        },
-                                      }),
-                                    )
-                                  : null,
-                              child: Text(context.tr('Complete task')),
-                            ),
-                          if (!task.open)
-                            TextButton(
-                              onPressed: editable && !task.needsReview
-                                  ? () => _run(
-                                      () => _save({
-                                        'type': 'put_task',
-                                        'expectedTaskRevision': task.revision,
-                                        'task': {
-                                          ...task.toJson(),
-                                          'state': 'pending',
-                                          'revision': task.revision + 1,
-                                        },
-                                      }),
-                                    )
-                                  : null,
-                              child: Text(context.tr('Reopen task')),
-                            ),
-                          if (task.open)
-                            TextButton(
-                              onPressed: editable
-                                  ? () => _run(() => _remind(task))
-                                  : null,
-                              child: Text(context.tr('Device reminder')),
-                            ),
-                        ],
-                      ),
-                      if (service.reminders
-                              .forTask(_caseId, task.id)
-                              ?.enabled ==
-                          true) ...[
-                        Text(
-                          context.tr('Reminder requested: {time} ({zone})', {
-                            'time':
-                                '${service.reminders.forTask(_caseId, task.id)!.data['date']} ${service.reminders.forTask(_caseId, task.id)!.data['time']}',
-                            'zone': service.reminders
-                                .forTask(_caseId, task.id)!
-                                .zone,
-                          }),
-                        ),
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            TextButton(
-                              onPressed: editable
-                                  ? () =>
-                                        _run(() => _remind(task, snooze: true))
-                                  : null,
-                              child: Text(context.tr('Snooze reminder')),
-                            ),
-                            TextButton(
-                              onPressed: editable
-                                  ? () => _run(() async {
-                                      await service.reminders.disable(
-                                        _caseId,
-                                        task.id,
-                                      );
-                                      await service.reconcileReminders();
-                                    })
-                                  : null,
-                              child: Text(context.tr('Disable reminder')),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            const SizedBox(height: 16),
-            ExpansionTile(
-              title: Text(context.tr('About tasks and reminders')),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    context.tr(
-                      'Manual reports do not verify submission, eligibility, approval, or completed repairs.',
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    context.tr(
-                      'Due dates are personal targets. They are not verified agency deadlines. A responsible person label does not share this plan or assign a signed-in helper.',
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    context.tr(
-                      'Reminders are local to this device. Open the app to sync remote changes. Device settings may delay or prevent delivery.',
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ] else ...[
+          if (_tasks)
+            ..._taskSection(context, state, tasks, today)
+          else ...[
             if (_fresh && state != null && state.programs.isEmpty)
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -1019,83 +1113,14 @@ class _ProgressCard extends StatelessWidget {
   );
 }
 
-class _ReminderDialog extends StatefulWidget {
-  const _ReminderDialog({
-    required this.snooze,
-    required this.date,
-    required this.time,
-    required this.zone,
+class _Suggestion {
+  const _Suggestion({
+    required this.title,
+    required this.why,
+    required this.add,
+    this.dismiss,
   });
-  final bool snooze;
-  final String date, time, zone;
-  @override
-  State<_ReminderDialog> createState() => _ReminderDialogState();
-}
-
-class _ReminderDialogState extends State<_ReminderDialog> {
-  late final _date = TextEditingController(text: widget.date),
-      _time = TextEditingController(text: widget.time),
-      _zone = TextEditingController(text: widget.zone);
-  @override
-  void dispose() {
-    _date.dispose();
-    _time.dispose();
-    _zone.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    scrollable: true,
-    title: Text(
-      context.tr(widget.snooze ? 'Snooze reminder' : 'Device reminder'),
-    ),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          context.tr(
-            'Reminders stay in the chosen time zone when you travel. A repeated daylight-saving time uses the earlier occurrence; choose another time if the clock skips it.',
-          ),
-        ),
-        TextField(
-          controller: _date,
-          decoration: InputDecoration(
-            labelText: context.tr('Reminder date (YYYY-MM-DD)'),
-          ),
-          keyboardType: TextInputType.datetime,
-        ),
-        TextField(
-          controller: _time,
-          decoration: InputDecoration(
-            labelText: context.tr('Reminder time (HH:MM)'),
-          ),
-          keyboardType: TextInputType.datetime,
-        ),
-        TextField(
-          controller: _zone,
-          decoration: InputDecoration(
-            labelText: context.tr('Time zone (IANA)'),
-          ),
-        ),
-      ],
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: Text(context.tr('Cancel')),
-      ),
-      FilledButton(
-        onPressed: () {
-          FocusScope.of(context).unfocus();
-          Navigator.pop(context, {
-            'date': _date.text.trim(),
-            'time': _time.text.trim(),
-            'zone': _zone.text.trim(),
-          });
-        },
-        child: Text(context.tr('Enable reminder')),
-      ),
-    ],
-  );
+  final String title, why;
+  final VoidCallback add;
+  final VoidCallback? dismiss;
 }

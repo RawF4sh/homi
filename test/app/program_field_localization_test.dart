@@ -10,7 +10,8 @@ import 'package:safe_at_home/shared/models/program_intake.dart';
 import '../contracts/form_answers_test.dart' as forms;
 import '../services/case_evidence_api_client_test.dart' as http;
 import 'case_coordinator_test.dart' show FakeTransport;
-import 'live_workflows_test.dart' show MemoryPrivateStore, services, program;
+import 'live_workflows_test.dart'
+    show MemoryPrivateStore, services, program, input;
 import 'program_localization_support.dart';
 
 List<Map<String, dynamic>> intakeDefinitions() =>
@@ -73,10 +74,14 @@ void main() {
             expect(tester.widget<Text>(full).data, label);
             expect(tester.widget<Text>(full).maxLines, isNull);
             expect(find.text(question['label'] as String), findsNothing);
-            final input = find.byWidgetPredicate(
-              (w) => w is InputDecorator && w.decoration.labelText == label,
+            // Label shown once above the control; the control keeps the
+            // same accessible name (UI-030).
+            expect(
+              question['kind'] == 'boolean'
+                  ? find.byKey(ValueKey('intake-choices-${question['key']}'))
+                  : input(label),
+              findsOneWidget,
             );
-            expect(input, findsOneWidget);
             expect(find.text(tr('About this question')), findsNothing);
             expect(tester.takeException(), isNull);
           }
@@ -139,14 +144,16 @@ void main() {
             find.ancestor(of: full, matching: find.byType(ExcludeSemantics)),
             findsOneWidget,
           );
-          expect(find.byKey(ValueKey('form-review-$key')), findsOneWidget);
+          expect(find.byKey(ValueKey('form-field-$key')), findsOneWidget);
+          expect(find.byKey(ValueKey('form-review-$key')), findsNothing);
           expect(find.text(definition['label'] as String), findsNothing);
           expect(tester.takeException(), isNull);
         }
         final save = find.byKey(const ValueKey('form-save'));
         await revealProgramControl(tester, save);
         expect(save.hitTestable(), findsOneWidget);
-        expect(transport.requests, hasLength(2));
+        // Case reload, form answers and the read-only program answers.
+        expect(transport.requests, hasLength(3));
       },
     );
 

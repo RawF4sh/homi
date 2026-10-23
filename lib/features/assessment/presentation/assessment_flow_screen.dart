@@ -125,10 +125,17 @@ class AssessmentFlowScreen extends StatelessWidget {
                 : null,
             appBar: AppBar(
               actions: actions,
-              title: Text(
-                step == AssessmentStep.chooseArea && areaTools != null
-                    ? context.tr('Home assessment')
-                    : context.tr(_title(step)),
+              // Up to three actions leave little width: allow two lines.
+              toolbarHeight: 64,
+              title: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.3,
+                child: Text(
+                  step == AssessmentStep.chooseArea && areaTools != null
+                      ? context.tr('Home assessment')
+                      : context.tr(_title(step)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               leading: flow.canGoBack
                   ? IconButton(

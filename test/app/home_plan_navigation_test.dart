@@ -95,6 +95,8 @@ Future<void> _mount(WidgetTester tester, AppServices app) async {
 Future<void> _tab(WidgetTester tester, String name) async {
   if (name == 'plans') {
     await openManagePlans(tester);
+  } else if (name == 'account') {
+    await tester.tap(find.byKey(const ValueKey('open-account')));
   } else {
     await tester.tap(
       find.byKey(ValueKey('plan-tab-${name == 'home' ? 'plan' : name}')),
@@ -130,7 +132,7 @@ void _onlyDiscovery(FakeTransport transport) => expect(
 
 void main() {
   testWidgets(
-    'Plan is the entry and all five destinations never create a plan',
+    'Plan is the entry and tabs, Plans and Account never create a plan',
     (tester) async {
       final store = MemoryPrivateStore();
       final transport = _transport();
@@ -146,15 +148,23 @@ void main() {
       expect(app.coordinator.draft, isNull);
       final generation = app.coordinator.generation;
 
-      for (final tab in ['rooms', 'help', 'tasks']) {
+      for (final (tab, empty) in [
+        ('rooms', 'Rooms belong to a plan'),
+        ('help', 'Find help'),
+        ('tasks', 'Tasks belong to a plan'),
+      ]) {
         await _tab(tester, tab);
+        expect(find.text(empty), findsOneWidget, reason: tab);
+        expect(find.text('Start your first home plan'), findsNothing);
         expect(app.coordinator.draft, isNull);
       }
       await _tab(tester, 'plans');
       expect(find.byKey(const ValueKey('plan-search')), findsOneWidget);
-      expect(find.byKey(const ValueKey('plan-search')), findsOneWidget);
-      await _tab(tester, 'settings');
+      await _tab(tester, 'account');
       expect(find.byType(AccountSettingsScreen), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('plan-search')), findsOneWidget);
       await _tab(tester, 'home');
       expect(find.text('Start your first home plan'), findsOneWidget);
       expect(find.byType(AccountSettingsScreen), findsNothing);
@@ -364,8 +374,11 @@ void main() {
       expect(cancel.hitTestable(), findsOneWidget);
       await tester.tap(cancel);
       await tester.pumpAndSettle();
-      await _tab(tester, 'settings');
+      await _tab(tester, 'account');
       expect(find.byType(AccountSettingsScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       await _tab(tester, 'home');
       expect(find.byType(AccountSettingsScreen), findsNothing);
       expect(jsonEncode(store.records), retained);
@@ -376,7 +389,7 @@ void main() {
   );
 
   testWidgets(
-    'returning from Settings blocks interaction while deletion receipts reload',
+    'leaving Account blocks interaction while deletion receipts reload',
     (tester) async {
       final store = _DelayedKeysStore();
       await _seed(store, _first, 'San José');
@@ -385,14 +398,18 @@ void main() {
       await app.coordinator.restoreLocal(_first);
       final generation = app.coordinator.generation;
       await _mount(tester, app);
-      await _tab(tester, 'settings');
+      await _tab(tester, 'account');
+      expect(find.byType(AccountSettingsScreen), findsOneWidget);
 
       await store.writeJson('case-delete.$_first', {'serverDeleted': true});
       final retained = jsonEncode(store.records);
       final gate = Completer<List<String>>();
       store.keysGate = gate;
-      await tester.tap(find.byKey(const ValueKey('plan-tab-plan')));
+      // Closing Account rechecks deletion receipts, because Account can
+      // delete plans; the shell stays blocked until the check finishes.
+      await tester.pageBack();
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       expect(
         tester
             .widget<PopupMenuButton<String>>(

@@ -143,7 +143,7 @@ void main() {
         directory.providers.map((p) => p.id).toSet().length,
         directory.providers.length,
       );
-      expect(localProviderCatalogVersion, 'us-pilot-2026-10-26-v1');
+      expect(localProviderCatalogVersion, 'us-pilot-2026-10-26-v2');
       for (final p in localProviderCatalog.where(
         (p) => p.stateCodes.contains('CA'),
       )) {

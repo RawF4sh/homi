@@ -139,15 +139,17 @@ const nationwideRecordsTranslations = <String, Map<String, String>>{
     'fil':
         'Para sa mga kwalipikadong residenteng may kapansanan at/o nakatatanda sa Maricopa County. May mga tuntunin sa pondo at kwalipikasyon; kumpirmahin ang kasalukuyang sakop, pagkakaroon ng proyekto at anumang ambag ng residente. Iba ang lumang impormasyon sa kahating gastos sa kasalukuyang pahina.',
   },
-  'Official rural home-repair loan and grant route. USDA must confirm address, income, ownership, funding and loan/grant conditions.': {
+  'Rural repair loans (1%, must be repaid) for owners who live in the home; grants only for owners 62+. USDA confirms address, income, ownership and funding.': {
     'es':
-        'Vía oficial de préstamos y subvenciones para reparar viviendas rurales. USDA debe confirmar la dirección, ingresos, propiedad, fondos y condiciones del préstamo o subvención.',
-    'zh-Hans': '官方乡村住宅维修贷款和补助渠道。须由 USDA 确认地址、收入、所有权、资金及贷款／补助条件。',
-    'zh-Hant': '官方鄉村住宅維修貸款和補助管道。須由 USDA 確認地址、收入、所有權、資金及貸款／補助條件。',
+        'Préstamos rurales para reparaciones (1 %, deben devolverse) para propietarios que viven en la vivienda; subvenciones solo para propietarios de 62 años o más. USDA confirma la dirección, los ingresos, la propiedad y los fondos.',
+    'zh-Hans':
+        '乡村住宅维修贷款（利率 1%，须偿还），面向自住业主；补助仅限 62 岁或以上的业主。由 USDA 确认地址、收入、所有权和资金。',
+    'zh-Hant':
+        '鄉村住宅維修貸款（利率 1%，須償還），適用於自住屋主；補助僅限 62 歲或以上的屋主。由 USDA 確認地址、收入、所有權和資金。',
     'vi':
-        'Kênh chính thức về khoản vay và trợ cấp sửa chữa nhà nông thôn. USDA phải xác nhận địa chỉ, thu nhập, quyền sở hữu, kinh phí và điều kiện vay/trợ cấp.',
+        'Khoản vay sửa chữa nhà nông thôn (lãi 1%, phải hoàn trả) cho chủ nhà đang sống tại nhà; trợ cấp chỉ dành cho chủ nhà từ 62 tuổi trở lên. USDA xác nhận địa chỉ, thu nhập, quyền sở hữu và kinh phí.',
     'fil':
-        'Opisyal na paraan para sa pautang at grant sa pagkukumpuni ng tahanan sa kanayunan. Kailangang kumpirmahin ng USDA ang address, kita, pagmamay-ari, pondo at mga kondisyon ng pautang o grant.',
+        'Mga pautang sa pagkukumpuni sa kanayunan (1%, kailangang bayaran) para sa mga may-aring nakatira sa bahay; para lamang sa mga may-aring 62 pataas ang mga grant. Kinukumpirma ng USDA ang address, kita, pagmamay-ari at pondo.',
   },
   'Preparation only. Current USDA overview and regulation conflict on loan income policy. Ask the local Rural Development office to resolve this. Age 62 applies to grants, not all loans. No official application is generated.': {
     'es':
@@ -161,15 +163,15 @@ const nationwideRecordsTranslations = <String, Map<String, String>>{
     'fil':
         'Para sa paghahanda lamang. Magkasalungat ang kasalukuyang buod at regulasyon ng USDA tungkol sa kita para sa pautang. Humingi ng paglilinaw sa lokal na tanggapan ng Rural Development. Para sa mga grant ang edad 62, hindi sa lahat ng pautang. Walang ginagawang opisyal na aplikasyon.',
   },
-  'Official VA accessibility-adaptation route. VA and your clinician must confirm benefit eligibility, medical necessity, permitted work and remaining benefit.': {
+  'Official VA home-change route. A VA physician must write or approve the prescription; VA confirms eligibility and remaining benefit.': {
     'es':
-        'Vía oficial de VA para adaptaciones de accesibilidad. VA y tu profesional clínico deben confirmar la elegibilidad, necesidad médica, obras permitidas y beneficio restante.',
-    'zh-Hans': '官方 VA 无障碍改造渠道。须由 VA 和您的临床专业人员确认福利资格、医疗必要性、允许的工程和剩余福利额度。',
-    'zh-Hant': '官方 VA 無障礙改造管道。須由 VA 和您的臨床專業人員確認福利資格、醫療必要性、允許的工程和剩餘福利額度。',
+        'Vía oficial de VA para cambios en el hogar. Un médico de VA debe escribir o aprobar la prescripción; VA confirma la elegibilidad y el beneficio restante.',
+    'zh-Hans': '官方 VA 住宅改造渠道。处方须由 VA 医生开具或批准；由 VA 确认资格和剩余福利额度。',
+    'zh-Hant': '官方 VA 住宅改造管道。處方須由 VA 醫師開立或核准；由 VA 確認資格和剩餘福利額度。',
     'vi':
-        'Kênh chính thức của VA về cải tạo khả năng tiếp cận. VA và chuyên gia lâm sàng của bạn phải xác nhận điều kiện hưởng, sự cần thiết về y tế, công việc được phép và quyền lợi còn lại.',
+        'Kênh chính thức của VA về thay đổi trong nhà. Bác sĩ VA phải viết hoặc phê duyệt chỉ định; VA xác nhận điều kiện hưởng và quyền lợi còn lại.',
     'fil':
-        'Opisyal na paraan ng VA para sa pagbabago sa aksesibilidad. Kailangang kumpirmahin ng VA at ng iyong clinician ang kwalipikasyon sa benepisyo, pangangailangang medikal, pinahihintulutang trabaho at natitirang benepisyo.',
+        'Opisyal na paraan ng VA para sa mga pagbabago sa bahay. Kailangang isulat o aprubahan ng isang VA physician ang reseta; kinukumpirma ng VA ang kwalipikasyon at natitirang benepisyo.',
   },
   'Preparation only. Ask local VA Prosthetics about a prescription, itemized estimate, before-work photo, form and actual property permission. Official form page and PDF revision dates differ; no mapped form is generated. This is not approval or submission.': {
     'es':

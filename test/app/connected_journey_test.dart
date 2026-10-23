@@ -313,9 +313,26 @@ void main() {
         find.text('A professional must review medical necessity.'),
         findsOneWidget,
       );
-      await tap('Prepare forms');
-      await tap('Save and continue');
+      await tap('Start application');
+      // One application workspace: the Now step leads through each stage.
+      expect(find.text('Draft · not sent'), findsOneWidget);
+      expect(find.text('Official form draft'), findsOneWidget);
+      Future<void> nowStep() async {
+        final action = find.byKey(const ValueKey('workspace-now'));
+        await tester.scrollUntilVisible(
+          action,
+          -250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+      }
+
+      await nowStep();
+      expect(find.text('Program questions'), findsOneWidget);
+      await tap('Save');
       expect(revision(), 3);
+      await nowStep();
       await tester.scrollUntilVisible(
         input('Given name'),
         250,
@@ -323,14 +340,13 @@ void main() {
       );
       await tester.enterText(input('Given name'), 'Fictional Resident');
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(CheckboxListTile).first);
-      await tester.pumpAndSettle();
-      await tap('Save and continue');
+      await tap('Confirm these answers');
       expect(revision(), 4);
       final supplied = (savedAnswers!['answers'] as List).first;
       expect(supplied['value'], 'Fictional Resident');
       expect(supplied['reviewState'], 'reviewed');
-      await tap('Prepare or recover this draft');
+      await nowStep();
+      await tap('Create draft PDF');
       expect(exportRequest!['schemaVersion'], '2');
       expect(exportRequest!['expectedCaseRevision'], 4);
       expect(exportRequest!['expectedAnswerRevision'], 1);
@@ -358,10 +374,10 @@ void main() {
       );
       await back();
       expect(find.textContaining('The case changed.'), findsNothing);
-      if (find.text('Manual request history').evaluate().isEmpty) {
-        await tap('Details');
-      }
-      await tap('Manual request history');
+      // The workspace now points to the external step the app cannot take.
+      expect(find.text('You send it — the app can’t'), findsOneWidget);
+      await tap('Updates');
+      await tap('Add update');
       await tester.scrollUntilVisible(
         input('Optional note'),
         250,
@@ -371,7 +387,7 @@ void main() {
         input('Optional note'),
         'Fictional resident will ask the program about missing documents.',
       );
-      await tap('Save manual update');
+      await tap('Save update');
       expect(events, hasLength(1));
       expect(events.single['status'], 'preparing');
       await tester.scrollUntilVisible(

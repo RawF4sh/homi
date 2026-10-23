@@ -144,7 +144,6 @@ void main() {
           findsOneWidget,
         );
         for (final label in [
-          'Service area: confirm your address with the program.',
           'Current availability is unverified. Confirm it with the program.',
           'More information is needed',
           'Ask the program',
@@ -155,32 +154,38 @@ void main() {
           expect(find.text(label), findsNothing);
         }
         expect(find.textContaining('Review needed:'), findsNothing);
+        // The card carries one requirement summary; unknowns never count as
+        // met or failed.
         expect(
-          find.text('0 met · 0 not met · 10 need confirmation'),
-          findsNothing,
+          find.text(
+            '0 looks met · 2 for you to answer · 8 others must confirm',
+          ),
+          findsOneWidget,
         );
+        expect(
+          find.text('Where: Confirm your address with the program'),
+          findsOneWidget,
+        );
+        expect(find.text('Official form draft'), findsOneWidget);
         expect(find.text('Prepare a draft'), findsNothing);
         await _tap(tester, _details('fictional-program'));
         for (final label in [
-          'Service area: confirm your address with the program.',
           'Current availability is unverified. Confirm it with the program.',
           'More information is needed',
           'Preparation only. Nothing has been submitted by this app.',
         ]) {
           expect(find.text(label), findsOneWidget);
         }
-        expect(
-          find.text('0 met · 0 not met · 10 need confirmation'),
-          findsOneWidget,
-        );
         for (final label in [
-          'You can answer',
-          'Ask the program',
-          'Professional review',
-          'Reviewer not specified',
+          'You can answer (2)',
+          'The program must confirm (5)',
+          'A professional must confirm (2)',
+          'Reviewer not specified (1)',
         ]) {
           expect(find.text(label), findsOneWidget);
         }
+        expect(find.textContaining('Looks met ('), findsNothing);
+        expect(find.textContaining('Not met ('), findsNothing);
         expect(
           find.text(
             'Fictional exception still needs program review; this is not a rejection.',
@@ -189,22 +194,31 @@ void main() {
         );
         expect(
           find.byWidgetPredicate(
-            (w) => w is ListTile && w.key.toString().contains('-check-check-'),
+            (w) =>
+                (w is ListTile || w is ExpansionTile) &&
+                w.key.toString().contains('-check-check-'),
           ),
           findsNWidgets(10),
         );
+        expect(find.text('Why'), findsNWidgets(10));
         expect(find.text('Rule version: fictional-rule-v2'), findsOneWidget);
         expect(find.text('Fictional official source'), findsOneWidget);
+        // One application workspace replaces the old list of equal step
+        // links (UI-025).
         for (final action in ['intake', 'answers', 'export', 'history']) {
           expect(
-            tester
-                .widget<TextButton>(
-                  find.byKey(ValueKey('program-fictional-program-$action')),
-                )
-                .onPressed,
-            isNotNull,
+            find.byKey(ValueKey('program-fictional-program-$action')),
+            findsNothing,
           );
         }
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.byKey(const ValueKey('program-fictional-program-start')),
+              )
+              .onPressed,
+          isNotNull,
+        );
         await _tap(
           tester,
           find.byKey(const ValueKey('program-fictional-program-contact')),
@@ -237,89 +251,113 @@ void main() {
     );
   }
 
-  testWidgets(
-    'three program overviews stay compact and retain full names in details',
-    (tester) async {
-      const routes = [
-        (
-          'scfhp-eaa',
-          'SCFHP',
-          'SCFHP Environmental Accessibility Adaptations (referral draft)',
-          'Could help with accessibility changes at home.',
+  testWidgets('three program overviews stay compact and retain full names in details', (
+    tester,
+  ) async {
+    const routes = [
+      (
+        'scfhp-eaa',
+        'SCFHP',
+        'SCFHP Environmental Accessibility Adaptations (referral draft)',
+        'May help SCFHP Medi-Cal members with home changes needed for safety and independence.',
+        'Needs a professional order and a physical or occupational therapy evaluation.',
+        'Santa Clara County · SCFHP Medi-Cal or DualConnect members only',
+      ),
+      (
+        'hpsm-eaa',
+        'HPSM',
+        'HPSM Home Modifications (referral draft)',
+        'May help HPSM members with home changes needed for safety and independence.',
+        'Needs a professional order and a physical or occupational therapy evaluation.',
+        'San Mateo County · HPSM Medi-Cal or CareAdvantage members only',
+      ),
+      (
+        'rtp-home-repair',
+        'Rebuilding Together Peninsula',
+        'Rebuilding Together Peninsula (preparation worksheet)',
+        'May help homeowners with no-cost safety repairs, if RTP accepts the project.',
+        'RTP typically can’t do emergency repairs.',
+        'San Mateo County, Palo Alto, Mountain View, Los Altos · RTP confirms the address',
+      ),
+    ];
+    final transport = FakeTransport((request) async {
+      final body = http.requestJson(request);
+      if (request.endpoint.path == '/v1/create-case') {
+        return http.jsonResponse({...body, 'revision': 1});
+      }
+      return http.jsonResponse(
+        _response(
+          body,
+          programs: [
+            for (final (id, _, fullName, _, _, _) in routes)
+              {..._manualProgram(), 'programId': id, 'programName': fullName},
+          ],
         ),
-        (
-          'hpsm-eaa',
-          'HPSM',
-          'HPSM Home Modifications (referral draft)',
-          'Could help with home modifications for accessibility.',
-        ),
-        (
-          'rtp-home-repair',
-          'Rebuilding Together Peninsula',
-          'Rebuilding Together Peninsula (preparation worksheet)',
-          'Could help with home repairs.',
-        ),
-      ];
-      final transport = FakeTransport((request) async {
-        final body = http.requestJson(request);
-        if (request.endpoint.path == '/v1/create-case') {
-          return http.jsonResponse({...body, 'revision': 1});
-        }
-        return http.jsonResponse(
-          _response(
-            body,
-            programs: [
-              for (final (id, _, fullName, _) in routes)
-                {..._manualProgram(), 'programId': id, 'programName': fullName},
-            ],
-          ),
-        );
-      });
-      final app = await _app(transport);
-      await tester.pumpWidget(_screen(app, embedded: true));
+      );
+    });
+    final app = await _app(transport);
+    await tester.pumpWidget(_screen(app, embedded: true));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Eligibility and availability need confirmation.'),
+      findsOneWidget,
+    );
+    expect(find.text('3 programs'), findsOneWidget);
+    expect(find.text('Details'), findsWidgets);
+    expect(find.textContaining('Review needed:'), findsNothing);
+    for (final (id, title, fullName, purpose, limit, where) in routes) {
+      final start = find.byKey(ValueKey('program-$id-start'));
+      await tester.scrollUntilVisible(
+        start,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.pumpAndSettle();
+      expect(tester.widget(start), isA<FilledButton>());
+      final worksheet = id == 'rtp-home-repair';
       expect(
-        find.text('Eligibility and availability need confirmation.'),
+        find.descendant(
+          of: start,
+          matching: find.text(
+            worksheet ? 'Prepare worksheet' : 'Start application',
+          ),
+        ),
         findsOneWidget,
       );
-      expect(find.text('3 programs'), findsOneWidget);
-      expect(find.text('Details'), findsWidgets);
-      expect(find.byType(FilledButton), findsNothing);
-      expect(find.textContaining('Review needed:'), findsNothing);
-      for (final (id, title, fullName, purpose) in routes) {
-        final start = find.byKey(ValueKey('program-$id-start'));
-        await tester.scrollUntilVisible(
-          start,
-          200,
-          scrollable: find.byType(Scrollable).first,
-        );
-        await tester.pumpAndSettle();
-        expect(
-          find.descendant(of: start, matching: find.text('Prepare forms')),
-          findsOneWidget,
-        );
-        expect(
-          tester.getTopLeft(start).dy,
-          lessThan(tester.getTopLeft(_details(id)).dy),
-        );
-        expect(find.text(title), findsOneWidget);
-        expect(find.text(purpose), findsOneWidget);
-        expect(find.text(fullName), findsNothing);
-        await _tap(tester, _details(id));
-        expect(find.text(fullName), findsOneWidget);
-        expect(
-          find.text(
-            'Preparation only. Nothing has been submitted by this app.',
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('program-$id')),
+          matching: find.text(
+            worksheet ? 'Preparation worksheet' : 'Official form draft',
           ),
-          findsOneWidget,
-        );
-        await _tap(tester, _details(id));
-        expect(find.text(fullName), findsNothing);
-      }
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getTopLeft(start).dy,
+        lessThan(tester.getTopLeft(_details(id)).dy),
+      );
+      expect(find.text(title), findsOneWidget);
+      expect(find.text(purpose), findsOneWidget);
+      // Each card states its key limit and the area from the program's page.
+      expect(
+        tester.widget<Text>(find.byKey(ValueKey('program-limit-$id'))).data,
+        limit,
+      );
+      expect(find.text('Where: $where'), findsOneWidget);
+      expect(find.text(fullName), findsNothing);
+      await _tap(tester, _details(id));
+      expect(find.text(fullName), findsOneWidget);
+      expect(
+        find.text('Preparation only. Nothing has been submitted by this app.'),
+        findsOneWidget,
+      );
+      await _tap(tester, _details(id));
+      expect(find.text(fullName), findsNothing);
+    }
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'closed intake and a failed criterion remain visible before details',
@@ -364,10 +402,12 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text('0 met · 1 not met · 9 need confirmation'),
+        find.text(
+          '1 not met · 0 looks met · 1 for you to answer · 8 others must confirm',
+        ),
         findsOneWidget,
       );
-      expect(find.text('Not met'), findsOneWidget);
+      expect(find.text('Not met (1)'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
@@ -448,7 +488,7 @@ void main() {
       );
       expect(
         tester
-            .widget<OutlinedButton>(
+            .widget<FilledButton>(
               find.byKey(const ValueKey('program-fictional-program-start')),
             )
             .onPressed,

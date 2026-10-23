@@ -154,7 +154,8 @@ void main() {
       expect(store.records[f.pendingKey], isNull);
       expect(store.records[f.editKey], _editor);
       expect(find.text('Pending update'), findsNothing);
-      expect(find.text('Add a reported update'), findsOneWidget);
+      expect(find.byKey(const ValueKey('history-editor')), findsOneWidget);
+      expect(find.text('Add update'), findsOneWidget);
       _noAppend(f.transport);
       expect(tester.takeException(), isNull);
     },

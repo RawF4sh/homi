@@ -13,7 +13,17 @@ import type { CaseSnapshot } from '../types.ts';
 const S = 'safeathome_private';
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const time = (value: string | Date) => new Date(value).toISOString();
-function membership(row: QueryResultRow, now: number): CaseMembership {
+// Labels live in the owner-written definition. The recipient-facing view never
+// carries the owner's private "Who is this for?" label.
+type LabelView = 'owner' | 'recipient' | undefined;
+const labelsOf = (source: { recipientLabel?: unknown; ownerLabel?: unknown }): { recipientLabel?: string; ownerLabel?: string } =>
+  Object.fromEntries((['recipientLabel', 'ownerLabel'] as const).filter(key => typeof source[key] === 'string').map(key => [key, source[key]]));
+function membership(row: QueryResultRow, now: number, view?: LabelView): CaseMembership {
+  const labels = view ? labelsOf(row.definition) : {};
+  if (view === 'recipient') delete labels.recipientLabel;
+  return { ...membershipFields(row, now), ...labels };
+}
+function membershipFields(row: QueryResultRow, now: number): CaseMembership {
   return { membershipId: row.membership_id, caseId: row.case_id, grantorId: row.owner_id, recipientId: row.recipient_id,
     role: row.definition.role, scope: row.definition.scope, permissionRevision: Number(row.permission_revision),
     expiresAt: row.expires_at === null ? null : time(row.expires_at), invitationExpiresAt: time(row.invitation_expires_at),
@@ -56,8 +66,9 @@ export class PostgresSharingRepository implements SharingRepository {
             [route, args, invitationEmailHash(verifiedEmail)])).rows[0].result;
         }
         if (result.status !== 'ok') return { status: result.status };
-        if (route === 'list-shared-cases') return { status: 'ok', data: { memberships: result.rows.map((r: QueryResultRow) => membership(r, Date.parse(now))) } };
-        const row = result.row, grant = membership(row, Date.parse(now));
+        const view: LabelView = input.includeLabels ? 'recipient' : undefined;
+        if (route === 'list-shared-cases') return { status: 'ok', data: { memberships: result.rows.map((r: QueryResultRow) => membership(r, Date.parse(now), view)) } };
+        const row = result.row, grant = membership(row, Date.parse(now), route === 'review-invitation' ? view : undefined);
         return { status: 'ok', data: route === 'review-invitation' || route === 'accept-invitation' ? { membership: grant }
           : { membership: grant, projection: row.projection, notes: row.notes.events } };
       }
@@ -69,7 +80,7 @@ export class PostgresSharingRepository implements SharingRepository {
       const programIds = [...new Set([...progress.programs.map(p => p.programId), ...legacy.map(h => h.programId)])];
       if (route === 'list-sharing' || route === 'list-email-sharing') {
         const rows = (await client.query(`SELECT * FROM ${S}.case_shares WHERE case_id=$1 AND owner_id=$2 ORDER BY membership_id`, [input.caseId, userId])).rows;
-        return { status: 'ok', data: { availableProgramIds: programIds, shares: rows.map(row => ({ ...membership(row, Date.parse(now)), projection: row.projection, notes: row.notes.events, audit: row.audit.events,
+        return { status: 'ok', data: { availableProgramIds: programIds, shares: rows.map(row => ({ ...membership(row, Date.parse(now), input.includeLabels ? 'owner' : undefined), projection: row.projection, notes: row.notes.events, audit: row.audit.events,
           ...(route==='list-email-sharing'?{invitedEmail:row.invited_email}:{}),
         })) } };
       }
@@ -78,7 +89,7 @@ export class PostgresSharingRepository implements SharingRepository {
         if (!row) return { status: 'not_found' };
         if (row.revoked && Number(row.permission_revision) === input.expectedPermissionRevision! + 1) return { status: 'ok', data: { membership: membership(row, Date.parse(now)) } };
         if (Number(row.permission_revision) !== input.expectedPermissionRevision || row.revoked) return { status: 'conflict' };
-        const revoked = (await client.query(`UPDATE ${S}.case_shares SET revoked=true, invitation_hash=NULL,projection=NULL,notes='{"events":[]}',
+        const revoked = (await client.query(`UPDATE ${S}.case_shares SET revoked=true, invitation_hash=NULL,projection=NULL,notes='{"events":[]}',definition=definition-'recipientLabel'-'ownerLabel',
           permission_revision=permission_revision+1,audit=${S}.share_audit(audit,'revoked') WHERE membership_id=$1 RETURNING *`, [input.invitationId])).rows[0];
         return { status: 'ok', data: { membership: membership(revoked, Date.parse(now)) } };
       }
@@ -97,7 +108,7 @@ export class PostgresSharingRepository implements SharingRepository {
         if (!(await client.query(`SELECT ${S}.share_recipient_has_capacity($1) AS capacity`, [input.recipientId])).rows[0].capacity) return {status:'quota_exceeded'};
         const inserted = (await client.query(`INSERT INTO ${S}.case_shares(membership_id,case_id,owner_id,recipient_id,creation_key,invitation_hash,invitation_expires_at,expires_at,definition,projection,audit,recipient_email_hash,invited_email)
           VALUES($1,$2,$3,$4,$5,$6,LEAST(clock_timestamp()+interval '7 days',COALESCE($7::timestamptz,'infinity'::timestamptz)),$7,$8::jsonb,$9::jsonb,${S}.share_audit('{"events":[]}', 'invited'),$10,$11) RETURNING *`,
-        [input.invitationId, input.caseId, userId, input.recipientId, key, tokenHash, input.expiresAt, JSON.stringify({ role: input.role, scope }), JSON.stringify(projection), emailInvite ? invitationEmailHash(input.recipientEmail!) : null, emailInvite?input.recipientEmail:null])).rows[0];
+        [input.invitationId, input.caseId, userId, input.recipientId, key, tokenHash, input.expiresAt, JSON.stringify({ role: input.role, scope, ...labelsOf(input) }), JSON.stringify(projection), emailInvite ? invitationEmailHash(input.recipientEmail!) : null, emailInvite?input.recipientEmail:null])).rows[0];
         return { status: 'ok', data: { created: true, membership: membership(inserted, Date.parse(now)) } };
       }
       if (route === 'change-sharing') {
@@ -108,7 +119,7 @@ export class PostgresSharingRepository implements SharingRepository {
         if (Number(row.permission_revision) >= 998) return {status:'quota_exceeded'};
         const changed = (await client.query(`UPDATE ${S}.case_shares SET definition=$2::jsonb,projection=$3::jsonb,expires_at=$4,
           permission_revision=permission_revision+1,audit=${S}.share_audit(audit,'changed') WHERE membership_id=$1 RETURNING *`,
-        [input.invitationId, JSON.stringify({ role: input.role, scope, lastChangeKey: changeKey }), JSON.stringify(projection), input.expiresAt])).rows[0];
+        [input.invitationId, JSON.stringify({ role: input.role, scope, lastChangeKey: changeKey, ...labelsOf(row.definition) }), JSON.stringify(projection), input.expiresAt])).rows[0];
         return { status: 'ok', data: { membership: membership(changed, Date.parse(now)) } };
       }
       return { status: 'invalid_request' };

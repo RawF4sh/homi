@@ -81,13 +81,18 @@ void main() {
       }
       debugPrint('ASSISTANT_FICTIONAL_CONTEXTUAL_REPLY: $raw');
       if (contextualOnly) {
+        // With a ready model the App guide lives in Chat options.
+        await tester.tap(find.byKey(const ValueKey('assistant-options')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('assistant-options-guide')));
+        await tester.pumpAndSettle();
         final builtin = find.byKey(
           const ValueKey('assistant-app-help-prepareDraft'),
         );
         await tester.ensureVisible(builtin);
         await tester.tap(builtin);
         await tester.pumpAndSettle();
-        expect(find.text('App guidance'), findsOneWidget);
+        expect(find.text('App guide — not AI'), findsOneWidget);
         expect(
           find.textContaining('Saving or sharing a draft does not submit'),
           findsOneWidget,

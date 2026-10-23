@@ -78,6 +78,17 @@ explicit acceptance. See `fixtures/email-invitation.json` and
 [implementation, flags and device checks](../../docs/simple-helper-invitations.md).
 Migration 013 and the default-off `SAH_SIMPLE_INVITATIONS_ENABLED` flag are required.
 
+## Sharing labels
+
+There is no server-side profile or display-name source, and plan names stay
+owner-only, so shared rows carry no plan name. Create requests may add optional
+owner-typed `recipientLabel` ("Who is this for?") and `ownerLabel` (the name the
+owner chooses to show). List and review requests opt in with `includeLabels: true`;
+without it responses keep the exact earlier shape. `recipientLabel` is returned
+only on the owner's `list-sharing`/`list-email-sharing` rows; recipients get only
+`ownerLabel`. Labels are not verified identities, are kept by `change-sharing`
+and cleared on revocation. See `fixtures/sharing-labels.json`. No migration.
+
 ## Detailed helper sharing
 
 `sensitive-sharing.schema.json` and `fixtures/sensitive-sharing.json` define eight

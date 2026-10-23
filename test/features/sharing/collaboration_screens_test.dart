@@ -18,12 +18,17 @@ class _HelperStore extends MemoryPrivateStore {
   String get accountId => helper;
 }
 
-AppServices _app(FakeTransport transport, {bool owner = false}) => AppServices(
+AppServices _app(
+  FakeTransport transport, {
+  bool owner = false,
+  bool labels = false,
+}) => AppServices(
   config: LiveAppConfig(
     apiOrigin: Uri.parse('https://fictional.example'),
     supabaseUrl: Uri.parse('https://fictional.supabase.co'),
     publishableKey: 'fictional',
     permissionSharingEnabled: true,
+    sharingLabelsEnabled: labels,
   ),
   session: FakeSession()..owner = owner ? 'fictional-owner' : helper,
   store: owner ? MemoryPrivateStore() : _HelperStore(),
@@ -254,13 +259,87 @@ void main() {
       await _mount(tester, app, owner: true);
       await _tap(tester, 'Accept reported status');
       expect(reviewed!['decision'], 'accepted');
+      expect(find.textContaining('Reviewed by You'), findsOneWidget);
       expect(
-        find.textContaining('Reviewed by fictional-owner'),
+        find.textContaining('Proposed by The person you shared with'),
         findsOneWidget,
       );
-      expect(find.textContaining('Proposed by $helper'), findsOneWidget);
+      expect(find.textContaining(helper), findsNothing);
+      expect(find.textContaining('fictional-owner'), findsNothing);
       expect(find.text('Accept reported status'), findsNothing);
       await tester.pumpWidget(const SizedBox());
     },
   );
+  for (final owner in [true, false]) {
+    testWidgets(
+      'owner-typed labels name both people; absent labels and IDs never show (owner: $owner)',
+      (tester) async {
+        final meta = _meta(owner);
+        final row = Map<String, Object?>.from(
+          ((meta[owner ? 'shares' : 'memberships']! as List).single as Map),
+        );
+        row['ownerLabel'] = 'Fictional Sam';
+        if (owner) row['recipientLabel'] = 'Fictional neighbor Ana';
+        final app = _app(
+          FakeTransport(
+            (request) async => http.jsonResponse(
+              request.endpoint.path.endsWith('read-collaboration')
+                  ? {
+                      ...collaborationFixture('read-collaboration'),
+                      'canManage': owner,
+                      'proposals': collaborationFixture(
+                        'review-shared-status',
+                      )['proposals'],
+                    }
+                  : {
+                      ...meta,
+                      owner ? 'shares' : 'memberships': [row],
+                    },
+            ),
+          ),
+          owner: owner,
+          labels: true,
+        );
+        await _mount(tester, app, owner: owner);
+        await tester.scrollUntilVisible(
+          find.textContaining('Reviewed by'),
+          180,
+          scrollable: find.byType(Scrollable).first,
+          maxScrolls: 40,
+        );
+        expect(
+          find.textContaining(
+            owner ? 'Proposed by Fictional neighbor Ana' : 'Proposed by You',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining(
+            owner ? 'Reviewed by You' : 'Reviewed by Fictional Sam',
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining(helper), findsNothing);
+        expect(find.textContaining('fictional-owner'), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+  testWidgets('helper sees the assignee as You, never an account ID', (
+    tester,
+  ) async {
+    final app = _app(
+      FakeTransport(
+        (request) async => http.jsonResponse(
+          request.endpoint.path.endsWith('read-collaboration')
+              ? collaborationFixture('read-collaboration')
+              : _meta(false),
+        ),
+      ),
+    );
+    await _mount(tester, app);
+    expect(find.text('Assigned to You'), findsOneWidget);
+    expect(find.textContaining(helper), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

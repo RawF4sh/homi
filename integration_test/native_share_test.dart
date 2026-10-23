@@ -112,7 +112,7 @@ void main() {
         () => h.transport.responseBodies['/v2/read-form-answers'] != null,
         'draft inputs',
       );
-      await tap('Prepare or recover this draft');
+      await tap('Create draft PDF');
       await until(() => h.transport.pdfs.length == 1, 'real draft download');
       final pdf = h.transport.pdfs.single;
       final doc = await PdfDocument.openData(
@@ -136,9 +136,11 @@ void main() {
       final writesBefore = h.transport.paths
           .where((p) => p == '/v1/append-request-update')
           .length;
-      await tap('Share or save draft');
+      await tap('Share draft file');
       expect(
-        find.textContaining('Sharing does not submit an application'),
+        find.textContaining(
+          'It doesn’t send your application. The app or person you choose can keep a copy.',
+        ),
         findsOneWidget,
       );
       await tester.tap(find.text('Open share sheet'));
@@ -187,7 +189,7 @@ void main() {
         'operator to cancel native sheet',
         seconds: 150,
       );
-      expect(find.text('Share or save draft'), findsOneWidget);
+      expect(find.text('Share draft file'), findsOneWidget);
       expect(
         h.transport.paths.where((p) => p == '/v1/append-request-update').length,
         writesBefore,

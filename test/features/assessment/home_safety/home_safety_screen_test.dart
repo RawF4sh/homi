@@ -61,18 +61,37 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Fictional upstairs'));
       await tester.pumpAndSettle();
-      final dropdown = find.byKey(const ValueKey('answer-bedroom.path'));
+      final notSure = find.byKey(
+        const ValueKey('answer-bedroom.path-not_sure'),
+      );
       await tester.scrollUntilVisible(
-        dropdown,
+        notSure,
         300,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pumpAndSettle();
-      await tester.tap(dropdown);
+      final state = find.byKey(const ValueKey('answer-state-bedroom.path'));
+      expect(tester.widget<Text>(state).data, 'Not answered');
+      expect(
+        tester
+            .widget<RadioGroup<String>>(
+              find.byKey(const ValueKey('answer-bedroom.path')),
+            )
+            .groupValue,
+        isNull,
+        reason: 'No answer is preselected.',
+      );
+      await tester.tap(notSure);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Not sure').last);
-      await tester.pumpAndSettle();
-      expect(find.text('Not sure'), findsOneWidget);
+      expect(tester.widget<Text>(state).data, 'Answered');
+      expect(
+        tester
+            .widget<RadioGroup<String>>(
+              find.byKey(const ValueKey('answer-bedroom.path')),
+            )
+            .groupValue,
+        'not_sure',
+      );
       expect(h.server.saves, 0);
       expect(tester.takeException(), isNull);
       final record = h.store.records.values.firstWhere(

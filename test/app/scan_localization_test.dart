@@ -172,9 +172,14 @@ void main() {
           find.text(words.text('Explore support for sitting and standing')),
         );
         expect(find.text(expected.title), findsNothing);
-        final idea = find.ancestor(
-          of: find.text(words.text('Explore support for sitting and standing')),
-          matching: find.byType(CheckboxListTile),
+        final idea = find.descendant(
+          of: find.ancestor(
+            of: find.text(
+              words.text('Explore support for sitting and standing'),
+            ),
+            matching: find.byType(Card),
+          ),
+          matching: find.widgetWithText(OutlinedButton, words.text('Keep')),
         );
         await revealPastModel(tester, idea);
         await tester.tap(idea);
@@ -222,23 +227,17 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        tester.platformDispatcher.accessibilityFeaturesTestValue =
-            const FakeAccessibilityFeatures(accessibleNavigation: true);
-        addTearDown(
-          tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        // Every user selects from the visible, numbered list.
+        final item = find.byKey(const ValueKey('scan-item-surface-1'));
+        await revealPastModel(tester, item);
+        expect(
+          find.descendant(
+            of: item,
+            matching: find.text('1. ${words.text('Unidentified surface')}'),
+          ),
+          findsOneWidget,
         );
-        await tester.pumpAndSettle();
-        final list = find.byKey(const ValueKey('scan-selection-surface-1'));
-        await revealPastModel(tester, list);
-        await tester.tap(list);
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find
-              .byWidgetPredicate(
-                (w) => w is DropdownMenuItem<String> && w.value == 'surface-1',
-              )
-              .last,
-        );
+        await tester.tap(item);
         await tester.pumpAndSettle();
         final selector = find.byKey(const ValueKey('surface-1-unknown'));
         for (var i = 0; i < 100 && selector.evaluate().isEmpty; i++) {
@@ -289,8 +288,18 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await reveal(tester, find.byTooltip(entry.value));
-        await tester.tap(find.byTooltip(entry.value));
+        final more = find.byTooltip(
+          AppLocalizations(entry.key).text('More view controls'),
+        );
+        await reveal(tester, more);
+        await tester.tap(more);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(entry.value));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final topDown = find.text(AppLocalizations(entry.key).text('Top-down'));
+        await reveal(tester, topDown);
+        await tester.tap(topDown);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         final semantics = tester

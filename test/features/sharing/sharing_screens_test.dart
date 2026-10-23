@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -26,14 +27,16 @@ Map<String, Object?> _view({bool viewer = false}) {
 AppServices _ownerServices(
   bool email,
   MemoryPrivateStore store,
-  FakeTransport transport,
-) => AppServices(
+  FakeTransport transport, {
+  bool labels = false,
+}) => AppServices(
   config: LiveAppConfig(
     apiOrigin: Uri.parse('https://example.org'),
     supabaseUrl: Uri.parse('https://fictional.supabase.co'),
     publishableKey: 'fictional',
     permissionSharingEnabled: true,
     simpleInvitationsEnabled: email,
+    sharingLabelsEnabled: labels,
   ),
   session: FakeSession(),
   store: store,
@@ -275,7 +278,14 @@ void main() {
       await tester.tap(find.text('Accept invitation'));
       await tester.pumpAndSettle();
       expect(accepted, isTrue);
-      expect(find.text('Shared home safety plan'), findsOneWidget);
+      expect(find.text('Plan shared with you'), findsOneWidget);
+      expect(find.textContaining('Invited by account'), findsNothing);
+      expect(
+        find.textContaining(
+          (view['membership']! as Map)['membershipId'] as String,
+        ),
+        findsNothing,
+      );
     },
   );
   for (final emailInvites in [false, true]) {
@@ -296,7 +306,24 @@ void main() {
         });
         Map<String, Object?>? snapshot, created;
         Map<String, Object?>? selected;
-        String? clipboard;
+        String? clipboard, shared;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              const MethodChannel('dev.fluttercommunity.plus/share'),
+              (call) async {
+                shared = (call.arguments as Map)['text'] as String;
+                return 'dev.fluttercommunity.plus/share/unavailable';
+              },
+            );
+        addTearDown(
+          () => TestDefaultBinaryMessengerBinding
+              .instance
+              .defaultBinaryMessenger
+              .setMockMethodCallHandler(
+                const MethodChannel('dev.fluttercommunity.plus/share'),
+                null,
+              ),
+        );
         if (emailInvites) {
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
               .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -315,9 +342,14 @@ void main() {
         final app = _ownerServices(
           emailInvites,
           MemoryPrivateStore(),
+          labels: !emailInvites,
           FakeTransport((request) async {
             final body = Map<String, Object?>.from(
               jsonDecode(utf8.decode(request.body)) as Map,
+            );
+            expect(
+              body.containsKey('includeLabels'),
+              !emailInvites && request.endpoint.path.contains('list'),
             );
             switch (request.endpoint.path) {
               case '/v1/create-case':
@@ -409,44 +441,92 @@ void main() {
         );
         await app.coordinator.save();
         await _mount(tester, app, PeopleWithAccessScreen(services: app));
-        expect(find.text('Create invitation code'), findsNothing);
+        expect(find.text('Only you can see this plan.'), findsOneWidget);
+        expect(find.byType(TextField), findsNothing, reason: 'list only');
         await tester.scrollUntilVisible(
-          find.byType(TextField),
+          find.byKey(const ValueKey('invite-someone')),
           250,
           scrollable: find.byType(Scrollable).first,
         );
+        await tester.tap(find.byKey(const ValueKey('invite-someone')));
         await tester.pumpAndSettle();
+        expect(find.text('Step 1 of 3 · Who'), findsOneWidget);
         await tester.enterText(
-          find.byType(TextField),
+          find.byType(TextField).first,
           emailInvites
               ? 'helper@fictional.example'
               : '22222222-2222-4222-8222-222222222222',
         );
+        expect(
+          find.text('Who is this for? (optional)'),
+          emailInvites ? findsNothing : findsOneWidget,
+          reason: 'label fields only with the labels flag',
+        );
+        expect(find.byType(TextField), findsNWidgets(emailInvites ? 1 : 3));
+        if (!emailInvites) {
+          await tester.enterText(
+            find.byType(TextField).at(1),
+            '  Fictional neighbor Ana  ',
+          );
+          await tester.enterText(find.byType(TextField).at(2), 'Fictional Sam');
+        }
+        tester.testTextInput.hide();
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Next'));
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+        expect(find.text('Step 2 of 3 · What they can do'), findsOneWidget);
         await tester.scrollUntilVisible(
           find.text('Selected observation'),
           250,
           scrollable: find.byType(Scrollable).first,
         );
+        await tester.ensureVisible(find.text('Selected observation'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Selected observation'));
+        await tester.pumpAndSettle();
         await tester.scrollUntilVisible(
-          find.text('Preview selected information'),
+          find.text('Next'),
           250,
           scrollable: find.byType(Scrollable).first,
         );
-        await tester.tap(find.text('Preview selected information'));
+        expect(
+          tester
+              .getRect(
+                find.text(
+                  'Photos, PDFs, income, health answers, and downloads are not shared.',
+                ),
+              )
+              .bottom,
+          // Real fonts draw taller than the test font, so require clear space.
+          lessThanOrEqualTo(
+            tester.getRect(find.text('Access expires')).top - 16,
+          ),
+          reason: 'The note must not overlap the floating expiry label.',
+        );
+        await tester.tap(find.text('Next'));
         await tester.pumpAndSettle();
         expect((selected!['scope'] as Map)['findingIds'], ['selected']);
         expect(created, isNull);
+        expect(find.text('Selected observation'), findsOneWidget);
+        expect(find.text('Excluded observation'), findsNothing);
+        expect(find.textContaining('revision'), findsNothing);
+        if (!emailInvites) {
+          expect(find.text('Fictional neighbor Ana'), findsOneWidget);
+        }
         await tester.scrollUntilVisible(
-          find.text('Create invitation code'),
+          find.text('Create invitation'),
           250,
           scrollable: find.byType(Scrollable).first,
         );
-        await tester.tap(find.text('Create invitation code'));
+        await tester.tap(find.text('Create invitation'));
         await tester.pumpAndSettle();
+        final link = 'https://example.org/invite#code=${'a' * 43}';
         if (emailInvites) {
           expect(created!['recipientEmail'], 'helper@fictional.example');
           expect(created!.containsKey('recipientId'), false);
+          expect(created!.containsKey('recipientLabel'), false);
+          expect(created!.containsKey('ownerLabel'), false);
           await tester.scrollUntilVisible(
             find.text('Copy invitation link'),
             250,
@@ -454,13 +534,21 @@ void main() {
           );
           await tester.tap(find.text('Copy invitation link'));
           await tester.pumpAndSettle();
-          expect(clipboard, 'https://example.org/invite#code=${'a' * 43}');
+          expect(clipboard, link);
         } else {
           expect(
             created!['recipientId'],
             '22222222-2222-4222-8222-222222222222',
           );
+          expect(created!['recipientLabel'], 'Fictional neighbor Ana');
+          expect(created!['ownerLabel'], 'Fictional Sam');
         }
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('invitation-share')),
+        );
+        await tester.tap(find.byKey(const ValueKey('invitation-share')));
+        await tester.pumpAndSettle();
+        expect(shared, emailInvites ? link : 'a' * 43);
         expect((created!['scope'] as Map)['findingIds'], ['selected']);
         expect((created!['scope'] as Map)['allowHelperNotes'], false);
         expect(
@@ -473,4 +561,161 @@ void main() {
       },
     );
   }
+  testWidgets(
+    'owner-typed labels name people and plans; neutral fallbacks without labels or IDs',
+    (tester) async {
+      final fixtures =
+          (jsonDecode(
+                    File(
+                      'contracts/v3/fixtures/sharing-labels.json',
+                    ).readAsStringSync(),
+                  )
+                  as List)
+              .cast<Map<String, Object?>>();
+      Map<String, Object?> response(String route) =>
+          fixtures.firstWhere((f) => f['route'] == route)['response']!
+              as Map<String, Object?>;
+      final bodies = <String, Map>{};
+      Map<String, Object?>? snapshot;
+      final app = _ownerServices(
+        true,
+        MemoryPrivateStore(),
+        labels: true,
+        FakeTransport((request) async {
+          final path = request.endpoint.path,
+              body = jsonDecode(utf8.decode(request.body)) as Map;
+          bodies[path] = body;
+          if (path == '/v1/create-case') {
+            snapshot = {...body, 'revision': 1};
+            return http.jsonResponse(snapshot);
+          }
+          if (path == '/v3/list-email-sharing') {
+            final labelled = Map<String, Object?>.from(
+              (response('list-sharing')['shares']! as List).single as Map,
+            )..['caseId'] = snapshot!['caseId'];
+            final unlabelled = Map<String, Object?>.from(labelled)
+              ..remove('recipientLabel')
+              ..['membershipId'] = '55555555-5555-4555-8555-555555555555'
+              ..['projection'] = null;
+            return http.jsonResponse({
+              'schemaVersion': '3',
+              'availableProgramIds': [],
+              'shares': [
+                {...labelled, 'invitedEmail': 'ana@fictional.example'},
+                {...unlabelled, 'invitedEmail': null},
+              ],
+            });
+          }
+          if (path == '/v3/review-invitation') {
+            return http.jsonResponse(response('review-invitation'));
+          }
+          final mine = response('list-shared-cases'),
+              row = (mine['memberships']! as List).single as Map;
+          return http.jsonResponse({
+            ...mine,
+            'memberships': [
+              row,
+              {...row, 'membershipId': '66666666-6666-4666-8666-666666666666'}
+                ..remove('ownerLabel'),
+            ],
+          });
+        }),
+      );
+      await app.coordinator.createDraft();
+      await app.coordinator.save();
+      await _mount(tester, app, PeopleWithAccessScreen(services: app));
+      expect(bodies['/v3/list-email-sharing']!['includeLabels'], true);
+      expect(find.text('Fictional neighbor Ana'), findsOneWidget);
+      expect(find.text('ana@fictional.example'), findsOneWidget);
+      expect(find.text('Someone you invited'), findsOneWidget);
+      expect(find.textContaining('2222-4222'), findsNothing);
+      await tester.pumpWidget(
+        MaterialApp(home: SharedWithMeScreen(services: app)),
+      );
+      await tester.pumpAndSettle();
+      expect(bodies['/v3/list-shared-cases']!['includeLabels'], true);
+      expect(find.text('Shared by Fictional Sam'), findsOneWidget);
+      expect(find.text('Plan shared with you'), findsOneWidget);
+      expect(find.textContaining('neighbor Ana'), findsNothing);
+      await tester.enterText(
+        find.byType(TextField),
+        List.filled(43, 'a').join(),
+      );
+      await tester.tap(find.text('Review invitation'));
+      await tester.pumpAndSettle();
+      expect(bodies['/v3/review-invitation']!['includeLabels'], true);
+      expect(find.text('Invitation from Fictional Sam'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets(
+    'labels flag off: no label requests or fields, neutral fallbacks, no IDs',
+    (tester) async {
+      final bodies = <String, Map>{};
+      final view = _view(),
+          member = view['membership']! as Map<String, Object?>;
+      final app = _ownerServices(
+        false,
+        MemoryPrivateStore(),
+        FakeTransport((request) async {
+          final path = request.endpoint.path,
+              body = jsonDecode(utf8.decode(request.body)) as Map;
+          bodies[path] = body;
+          if (path == '/v1/create-case') {
+            return http.jsonResponse({...body, 'revision': 1});
+          }
+          if (path == '/v3/list-sharing') {
+            return http.jsonResponse({
+              'schemaVersion': '3',
+              'availableProgramIds': [],
+              'shares': [
+                {
+                  ...member,
+                  'caseId': body['caseId'],
+                  'projection': null,
+                  'notes': [],
+                  'audit': [],
+                },
+              ],
+            });
+          }
+          return http.jsonResponse({
+            'schemaVersion': '3',
+            'memberships': [member],
+          });
+        }),
+      );
+      await app.coordinator.createDraft();
+      await app.coordinator.save();
+      await _mount(tester, app, PeopleWithAccessScreen(services: app));
+      expect(find.text('Someone you invited'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('invite-someone')));
+      await tester.pumpAndSettle();
+      expect(find.text('Who is this for? (optional)'), findsNothing);
+      expect(find.byType(TextField), findsOneWidget);
+      await tester.pumpWidget(
+        MaterialApp(
+          key: UniqueKey(),
+          home: SharedWithMeScreen(services: app),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Plan shared with you'), findsOneWidget);
+      expect(find.textContaining('Shared by'), findsNothing);
+      for (final body in bodies.values) {
+        for (final key in ['includeLabels', 'recipientLabel', 'ownerLabel']) {
+          expect(body.containsKey(key), isFalse);
+        }
+      }
+      expect(
+        bodies.keys,
+        containsAll(['/v3/list-sharing', '/v3/list-shared-cases']),
+      );
+      expect(
+        find.textContaining(member['recipientId']! as String),
+        findsNothing,
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/app/theme.dart';
 import 'package:safe_at_home/features/programs/program_intake_screen.dart';
+import 'package:safe_at_home/shared/models/contracts.dart';
 import 'app_design_test.dart' show reveal;
 import 'case_coordinator_test.dart' show FakeTransport;
 import 'live_workflows_test.dart' show MemoryPrivateStore, services, program;
@@ -169,6 +170,25 @@ void main() {
       addTearDown(app.dispose);
       await app.coordinator.createDraft();
       await app.coordinator.save();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: SafeAtHomeTheme.light(),
+          home: ProgramIntakeScreen(services: app, program: program()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // Current saved answers are not a conflict: no reconcile tool (N-02).
+      expect(find.byKey(const ValueKey('intake-reconcile')), findsNothing);
+      // Another device moves the case to revision 2; the older saved answers
+      // are now a conflict and the reconcile tool appears.
+      server = {...server!, 'revision': 2};
+      await app.coordinator.adoptRemoteSnapshot(
+        CaseSnapshot.fromJson({
+          ...app.coordinator.currentCase().toJson(),
+          'revision': 2,
+        }),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpWidget(
         MaterialApp(
           theme: SafeAtHomeTheme.light(),

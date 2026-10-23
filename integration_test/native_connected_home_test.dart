@@ -272,10 +272,12 @@ void main() {
       await _tap(tester, find.text('Cancel'));
       expect((await saved()).globalPose('bath-two').x, 4);
 
-      await _reveal(tester, find.text('Top').first);
-      await tester.tap(find.text('Top').first);
+      await _reveal(tester, find.text('Top-down'));
+      await tester.tap(find.text('Top-down').first);
       await _settle(tester);
-      await tester.tap(find.text('Front').first);
+      await tester.tap(find.byTooltip('More view controls').first);
+      await _settle(tester);
+      await tester.tap(find.text('Front').last);
       await _settle(tester);
       await tester.tap(find.text('Reset view').first);
       await _settle(tester);

@@ -90,16 +90,6 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
 
-      Future<void> back() async {
-        final button = find.byTooltip('Back').hitTestable();
-        await until(
-          () => button.evaluate().length == 1,
-          'one visible back action',
-        );
-        await tester.tap(button);
-        await tester.pump(const Duration(milliseconds: 500));
-      }
-
       Future<void> loginAndCreate() async {
         await text('Email', 'alice@example.invalid');
         await text('Password', 'fictional-password-only');
@@ -132,8 +122,8 @@ void main() {
                   .isEmpty,
           'resident details automatically update the newly saved case',
         );
-        await back();
-        await tap(find.byKey(const ValueKey('nav-settings')));
+        await tap(find.byKey(const ValueKey('open-account')));
+        await tap(find.byKey(const ValueKey('account-privacy')));
       }
 
       final initial = await config.control('status', {});
@@ -143,14 +133,14 @@ void main() {
       await tester.pump(const Duration(milliseconds: 350));
       await loginAndCreate();
       final accountDirectory = harness.directory!;
-      await tap(find.text('Delete selected case'));
+      await tap(find.text('Delete this plan'));
       await tap(find.text('Continue'));
       await until(
         () => harness.services!.coordinator.snapshot == null,
         'case deletion',
       );
-      await reveal(find.text('Selected case deleted.'), direction: -260);
-      expect(find.text('Selected case deleted.'), findsOneWidget);
+      await reveal(find.text('Plan deleted.'), direction: -260);
+      expect(find.text('Plan deleted.'), findsOneWidget);
       var status = await config.control('status', {});
       expect(status['cases'], 0);
       expect(status['derivedRows'], 0);

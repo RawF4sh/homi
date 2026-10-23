@@ -31,6 +31,91 @@ Future<void> openChecklist(WidgetTester tester) async {
 
 void main() {
   testWidgets(
+    'checklist items lead to resident details, a reviewed task or Contact',
+    (tester) async {
+      final example = scenarios().first;
+      final scenarioJson =
+          (jsonDecode(
+                        File(
+                          'contracts/v1/fixtures/scenarios.json',
+                        ).readAsStringSync(),
+                      )
+                      as List)
+                  .first
+              as Map;
+      final packetJson =
+          (jsonDecode(
+                        File(
+                          'contracts/v1/fixtures/packets.json',
+                        ).readAsStringSync(),
+                      )
+                      as List)
+                  .first['packet']
+              as Map;
+      final program = ProgramMatch.fromJson(
+        Map<String, Object?>.from(
+          ((scenarioJson['match'] as Map)['matches'] as List).first as Map,
+        ),
+      );
+      final packet = DraftPacket.fromJson({
+        ...Map<String, Object?>.from(packetJson),
+        'missingItems': [
+          ...(packetJson['missingItems'] as List),
+          {
+            'id': 'professional-order',
+            'description': 'Fictional professional order.',
+            'resolvedBy': 'professional',
+          },
+        ],
+      });
+      final resident = packet.missingItems.firstWhere(
+        (i) => i.resolvedBy == 'resident',
+      );
+      final tasks = <String>[];
+      var details = 0, contact = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DraftPacketScreen(
+            snapshot: example.caseSnapshot,
+            program: program,
+            service: _PacketService(pending: Future.value(packet)),
+            currentCase: () => example.caseSnapshot,
+            onContact: () => contact++,
+            onResidentDetails: () => details++,
+            onAddTask: tasks.add,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Future<void> tap(Finder finder) async {
+        await tester.ensureVisible(finder);
+        await tester.pumpAndSettle();
+        await tester.tap(finder);
+        await tester.pumpAndSettle();
+      }
+
+      await tap(find.byKey(ValueKey('checklist-item-${resident.id}')));
+      expect(details, 1);
+      expect(tasks, isEmpty);
+      await tap(find.byKey(ValueKey('checklist-add-task-${resident.id}')));
+      expect(tasks, [resident.description]);
+      expect(find.text('Ask a doctor or therapist'), findsOneWidget);
+      await tap(
+        find.byKey(const ValueKey('checklist-add-task-professional-order')),
+      );
+      expect(tasks.last, 'Fictional professional order.');
+      // Program items keep Contact and never become tasks.
+      expect(
+        find.byKey(const ValueKey('checklist-add-task-intake-route')),
+        findsNothing,
+      );
+      await tap(find.byKey(const ValueKey('checklist-item-intake-route')));
+      expect(contact, 1);
+      expect(tasks, hasLength(2));
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
     'RTP checklist calls its app-generated artifact a preparation worksheet',
     (tester) async {
       final example = scenarios().first;

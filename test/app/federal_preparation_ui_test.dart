@@ -136,7 +136,12 @@ void main() {
       );
       expect(find.text('Prepare a draft'), findsNothing);
       final start = find.byKey(ValueKey('program-$programId-start'));
-      expect(find.text('Homi preparation checklist'), findsNWidgets(2));
+      expect(
+        find.descendant(of: start, matching: find.text('See checklist')),
+        findsOneWidget,
+      );
+      expect(find.text('Checklist'), findsOneWidget);
+      expect(find.text('Start application'), findsNothing);
       await Scrollable.ensureVisible(tester.element(start), alignment: .5);
       await tester.pumpAndSettle();
       await tester.tap(start);
@@ -149,6 +154,26 @@ void main() {
         find.text('Confirm the accepted application with the program.'),
         findsOneWidget,
       );
+      // Checklist-only routes never read as a failed form (UI-028), and
+      // program items lead to a contact action (UI-027).
+      expect(find.text('Checklist — no form in this app'), findsOneWidget);
+      expect(
+        find.text('Official form not prepared. Its fields are unverified.'),
+        findsNothing,
+      );
+      final item = find.byKey(const ValueKey('checklist-item-official-form'));
+      await tester.ensureVisible(item);
+      await tester.pumpAndSettle();
+      await tester.tap(item);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(
+        find.text('Contact the program for the accepted application.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('checklist-updates')), findsOneWidget);
       expect(
         transport.requests.where(
           (r) => r.endpoint.path == '/v1/prepare-packet',

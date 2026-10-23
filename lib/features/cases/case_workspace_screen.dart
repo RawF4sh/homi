@@ -6,7 +6,7 @@ import '../assistant/assistant_app_context.dart';
 import '../assistant/assistant_context_v2.dart';
 import '../../shared/navigation/homi_destination.dart';
 import '../assistant/assistant_runtime.dart';
-import '../settings/account_settings_screen.dart';
+import '../../shared/services/case_coordinator.dart';
 import '../../shared/presentation/sah_floating_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
@@ -23,6 +23,8 @@ import '../assessment/presentation/home_safety/home_safety_screen.dart';
 import 'case_display_details.dart';
 import 'profile_editor_screen.dart';
 import 'profile_response_state.dart';
+import 'plan_next_step.dart';
+import '../requests/application_workspace_screen.dart';
 
 class CaseWorkspaceScreen extends StatefulWidget {
   const CaseWorkspaceScreen({
@@ -32,12 +34,18 @@ class CaseWorkspaceScreen extends StatefulWidget {
     this.embedded = false,
     this.destination = 0,
     this.onDestinationSelected,
+    this.onOpenScreensChanged,
+    this.onAccount,
+    this.onRename,
   });
   final AppServices services;
   final HomeSafetyCatalog? homeSafetyCatalog;
   final bool embedded;
   final int destination;
   final ValueChanged<int>? onDestinationSelected;
+  final VoidCallback? onOpenScreensChanged;
+  final VoidCallback? onAccount;
+  final VoidCallback? onRename;
 
   @override
   State<CaseWorkspaceScreen> createState() => CaseWorkspaceScreenState();
@@ -95,7 +103,8 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
   }
 
   int _standaloneTab = 0;
-  int get _tab => widget.embedded ? widget.destination : _standaloneTab;
+  int get _tab =>
+      (widget.embedded ? widget.destination : _standaloneTab).clamp(0, 3);
   final Set<int> _visited = {0};
   bool get canLeave =>
       !services.coordinator.hasUndurableEdits &&
@@ -103,7 +112,6 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
       _roomsKey.currentState?.canLeave != false &&
       _tasksKey.currentState?.canLeave != false &&
       _legacyKey.currentState?.canLeave != false &&
-      _settingsKey.currentState?.canLeave != false &&
       _programsKey.currentState?.canLeave != false &&
       _localHelpKey.currentState?.canLeave != false;
   bool handleBack() =>
@@ -115,13 +123,36 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
   final _programsKey = GlobalKey<LiveProgramsScreenState>();
   final _localHelpKey = GlobalKey<LocalHelpScreenState>();
   final _legacyKey = GlobalKey<LiveAssessmentScreenState>();
-  final _settingsKey = GlobalKey<AccountSettingsScreenState>();
   bool _showLocalHelp = false;
   bool _visitedLocalHelp = false;
 
   String? _roomId;
   final _roomsKey = GlobalKey<HomeSafetyScreenState>();
   final _tasksKey = GlobalKey<ProgramProgressScreenState>();
+  final _tabNavigators = List.generate(
+    4,
+    (_) => GlobalKey<SahTabNavigatorState>(),
+  );
+
+  /// True when a tab shows a screen opened from its first page.
+  bool hasOpenScreensIn(int tab) =>
+      tab < _tabNavigators.length &&
+      _tabNavigators[tab].currentState?.hasOpenScreens == true;
+
+  bool get hasOpenScreens =>
+      _tabNavigators.any((key) => key.currentState?.hasOpenScreens == true);
+
+  /// Before another plan opens, close every pushed screen through its own
+  /// leave guard so nothing from the previous plan stays on screen.
+  Future<bool> prepareToChangePlan() async {
+    if (!await prepareToLeave()) return false;
+    for (final key in _tabNavigators) {
+      if (await key.currentState?.closeOpenScreens() == false) return false;
+    }
+    return true;
+  }
+
+  void _openScreensChanged(bool _) => widget.onOpenScreensChanged?.call();
 
   void _selectTab(int value) {
     if (value == _tab || !services.coordinator.isCurrent) return;
@@ -206,7 +237,9 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
           },
           onSection: (section) {
             Navigator.of(context).pop();
-            _selectTab(section);
+            section >= HomiDestination.settings.index
+                ? widget.onAccount?.call()
+                : _selectTab(section);
           },
         ),
       ),
@@ -224,65 +257,60 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
 
     final draft = services.coordinator.draft;
     final localEnabled = services.config.localHelpEnabled;
-    final largeText = MediaQuery.textScalerOf(context).scale(14) > 20;
+    // Chips keep one line; larger text gets full-width choices instead.
+    final largeText = MediaQuery.textScalerOf(context).scale(14) > 17;
+    String label(bool local) => context.tr(
+      local ? 'Organizations and referrals' : 'Programs for this plan',
+    );
     return SahContent(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              context.tr('Help'),
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            if (draft != null)
-              Text(
-                services.coordinator.planNameFor(draft.caseId) ??
-                    homePlanTitle(draft, context: context),
-              ),
-            const SizedBox(height: 16),
-            if (localEnabled && !largeText)
-              SegmentedButton<bool>(
-                showSelectedIcon: false,
-                segments: [
-                  ButtonSegment(
-                    value: false,
-                    label: Text(context.tr('Programs')),
-                  ),
-                  ButtonSegment(
-                    value: true,
-                    label: Text(
-                      context.tr('Local providers'),
-                      key: const ValueKey('case-local-help'),
-                    ),
-                  ),
-                ],
-                selected: {_showLocalHelp},
-                onSelectionChanged: canLeave
-                    ? (value) => select(value.single)
-                    : null,
-              )
-            else if (localEnabled)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final local in [false, true])
-                    OutlinedButton.icon(
-                      key: local ? const ValueKey('case-local-help') : null,
-                      onPressed: canLeave ? () => select(local) : null,
-                      icon: Icon(
-                        _showLocalHelp == local
-                            ? Icons.check_circle_outline
-                            : Icons.circle_outlined,
+      child: SahPageHeader(
+        title: context.tr('Find help'),
+        description: draft == null
+            ? null
+            : services.coordinator.planNameFor(draft.caseId) ??
+                  homePlanTitle(draft, context: context),
+        trailing: !localEnabled
+            ? null
+            : Semantics(
+                container: true,
+                label: context.tr('Type of results'),
+                child: largeText
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final local in [false, true])
+                            OutlinedButton.icon(
+                              key: local
+                                  ? const ValueKey('case-local-help')
+                                  : const ValueKey('case-help-programs'),
+                              onPressed: canLeave ? () => select(local) : null,
+                              icon: Icon(
+                                _showLocalHelp == local
+                                    ? Icons.check_circle_outline
+                                    : Icons.circle_outlined,
+                              ),
+                              label: Text(label(local)),
+                            ),
+                        ],
+                      )
+                    : Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final local in [false, true])
+                            ChoiceChip(
+                              key: local
+                                  ? const ValueKey('case-local-help')
+                                  : const ValueKey('case-help-programs'),
+                              label: Text(label(local)),
+                              selected: _showLocalHelp == local,
+                              onSelected: canLeave
+                                  ? (_) => select(local)
+                                  : null,
+                            ),
+                        ],
                       ),
-                      label: Text(
-                        context.tr(local ? 'Local providers' : 'Programs'),
-                      ),
-                    ),
-                ],
               ),
-          ],
-        ),
       ),
     );
   }
@@ -308,6 +336,123 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
       ),
     ),
   );
+
+  /// Recovery for device saves, conflicts and uncertain saves. Shown only
+  /// when something needs attention, never as routine status.
+  List<Widget> _problemNotice(
+    BuildContext context,
+    CaseCoordinator c,
+    CaseDraft draft,
+  ) => [
+    SahNotice(
+      key: const ValueKey('case-save-status'),
+      title: c.localSaveFailed
+          ? context.tr('Not saved on this device')
+          : c.localWritePending
+          ? context.tr('Saving on this device')
+          : c.busy
+          ? context.tr('Case update in progress')
+          : c.conflict
+          ? context.tr('Case versions need review')
+          : context.tr('Save confirmation needed'),
+      message: c.localSaveFailed
+          ? context.tr('Keep this case open and retry.')
+          : c.localWritePending
+          ? context.tr('Wait before leaving this case.')
+          : c.busy
+          ? context.tr('Wait for confirmation.')
+          : c.conflict
+          ? context.tr('The saved case and this device differ.')
+          : context.tr(
+              'A save may already have worked. Check before saving again.',
+            ),
+      icon: c.localSaveFailed
+          ? Icons.error_outline
+          : c.localWritePending || c.busy
+          ? Icons.sync_rounded
+          : Icons.sync_problem_outlined,
+      tone: c.localSaveFailed
+          ? SahNoticeTone.error
+          : c.uncertain || c.conflict
+          ? SahNoticeTone.warning
+          : SahNoticeTone.info,
+    ),
+    if (c.notice != null)
+      Text(
+        context.tr(c.notice!),
+        key: const ValueKey('case-latest-update'),
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+    if (c.localSaveFailed)
+      OutlinedButton.icon(
+        key: const ValueKey('case-retry-device-save'),
+        onPressed: c.busy || c.localWritePending
+            ? null
+            : () => _run(context, c.retryDeviceSave),
+        icon: const Icon(Icons.save_outlined),
+        label: Text(context.tr('Retry saving on this device')),
+      ),
+    if (c.busy)
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: LinearProgressIndicator(
+          semanticsLabel: context.tr('Updating saved case'),
+        ),
+      ),
+    if (c.conflict) ...[
+      ExpansionTile(
+        title: Text(context.tr('Compare versions')),
+        children: [
+          _CaseVersionSummary(
+            title: context.tr('Saved online'),
+            draft: c.snapshot == null
+                ? null
+                : CaseDraft.fromSnapshot(c.snapshot!),
+          ),
+          _CaseVersionSummary(
+            title: context.tr('On this device'),
+            draft: draft,
+          ),
+        ],
+      ),
+      OutlinedButton(
+        onPressed: c.busy
+            ? null
+            : () => _run(context, () => c.resolveConflict(keepLocal: false)),
+        child: Text(context.tr('Use the saved version')),
+      ),
+      const SizedBox(height: 8),
+      OutlinedButton(
+        onPressed: c.busy
+            ? null
+            : () => _run(context, () => c.resolveConflict(keepLocal: true)),
+        child: Text(context.tr('Keep my edits for another save')),
+      ),
+    ],
+    const SizedBox(height: 8),
+    if (c.uncertain) ...[
+      FilledButton(
+        key: const ValueKey('case-check-saved-state'),
+        onPressed: c.busy ? null : () => _run(context, c.reconcile),
+        child: Text(context.tr('Check saved state')),
+      ),
+      const SizedBox(height: 10),
+    ],
+    FilledButton.icon(
+      key: const ValueKey('case-save-online'),
+      onPressed: c.busy || c.uncertain || c.conflict
+          ? null
+          : () => _run(context, c.save),
+      icon: const Icon(Icons.cloud_upload_outlined),
+      label: Text(context.tr('Retry sync')),
+    ),
+    if (!c.uncertain)
+      TextButton(
+        key: const ValueKey('case-check-saved-state'),
+        onPressed: c.busy ? null : () => _run(context, c.reconcile),
+        child: Text(context.tr('Check saved state')),
+      ),
+  ];
 
   Future<void> _run(
     BuildContext context,
@@ -362,258 +507,300 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
           c.busy ||
           c.conflict ||
           c.uncertain;
-      void open(Widget screen) => Navigator.of(
-        context,
-      ).push(MaterialPageRoute<void>(builder: (_) => screen));
+      final progress = services.progress?.cached[draft.caseId];
+      final suggested = draft.findings
+          .where((f) => f.reviewState == 'needs_review')
+          .length;
+      final kept = draft.findings
+          .where((f) => f.reviewState == 'confirmed')
+          .length;
+      final facts = PlanProgressFacts(
+        answered: answered,
+        questions: profile.length,
+        suggestedConcerns: suggested,
+        keptConcerns: kept,
+        programs: progress?.programs ?? const [],
+        tasks: progress?.tasks ?? const [],
+      );
+      final next = planNextStep(facts);
       final overview = Builder(
-        builder: (context) => SafeArea(
-          bottom: false,
-          child: SahContent(
+        builder: (context) {
+          void open(Widget screen) => Navigator.of(
+            context,
+          ).push(MaterialPageRoute<void>(builder: (_) => screen));
+          void follow(PlanStepTarget target, {String? programId}) {
+            switch (target) {
+              case PlanStepTarget.profile:
+                if (!c.busy) open(ProfileEditorScreen(services: services));
+              case PlanStepTarget.rooms:
+                _selectTab(1);
+              case PlanStepTarget.help:
+                _selectTab(2);
+              case PlanStepTarget.program:
+                _selectTab(2);
+                if (programId != null) {
+                  WidgetsBinding.instance.addPostFrameCallback(
+                    (_) => _programsKey.currentState?.openAssistantProgram(
+                      programId,
+                    ),
+                  );
+                }
+              case PlanStepTarget.tasks:
+                _selectTab(3);
+            }
+          }
+
+          final theme = Theme.of(context);
+          final programs = facts.activePrograms;
+          final nextValues = {
+            ...next.values,
+            if (next.programId case final id?)
+              'program': programOverviewName(
+                context,
+                id,
+                '${next.values['program']}',
+              ),
+          };
+          final openTasks = facts.openTasks;
+          String programStatus(String? status) => context.tr(switch (status) {
+            null || 'preparing' => 'Preparing · not sent',
+            'submitted' => 'Sent (you recorded)',
+            'received' => 'Received (you recorded)',
+            'needs_information' => 'Needs information (you recorded)',
+            'approved' => 'Approved (you recorded)',
+            'denied' => 'Denied (you recorded)',
+            'withdrawn' => 'Withdrawn (you recorded)',
+            _ => 'Preparing · not sent',
+          });
+          return SahContent(
             child: ListView(
               padding: sahFloatingContentPadding(context),
               children: [
-                Semantics(
-                  header: true,
-                  child: Text(
-                    planTitle,
-                    key: const ValueKey('case-plan-title'),
-                    style: Theme.of(context).textTheme.headlineSmall,
+                SahPageHeader(
+                  key: const ValueKey('case-plan-title'),
+                  title: planTitle,
+                  trailing: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!problem)
+                        SahStatusLine(
+                          key: const ValueKey('case-save-badge'),
+                          label: c.snapshot == null
+                              ? context.tr('Saved on this device')
+                              : c.hasUnsavedChanges
+                              ? context.tr('Changes not saved online')
+                              : context.tr('Saved online'),
+                          state: c.snapshot == null || c.hasUnsavedChanges
+                              ? SahSaveState.waiting
+                              : SahSaveState.saved,
+                        ),
+                      if (!problem &&
+                          c.notice != null &&
+                          !c.notice!.startsWith('Saved'))
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            context.tr(c.notice!),
+                            key: const ValueKey('case-latest-update'),
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton(
+                            key: const ValueKey('case-rename-plan'),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                            ),
+                            onPressed: c.busy || widget.onRename == null
+                                ? null
+                                : widget.onRename,
+                            child: Text(context.tr('Edit name')),
+                          ),
+                          if (!problem &&
+                              (c.snapshot == null || c.hasUnsavedChanges))
+                            TextButton.icon(
+                              key: const ValueKey('case-save-online'),
+                              onPressed: () => _run(context, c.save),
+                              icon: const Icon(Icons.cloud_upload_outlined),
+                              label: Text(context.tr('Retry sync')),
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                Text(
-                  context.tr('Home safety plan'),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                if (problem) ..._problemNotice(context, c, draft),
+                SahNextStepCard(
+                  key: const ValueKey('plan-next-step'),
+                  title: context.tr(next.title, nextValues),
+                  message: context.tr(next.message, nextValues),
+                  actionLabel: context.tr(next.action),
+                  actionKey: const ValueKey('plan-next-step-action'),
+                  onAction: () =>
+                      follow(next.target, programId: next.programId),
                 ),
-                if (services.config.permissionSharingEnabled)
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton.icon(
-                      onPressed: programsBlocked
+                SahListGroup(
+                  title: context.tr('Your progress'),
+                  children: [
+                    SahStepTile(
+                      key: const ValueKey('case-profile'),
+                      number: 1,
+                      title: context.tr('Resident details'),
+                      subtitle: answered == 0
+                          ? context.tr(
+                              'About 3 minutes. You can skip any question.',
+                            )
+                          : context.tr('{count} of {total} answered', {
+                              'count': answered,
+                              'total': profile.length,
+                            }),
+                      state: answered == 0
+                          ? SahStepState.notStarted
+                          : answered >= profile.length
+                          ? SahStepState.done
+                          : SahStepState.inProgress,
+                      onTap: c.busy
+                          ? null
+                          : () => open(ProfileEditorScreen(services: services)),
+                    ),
+                    SahStepTile(
+                      key: const ValueKey('case-rooms'),
+                      number: 2,
+                      title: context.tr('Rooms and concerns'),
+                      subtitle: draft.findings.isEmpty
+                          ? context.tr('Not started — you can start here')
+                          : [
+                              if (suggested > 0)
+                                context.tr('{count} to review', {
+                                  'count': suggested,
+                                }),
+                              if (kept > 0)
+                                context.tr(
+                                  kept == 1
+                                      ? '1 concern kept'
+                                      : '{count} concerns kept',
+                                  {'count': kept},
+                                ),
+                              if (suggested == 0 && kept == 0)
+                                context.tr('No concerns kept'),
+                            ].join(' · '),
+                      state: suggested > 0
+                          ? SahStepState.attention
+                          : draft.findings.isEmpty
+                          ? SahStepState.notStarted
+                          : SahStepState.inProgress,
+                      onTap: () => _selectTab(1),
+                    ),
+                    SahStepTile(
+                      key: const ValueKey('case-programs'),
+                      number: 3,
+                      title: context.tr('Find help'),
+                      subtitle: facts.programs.isEmpty
+                          ? context.tr('Works before anything else')
+                          : context.tr(
+                              facts.programs.length == 1
+                                  ? '1 program followed'
+                                  : '{count} programs followed',
+                              {'count': facts.programs.length},
+                            ),
+                      state: facts.programs.isEmpty
+                          ? SahStepState.notStarted
+                          : SahStepState.inProgress,
+                      onTap: () => _selectTab(2),
+                    ),
+                    SahStepTile(
+                      key: const ValueKey('case-documents'),
+                      number: 4,
+                      title: context.tr('Applications'),
+                      subtitle: programs.isEmpty
+                          ? context.tr('Starts from Find help')
+                          : programs
+                                .map(
+                                  (p) =>
+                                      '${programOverviewName(context, p.id, p.name)} — ${programStatus(p.latest?['status'] as String?)}',
+                                )
+                                .join('\n'),
+                      state: programs.isEmpty
+                          ? SahStepState.notStarted
+                          : SahStepState.inProgress,
+                      onTap: () => programs.isEmpty
+                          ? _selectTab(2)
+                          : follow(
+                              PlanStepTarget.program,
+                              programId: programs.first.id,
+                            ),
+                    ),
+                    SahStepTile(
+                      key: const ValueKey('case-tasks'),
+                      number: 5,
+                      title: context.tr('Follow-up'),
+                      subtitle: openTasks.isEmpty
+                          ? context.tr('Tasks appear as you go')
+                          : context.tr('{count} to do', {
+                              'count': openTasks.length,
+                            }),
+                      state: openTasks.isEmpty
+                          ? SahStepState.notStarted
+                          : SahStepState.inProgress,
+                      onTap: () => _selectTab(3),
+                    ),
+                  ],
+                ),
+                if (programs.isNotEmpty)
+                  SahListGroup(
+                    title: context.tr('Applications and documents'),
+                    children: [
+                      for (final program in programs)
+                        SahActionTile(
+                          key: ValueKey('plan-application-${program.id}'),
+                          title: programOverviewName(
+                            context,
+                            program.id,
+                            program.name,
+                          ),
+                          subtitle: programStatus(
+                            program.latest?['status'] as String?,
+                          ),
+                          icon: Icons.description_outlined,
+                          onTap: () => follow(
+                            PlanStepTarget.program,
+                            programId: program.id,
+                          ),
+                        ),
+                    ],
+                  ),
+                SahListGroup(
+                  title: context.tr('People with access'),
+                  children: [
+                    SahActionTile(
+                      key: const ValueKey('plan-people-with-access'),
+                      title: context.tr('People with access'),
+                      subtitle: services.config.permissionSharingEnabled
+                          ? context.tr(
+                              'See who can open this plan, or invite someone',
+                            )
+                          : context.tr(
+                              'Sharing isn’t available in this version.',
+                            ),
+                      icon: Icons.people_outline,
+                      onTap:
+                          programsBlocked ||
+                              !services.config.permissionSharingEnabled
                           ? null
                           : () => open(
                               PeopleWithAccessScreen(services: services),
                             ),
-                      icon: const Icon(Icons.people_outline),
-                      label: Text(context.tr('People with access')),
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                if (!problem) ...[
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        c.snapshot == null
-                            ? context.tr('Saved on this device')
-                            : c.hasUnsavedChanges
-                            ? context.tr('Changes not saved online')
-                            : context.tr('Saved online'),
-                        key: const ValueKey('case-save-badge'),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (c.notice != null && !c.notice!.startsWith('Saved'))
-                    Semantics(
-                      liveRegion: true,
-                      child: Text(
-                        context.tr(c.notice!),
-                        key: const ValueKey('case-latest-update'),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  if (c.snapshot == null || c.hasUnsavedChanges)
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: OutlinedButton.icon(
-                        key: const ValueKey('case-save-online'),
-                        onPressed: () => _run(context, c.save),
-                        icon: const Icon(Icons.cloud_upload_outlined),
-                        label: Text(context.tr('Retry sync')),
-                      ),
-                    ),
-                ] else ...[
-                  SahNotice(
-                    key: const ValueKey('case-save-status'),
-                    title: c.localSaveFailed
-                        ? context.tr('Not saved on this device')
-                        : c.localWritePending
-                        ? context.tr('Saving on this device')
-                        : c.busy
-                        ? context.tr('Case update in progress')
-                        : c.conflict
-                        ? context.tr('Case versions need review')
-                        : context.tr('Save confirmation needed'),
-                    message: c.localSaveFailed
-                        ? context.tr('Keep this case open and retry.')
-                        : c.localWritePending
-                        ? context.tr('Wait before leaving this case.')
-                        : c.busy
-                        ? context.tr('Wait for confirmation.')
-                        : c.conflict
-                        ? context.tr('The saved case and this device differ.')
-                        : context.tr(
-                            'A save may already have worked. Check before saving again.',
-                          ),
-                    icon: c.localSaveFailed
-                        ? Icons.error_outline
-                        : c.localWritePending || c.busy
-                        ? Icons.sync_rounded
-                        : Icons.sync_problem_outlined,
-                    tone: c.localSaveFailed
-                        ? SahNoticeTone.error
-                        : c.uncertain || c.conflict
-                        ? SahNoticeTone.warning
-                        : SahNoticeTone.info,
-                  ),
-                  if (c.notice != null)
-                    Text(
-                      context.tr(c.notice!),
-                      key: const ValueKey('case-latest-update'),
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  if (c.localSaveFailed)
-                    OutlinedButton.icon(
-                      key: const ValueKey('case-retry-device-save'),
-                      onPressed: c.busy || c.localWritePending
-                          ? null
-                          : () => _run(context, c.retryDeviceSave),
-                      icon: const Icon(Icons.save_outlined),
-                      label: Text(context.tr('Retry saving on this device')),
-                    ),
-                  if (c.busy)
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: LinearProgressIndicator(
-                        semanticsLabel: context.tr('Updating saved case'),
-                      ),
-                    ),
-                  if (c.conflict) ...[
-                    ExpansionTile(
-                      title: Text(context.tr('Compare versions')),
-                      children: [
-                        _CaseVersionSummary(
-                          title: context.tr('Saved online'),
-                          draft: c.snapshot == null
-                              ? null
-                              : CaseDraft.fromSnapshot(c.snapshot!),
-                        ),
-                        _CaseVersionSummary(
-                          title: context.tr('On this device'),
-                          draft: draft,
-                        ),
-                      ],
-                    ),
-                    OutlinedButton(
-                      onPressed: c.busy
-                          ? null
-                          : () => _run(
-                              context,
-                              () => c.resolveConflict(keepLocal: false),
-                            ),
-                      child: Text(context.tr('Use the saved version')),
-                    ),
-                    const SizedBox(height: 8),
-                    OutlinedButton(
-                      onPressed: c.busy
-                          ? null
-                          : () => _run(
-                              context,
-                              () => c.resolveConflict(keepLocal: true),
-                            ),
-                      child: Text(context.tr('Keep my edits for another save')),
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  if (c.uncertain) ...[
-                    FilledButton(
-                      key: const ValueKey('case-check-saved-state'),
-                      onPressed: c.busy
-                          ? null
-                          : () => _run(context, c.reconcile),
-                      child: Text(context.tr('Check saved state')),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  FilledButton.icon(
-                    key: const ValueKey('case-save-online'),
-                    onPressed: c.busy || c.uncertain || c.conflict
-                        ? null
-                        : () => _run(context, c.save),
-                    icon: const Icon(Icons.cloud_upload_outlined),
-                    label: Text(context.tr('Retry sync')),
-                  ),
-                  if (!c.uncertain)
-                    TextButton(
-                      key: const ValueKey('case-check-saved-state'),
-                      onPressed: c.busy
-                          ? null
-                          : () => _run(context, c.reconcile),
-                      child: Text(context.tr('Check saved state')),
-                    ),
-                ],
-                SahSectionHeading(title: context.tr('Your plan')),
-                SahActionTile(
-                  key: const ValueKey('case-profile'),
-                  title: context.tr('Resident details'),
-                  subtitle: answered == 0
-                      ? null
-                      : '${draft.profile.city ?? context.tr('City not provided')} · ${draft.profile.healthPlan ?? context.tr('Health plan not provided')}',
-                  status: answered == 0
-                      ? context.tr('Not started')
-                      : context.tr('{count} of {total} answered', {
-                          'count': answered,
-                          'total': profile.length,
-                        }),
-                  statusIcon: answered == 0
-                      ? Icons.radio_button_unchecked_rounded
-                      : Icons.edit_note_rounded,
-                  icon: Icons.person_outline_rounded,
-                  onTap: c.busy
-                      ? null
-                      : () => open(ProfileEditorScreen(services: services)),
-                ),
-                SahActionTile(
-                  key: const ValueKey('case-rooms'),
-                  title: context.tr('Rooms'),
-                  subtitle: context.tr('Scans, photos and measurements'),
-                  icon: Icons.grid_view_outlined,
-                  onTap: () => _selectTab(1),
-                ),
-                SahActionTile(
-                  key: const ValueKey('case-programs'),
-                  title: context.tr('Assistance programs'),
-                  icon: Icons.support_agent_outlined,
-                  onTap: () => _selectTab(2),
-                ),
-                SahActionTile(
-                  key: const ValueKey('case-tasks'),
-                  title: context.tr('Tasks'),
-                  icon: Icons.checklist,
-                  onTap: () => _selectTab(3),
-                ),
-                SahActionTile(
-                  key: const ValueKey('case-documents'),
-                  title: context.tr('Sharing and documents'),
-                  subtitle: context.tr(
-                    'Review draft documents in Assistance programs',
-                  ),
-                  icon: Icons.description_outlined,
-                  onTap: () => _selectTab(2),
                 ),
               ],
             ),
-          ),
-        ),
+          );
+        },
       );
       Widget section(int tab) => switch (tab) {
         1 when c.snapshot != null && services.config.homeSafetyEnabled =>
@@ -624,6 +811,7 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
             workspaceMode: true,
             embedded: true,
             initialRoomId: _roomId,
+            onFindHelp: (_) => _selectTab(2),
           ),
         1 when c.snapshot != null => LiveAssessmentScreen(
           key: _legacyKey,
@@ -660,6 +848,18 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
                     services: services,
                     embedded: true,
                     header: _helpLinks(context),
+                    checklist: (id) =>
+                        _programsKey.currentState?.assistantMatches?.matches
+                                .any((m) => m.programId == id) !=
+                            true
+                        ? null
+                        : () {
+                            setState(() => _showLocalHelp = false);
+                            WidgetsBinding.instance.addPostFrameCallback(
+                              (_) => _programsKey.currentState
+                                  ?.openAssistantProgram(id),
+                            );
+                          },
                   )
                 : const SizedBox.shrink(),
           ],
@@ -679,20 +879,23 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
               ? 'Sync your plan before updating tasks.'
               : 'Tasks are disabled in this build. Check feature availability in Settings.',
         ),
-        4 => AccountSettingsScreen(
-          key: _settingsKey,
-          services: services,
-          embedded: true,
-        ),
         _ => overview,
       };
       _visited.add(_tab);
       final body = IndexedStack(
         index: _tab,
         children: [
-          for (var index = 0; index < 5; index++)
+          for (var index = 0; index < 4; index++)
             _visited.contains(index)
-                ? TickerMode(enabled: index == _tab, child: section(index))
+                ? TickerMode(
+                    enabled: index == _tab,
+                    child: SahTabNavigator(
+                      key: _tabNavigators[index],
+                      active: index == _tab,
+                      onOpenScreensChanged: _openScreensChanged,
+                      child: section(index),
+                    ),
+                  )
                 : const SizedBox.shrink(),
         ],
       );
@@ -700,8 +903,8 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
       return SahFloatingScaffold(
         body: body,
         selectedIndex: _tab,
-        onDestinationSelected: _selectTab,
-        onAssistant: _assistant,
+        onDestinationSelected: (index) =>
+            index == HomiTab.assistant.index ? _assistant() : _selectTab(index),
       );
     },
   );

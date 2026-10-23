@@ -162,7 +162,7 @@ void main() {
         of: find.byKey(const ValueKey(_provider)),
         matching: find.text(title),
       );
-      await _tap(tester, action('Save contact'));
+      await _tap(tester, action('Save · on this phone'));
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Contact note (optional)'),
         _note,
@@ -178,12 +178,10 @@ void main() {
       await _tap(tester, action('Add follow-up'));
       expect(find.byType(ProgramProgressScreen), findsOneWidget);
       expect(backend.tasks, isEmpty);
-      await _tap(tester, find.text('Add next step'));
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'Next step'),
-        _title,
-      );
-      await _tap(tester, find.text('Save task'));
+      final quickAdd = find.byKey(const ValueKey('task-quick-add'));
+      await _reveal(tester, quickAdd);
+      await tester.enterText(quickAdd, _title);
+      await _tap(tester, find.byKey(const ValueKey('task-quick-add-button')));
       final taskId = backend.tasks.keys.single;
       expect(
         (backend.tasks[taskId]!['referral'] as Map)['providerId'],
@@ -192,18 +190,15 @@ void main() {
       expect(jsonEncode(backend.tasks), isNot(contains(_note)));
       await tester.pageBack();
       await _settle(tester);
-      await tester.pageBack();
-      await _settle(tester);
       await _tab(tester, 'tasks');
-      await _reveal(tester, find.text(_title));
-      await _tap(tester, find.text('Edit task'));
+      await _tap(tester, find.text(_title));
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Responsible person (optional)'),
+        find.widgetWithText(TextFormField, 'For (optional note)'),
         'Fictional resident',
       );
       await _tap(tester, find.text('Save task'));
       expect(backend.tasks.keys.single, taskId);
-      await _tap(tester, find.text('Complete task'));
+      await _tap(tester, find.byKey(ValueKey('task-done-$taskId')));
       expect(backend.tasks[taskId]!['state'], 'completed');
       expect(device.permissionRequests, 0);
       expect(device.schedules, 0);
@@ -231,14 +226,12 @@ void main() {
       await tester.tap(find.text('Save on this device'));
       await _settle(tester);
       await _reveal(tester, find.text(offlineNote));
-      await tester.pageBack();
-      await _settle(tester);
       await _tab(tester, 'tasks');
+      // Completed tasks sit in the collapsed "Done (n)" group.
+      await _tap(tester, find.byKey(const ValueKey('tasks-done')));
       await _reveal(tester, find.text(_title));
       expect(
-        tester
-            .widget<TextButton>(find.widgetWithText(TextButton, 'Edit task'))
-            .onPressed,
+        tester.widget<ListTile>(find.byKey(ValueKey('task-$taskId'))).onTap,
         isNull,
       );
       for (final file in directory.listSync().whereType<File>()) {

@@ -10,7 +10,8 @@ import { MAX_TEMPLATE_BYTES, verifyTemplateBytes } from '../forms/template-artif
 import type { VerifiedFormTemplate } from '../forms/field-mapping.ts';
 import type { ProgramDefinition } from '../types.ts';
 
-export type BenefitsBundleName = 'disabled' | 'scfhp-eaa-draft-v1' | 'team-beta-drafts-v2' | 'nationwide-preparation-v1';
+export type BenefitsBundleName = 'disabled' | 'scfhp-eaa-draft-v1' | 'team-beta-drafts-v2' | 'nationwide-preparation-v1'
+  | 'team-beta-with-nationwide-v1';
 
 export interface RuntimeBenefitsBundle {
   readonly name: BenefitsBundleName;
@@ -32,7 +33,7 @@ export class BenefitsBundleConfigurationError extends Error {
 
 function bundleName(value: unknown): BenefitsBundleName {
   if (value === 'disabled' || value === 'scfhp-eaa-draft-v1' || value === 'team-beta-drafts-v2'
-    || value === 'nationwide-preparation-v1') return value;
+    || value === 'nationwide-preparation-v1' || value === 'team-beta-with-nationwide-v1') return value;
   throw new BenefitsBundleConfigurationError();
 }
 
@@ -89,7 +90,8 @@ export async function loadRuntimeBenefitsBundle(
     const bytes = Uint8Array.from(loaded);
     verifyTemplateBytes(bytes, template.templateSha256);
     const entries = [{ program, template, bytes }];
-    if (selected === 'team-beta-drafts-v2') {
+    const withNationwide = selected === 'team-beta-with-nationwide-v1';
+    if (selected === 'team-beta-drafts-v2' || withNationwide) {
       for (const item of [
         { program: createHpsmEaaResearchProgram(), template: createHpsmEaaFormTemplate(), filename: 'hpsm-eaa-inert.pdf' },
         { program: createRtpResearchProgram(), template: createRtpHomeRepairFormTemplate(), filename: 'rtp-preparation-worksheet.pdf' },
@@ -99,8 +101,11 @@ export async function loadRuntimeBenefitsBundle(
         entries.push({ program: item.program, template: item.template, bytes: Uint8Array.from(extraBytes) });
       }
     }
+    // Combined bundle: the five routes side by side; each keeps its own rule version, sources and output.
+    // Federal routes are checklist-only, so they have no form template entry.
+    const federal = withNationwide ? createFederalPreparationPrograms() : [];
     return Object.freeze({ name: selected, enabled: true,
-      loadRegistry: async () => entries.map(item => structuredClone(item.program)),
+      loadRegistry: async () => [...entries.map(item => item.program), ...federal].map(program => structuredClone(program)),
       loadFormTemplate: async (programId: string) => {
         const item = entries.find(item => item.program.programId === programId);
         return item ? { template: structuredClone(item.template), bytes: Uint8Array.from(item.bytes) } : null;

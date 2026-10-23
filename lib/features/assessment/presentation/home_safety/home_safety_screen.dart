@@ -18,8 +18,14 @@ import '../../domain/home_safety/home_safety.dart';
 import '../live_assessment_screen.dart';
 import '../room_scan_cards.dart';
 import '../room_capture_cards.dart';
+import '../assessment_location_guide.dart';
 import '../whole_home_screen.dart';
 import '../../../tracking/program_progress_screen.dart';
+import '../../../local_help/local_help_screen.dart';
+import '../../application/bathroom_scan_session.dart';
+import '../../application/whole_home_session.dart';
+import '../../domain/scan/bathroom_scan_scene.dart';
+import '../bathroom_scan_screen.dart' show scanModeCopy;
 
 class HomeSafetyScreen extends StatefulWidget {
   const HomeSafetyScreen({
@@ -30,8 +36,13 @@ class HomeSafetyScreen extends StatefulWidget {
     this.workspaceMode = false,
     this.embedded = false,
     this.initialRoomId,
+    this.onFindHelp,
   });
   final HomeSafetyCatalog? catalog;
+
+  /// Opens assistance for a kept concern. When null, the room screen opens
+  /// local help inside the current tab if that feature is enabled.
+  final ValueChanged<String?>? onFindHelp;
   final bool scansFirst;
   final bool workspaceMode;
   final bool embedded;
@@ -56,6 +67,66 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
   int scanEpoch = 0;
   int _roomSection = 0;
   String? _assistantFindingId;
+
+  /// Device-only scan state per room, read from the private store. A room
+  /// without an entry is still being checked.
+  final Map<String, _RoomScan> _roomScans = {};
+  final Set<String> _connectedRoomIds = {};
+  bool _scansLoaded = false;
+  int _scanLoad = 0;
+
+  Future<void> _loadRoomScans() async {
+    final s = session;
+    if (s == null || !s.initialized) return;
+    final token = ++_scanLoad;
+    bool stale() => !mounted || !s.isCurrent || token != _scanLoad;
+    final next = <String, _RoomScan>{};
+    for (final room in s.document.rooms) {
+      try {
+        final review = await BathroomScanSession.readSaved(
+          widget.services.store,
+          s.caseId,
+          room: room,
+        );
+        if (stale()) return;
+        next[room.id] = review?.pendingScanId != null
+            ? const _RoomScan(_ScanState.interrupted)
+            : review?.scene != null
+            ? _RoomScan(_ScanState.saved, review!.scene!.source)
+            : const _RoomScan(_ScanState.none);
+      } catch (_) {
+        if (stale()) return;
+        next[room.id] = const _RoomScan(_ScanState.attention);
+      }
+    }
+    var connected = <String>{};
+    try {
+      connected = await WholeHomeSession.readSavedConnectedRoomIds(
+        store: widget.services.store,
+        caseId: s.caseId,
+        rooms: s.document.activeRooms,
+        isCurrent: () => !stale(),
+      );
+    } catch (_) {
+      // Do not claim a room belongs to a model that could not be validated.
+    }
+    if (stale()) return;
+    setState(() {
+      _roomScans
+        ..clear()
+        ..addAll(next);
+      _connectedRoomIds
+        ..clear()
+        ..addAll(connected);
+      _scansLoaded = true;
+    });
+  }
+
+  void _scansChanged() {
+    setState(() => scanEpoch++);
+    _loadRoomScans();
+  }
+
   bool get canLeave =>
       !working && session?.busy != true && session?.localSaveFailed != true;
 
@@ -147,6 +218,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
             'Room scan concerns could not be linked yet. Saved work is retained.';
       }
     }
+    await _loadRoomScans();
   }
 
   bool get enabled =>
@@ -211,10 +283,8 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
     });
     await session!.save();
     if (mounted) {
-      setState(() {
-        selectedRoom = null;
-        scanEpoch++;
-      });
+      setState(() => selectedRoom = null);
+      _scansChanged();
     }
   }
 
@@ -281,10 +351,8 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
     });
     await s.save();
     if (mounted) {
-      setState(() {
-        selectedRoom = null;
-        scanEpoch++;
-      });
+      setState(() => selectedRoom = null);
+      _scansChanged();
     }
   }
 
@@ -381,7 +449,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
       builder: (_) => _RoomDialog(room: room, onSave: s.edit),
     );
     if (mounted && s.isCurrent) {
-      setState(() => scanEpoch++);
+      _scansChanged();
       if (widget.workspaceMode && room == null) {
         final added = s.document.rooms
             .where((r) => !previousIds.contains(r.id))
@@ -545,22 +613,60 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
     final note =
         finding?.observation ??
         '${roomTitle(room)}: ${context.tr(q.prompt)} ${context.tr('Reported answer')}: ${context.tr(answerLabel(answer.value))}';
+    Map<String, Object?> edit(Map<String, Object?> result) => {
+      'type': 'review_concern',
+      'roomId': room.id,
+      'questionId': q.id,
+      'findingId': findingId,
+      ...result,
+    };
+    Map<String, Object?>? saved;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => _ConcernDialog(
         observation: note,
         state: finding?.reviewState ?? 'needs_review',
-        onSave: (result) => s.edit({
-          'type': 'review_concern',
-          'roomId': room.id,
-          'questionId': q.id,
-          'findingId': findingId,
-          ...result,
-        }),
+        onSave: (result) async {
+          await s.edit(edit(result));
+          saved = result;
+        },
       ),
     );
-    if (mounted && s.isCurrent) await run(_syncIfReady);
+    if (!mounted || !s.isCurrent) return;
+    await run(_syncIfReady);
+    // Undo re-reviews the same finding ID with its previous observation and
+    // state. A newly created concern has no previous state to restore.
+    if (finding == null ||
+        saved == null ||
+        !mounted ||
+        (saved!['state'] == finding.reviewState &&
+            saved!['observation'] == finding.observation)) {
+      return;
+    }
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.fixed,
+          content: Text(context.tr('Concern updated')),
+          action: SnackBarAction(
+            label: context.tr('Undo'),
+            onPressed: () {
+              if (mounted && s.isCurrent) {
+                run(
+                  () => s.edit(
+                    edit({
+                      'observation': finding.observation,
+                      'state': finding.reviewState,
+                    }),
+                  ),
+                );
+              }
+            },
+          ),
+        ),
+      );
   }
 
   Future<void> assign(RoomInstance room) async {
@@ -670,7 +776,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
         ),
       ),
     );
-    if (mounted && s.isCurrent) setState(() => scanEpoch++);
+    if (mounted && s.isCurrent) _scansChanged();
   }
 
   Widget homeModelEntry() => OutlinedButton.icon(
@@ -909,41 +1015,446 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
           body: SafeArea(child: body),
         );
 
-  List<Widget> _contextActions(HomeSafetySession s, RoomInstance? room) => [
-    if (room != null) ...[
-      Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: TextButton.icon(
-          key: const ValueKey('rooms-back'),
-          onPressed: enabled && canLeave ? handleBack : null,
-          icon: const Icon(Icons.arrow_back),
-          label: Text(context.tr('Back')),
+  String _count(int n, String one, String many) =>
+      n == 1 ? context.tr(one) : context.tr(many, {'count': n});
+
+  /// One save vocabulary: Saved, Saving…, Waiting to sync, or a problem.
+  Widget _saveStatus(HomeSafetySession s) {
+    final (label, state) = s.localSaveFailed
+        ? ('Not saved on this device', SahSaveState.problem)
+        : working || s.busy
+        ? ('Saving…', SahSaveState.saving)
+        : s.hasPending
+        ? ('Waiting to sync', SahSaveState.waiting)
+        : ('Saved', SahSaveState.saved);
+    return SahStatusLine(
+      key: const ValueKey('rooms-save-status'),
+      label: context.tr(label),
+      state: state,
+    );
+  }
+
+  bool _canSync(HomeSafetySession s) =>
+      s.hasPending &&
+      !s.offline &&
+      !s.caseWriteBlocked &&
+      s.conflict == null &&
+      !s.needsReconcile &&
+      !s.localSaveFailed;
+
+  Widget _syncRetry(HomeSafetySession s) => TextButton.icon(
+    key: const ValueKey('rooms-sync'),
+    onPressed: editable && !s.caseWriteBlocked ? () => run(s.save) : null,
+    icon: const Icon(Icons.cloud_upload_outlined),
+    label: Text(context.tr('Save checklist online')),
+  );
+
+  List<Widget> _header(HomeSafetySession s, RoomInstance? room) {
+    if (room == null) {
+      return [
+        SahPageHeader(title: context.tr('Rooms'), trailing: _saveStatus(s)),
+      ];
+    }
+    final overview = _roomSection == 0;
+    return [
+      if (widget.embedded)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            key: const ValueKey('rooms-back'),
+            onPressed: enabled && canLeave ? handleBack : null,
+            icon: const Icon(Icons.arrow_back),
+            label: Text(context.tr('Back')),
+          ),
+        ),
+      SahPageHeader(
+        title: overview
+            ? roomTitle(room)
+            : context.tr(
+                _roomSection == 1 ? 'Room questions' : 'Concerns and evidence',
+              ),
+        description: !overview
+            ? roomTitle(room)
+            : room.name != null
+            ? context.tr(room.type.title)
+            : null,
+        trailing: Row(
+          children: [
+            Expanded(child: _saveStatus(s)),
+            if (overview && !room.archived) _roomMenu(s, room),
+          ],
         ),
       ),
-      Semantics(
-        header: true,
+    ];
+  }
+
+  Widget _roomMenu(HomeSafetySession s, RoomInstance room) =>
+      PopupMenuButton<String>(
+        key: ValueKey('room-menu-${room.id}'),
+        tooltip: context.tr('Room options'),
+        enabled: editable,
+        icon: const Icon(Icons.more_horiz),
+        onSelected: (value) {
+          if (value == 'rename') {
+            roomDialog(room);
+          } else if (value == 'archive') {
+            run(() => changeRoomArchive(room));
+          } else if (value == 'report') {
+            openReport();
+          }
+        },
+        itemBuilder: (ctx) => [
+          PopupMenuItem(
+            key: ValueKey('rename-room-${room.id}'),
+            value: 'rename',
+            child: Text(ctx.tr('Rename room')),
+          ),
+          PopupMenuItem(
+            key: ValueKey('archive-room-${room.id}'),
+            value: 'archive',
+            child: Text(ctx.tr('Archive room')),
+          ),
+          if (!s.caseWriteBlocked)
+            PopupMenuItem(
+              key: ValueKey('room-report-${room.id}'),
+              value: 'report',
+              child: Text(ctx.tr('Room and checklist report')),
+            ),
+        ],
+      );
+
+  _RoomFacts _facts(HomeSafetySession s, RoomInstance room) {
+    final questions = s.catalog.forRoom(room);
+    var answered = 0, fromAnswers = 0;
+    for (final q in questions) {
+      final answer = s.document.answer(room.id, q.id);
+      if (answer != null && answer.value != 'unanswered') answered++;
+      if (answer?.value == q.concernWhen &&
+          s.document.link(room.id, q.id) == null) {
+        fromAnswers++;
+      }
+    }
+    final toReview = <String>[], kept = <String>[];
+    var addressed = 0;
+    for (final link in s.document.findingRooms.where(
+      (l) => l.roomId == room.id,
+    )) {
+      final finding = s.snapshot.findings
+          .where((f) => f.id == link.findingId)
+          .firstOrNull;
+      if (finding == null || finding.reviewState == 'dismissed') continue;
+      if (finding.reviewState != 'confirmed') {
+        toReview.add(finding.id);
+      } else if (concernIsAddressed(
+        s.document,
+        s.snapshot,
+        link,
+        s.operations,
+        evidenceCatalogRevision: s.baseline.evidenceCatalogRevision,
+      )) {
+        addressed++;
+      } else {
+        kept.add(finding.id);
+      }
+    }
+    return _RoomFacts(
+      toReview: toReview,
+      kept: kept,
+      addressed: addressed,
+      fromAnswers: fromAnswers,
+      answered: answered,
+      questions: questions.length,
+    );
+  }
+
+  /// One useful status per room instead of zero counters.
+  String _roomStatus(HomeSafetySession s, RoomInstance room) {
+    final f = _facts(s, room);
+    final scan = _roomScans[room.id]?.state;
+    final scanned = scan == _ScanState.saved;
+    if (f.suggested > 0) {
+      final text = _count(
+        f.suggested,
+        '1 suggested concern to review',
+        '{count} suggested concerns to review',
+      );
+      return scanned ? '$text · ${context.tr('Scanned')}' : text;
+    }
+    if (scan == _ScanState.interrupted) {
+      return context.tr('Interrupted scan · saved work retained');
+    }
+    if (scan == _ScanState.attention) {
+      return context.tr('Saved scan needs attention');
+    }
+    final parts = [
+      if (scanned)
+        context.tr('Scanned')
+      else if (_connectedRoomIds.contains(room.id))
+        context.tr('In connected model'),
+      if (f.kept.isNotEmpty)
+        _count(f.kept.length, '1 concern', '{count} concerns'),
+      if (f.addressed > 0)
+        _count(
+          f.addressed,
+          '1 reported addressed',
+          '{count} reported addressed',
+        ),
+    ];
+    if (parts.isNotEmpty) return parts.join(' · ');
+    if (f.answered > 0) return context.tr('Questions started');
+    return context.tr(_scansLoaded ? 'Not started' : 'Checking saved scans');
+  }
+
+  bool get _canFindHelp =>
+      widget.onFindHelp != null || widget.services.config.localHelpEnabled;
+
+  void _findHelp(String? findingId) {
+    if (!enabled || !canLeave) return;
+    if (widget.onFindHelp != null) {
+      widget.onFindHelp!(findingId);
+      return;
+    }
+    final coordinator = widget.services.coordinator;
+    if (coordinator.busy || coordinator.hasUndurableEdits) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            LocalHelpScreen(services: widget.services, findingId: findingId),
+      ),
+    );
+  }
+
+  void _openConcerns([String? findingId]) => setState(() {
+    _roomSection = 2;
+    _assistantFindingId = findingId;
+  });
+
+  void _openQuestions() => setState(() {
+    _roomSection = 1;
+    _assistantFindingId = null;
+  });
+
+  /// The room's single recommended action: scan, review, find help, then the
+  /// next room. Missing answers stay unknown and never count as "no concern".
+  _NextStep? _nextStep(HomeSafetySession s, RoomInstance room, _RoomFacts f) {
+    final outdoor = room.type == AssessmentLocation.outdoorPaths;
+    final scan = _roomScans[room.id]?.state;
+    final capability = scanAvailability.capabilities;
+    final canScan =
+        !outdoor && (capability == null || capability.canRequestCapture);
+    final scanTap = editable ? () => openRoomScan(room) : null;
+    final suggested = _count(
+      f.suggested,
+      '1 suggested concern to review',
+      '{count} suggested concerns to review',
+    );
+    if (scan == _ScanState.interrupted && !outdoor) {
+      return _NextStep(
+        id: 'room-start-assessment',
+        title: context.tr('Your scan didn’t finish'),
+        message: context.tr(
+          'Your saved work is kept. Try again in good light, or use photos.',
+        ),
+        action: context.tr('Scan this room'),
+        onTap: scanTap,
+      );
+    }
+    if (f.toReview.isNotEmpty) {
+      return _NextStep(
+        id: 'room-next-review',
+        title: suggested,
+        message: context.tr(
+          'Keep the ones that are real. You can change this later.',
+        ),
+        action: context.tr('Review concerns'),
+        onTap: enabled ? () => _openConcerns(f.toReview.first) : null,
+      );
+    }
+    if (f.fromAnswers > 0) {
+      return _NextStep(
+        id: 'room-review-answers',
+        title: suggested,
+        message: context.tr(
+          'Your answers point to a possible concern. Review it before adding it to your assessment.',
+        ),
+        action: context.tr('Review concerns'),
+        onTap: enabled ? _openQuestions : null,
+      );
+    }
+    final started = scan == _ScanState.saved || f.answered > 0;
+    if (!started && canScan) {
+      final mode = scanModeCopy(capability);
+      return _NextStep(
+        id: 'room-start-assessment',
+        title: context.tr('Scan this room'),
+        message:
+            '${context.tr(mode.$1)}. ${context.tr('Takes about 1–3 minutes.')}',
+        action: context.tr('Scan this room'),
+        onTap: scanTap,
+        secondary: TextButton(
+          key: const ValueKey('room-next-questions'),
+          onPressed: enabled ? _openQuestions : null,
+          child: Text(context.tr('Answer questions instead')),
+        ),
+      );
+    }
+    if (!started) {
+      return _NextStep(
+        id: 'room-next-questions',
+        title: context.tr('Answer {count} quick questions', {
+          'count': f.questions,
+        }),
+        message: context.tr(
+          outdoor
+              ? 'Outdoor areas use photos and measurements.'
+              : scanModeCopy(capability).$2,
+        ),
+        action: context.tr('Answer questions'),
+        onTap: enabled ? _openQuestions : null,
+      );
+    }
+    if (f.kept.isNotEmpty && _canFindHelp) {
+      return _NextStep(
+        id: 'room-find-help',
+        title: context.tr('Find help for these concerns'),
+        message: _count(
+          f.kept.length,
+          '1 concern kept in this room.',
+          '{count} concerns kept in this room.',
+        ),
+        action: context.tr('Find help'),
+        onTap: enabled ? () => _findHelp(f.kept.first) : null,
+      );
+    }
+    final next = s.document.activeRooms
+        .where(
+          (r) =>
+              r.id != room.id &&
+              _roomScans[r.id]?.state != _ScanState.saved &&
+              _facts(s, r).answered == 0,
+        )
+        .firstOrNull;
+    if (next == null) return null;
+    return _NextStep(
+      id: 'room-next-room',
+      title: context.tr(
+        f.kept.isEmpty ? 'No concerns here so far' : 'Next room',
+      ),
+      message: context.tr('Next: {room}', {'room': roomTitle(next)}),
+      action: context.tr('Open {room}', {'room': roomTitle(next)}),
+      onTap: enabled ? () => _selectRoom(next.id) : null,
+    );
+  }
+
+  Widget _stepCard(_NextStep step) => SahNextStepCard(
+    key: const ValueKey('room-next-step'),
+    title: step.title,
+    message: step.message,
+    actionLabel: step.action,
+    actionKey: ValueKey(step.id),
+    onAction: step.onTap,
+    secondary: step.secondary,
+  );
+
+  /// The next step shown at the end of a room sub-page, so finishing it moves
+  /// forward instead of only returning to the room.
+  List<Widget> _forward(
+    HomeSafetySession s,
+    RoomInstance room,
+    Set<String> here,
+  ) {
+    final step = _nextStep(s, room, _facts(s, room));
+    return [
+      const SizedBox(height: 8),
+      if (step != null && !here.contains(step.id)) _stepCard(step),
+      OutlinedButton(
+        key: const ValueKey('room-return-overview'),
+        onPressed: enabled
+            ? () => setState(() {
+                _roomSection = 0;
+                _assistantFindingId = null;
+              })
+            : null,
         child: Text(
-          roomTitle(room),
-          style: Theme.of(context).textTheme.headlineSmall,
+          context.tr('Done — back to {room}', {'room': roomTitle(room)}),
         ),
       ),
+    ];
+  }
+
+  List<Widget> _notices(HomeSafetySession s) => [
+    if (error != null)
+      SahNotice(
+        message: context.tr(error!),
+        tone: SahNoticeTone.warning,
+        action: widget.workspaceMode && _canSync(s) ? _syncRetry(s) : null,
+      )
+    else if (widget.workspaceMode && _canSync(s) && !working && !s.busy)
+      SahNotice(
+        title: context.tr('Not synced yet'),
+        message: context.tr(
+          'Some checklist changes are saved on this phone but have not reached your account yet.',
+        ),
+        tone: SahNoticeTone.warning,
+        action: _syncRetry(s),
+      ),
+    if (s.localSaveFailed)
+      SahNotice(
+        message: context.tr(
+          'The device save failed. Keep this screen open and try again.',
+        ),
+        tone: SahNoticeTone.error,
+      ),
+    if (s.offline)
+      SahNotice(
+        message: context.tr(
+          'Your checklist is saved on this device. Online saving is unavailable right now. You can keep working here.',
+        ),
+      ),
+    if (s.caseWriteBlocked)
+      SahNotice(
+        message: context.tr(
+          'Resident details have unsaved changes. You can continue the checklist here; resolve those details before syncing.',
+        ),
+      ),
+    if (s.conflict != null) ...[
+      SahNotice(
+        message: context.tr(
+          'This device and the saved checklist differ. Review both before continuing.',
+        ),
+        tone: SahNoticeTone.warning,
+      ),
+      if (s.pendingRoomDeletion)
+        Text(
+          context.tr(
+            'Use the saved checklist, then reopen the archived room to review deletion again.',
+          ),
+        )
+      else
+        OutlinedButton(
+          onPressed: enabled ? () => resolve(true) : null,
+          child: Text(context.tr('Keep device changes for review')),
+        ),
+      TextButton(
+        onPressed: enabled ? () => resolve(false) : null,
+        child: Text(context.tr('Use saved checklist')),
+      ),
+    ] else if (s.needsReconcile)
+      OutlinedButton(
+        onPressed: enabled ? () => run(s.refresh) : null,
+        child: Text(context.tr('Check saved state')),
+      ),
+    if (!widget.workspaceMode) ...[
+      _saveStatus(s),
+      if (s.hasPending)
+        FilledButton.icon(
+          key: const ValueKey('rooms-sync'),
+          onPressed: editable && !s.caseWriteBlocked ? () => run(s.save) : null,
+          icon: const Icon(Icons.cloud_upload_outlined),
+          label: Text(context.tr('Save checklist online')),
+        ),
     ],
-    Wrap(
-      spacing: 8,
-      children: [
-        TextButton.icon(
-          onPressed: editable && !s.caseWriteBlocked ? openReport : null,
-          icon: const Icon(Icons.picture_as_pdf_outlined),
-          label: Text(context.tr('Room and checklist report')),
-        ),
-        TextButton.icon(
-          onPressed: enabled ? () => run(s.refresh) : null,
-          icon: const Icon(Icons.refresh),
-          label: Text(context.tr('Check saved state')),
-        ),
-      ],
-    ),
-    const SizedBox(height: 16),
+    const SizedBox(height: 8),
   ];
 
   @override
@@ -1054,7 +1565,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
                         ? sahFloatingContentPadding(context)
                         : const EdgeInsets.all(20),
                     children: [
-                      if (widget.embedded) ..._contextActions(s, room),
+                      if (widget.workspaceMode) ..._header(s, room),
                       if (!widget.workspaceMode &&
                           (!widget.scansFirst || room != null)) ...[
                         Text(
@@ -1083,82 +1594,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
                           ),
                         ),
                       ],
-                      if (error != null)
-                        SahNotice(
-                          message: context.tr(error!),
-                          tone: SahNoticeTone.warning,
-                        ),
-                      if (s.localSaveFailed)
-                        SahNotice(
-                          message: context.tr(
-                            'The device save failed. Keep this screen open and try again.',
-                          ),
-                          tone: SahNoticeTone.error,
-                        ),
-                      if (s.offline)
-                        SahNotice(
-                          message: context.tr(
-                            'Your checklist is saved on this device. Online saving is unavailable right now. You can keep working here.',
-                          ),
-                        ),
-                      if (s.caseWriteBlocked)
-                        SahNotice(
-                          message: context.tr(
-                            'Resident details have unsaved changes. You can continue the checklist here; resolve those details before syncing.',
-                          ),
-                        ),
-                      if (s.conflict != null) ...[
-                        SahNotice(
-                          message: context.tr(
-                            'This device and the saved checklist differ. Review both before continuing.',
-                          ),
-                          tone: SahNoticeTone.warning,
-                        ),
-                        if (s.pendingRoomDeletion)
-                          Text(
-                            context.tr(
-                              'Use the saved checklist, then reopen the archived room to review deletion again.',
-                            ),
-                          )
-                        else
-                          OutlinedButton(
-                            onPressed: enabled ? () => resolve(true) : null,
-                            child: Text(
-                              context.tr('Keep device changes for review'),
-                            ),
-                          ),
-                        TextButton(
-                          onPressed: enabled ? () => resolve(false) : null,
-                          child: Text(context.tr('Use saved checklist')),
-                        ),
-                      ] else if (s.needsReconcile)
-                        OutlinedButton(
-                          onPressed: enabled ? () => run(s.refresh) : null,
-                          child: Text(context.tr('Check saved state')),
-                        ),
-                      Semantics(
-                        liveRegion: true,
-                        child: Text(
-                          context.tr(
-                            s.hasPending
-                                ? 'Saved on this device · {count} changes to sync'
-                                : s.offline
-                                ? 'Checklist kept on this device'
-                                : 'Checklist saved online',
-                            {'count': s.pending.length},
-                          ),
-                        ),
-                      ),
-                      if (s.hasPending)
-                        FilledButton.icon(
-                          key: const ValueKey('rooms-sync'),
-                          onPressed: editable && !s.caseWriteBlocked
-                              ? () => run(s.save)
-                              : null,
-                          icon: const Icon(Icons.cloud_upload_outlined),
-                          label: Text(context.tr('Save checklist online')),
-                        ),
-                      const SizedBox(height: 16),
+                      ..._notices(s),
                       if (room?.archived == true) ...[
                         ...archivedRoom(s, room!),
                       ] else if (widget.workspaceMode && room != null) ...[
@@ -1206,144 +1642,272 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
     },
   );
 
-  List<Widget> roomList(HomeSafetySession s) => [
-    homeModelEntry(),
-    for (final finding in s.snapshot.findings.where(
-      (f) => !s.document.findingRooms.any((l) => l.findingId == f.id),
-    ))
-      Card(
-        child: ListTile(
-          title: Text(finding.observation),
-          subtitle: Text(context.tr('Room assignment needs confirmation')),
-          trailing: const Icon(Icons.room_outlined),
-          onTap: editable ? () => legacyAssignment(finding.id) : null,
+  Widget _roomRow(HomeSafetySession s, RoomInstance room) => SahActionTile(
+    key: ValueKey('room-${room.id}'),
+    title: roomTitle(room),
+    subtitle: _roomStatus(s, room),
+    icon: room.type.icon,
+    onTap: enabled ? () => _selectRoom(room.id) : null,
+  );
+
+  List<Widget> roomList(HomeSafetySession s) {
+    final active = s.document.activeRooms;
+    bool outside(RoomInstance r) => r.type == AssessmentLocation.outdoorPaths;
+    final unassigned = s.snapshot.findings
+        .where((f) => !s.document.findingRooms.any((l) => l.findingId == f.id))
+        .toList();
+    return [
+      if (unassigned.isNotEmpty)
+        SahListGroup(
+          title: context.tr('Concerns that need a room'),
+          children: [
+            for (final finding in unassigned)
+              SahActionTile(
+                title: finding.observation,
+                subtitle: context.tr('Room assignment needs confirmation'),
+                icon: Icons.room_outlined,
+                onTap: editable ? () => legacyAssignment(finding.id) : null,
+              ),
+          ],
         ),
-      ),
-    FilledButton.icon(
-      key: const ValueKey('rooms-add'),
-      onPressed: editable && s.document.rooms.length < 32 ? roomDialog : null,
-      icon: const Icon(Icons.add),
-      label: Text(context.tr('Add a room')),
-    ),
-    if (s.document.activeRooms.isEmpty)
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Text(
-          context.tr(
+      if (active.isEmpty)
+        SahEmptyState(
+          title: context.tr('Add the rooms you want to check'),
+          message: context.tr(
             'Add each room separately, including rooms of the same type. Photos are optional.',
           ),
+          icon: Icons.meeting_room_outlined,
+        ),
+      if (active.any((r) => !outside(r)))
+        SahListGroup(
+          title: context.tr('Inside'),
+          children: [
+            for (final room in active.where((r) => !outside(r)))
+              _roomRow(s, room),
+          ],
+        ),
+      if (active.any(outside))
+        SahListGroup(
+          title: context.tr('Outside'),
+          children: [
+            for (final room in active.where(outside)) _roomRow(s, room),
+          ],
+        ),
+      if (active.isEmpty)
+        FilledButton.icon(
+          key: const ValueKey('rooms-add'),
+          onPressed: editable && s.document.rooms.length < 32
+              ? roomDialog
+              : null,
+          icon: const Icon(Icons.add),
+          label: Text(context.tr('Add a room')),
+        )
+      else
+        OutlinedButton.icon(
+          key: const ValueKey('rooms-add'),
+          onPressed: editable && s.document.rooms.length < 32
+              ? roomDialog
+              : null,
+          icon: const Icon(Icons.add),
+          label: Text(context.tr('Add a room')),
+        ),
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          key: const ValueKey('open-whole-home-model'),
+          onPressed: enabled ? openHomeModel : null,
+          icon: const Icon(Icons.home_work_outlined),
+          label: Text(context.tr('Scan connected rooms')),
         ),
       ),
-    if (widget.workspaceMode)
-      RoomScanCards(
-        key: ValueKey('legacy-scans-$scanEpoch'),
+      if (widget.workspaceMode)
+        RoomScanCards(
+          key: ValueKey('legacy-scans-$scanEpoch'),
+          store: widget.services.store,
+          caseId: s.caseId,
+          rooms: const [],
+          isCurrent: () => mounted && s.isCurrent,
+          enabled: editable,
+          onOpen: openRoomScan,
+          onChecklist: (r) => _selectRoom(r.id),
+          compact: true,
+        ),
+      RoomCaptureCards(
+        key: ValueKey('saved-place-cards-${s.caseId}-$scanEpoch'),
         store: widget.services.store,
         caseId: s.caseId,
-        rooms: const [],
+        rooms: LocalPlaceRooms.all,
+        availability: scanAvailability,
         isCurrent: () => mounted && s.isCurrent,
         enabled: editable,
-        onOpen: openRoomScan,
-        onChecklist: (r) => _selectRoom(r.id),
-        compact: true,
+        onScan: openRoomScan,
+        onOpenRoom: (room) => openRoomEvidence(room),
+        savedPlacesOnly: true,
+        onConnected: () => openHomeModel(localPlaces: true),
       ),
-    RoomCaptureCards(
-      key: ValueKey('room-cards-${s.caseId}-$scanEpoch'),
-      store: widget.services.store,
-      caseId: s.caseId,
-      rooms: s.document.activeRooms,
-      availability: scanAvailability,
-      isCurrent: () => mounted && s.isCurrent,
-      enabled: editable,
-      onScan: openRoomScan,
-      onOpenRoom: (room) => _selectRoom(room.id),
-      onConnected: openHomeModel,
-      summary: (room) =>
-          '${context.tr('{count} of {total} questions answered', {'count': s.catalog.forRoom(room).where((q) => s.document.answer(room.id, q.id)?.value != 'unanswered' && s.document.answer(room.id, q.id) != null).length, 'total': s.catalog.forRoom(room).length})} · ${progressText(s, room)}',
-    ),
-    RoomCaptureCards(
-      key: ValueKey('saved-place-cards-${s.caseId}-$scanEpoch'),
-      store: widget.services.store,
-      caseId: s.caseId,
-      rooms: LocalPlaceRooms.all,
-      availability: scanAvailability,
-      isCurrent: () => mounted && s.isCurrent,
-      enabled: editable,
-      onScan: openRoomScan,
-      onOpenRoom: (room) => openRoomEvidence(room),
-      savedPlacesOnly: true,
-      onConnected: () => openHomeModel(localPlaces: true),
-    ),
-    ...archivedRooms(s),
-  ];
+      ...archivedRooms(s),
+      if (widget.embedded)
+        Wrap(
+          spacing: 8,
+          children: [
+            TextButton.icon(
+              onPressed: editable && !s.caseWriteBlocked ? openReport : null,
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: Text(context.tr('Room and checklist report')),
+            ),
+            TextButton.icon(
+              onPressed: enabled ? () => run(s.refresh) : null,
+              icon: const Icon(Icons.refresh),
+              label: Text(context.tr('Check saved state')),
+            ),
+          ],
+        ),
+    ];
+  }
+
+  String _findingStatus(HomeSafetySession s, FindingRoom link, String state) {
+    if (state != 'confirmed') return context.tr('Needs your review');
+    return context.tr(
+      concernIsAddressed(
+            s.document,
+            s.snapshot,
+            link,
+            s.operations,
+            evidenceCatalogRevision: s.baseline.evidenceCatalogRevision,
+          )
+          ? 'Addressed - reported by you'
+          : 'Confirmed by you',
+    );
+  }
+
   List<Widget> roomOverview(HomeSafetySession s, RoomInstance room) {
-    final questions = s.catalog.forRoom(room);
-    final answered = questions.where((q) {
-      final answer = s.document.answer(room.id, q.id);
-      return answer != null && answer.value != 'unanswered';
-    }).length;
-    final links = s.document.findingRooms.where((l) => l.roomId == room.id);
-    final count = links
-        .where(
-          (l) => s.snapshot.findings.any(
-            (f) => f.id == l.findingId && f.reviewState != 'dismissed',
-          ),
-        )
-        .length;
+    final f = _facts(s, room);
+    final step = _nextStep(s, room, f);
+    final outdoor = room.type == AssessmentLocation.outdoorPaths;
+    final scan = _roomScans[room.id];
+    final lidar =
+        scan?.state == _ScanState.saved && scan?.source == ScanSource.roomplan;
+    final concerns = [
+      for (final link in s.document.findingRooms.where(
+        (l) => l.roomId == room.id,
+      ))
+        for (final finding in s.snapshot.findings.where(
+          (f) => f.id == link.findingId && f.reviewState != 'dismissed',
+        ))
+          (link, finding),
+    ];
     return [
-      Text(
-        context.tr(room.type.title),
-        style: Theme.of(context).textTheme.labelLarge,
+      if (step != null) _stepCard(step),
+      if (!outdoor)
+        SahListGroup(
+          title: context.tr('Scan'),
+          children: [
+            SahActionTile(
+              key: ValueKey('open-room-scan-${room.id}'),
+              title: context.tr(switch (scan?.state) {
+                _ScanState.saved => 'View room model',
+                null => 'Checking saved scans',
+                _ScanState.none => 'Scan this room',
+                _ => 'Open room scan',
+              }),
+              subtitle: context.tr(switch (scan?.state) {
+                _ScanState.saved when lidar =>
+                  '3D scan · sizes are estimates. Check important sizes with a tape measure.',
+                _ScanState.saved =>
+                  'Camera scan · rough surfaces only. Label what matters.',
+                _ScanState.interrupted =>
+                  'Interrupted scan · saved work retained',
+                _ScanState.attention => 'Saved scan needs attention',
+                _ => scanModeCopy(scanAvailability.capabilities).$1,
+              }),
+              icon: Icons.view_in_ar,
+              onTap: editable ? () => openRoomScan(room) : null,
+            ),
+            if (_connectedRoomIds.contains(room.id))
+              SahActionTile(
+                key: ValueKey('connected-room-${room.id}'),
+                title: context.tr('View connected model'),
+                icon: Icons.home_work_outlined,
+                onTap: enabled ? openHomeModel : null,
+              ),
+          ],
+        ),
+      SahListGroup(
+        title: context.tr('Concerns'),
+        children: [
+          for (final (link, finding) in concerns)
+            SahActionTile(
+              key: ValueKey('room-concern-${finding.id}'),
+              title: finding.observation,
+              subtitle: _findingStatus(s, link, finding.reviewState),
+              icon: finding.reviewState == 'confirmed'
+                  ? Icons.report_outlined
+                  : Icons.help_outline,
+              onTap: enabled ? () => _openConcerns(finding.id) : null,
+            ),
+          if (f.fromAnswers > 0)
+            SahActionTile(
+              key: const ValueKey('room-possible-concerns'),
+              title: _count(
+                f.fromAnswers,
+                '1 possible concern from your answers',
+                '{count} possible concerns from your answers',
+              ),
+              subtitle: context.tr('Review before adding to your assessment.'),
+              icon: Icons.help_outline,
+              onTap: enabled ? _openQuestions : null,
+            ),
+          SahActionTile(
+            key: const ValueKey('room-concerns'),
+            title: context.tr('Concerns and evidence'),
+            subtitle: context.tr(
+              concerns.isEmpty && f.fromAnswers == 0
+                  ? 'None yet. Concerns come from your scan, your answers, or you.'
+                  : 'Report addressed, add next steps, or link an existing concern.',
+            ),
+            icon: Icons.fact_check_outlined,
+            onTap: enabled ? _openConcerns : null,
+          ),
+        ],
       ),
-      const SizedBox(height: 12),
-      Text(
-        context.tr('{count} of {total} questions answered', {
-          'count': answered,
-          'total': questions.length,
-        }),
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-      const SizedBox(height: 20),
-      RoomScanCards(
-        key: ValueKey('room-model-$scanEpoch-${room.id}'),
-        store: widget.services.store,
-        caseId: s.caseId,
-        rooms: [room],
-        isCurrent: () => mounted && s.isCurrent,
-        enabled: editable,
-        onOpen: openRoomScan,
-        onChecklist: (r) => _selectRoom(r.id),
-        compact: true,
-        includeLegacy: false,
-        onContinueQuestions: () => setState(() => _roomSection = 1),
-        questionsLabel: answered < questions.length
-            ? 'Continue room questions'
-            : 'Review room questions',
-      ),
-      OutlinedButton.icon(
-        key: const ValueKey('room-add-photo'),
-        onPressed: editable ? () => openRoomEvidence(room) : null,
-        icon: const Icon(Icons.add_a_photo_outlined),
-        label: Text(context.tr('Add photo')),
-      ),
-      OutlinedButton.icon(
-        key: const ValueKey('room-enter-measurement'),
-        onPressed: editable ? () => openRoomEvidence(room, photo: false) : null,
-        icon: const Icon(Icons.straighten),
-        label: Text(context.tr('Enter measurement')),
-      ),
-      SahActionTile(
-        key: const ValueKey('room-concerns'),
-        title: context.tr('Concerns and evidence'),
-        subtitle: context.tr('{count} concerns recorded', {'count': count}),
-        icon: Icons.fact_check_outlined,
-        onTap: enabled ? () => setState(() => _roomSection = 2) : null,
-      ),
-      const SizedBox(height: 12),
-      archiveAction(room),
-      TextButton.icon(
-        onPressed: editable ? () => roomDialog(room) : null,
-        icon: const Icon(Icons.edit_outlined),
-        label: Text(context.tr('Rename room')),
+      SahListGroup(
+        title: context.tr('More about this room'),
+        children: [
+          SahActionTile(
+            key: const ValueKey('room-continue-questions'),
+            title: context.tr('Questions'),
+            subtitle: f.answered > 0
+                ? context.tr('{count} of {total} answered', {
+                    'count': f.answered,
+                    'total': f.questions,
+                  })
+                : context.tr('Optional · {count} quick questions', {
+                    'count': f.questions,
+                  }),
+            icon: Icons.checklist_rounded,
+            onTap: enabled ? _openQuestions : null,
+          ),
+          SahActionTile(
+            key: const ValueKey('room-add-photo'),
+            title: context.tr('Photos'),
+            subtitle: context.tr(
+              'Optional · add a photo of anything you notice',
+            ),
+            icon: Icons.add_a_photo_outlined,
+            onTap: editable ? () => openRoomEvidence(room) : null,
+          ),
+          SahActionTile(
+            key: const ValueKey('room-enter-measurement'),
+            title: context.tr('Measurements'),
+            subtitle: context.tr(
+              lidar
+                  ? 'Scan sizes are estimates · add your own any time'
+                  : 'Optional · measured by you',
+            ),
+            icon: Icons.straighten,
+            onTap: editable ? () => openRoomEvidence(room, photo: false) : null,
+          ),
+        ],
       ),
     ];
   }
@@ -1376,22 +1940,13 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
 
   List<Widget> roomQuestions(HomeSafetySession s, RoomInstance room) => [
     Text(
-      context.tr('Room questions'),
-      style: Theme.of(context).textTheme.titleLarge,
-    ),
-    const SizedBox(height: 8),
-    Text(
       context.tr(
         'Choose Not applicable for features this room does not have. Not sure and unanswered remain unknown.',
       ),
     ),
     const SizedBox(height: 16),
     for (final q in s.catalog.forRoom(room)) questionCard(s, room, q),
-    FilledButton(
-      key: const ValueKey('room-return-overview'),
-      onPressed: enabled ? () => setState(() => _roomSection = 0) : null,
-      child: Text(context.tr('Return to room')),
-    ),
+    ..._forward(s, room, const {'room-next-questions', 'room-review-answers'}),
     ExpansionTile(
       title: Text(context.tr('About these questions')),
       children: [
@@ -1434,12 +1989,9 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
         onPressed: () => setState(() => _assistantFindingId = null),
         child: Text(context.tr('All concerns')),
       ),
-    Text(
-      context.tr('Concerns and evidence'),
-      style: Theme.of(context).textTheme.titleLarge,
-    ),
-    const SizedBox(height: 12),
-    Text(progressText(s, room)),
+    if (_facts(s, room) case final f
+        when f.toReview.length + f.kept.length + f.addressed > 0)
+      Text(progressText(s, room)),
     for (final link in s.document.findingRooms.where(
       (l) => l.roomId == room.id,
     ))
@@ -1475,6 +2027,12 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
                   label: Text(context.tr('Review concern and evidence')),
                 ),
                 concernActions(s, link),
+                if (finding.reviewState == 'confirmed' && _canFindHelp)
+                  FilledButton.tonal(
+                    key: ValueKey('concern-find-help-${finding.id}'),
+                    onPressed: enabled ? () => _findHelp(finding.id) : null,
+                    child: Text(context.tr('Find help for this')),
+                  ),
               ],
             ),
           ),
@@ -1483,11 +2041,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
       onPressed: editable ? () => assign(room) : null,
       child: Text(context.tr('Link an existing concern')),
     ),
-    const SizedBox(height: 16),
-    FilledButton(
-      onPressed: enabled ? () => setState(() => _roomSection = 0) : null,
-      child: Text(context.tr('Return to room')),
-    ),
+    ..._forward(s, room, const {'room-next-review'}),
     ExpansionTile(
       title: Text(context.tr('About addressed concerns')),
       children: [
@@ -1605,6 +2159,7 @@ class _QuestionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final concern = answer?.value == question.concernWhen;
+    final answered = answer != null && answer!.value != 'unanswered';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1615,32 +2170,43 @@ class _QuestionCard extends StatelessWidget {
               context.tr(question.prompt),
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 12),
-            InputDecorator(
-              decoration: InputDecoration(labelText: context.tr('Your answer')),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  key: ValueKey('answer-${question.id}'),
-                  value: answer?.value ?? 'unanswered',
-                  isExpanded: true,
-                  items: [
-                    for (final value in safetyAnswerValues)
-                      DropdownMenuItem(
+            Text(
+              context.tr(answered ? 'Answered' : 'Not answered'),
+              key: ValueKey('answer-state-${question.id}'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
+            // No choice is preselected; Not sure is stored as not_sure and,
+            // like no answer, stays unknown.
+            RadioGroup<String>(
+              key: ValueKey('answer-${question.id}'),
+              groupValue: answered ? answer!.value : null,
+              onChanged: (v) {
+                if (editable && v != null && v != answer?.value) onAnswer(v);
+              },
+              child: Column(
+                children: [
+                  for (final value in safetyAnswerValues)
+                    if (value != 'unanswered')
+                      RadioListTile<String>(
+                        key: ValueKey('answer-${question.id}-$value'),
                         value: value,
-                        child: Text(context.tr(answerLabel(value))),
+                        enabled: editable,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(context.tr(answerLabel(value))),
                       ),
-                  ],
-                  onChanged: editable
-                      ? (v) {
-                          if (v != null &&
-                              v != (answer?.value ?? 'unanswered')) {
-                            onAnswer(v);
-                          }
-                        }
-                      : null,
-                ),
+                ],
               ),
             ),
+            if (answered)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  key: ValueKey('answer-clear-${question.id}'),
+                  onPressed: editable ? () => onAnswer('unanswered') : null,
+                  child: Text(context.tr('Clear answer')),
+                ),
+              ),
             if (concern) ...[
               const SizedBox(height: 12),
               Text(
@@ -2009,4 +2575,43 @@ class _ConflictChange extends StatelessWidget {
       ],
     );
   }
+}
+
+enum _ScanState { none, saved, interrupted, attention }
+
+class _RoomScan {
+  const _RoomScan(this.state, [this.source]);
+  final _ScanState state;
+  final ScanSource? source;
+}
+
+class _RoomFacts {
+  const _RoomFacts({
+    required this.toReview,
+    required this.kept,
+    required this.addressed,
+    required this.fromAnswers,
+    required this.answered,
+    required this.questions,
+  });
+
+  /// Linked findings still waiting for the resident's review, and confirmed
+  /// findings not reported addressed.
+  final List<String> toReview, kept;
+  final int addressed, fromAnswers, answered, questions;
+  int get suggested => toReview.length + fromAnswers;
+}
+
+class _NextStep {
+  const _NextStep({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.action,
+    required this.onTap,
+    this.secondary,
+  });
+  final String id, title, message, action;
+  final VoidCallback? onTap;
+  final Widget? secondary;
 }

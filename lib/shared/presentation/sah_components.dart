@@ -398,12 +398,22 @@ class SahPageHeader extends StatelessWidget {
             ),
             const SizedBox(height: 10),
           ],
-          Semantics(
-            header: true,
-            child: Text(title, style: theme.textTheme.headlineMedium),
+          // Large titles stop growing before body text so content still fits
+          // at accessibility sizes; body copy keeps the full system scale.
+          MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.6,
+            child: Semantics(
+              header: true,
+              child: Text(
+                title,
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           ),
           if (description != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
               description!,
               style: theme.textTheme.bodyLarge?.copyWith(
@@ -424,13 +434,19 @@ class SahSectionHeading extends StatelessWidget {
   final String? description;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 24, bottom: 12),
+    padding: const EdgeInsets.fromLTRB(4, 24, 4, 8),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Semantics(
           header: true,
-          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
         if (description != null) ...[
           const SizedBox(height: 6),
@@ -643,15 +659,18 @@ class SahActionTile extends StatelessWidget {
     final theme = Theme.of(context);
     final active = enabled && onTap != null;
     final showIcon = MediaQuery.textScalerOf(context).scale(14) <= 20;
+    final grouped = _SahGroupScope.maybeOf(context) != null;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(bottom: grouped ? 0 : 12),
       child: Material(
-        color: theme.colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(SahRadius.medium),
-          side: BorderSide(color: theme.colorScheme.outlineVariant),
-        ),
-        clipBehavior: Clip.antiAlias,
+        color: grouped ? Colors.transparent : theme.colorScheme.surface,
+        shape: grouped
+            ? null
+            : RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(SahRadius.large),
+                side: BorderSide(color: theme.colorScheme.outlineVariant),
+              ),
+        clipBehavior: grouped ? Clip.none : Clip.antiAlias,
         child: Semantics(
           button: true,
           enabled: active,
@@ -861,4 +880,415 @@ class SahKeyboardDismissal extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SahGroupScope extends InheritedWidget {
+  const _SahGroupScope({required super.child});
+
+  static _SahGroupScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_SahGroupScope>();
+
+  @override
+  bool updateShouldNotify(_SahGroupScope oldWidget) => false;
+}
+
+/// An inset grouped list: one rounded surface with separators. Tiles inside
+/// render as flat rows, so related rows read as one group.
+class SahListGroup extends StatelessWidget {
+  const SahListGroup({super.key, required this.children, this.title});
+  final List<Widget> children;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final rows = children.where((child) => child is! SizedBox).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (title != null) SahSectionHeading(title: title!),
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(SahRadius.large),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: _SahGroupScope(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < rows.length; i++) ...[
+                  if (i > 0) const Divider(height: 1, indent: 16),
+                  rows[i],
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The single recommended action for the current screen.
+class SahNextStepCard extends StatelessWidget {
+  const SahNextStepCard({
+    super.key,
+    required this.title,
+    this.message,
+    this.label,
+    this.actionLabel,
+    this.onAction,
+    this.actionKey,
+    this.secondary,
+  });
+  final String title;
+  final String? message, label, actionLabel;
+  final VoidCallback? onAction;
+  final Key? actionKey;
+  final Widget? secondary;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Semantics(
+      container: true,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer,
+          borderRadius: BorderRadius.circular(SahRadius.large),
+          border: BorderDirectional(
+            start: BorderSide(color: scheme.primary, width: 5),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              label ?? context.tr('Next step'),
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: scheme.onPrimaryContainer,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .6,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Semantics(
+              header: true,
+              child: Text(
+                title,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+            if (message != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                message!,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+            ],
+            if (actionLabel != null) ...[
+              const SizedBox(height: 12),
+              FilledButton(
+                key: actionKey,
+                onPressed: onAction,
+                child: Text(actionLabel!),
+              ),
+            ],
+            ?secondary,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum SahStepState { notStarted, inProgress, done, attention }
+
+/// A numbered stage row used for plan progress and application steps.
+class SahStepTile extends StatelessWidget {
+  const SahStepTile({
+    super.key,
+    required this.number,
+    required this.title,
+    this.subtitle,
+    this.state = SahStepState.notStarted,
+    this.current = false,
+    this.onTap,
+    this.tag,
+  });
+  final int number;
+  final String title;
+  final String? subtitle, tag;
+  final SahStepState state;
+  final bool current;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final done = state == SahStepState.done;
+    final stateLabel = switch (state) {
+      SahStepState.done => context.tr('Done'),
+      SahStepState.inProgress => context.tr('In progress'),
+      SahStepState.attention => context.tr('Needs attention'),
+      SahStepState.notStarted => context.tr('Not started'),
+    };
+    final badge = Container(
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: done ? scheme.primary : null,
+        border: Border.all(
+          color: done || current || state == SahStepState.inProgress
+              ? scheme.primary
+              : scheme.outline,
+          width: 2,
+        ),
+      ),
+      child: done
+          ? Icon(Icons.check_rounded, size: 18, color: scheme.onPrimary)
+          : Text(
+              '$number',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: current ? scheme.primary : scheme.onSurfaceVariant,
+                fontSize: 14,
+              ),
+            ),
+    );
+    return Semantics(
+      button: onTap != null,
+      label: [
+        context.tr('Step {number}', {'number': number}),
+        title,
+        ?subtitle,
+        stateLabel,
+        if (current) context.tr('Current step'),
+      ].join('. '),
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 60),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.4,
+                  child: badge,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: theme.textTheme.titleMedium),
+                      if (subtitle != null)
+                        Text(
+                          subtitle!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      if (tag != null || current) ...[
+                        const SizedBox(height: 4),
+                        SahTag(
+                          label: tag ?? context.tr('Now'),
+                          tone: current
+                              ? SahNoticeTone.success
+                              : SahNoticeTone.warning,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (onTap != null)
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: scheme.onSurfaceVariant,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A small status label with a coloured dot. Text carries the meaning; the
+/// colour only reinforces it.
+class SahTag extends StatelessWidget {
+  const SahTag({
+    super.key,
+    required this.label,
+    this.tone = SahNoticeTone.info,
+  });
+  final String label;
+  final SahNoticeTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dot = switch (tone) {
+      SahNoticeTone.success => scheme.primary,
+      SahNoticeTone.warning => scheme.tertiary,
+      SahNoticeTone.error => scheme.error,
+      SahNoticeTone.info => scheme.onSurfaceVariant,
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ExcludeSemantics(
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: scheme.onSurface,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// What the app can actually produce for a program or organization.
+enum SahOutputKind {
+  officialFormDraft,
+  preparationWorksheet,
+  checklist,
+  externalApplication,
+  referral,
+  contactOnly,
+}
+
+String sahOutputLabel(BuildContext context, SahOutputKind kind) =>
+    context.tr(switch (kind) {
+      SahOutputKind.officialFormDraft => 'Official form draft',
+      SahOutputKind.preparationWorksheet => 'Preparation worksheet',
+      SahOutputKind.checklist => 'Checklist',
+      SahOutputKind.externalApplication => 'Apply on their website',
+      SahOutputKind.referral => 'Referral service',
+      SahOutputKind.contactOnly => 'Contact only',
+    });
+
+class SahOutputLabel extends StatelessWidget {
+  const SahOutputLabel({super.key, required this.kind, this.prefix = true});
+  final SahOutputKind kind;
+  final bool prefix;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final prepared =
+        kind == SahOutputKind.officialFormDraft ||
+        kind == SahOutputKind.preparationWorksheet ||
+        kind == SahOutputKind.checklist;
+    final label = sahOutputLabel(context, kind);
+    return Semantics(
+      label: prefix
+          ? context.tr('In this app: {output}', {'output': label})
+          : label,
+      excludeSemantics: true,
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (prefix)
+            Text(
+              context.tr('In this app:'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(SahRadius.medium),
+              border: Border.all(
+                color: prepared ? scheme.primary : scheme.outline,
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  switch (kind) {
+                    SahOutputKind.checklist => Icons.checklist_rounded,
+                    SahOutputKind.referral ||
+                    SahOutputKind.contactOnly => Icons.call_outlined,
+                    SahOutputKind.externalApplication => Icons.open_in_new,
+                    _ => Icons.description_outlined,
+                  },
+                  size: 16,
+                  color: prepared ? scheme.primary : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: prepared ? scheme.primary : scheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum SahSaveState { saved, saving, waiting, problem }
+
+/// One vocabulary for saving: Saved, Saving…, Waiting to sync, or a problem.
+class SahStatusLine extends StatelessWidget {
+  const SahStatusLine({super.key, required this.label, required this.state});
+  final String label;
+  final SahSaveState state;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Semantics(
+      liveRegion: true,
+      child: SahTag(
+        label: label,
+        tone: switch (state) {
+          SahSaveState.saved => SahNoticeTone.success,
+          SahSaveState.saving => SahNoticeTone.info,
+          SahSaveState.waiting => SahNoticeTone.warning,
+          SahSaveState.problem => SahNoticeTone.error,
+        },
+      ),
+    ),
+  );
 }

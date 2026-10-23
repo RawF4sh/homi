@@ -21,16 +21,14 @@ class ReferralCoverageSummary extends StatelessWidget {
     final states = organizations.expand((p) => p.stateCodes).toSet();
     final local = organizations.where((p) => p.stateCodes.contains(stateCode));
     final fresh = local.where((p) => !p.needsReview(now));
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DefaultTextStyle.merge(
+        style: Theme.of(context).textTheme.bodySmall,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 4,
           children: [
-            Text(
-              context.tr('Homi coverage'),
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
             Text(context.tr('Official referral routes: all 50 states and DC.')),
             Text(
               context.tr(
@@ -57,7 +55,12 @@ class ReferralCoverageSummary extends StatelessWidget {
             ),
             Text(
               context.tr(
-                'Official PDFs: existing California routes only, subject to program review. Federal routes provide preparation information.',
+                'Official form drafts: SCFHP (Santa Clara County) and HPSM (San Mateo County) members only, subject to plan review. Rebuilding Together Peninsula gets a preparation worksheet made by this app, not its official form. Federal routes provide preparation information only.',
+              ),
+            ),
+            Text(
+              context.tr(
+                'Territory and Tribal service routes need separate review. Use the official locators to ask about your location.',
               ),
             ),
             Text(

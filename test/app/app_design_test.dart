@@ -220,6 +220,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await reveal(tester, find.byKey(const ValueKey('account-privacy')));
+    await tester.tap(find.byKey(const ValueKey('account-privacy')));
+    await tester.pumpAndSettle();
     await reveal(tester, find.byKey(const ValueKey('settings-sign-out')));
     await tester.tap(find.byKey(const ValueKey('settings-sign-out')));
     await tester.pumpAndSettle();

@@ -5,6 +5,7 @@ export { check, object, uuid, instant } from './validation.ts';
 import { COLLABORATION_ROUTES, parseCollaborationRequest, type CollaborationRequest, type CollaborationRoute } from './collaboration.ts';
 import { evidenceIdentifier, evidenceRevision } from '../evidence/validation.ts';
 import type { CaseSnapshot } from '../types.ts';
+import { validPlanName } from '../cases/plan-name.ts';
 
 
 export const SHARING_ROUTES = ['preview-sharing', 'create-invitation', 'create-email-invitation', 'list-email-sharing', 'list-sharing', 'change-sharing', 'revoke-sharing',
@@ -23,12 +24,17 @@ export interface CaseMembership {
   membershipId: string; caseId: string; grantorId: string; recipientId: string; role: 'viewer' | 'helper'; scope: ShareScope;
   permissionRevision: number; expiresAt: string | null; invitationExpiresAt: string;
   state: 'pending' | 'active' | 'revoked' | 'expired';
+  /** Owner-typed "Who is this for?"; only ever returned to the owner. */
+  recipientLabel?: string;
+  /** Owner-typed name the owner chose to show the recipient. */
+  ownerLabel?: string;
 }
 export interface OwnerShare extends CaseMembership { projection: SharedCaseProjection | null; notes: SharedNote[]; audit: AccessAuditEvent[] }
 export interface SharedView { membership: CaseMembership; projection: SharedCaseProjection; notes: SharedNote[] }
 export type SharingRequest = CollaborationRequest & { schemaVersion: '3'; caseId?: string; expectedCaseRevision?: number; invitationId?: string;
   recipientId?: string; recipientEmail?: string; role?: 'viewer' | 'helper'; scope?: ShareScope; expiresAt?: string | null;
-  expectedPermissionRevision?: number; code?: string; membershipId?: string; mutationId?: string; note?: string };
+  expectedPermissionRevision?: number; code?: string; membershipId?: string; mutationId?: string; note?: string;
+  recipientLabel?: string; ownerLabel?: string; includeLabels?: true };
 export interface SharingRepository {
   execute(userId: string, route: SharingRoute, request: SharingRequest, tokenHash?: string, verifiedEmail?: string): Promise<SharingResult>;
   sensitive?(userId: string, route: SensitiveRoute, request: SensitiveRequest): Promise<SharingResult>;
@@ -53,10 +59,20 @@ const keys: Record<Exclude<SharingRoute,CollaborationRoute | SensitiveRoute>, st
   'read-shared-case': ['membershipId', 'expectedPermissionRevision'],
   'add-shared-note': ['membershipId', 'expectedPermissionRevision', 'mutationId', 'note'],
 };
+// Additive v3 keys: owner-typed labels on create; list/review opt into labels so
+// legacy clients keep the exact earlier response shape.
+const optionalKeys: Partial<Record<SharingRoute, string[]>> = {
+  'create-invitation': ['recipientLabel', 'ownerLabel'], 'create-email-invitation': ['recipientLabel', 'ownerLabel'],
+  'list-sharing': ['includeLabels'], 'list-email-sharing': ['includeLabels'], 'list-shared-cases': ['includeLabels'], 'review-invitation': ['includeLabels'],
+};
 export function parseSharingRequest(route: SharingRoute, value: unknown): SharingRequest {
   if ((SENSITIVE_ROUTES as readonly string[]).includes(route)) return parseSensitiveRequest(route as SensitiveRoute, value);
   if((COLLABORATION_ROUTES as readonly string[]).includes(route)) return parseCollaborationRequest(route as CollaborationRoute,value);
-  object(value, ['schemaVersion', ...keys[route as Exclude<SharingRoute,CollaborationRoute | SensitiveRoute>]]); check(value.schemaVersion === '3');
+  check(value !== null && typeof value === 'object');
+  const optional = (optionalKeys[route] ?? []).filter(key => Object.hasOwn(value, key));
+  object(value, ['schemaVersion', ...keys[route as Exclude<SharingRoute,CollaborationRoute | SensitiveRoute>], ...optional]); check(value.schemaVersion === '3');
+  for (const key of ['recipientLabel', 'ownerLabel']) if (key in value) check(typeof value[key] === 'string' && validPlanName(value[key]));
+  if ('includeLabels' in value) check(value.includeLabels === true);
   if ('caseId' in value) check(evidenceIdentifier(value.caseId));
   for (const key of ['invitationId', 'recipientId', 'membershipId', 'mutationId']) if (key in value) check(uuid(value[key]));
   for (const key of ['expectedCaseRevision', 'expectedPermissionRevision']) if (key in value) check(evidenceRevision(value[key]));

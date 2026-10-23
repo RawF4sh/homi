@@ -14,6 +14,7 @@ class SharingApiClient {
     required MatchingTokenProvider tokenProvider,
     required MatchingTransport transport,
     this.timeout = const Duration(seconds: 15),
+    this.includeLabels = false,
     bool allowInsecureLoopback = false,
   }) : _base = _validateBase(baseUri, allowInsecureLoopback, false),
        _tokens = tokenProvider,
@@ -26,6 +27,10 @@ class SharingApiClient {
   final MatchingTokenProvider _tokens;
   final MatchingTransport _transport;
   final Duration timeout;
+
+  /// Off by default: the deployed backend rejects label fields. When off, no
+  /// label key is ever sent and labelled responses are rejected.
+  final bool includeLabels;
   Future<SharingResponse> request(
     String route,
     Map<String, Object?> fields, {
@@ -55,9 +60,25 @@ class SharingApiClient {
     if (!reads.contains(route) && !writes.contains(route)) {
       throw ArgumentError('Invalid sharing operation.');
     }
+    const labelFields = {'includeLabels', 'recipientLabel', 'ownerLabel'};
+    if (fields.keys.any(labelFields.contains) &&
+        (!includeLabels || fields.containsKey('includeLabels'))) {
+      throw ArgumentError('Sharing labels are not enabled.');
+    }
+    // Opt into owner-typed labels; without it the server keeps legacy shapes.
+    const labelled = {
+      'list-sharing',
+      'list-email-sharing',
+      'list-shared-cases',
+      'review-invitation',
+    };
     final json = await _post(
       route,
-      {'schemaVersion': '3', ...fields},
+      {
+        'schemaVersion': '3',
+        ...fields,
+        if (includeLabels && labelled.contains(route)) 'includeLabels': true,
+      },
       guard: () => _current(isCurrent),
       saving: writes.contains(route),
     );
@@ -75,6 +96,14 @@ class SharingApiClient {
         }
       }
       final grant = response.membership;
+      if (!includeLabels &&
+          [
+            ?grant,
+            ...response.memberships,
+            ...response.shares.map((s) => s.membership),
+          ].any((m) => m.ownerLabel != null || m.recipientLabel != null)) {
+        throw const FormatException();
+      }
       if (grant != null &&
           ((fields['membershipId'] != null &&
                   grant.id != fields['membershipId']) ||

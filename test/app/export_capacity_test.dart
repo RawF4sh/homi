@@ -163,7 +163,9 @@ void main() {
       }
 
       final selection = find.text('Included · 1');
-      final prepare = find.text('Prepare or recover this draft');
+      // The journal records an unfinished attempt, so the only recovery
+      // wording in this flow is "Finish draft" (UI-035).
+      final prepare = find.text('Finish draft');
       for (var attempt = 1; attempt <= 2; attempt++) {
         await tester.pumpWidget(screen());
         await tester.pumpAndSettle();
@@ -189,7 +191,7 @@ void main() {
           matching: find.byType(FilledButton),
         );
         expect(tester.widget<FilledButton>(button).onPressed, isNotNull);
-        expect(find.text('Share or save draft'), findsNothing);
+        expect(find.text('Share draft file'), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();

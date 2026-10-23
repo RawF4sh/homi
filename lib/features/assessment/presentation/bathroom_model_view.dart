@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import '../../../app/theme.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 
@@ -17,6 +18,7 @@ class BathroomModelView extends StatefulWidget {
     required this.onSelect,
     this.placedRooms,
     this.homeModel = false,
+    this.markers,
   });
   final BathroomScanScene scene;
   final String? selectedId;
@@ -25,18 +27,26 @@ class BathroomModelView extends StatefulWidget {
   final ValueChanged<String> onSelect;
   final List<PlacedRoomScene>? placedRooms;
   final bool homeModel;
+
+  /// Short persistent labels drawn on the model, keyed by element ID. They
+  /// match the numbers in the visible item list.
+  final Map<String, String>? markers;
   @override
   State<BathroomModelView> createState() => _BathroomModelViewState();
 }
 
+enum _ViewAction { left, right, front, zoomOut, zoomIn }
+
 class _BathroomModelViewState extends State<BathroomModelView> {
-  double yaw = -.65, pitch = .55, zoom = 1, startZoom = 1;
+  static const _yaw = -.65, _pitch = .55;
+  double yaw = _yaw, pitch = _pitch, zoom = 1, startZoom = 1;
+  bool top = false;
   Offset? tapStart;
   double travelled = 0;
 
   void _bind(
     _ModelGestureRecognizer recognizer,
-    double width,
+    Size size,
     ScanProjection projection,
   ) {
     recognizer.onStart = (details) {
@@ -48,7 +58,8 @@ class _BathroomModelViewState extends State<BathroomModelView> {
       setState(() {
         travelled += details.focalPointDelta.distance;
         zoom = (startZoom * details.scale).clamp(.7, 2.5);
-        if (details.pointerCount == 1) {
+        if (details.pointerCount == 1 && travelled > kTouchSlop) {
+          top = false;
           yaw += details.focalPointDelta.dx * .008;
           pitch = (pitch + details.focalPointDelta.dy * .008).clamp(
             -math.pi / 2,
@@ -61,7 +72,7 @@ class _BathroomModelViewState extends State<BathroomModelView> {
       final start = tapStart;
       tapStart = null;
       if (start == null || travelled > kTouchSlop) return;
-      final middle = Offset(width / 2, 150);
+      final middle = size.center(Offset.zero);
       final at = (start - middle) / zoom + middle;
       for (final face in projection.faces.reversed) {
         if (_facePath(face).contains(at)) {
@@ -72,143 +83,214 @@ class _BathroomModelViewState extends State<BathroomModelView> {
     };
   }
 
+  void _act(_ViewAction action) => setState(() {
+    switch (action) {
+      case _ViewAction.left:
+        top = false;
+        yaw -= .3;
+      case _ViewAction.right:
+        top = false;
+        yaw += .3;
+      case _ViewAction.front:
+        top = false;
+        yaw = 0;
+        pitch = 0;
+      case _ViewAction.zoomOut:
+        zoom = (zoom - .2).clamp(.7, 2.5);
+      case _ViewAction.zoomIn:
+        zoom = (zoom + .2).clamp(.7, 2.5);
+    }
+  });
+
+  void _setTop(bool value) => setState(() {
+    top = value;
+    yaw = value ? 0 : _yaw;
+    pitch = value ? math.pi / 2 : _pitch;
+  });
+
+  void _reset() => setState(() {
+    top = false;
+    yaw = _yaw;
+    pitch = _pitch;
+    zoom = 1;
+  });
+
+  static const _actionLabels = {
+    _ViewAction.left: 'Rotate model left',
+    _ViewAction.right: 'Rotate model right',
+    _ViewAction.front: 'Front',
+    _ViewAction.zoomOut: 'Zoom out',
+    _ViewAction.zoomIn: 'Zoom in',
+  };
+
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(SahRadius.large),
-        child: ColoredBox(
-          color: const Color(0xFF123F3C),
-          child: SizedBox(
-            height: 300,
-            child: LayoutBuilder(
-              builder: (context, bounds) {
-                final projection = ScanProjection.project(
-                  widget.scene,
-                  width: bounds.maxWidth,
-                  height: 300,
-                  yaw: yaw,
-                  pitch: pitch,
-                  placedRooms: widget.placedRooms,
-                );
-                return Semantics(
-                  value: widget.selectedLabel == null
-                      ? null
-                      : context.tr('Selected: {label}', {
-                          'label': widget.selectedLabel,
-                        }),
-                  label: context.tr(
-                    widget.homeModel
-                        ? 'Partial connected home model. Review room positions in the room list below. Unscanned space remains unknown.'
-                        : 'Partial room model. {features} detected features and {samples} point samples. This model is optional. Use the feature list below to identify an item if needed.',
-                    {
-                      'features': widget.scene.elements.length,
-                      'samples': widget.scene.points.length,
+  Widget build(BuildContext context) {
+    // Use most of the screen height for the model instead of a small fixed box.
+    final height = (MediaQuery.sizeOf(context).height * .5).clamp(280.0, 560.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(SahRadius.large),
+          child: ColoredBox(
+            color: const Color(0xFF123F3C),
+            child: SizedBox(
+              height: height,
+              child: LayoutBuilder(
+                builder: (context, bounds) {
+                  final size = Size(bounds.maxWidth, height);
+                  final projection = ScanProjection.project(
+                    widget.scene,
+                    width: size.width,
+                    height: size.height,
+                    yaw: yaw,
+                    pitch: pitch,
+                    placedRooms: widget.placedRooms,
+                  );
+                  return Semantics(
+                    value: widget.selectedLabel == null
+                        ? null
+                        : context.tr('Selected: {label}', {
+                            'label': widget.selectedLabel,
+                          }),
+                    label: context.tr(
+                      widget.homeModel
+                          ? 'Partial connected home model. Review room positions in the room list below. Unscanned space remains unknown.'
+                          : 'Partial room model. {features} detected features and {samples} point samples. This model is optional. Use the feature list below to identify an item if needed.',
+                      {
+                        'features': widget.scene.elements.length,
+                        'samples': widget.scene.points.length,
+                      },
+                    ),
+                    customSemanticsActions: {
+                      for (final e in _actionLabels.entries)
+                        CustomSemanticsAction(label: context.tr(e.value)): () =>
+                            _act(e.key),
+                      CustomSemanticsAction(label: context.tr('Reset view')):
+                          _reset,
                     },
-                  ),
-                  child: RawGestureDetector(
-                    gestures: {
-                      _ModelGestureRecognizer:
-                          GestureRecognizerFactoryWithHandlers<
-                            _ModelGestureRecognizer
-                          >(
-                            _ModelGestureRecognizer.new,
-                            (recognizer) =>
-                                _bind(recognizer, bounds.maxWidth, projection),
-                          ),
-                    },
-                    child: CustomPaint(
-                      painter: _ModelPainter(
-                        projection,
-                        widget.selectedId,
-                        zoom,
-                      ),
-                      child: Align(
-                        alignment: Alignment.topLeft,
-                        child: Padding(
-                          padding: EdgeInsets.all(16),
-                          child: ExcludeSemantics(
-                            child: Text(
-                              context.tr(
-                                widget.homeModel
-                                    ? 'CONNECTED HOME MODEL'
-                                    : 'PARTIAL 3D MODEL',
-                              ),
-                              style: TextStyle(
-                                color: Color(0xFFD4E8DF),
-                                fontSize: 12,
-                                letterSpacing: 1.5,
-                                fontWeight: FontWeight.w700,
+                    child: RawGestureDetector(
+                      gestures: {
+                        _ModelGestureRecognizer:
+                            GestureRecognizerFactoryWithHandlers<
+                              _ModelGestureRecognizer
+                            >(
+                              _ModelGestureRecognizer.new,
+                              (recognizer) =>
+                                  _bind(recognizer, size, projection),
+                            ),
+                      },
+                      child: CustomPaint(
+                        painter: _ModelPainter(
+                          projection,
+                          widget.selectedId,
+                          zoom,
+                          widget.markers ?? const {},
+                        ),
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: ExcludeSemantics(
+                              child: Text(
+                                context.tr(
+                                  widget.homeModel
+                                      ? 'CONNECTED HOME MODEL'
+                                      : 'PARTIAL 3D MODEL',
+                                ),
+                                style: TextStyle(
+                                  color: Color(0xFFD4E8DF),
+                                  fontSize: 12,
+                                  letterSpacing: 1.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ),
-      ),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        alignment: WrapAlignment.center,
-        children: [
-          IconButton(
-            tooltip: context.tr('Rotate model left'),
-            onPressed: () => setState(() => yaw -= .3),
-            icon: const Icon(Icons.rotate_left),
-          ),
-          IconButton(
-            tooltip: context.tr('Rotate model right'),
-            onPressed: () => setState(() => yaw += .3),
-            icon: const Icon(Icons.rotate_right),
-          ),
-          TextButton(
-            onPressed: () => setState(() {
-              yaw = 0;
-              pitch = math.pi / 2;
-            }),
-            child: Text(context.tr('Top')),
-          ),
-          TextButton(
-            onPressed: () => setState(() {
-              yaw = 0;
-              pitch = 0;
-            }),
-            child: Text(context.tr('Front')),
-          ),
-          IconButton(
-            tooltip: context.tr('Zoom out'),
-            onPressed: () => setState(() => zoom = (zoom - .2).clamp(.7, 2.5)),
-            icon: const Icon(Icons.remove),
-          ),
-          IconButton(
-            tooltip: context.tr('Zoom in'),
-            onPressed: () => setState(() => zoom = (zoom + .2).clamp(.7, 2.5)),
-            icon: const Icon(Icons.add),
-          ),
-          TextButton(
-            onPressed: () => setState(() {
-              yaw = -.65;
-              pitch = .55;
-              zoom = 1;
-            }),
-            child: Text(context.tr('Reset view')),
-          ),
-        ],
-      ),
-      Text(
-        context.tr(
-          'Drag to rotate · Pinch to zoom · Tap a feature\nEmpty space can mean unscanned space.',
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            ChoiceButtons<bool>(
+              key: const ValueKey('model-view-mode'),
+              options: {false: context.tr('3D'), true: context.tr('Top-down')},
+              selected: top,
+              onSelected: _setTop,
+            ),
+            TextButton(
+              key: const ValueKey('model-reset'),
+              onPressed: _reset,
+              child: Text(context.tr('Reset view')),
+            ),
+            PopupMenuButton<_ViewAction>(
+              key: const ValueKey('model-more-controls'),
+              tooltip: context.tr('More view controls'),
+              onSelected: _act,
+              itemBuilder: (ctx) => [
+                for (final e in _actionLabels.entries)
+                  PopupMenuItem(value: e.key, child: Text(ctx.tr(e.value))),
+              ],
+            ),
+          ],
         ),
-        textAlign: TextAlign.center,
-      ),
+        Text(
+          context.tr(
+            'Drag to rotate · Pinch to zoom · Tap a feature\nEmpty space can mean unscanned space.',
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+}
+
+/// A small set of mutually exclusive choices that wraps at large text sizes,
+/// unlike a segmented control. The selected choice shows a check.
+class ChoiceButtons<T> extends StatelessWidget {
+  const ChoiceButtons({
+    super.key,
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+  });
+  final Map<T, String> options;
+  final T? selected;
+  final ValueChanged<T>? onSelected;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      for (final MapEntry(:key, :value) in options.entries)
+        Semantics(
+          selected: key == selected,
+          inMutuallyExclusiveGroup: true,
+          child: key == selected
+              ? FilledButton.tonalIcon(
+                  onPressed: onSelected == null ? null : () {},
+                  // The check would crowd out the label at very large text.
+                  icon: MediaQuery.textScalerOf(context).scale(14) <= 21
+                      ? const Icon(Icons.check)
+                      : null,
+                  label: Text(value),
+                )
+              : OutlinedButton(
+                  onPressed: onSelected == null ? null : () => onSelected!(key),
+                  child: Text(value),
+                ),
+        ),
     ],
   );
 }
@@ -218,10 +300,11 @@ Path _facePath(ProjectedScanFace face) =>
       ..addPolygon(face.vertices.map((p) => Offset(p.x, p.y)).toList(), true);
 
 class _ModelPainter extends CustomPainter {
-  _ModelPainter(this.projection, this.selectedId, this.zoom);
+  _ModelPainter(this.projection, this.selectedId, this.zoom, this.markers);
   final ScanProjection projection;
   final String? selectedId;
   final double zoom;
+  final Map<String, String> markers;
   @override
   void paint(Canvas canvas, Size size) {
     canvas.save();
@@ -287,6 +370,38 @@ class _ModelPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
       label.paint(canvas, (a + b) / 2);
+      label.dispose();
+    }
+    final marked = <String>{};
+    for (final face in projection.faces.reversed) {
+      final text = markers[face.elementId];
+      if (text == null || !marked.add(face.elementId)) continue;
+      var centre = Offset.zero;
+      for (final p in face.vertices) {
+        centre += Offset(p.x, p.y);
+      }
+      centre /= face.vertices.length.toDouble();
+      final selected = face.elementId == selectedId;
+      canvas.drawCircle(
+        centre,
+        11 / zoom,
+        Paint()
+          ..color = selected
+              ? const Color(0xFFF2B48E)
+              : const Color(0xFFD4E8DF),
+      );
+      final label = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            color: const Color(0xFF123F3C),
+            fontSize: 12 / zoom,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas, centre - Offset(label.width / 2, label.height / 2));
       label.dispose();
     }
     canvas.restore();

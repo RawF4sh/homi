@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:safe_at_home/features/assessment/application/home_safety/home_safety_session.dart';
 import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
 import 'package:safe_at_home/features/assessment/presentation/home_safety/home_safety_screen.dart';
+import 'package:safe_at_home/shared/presentation/sah_components.dart';
 import 'home_safety_support.dart';
 
 void main() {
@@ -63,6 +64,8 @@ void main() {
       expect(find.byType(AppBar), findsNothing);
       expect(find.text('Home assessment'), findsNothing);
       expect(key.currentState!.handleBack(), false);
+      expect(find.textContaining('0 of'), findsNothing);
+      expect(find.text('Not started'), findsWidgets);
       for (final id in [
         ...AssessmentLocation.values.map((type) => type.name),
         'second-bathroom',
@@ -91,26 +94,33 @@ void main() {
             500,
             scrollable: find.byType(Scrollable).first,
           );
-          expect(find.text('Scan room'), findsOneWidget);
-        } else {
-          expect(scan, findsNothing);
+          // One recommended action: scan first, questions as the alternative.
+          expect(tester.widget<FilledButton>(scan).onPressed, isNotNull);
           await tester.scrollUntilVisible(
             find.byKey(ValueKey('open-room-scan-$id')),
-            500,
+            300,
             scrollable: find.byType(Scrollable).first,
           );
-          expect(find.text('Use photos and measurements'), findsOneWidget);
+        } else {
+          expect(scan, findsNothing);
+          expect(find.byKey(ValueKey('open-room-scan-$id')), findsNothing);
+          expect(
+            find.byKey(const ValueKey('room-next-questions')),
+            findsOneWidget,
+          );
         }
-        for (final action in ['room-add-photo', 'room-enter-measurement']) {
+        for (final action in [
+          'room-continue-questions',
+          'room-add-photo',
+          'room-enter-measurement',
+        ]) {
           await tester.scrollUntilVisible(
             find.byKey(ValueKey(action)),
             300,
             scrollable: find.byType(Scrollable).first,
           );
           expect(
-            tester
-                .widget<OutlinedButton>(find.byKey(ValueKey(action)))
-                .onPressed,
+            tester.widget<SahActionTile>(find.byKey(ValueKey(action))).onTap,
             isNotNull,
           );
         }

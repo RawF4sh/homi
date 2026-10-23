@@ -327,6 +327,7 @@ class LiveAssessmentScreenState extends State<LiveAssessmentScreen>
             activeImports: () =>
                 session.activeScanImportsForRoom(targetRoom?.id),
             onImport: session.importScanObservation,
+            onSetImportActive: session.setScanImportActive,
             onContinue: (_) {
               session.guard();
               finish = true;

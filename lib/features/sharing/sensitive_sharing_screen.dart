@@ -327,7 +327,9 @@ class _SensitiveSharingState extends _OnlineState<SensitiveSharingScreen> {
                 )
               : null,
           title: Text(a.label),
-          subtitle: Text('${a.programId}: ${answerText(a.value)}'),
+          subtitle: Text(
+            '${_programNames(context, services, widget.membership.caseId, [a.programId])[a.programId]}: ${answerText(a.value)}',
+          ),
         ),
     ],
   ];

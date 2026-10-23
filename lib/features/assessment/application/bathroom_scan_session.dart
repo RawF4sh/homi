@@ -398,6 +398,11 @@ class BathroomScanSession extends ChangeNotifier {
     await _save(review.copyWith(dismissed: {...review.dismissed, id}));
   });
 
+  /// Reverses [dismiss] for a suggestion that was never added.
+  Future<void> undismiss(String id) => _run(
+    () => _save(review.copyWith(dismissed: {...review.dismissed}..remove(id))),
+  );
+
   Future<void> clearModel() => _run(() async {
     await _save(BathroomScanReview());
     notice =

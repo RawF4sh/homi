@@ -113,22 +113,17 @@ void main() {
       expect(opened, isEmpty);
       await _selectWashington(tester);
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'City (optional)'),
+        find.widgetWithText(TextFormField, 'ZIP code or city (optional)'),
         'Fictional private city',
       );
+      await _tap(tester, find.text('Add county (optional)'));
       await tester.enterText(
         find.widgetWithText(TextFormField, 'County (optional)'),
         'King',
       );
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'ZIP code (optional)'),
-        '98101',
-      );
       await _tap(tester, find.text('Confirm location'));
       expect(
-        find.text(
-          'Confirmed location: Fictional private city, King, Washington, 98101',
-        ),
+        find.textContaining('Fictional private city, King, Washington'),
         findsOneWidget,
       );
       await _findSeattle(tester);
@@ -137,9 +132,7 @@ void main() {
         tester,
         find.descendant(
           of: card,
-          matching: find.textContaining(
-            'Limited corridor, not all King or Snohomish County.',
-          ),
+          matching: find.textContaining('selected areas only'),
         ),
       );
       expect(
@@ -165,7 +158,9 @@ void main() {
       );
       expect(opened.single.hasQuery, isFalse);
       expect(opened.single.hasFragment, isFalse);
-      await _tap(tester, _providerAction('Save contact'));
+      await _tap(tester, _providerAction('Save · on this phone'));
+      expect(find.text('Save to a plan'), findsOneWidget);
+      expect(find.byType(BottomSheet), findsOneWidget);
       expect(
         find.text('Create or open a plan to save contacts and add follow-ups.'),
         findsWidgets,
@@ -201,7 +196,7 @@ void main() {
       );
       await _settle(tester);
       await _findSeattle(tester, savedPlan: true);
-      await _tap(tester, _providerAction('Save contact'));
+      await _tap(tester, _providerAction('Save · on this phone'));
       const note = 'Fictional Washington follow-up note';
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Contact note (optional)'),
@@ -214,11 +209,11 @@ void main() {
       await _tap(tester, _providerAction('Add follow-up'));
       expect(find.byType(ProgramProgressScreen), findsOneWidget);
       expect(h.server.tasks, isEmpty);
-      await _tap(tester, find.text('Add next step'));
+      await _tap(tester, find.text('Add with details'));
       expect(find.byType(TaskEditorScreen), findsOneWidget);
       const title = 'Fictional ask about Seattle corridor coverage';
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Next step'),
+        find.widgetWithText(TextFormField, 'What needs doing?'),
         title,
       );
       await _tap(tester, find.text('Save task'));

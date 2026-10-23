@@ -8,6 +8,7 @@ import '../domain/scan/bathroom_scan_scene.dart';
 import '../domain/scan/scan_suggestions.dart';
 import '../domain/assessment_location.dart';
 import 'bathroom_model_view.dart';
+import '../../../shared/presentation/sah_components.dart';
 import 'scan_model_sync_panel.dart';
 
 class BathroomScanScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class BathroomScanScreen extends StatefulWidget {
     this.onContinue,
     this.onAddOtherConcern,
     this.onUsePhotos,
+    this.onSetImportActive,
   });
   final BathroomScanSession session;
   final Future<String> Function(ScanSuggestion) onImport;
@@ -31,6 +33,10 @@ class BathroomScanScreen extends StatefulWidget {
   final ValueChanged<String?>? onContinue;
   final VoidCallback? onAddOtherConcern;
   final VoidCallback? onUsePhotos;
+
+  /// Restores or dismisses the finding a suggestion already added.
+  final Future<void> Function(String suggestionId, bool active)?
+  onSetImportActive;
   @override
   State<BathroomScanScreen> createState() => _BathroomScanScreenState();
 }
@@ -345,26 +351,27 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           'permission_denied',
         }.contains(capability?.reason);
     final tapped = selectedId == null ? null : scene?.elementById(selectedId!);
-    final screenReader = MediaQuery.of(context).accessibleNavigation;
+    final ready =
+        capability != null &&
+        capability.supported &&
+        capability.reason == 'available';
+    final roomName = scan.room?.name ?? context.tr(scan.location.title);
     return [
       if (scene == null) ...[
-        Text(
-          context.tr(
-            capability?.source == 'arkit'
-                ? 'Camera-only scan'
-                : scan.room == null
-                ? 'Scan your bathroom'
-                : 'Scan this room',
+        MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.6,
+          child: Semantics(
+            header: true,
+            child: Text(
+              scan.room == null
+                  ? context.tr('Scan your bathroom')
+                  : context.tr('Scan {room}', {'room': roomName}),
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
           ),
-          style: Theme.of(context).textTheme.headlineMedium,
         ),
+        _modeCard(context, capability),
       ],
-      if (!scan.isCurrent())
-        Text(
-          context.tr(
-            'This case or account has changed. Return to the assessment.',
-          ),
-        ),
       if (scan.synchronization != null)
         ScanModelSyncPanel(
           scan: scan,
@@ -400,7 +407,7 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           onPressed: () => scan.cancelCapture(),
           child: Text(context.tr('Cancel scan')),
         ),
-      if (!scan.busy && !busy && (scene == null || !scanSupported))
+      if (!scan.busy && !busy && !ready && (scene == null || !scanSupported))
         Semantics(
           liveRegion: true,
           child: Text(context.tr(_readiness(capability))),
@@ -412,24 +419,35 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           ),
         ),
       if (scene == null)
-        _card([
-          Text(
-            context.tr('Before you scan'),
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          Text(
-            context.tr(
-              scan.location == AssessmentLocation.stairs
-                  ? 'Scan from a safe landing; do not walk on stairs.'
-                  : 'Lights on, clear path, move slowly. Up to 3 minutes.',
-            ),
-          ),
-          Text(
-            context.tr(
-              'Stop if moving feels unsafe. Someone else can scan for you.',
-            ),
-          ),
-        ]),
+        SahListGroup(
+          title: context.tr('Before you start'),
+          children: [
+            for (final (icon, title, detail) in [
+              (
+                Icons.light_mode_outlined,
+                'Turn on the lights and open curtains',
+                'Scanning needs good light.',
+              ),
+              (
+                Icons.door_front_door_outlined,
+                'Open the door and clear the floor',
+                'Mirrors and glass can confuse the scan.',
+              ),
+              (
+                Icons.directions_walk,
+                scan.location == AssessmentLocation.stairs
+                    ? 'Scan from a safe landing; do not walk on stairs.'
+                    : 'Move slowly along the walls',
+                'Stop if moving feels unsafe. Someone else can scan for you. About 1–3 minutes.',
+              ),
+            ])
+              ListTile(
+                leading: ExcludeSemantics(child: Icon(icon)),
+                title: Text(context.tr(title)),
+                subtitle: Text(context.tr(detail)),
+              ),
+          ],
+        ),
       if (scene == null)
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -439,17 +457,7 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
               onPressed: canStart ? capture : null,
               icon: const Icon(Icons.view_in_ar),
               label: Text(
-                needsSetup
-                    ? context.tr('Set up 3D scanning')
-                    : scene == null
-                    ? context.tr(
-                        capability?.source == 'arkit'
-                            ? 'Start camera scan'
-                            : scan.room == null
-                            ? 'Scan bathroom'
-                            : 'Scan room',
-                      )
-                    : context.tr('Scan again'),
+                context.tr(needsSetup ? 'Set up 3D scanning' : 'Start scan'),
               ),
             ),
             const SizedBox(height: 8),
@@ -459,7 +467,7 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
                   ? null
                   : () => close(usePhotos: true),
               icon: const Icon(Icons.photo_camera_outlined),
-              label: Text(context.tr('Use photos and measurements')),
+              label: Text(context.tr('Use photos instead')),
             ),
             TextButton(
               onPressed: enabled ? () => run(scan.refreshCapabilities) : null,
@@ -472,64 +480,55 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
           _notice(
             scene.warnings.map((code) => context.tr(_warning(code))).join('\n'),
           ),
+        if (scene.source != ScanSource.roomplan)
+          SahNotice(
+            title: context.tr('Camera scans can’t recognise objects'),
+            message: context.tr(
+              'Camera-only surface model. Identify features yourself; detected patches are not full walls or clearances.',
+            ),
+            tone: SahNoticeTone.warning,
+          ),
         BathroomModelView(
           key: ValueKey(scene.fingerprint),
           scene: scene,
           selectedId: selected?.id,
           selectedLabel: selected == null
               ? null
-              : '${scene.elements.indexOf(selected) + 1}. ${context.tr((scan.review.labels[selected.id] ?? selected.kind).label)}',
+              : _itemName(context, scene, selected),
+          markers: {
+            for (var i = 0; i < scene.elements.length; i++)
+              scene.elements[i].id: '${i + 1}',
+          },
           onSelect: (id) => setState(() => selectedId = id),
         ),
-        if (scene.source == ScanSource.arkit) ...[
-          Text(
-            context.tr(
-              'Camera-only surface model. Identify features yourself; detected patches are not full walls or clearances.',
-            ),
-          ),
-          if (scene.measurements.isNotEmpty)
-            ExpansionTile(
-              key: PageStorageKey('scan-distances-${scene.fingerprint}'),
-              title: Text(context.tr('Estimated distances')),
-              children: [
-                Text(
-                  context.tr(
-                    'These camera estimates stay on this phone. Check important measurements with a tape measure.',
-                  ),
+        if (scene.source == ScanSource.arkit && scene.measurements.isNotEmpty)
+          ExpansionTile(
+            key: PageStorageKey('scan-distances-${scene.fingerprint}'),
+            title: Text(context.tr('Estimated distances')),
+            children: [
+              Text(
+                context.tr(
+                  'These camera estimates stay on this phone. Check important measurements with a tape measure.',
                 ),
-                for (var i = 0; i < scene.measurements.length; i++)
-                  ListTile(
-                    title: Text(
-                      context.tr('Distance {number}: about {metres} m', {
-                        'number': i + 1,
-                        'metres': scene.measurements[i].metres.toStringAsFixed(
-                          2,
-                        ),
-                      }),
-                    ),
-                  ),
-              ],
-            ),
-        ],
-        if (screenReader && scene.elements.isNotEmpty)
-          DropdownButtonFormField<String>(
-            key: ValueKey('scan-selection-${selected?.id}'),
-            initialValue: tapped?.id,
-            isExpanded: true,
-            isDense: false,
-            decoration: InputDecoration(
-              labelText: context.tr('Detected feature'),
-            ),
-            items: [
-              for (var i = 0; i < scene.elements.length; i++)
-                DropdownMenuItem(
-                  value: scene.elements[i].id,
-                  child: Text(
-                    '${i + 1}. ${context.tr((scan.review.labels[scene.elements[i].id] ?? scene.elements[i].kind).label)}',
+              ),
+              for (var i = 0; i < scene.measurements.length; i++)
+                ListTile(
+                  title: Text(
+                    context.tr('Distance {number}: about {metres} m', {
+                      'number': i + 1,
+                      'metres': scene.measurements[i].metres.toStringAsFixed(2),
+                    }),
                   ),
                 ),
             ],
-            onChanged: enabled ? (id) => setState(() => selectedId = id) : null,
+          ),
+        if (scene.elements.isNotEmpty)
+          SahListGroup(
+            title: context.tr('In this scan'),
+            children: [
+              for (final element in scene.elements)
+                _item(context, scene, element, element.id == tapped?.id),
+            ],
           ),
         if (tapped != null) _feature(context, tapped),
         Text(
@@ -573,6 +572,12 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
                 : context.tr(
                     'Nothing in the scan matched. That does not mean there is no problem. You can still add a note.',
                   ),
+          )
+        else
+          Text(
+            context.tr(
+              'Keep the ideas that fit. You can change your choice later.',
+            ),
           ),
         for (final suggestion in prompts) _suggestion(context, suggestion),
         ExpansionTile(
@@ -652,6 +657,70 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     ];
   }
 
+  Widget _modeCard(BuildContext context, BathroomScanCapabilities? capability) {
+    final (title, detail) = scanModeCopy(capability);
+    final camera =
+        capability?.source != 'roomplan' &&
+        capability?.canRequestCapture == true;
+    return _card([
+      Text(context.tr(title), style: Theme.of(context).textTheme.titleLarge),
+      if (camera)
+        SahTag(label: context.tr('Less precise'), tone: SahNoticeTone.warning),
+      Text(context.tr(detail)),
+    ]);
+  }
+
+  /// Camera-only scans find surfaces, not objects, so their items never use
+  /// object names unless the resident labelled them.
+  String _itemName(
+    BuildContext context,
+    BathroomScanScene scene,
+    ScanElement element,
+  ) {
+    final number = scene.elements.indexOf(element) + 1;
+    final label = scan.review.labels[element.id];
+    if (scene.source == ScanSource.roomplan) {
+      return '$number. ${context.tr((label ?? element.kind).label)}';
+    }
+    final surface = context.tr('Surface {number}', {'number': number});
+    return label == null ? surface : '$surface: ${context.tr(label.label)}';
+  }
+
+  Widget _item(
+    BuildContext context,
+    BathroomScanScene scene,
+    ScanElement element,
+    bool selected,
+  ) {
+    final lidar = scene.source == ScanSource.roomplan;
+    final d = element.dimensions;
+    final size = [
+      for (final v in [d.x, d.y, d.z])
+        if (v > .05) v.toStringAsFixed(1),
+    ];
+    final details = [
+      if (lidar && size.isNotEmpty)
+        context.tr('About {size} m · estimate', {'size': size.join(' × ')}),
+      if (!lidar && scan.review.labels[element.id] == null)
+        context.tr('Not labelled · tap to label'),
+      if (scan.review.reviewed.contains(element.id))
+        context.tr('Checked by you'),
+    ];
+    return Semantics(
+      selected: selected,
+      child: SahActionTile(
+        key: ValueKey('scan-item-${element.id}'),
+        title: _itemName(context, scene, element),
+        subtitle: details.isEmpty ? null : details.join(' · '),
+        icon: selected ? Icons.radio_button_checked : Icons.circle_outlined,
+        status: selected ? context.tr('Selected') : null,
+        statusIcon: selected ? Icons.check : null,
+        trailing: const SizedBox.shrink(),
+        onTap: enabled ? () => setState(() => selectedId = element.id) : null,
+      ),
+    );
+  }
+
   Widget _feature(BuildContext context, ScanElement element) {
     final label = scan.review.labels[element.id] ?? element.kind;
     final reviewed = scan.review.reviewed.contains(element.id);
@@ -689,37 +758,98 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     ]);
   }
 
+  /// Keep / Not a concern stays reversible. Keeping adds the observation to
+  /// the assessment; Not a concern dismisses that same finding without a new ID.
   Widget _suggestion(BuildContext context, ScanSuggestionCandidate suggestion) {
-    final added = widget.importedFinding(suggestion.id) != null;
+    final findingId = widget.importedFinding(suggestion.id);
+    final added = findingId != null;
     final active =
         widget.activeImports?.call().contains(suggestion.id) ?? added;
-    return CheckboxListTile(
-      key: ValueKey('scan-suggestion-${suggestion.id}'),
-      contentPadding: EdgeInsets.zero,
-      controlAffinity: ListTileControlAffinity.leading,
-      value: added && active,
-      title: Text(context.tr(suggestion.title)),
-      subtitle: !added
-          ? null
-          : Text(
-              context.tr(
-                busy
-                    ? 'Saving this concern on your device…'
-                    : active
-                    ? 'Added to your plan'
-                    : 'Removed from your plan',
-              ),
+    final kept = added && active;
+    final notConcern = added
+        ? !active
+        : scan.review.dismissed.contains(suggestion.id);
+    final reversible = !added || widget.onSetImportActive != null;
+    final bool? before = kept
+        ? true
+        : notConcern
+        ? false
+        : null;
+    void choose(bool keep) {
+      // Only an unchanged choice is a no-op; an undecided suggestion can be
+      // marked Not a concern.
+      if (keep == before) return;
+      run(() async {
+        if (!added && keep) {
+          final confirmed = await scan.confirmImprovement(suggestion);
+          latestImportedFindingId = await widget.onImport(confirmed);
+        } else if (!added) {
+          await scan.dismiss(suggestion.id);
+        } else {
+          await widget.onSetImportActive!(suggestion.id, keep);
+          if (keep) latestImportedFindingId = findingId;
+        }
+        if (mounted) _offerUndo(suggestion.id, keep, before);
+      });
+    }
+
+    return _card(key: ValueKey('scan-suggestion-${suggestion.id}'), [
+      Text(
+        context.tr(suggestion.title),
+        style: Theme.of(context).textTheme.titleMedium,
+      ),
+      if (added)
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            context.tr(
+              busy
+                  ? 'Saving this concern on your device…'
+                  : active
+                  ? 'Added to your plan'
+                  : 'Removed from your plan',
             ),
-      onChanged: added || !enabled || scan.dirty
-          ? null
-          : (_) => run(() async {
-              final confirmed = await scan.confirmImprovement(suggestion);
-              latestImportedFindingId = await widget.onImport(confirmed);
-            }),
-    );
+          ),
+        ),
+      ChoiceButtons<bool>(
+        key: ValueKey('scan-suggestion-choice-${suggestion.id}'),
+        options: {true: context.tr('Keep'), false: context.tr('Not a concern')},
+        selected: before,
+        onSelected: enabled && !scan.dirty && reversible ? choose : null,
+      ),
+    ]);
   }
 
-  Widget _card(List<Widget> children) => Card(
+  /// Undo restores the previous choice on the same finding ID. A suggestion
+  /// added for the first time is set back to Not a concern, since an added
+  /// finding is dismissed rather than deleted.
+  void _offerUndo(String suggestionId, bool keep, bool? before) {
+    final added = widget.importedFinding(suggestionId) != null;
+    final restore = widget.onSetImportActive;
+    if (added && restore == null) return;
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          // Fixed, so large text and footer buttons cannot push it off screen.
+          behavior: SnackBarBehavior.fixed,
+          content: Text(
+            context.tr(keep ? 'Concern kept' : 'Marked not a concern'),
+          ),
+          action: SnackBarAction(
+            label: context.tr('Undo'),
+            onPressed: () => run(
+              () => added
+                  ? restore!(suggestionId, before ?? false)
+                  : scan.undismiss(suggestionId),
+            ),
+          ),
+        ),
+      );
+  }
+
+  Widget _card(List<Widget> children, {Key? key}) => Card(
+    key: key,
     child: Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -778,4 +908,30 @@ String _warning(String code) => switch (code) {
   'count_limit' =>
     'The model reached a capture bound. Some geometry is omitted.',
   _ => 'This scan may be incomplete.',
+};
+
+/// Plain-language name and description of the scan this phone will use.
+(String, String) scanModeCopy(
+  BathroomScanCapabilities? capability,
+) => switch (capability) {
+  null => (
+    'Checking this phone',
+    'You can start with photos or measurements while we check this phone.',
+  ),
+  BathroomScanCapabilities(source: 'roomplan', supported: true) => (
+    'LiDAR 3D scan',
+    'Finds walls, doors, the tub, toilet and sink. Sizes are estimates — measure anything important.',
+  ),
+  BathroomScanCapabilities(source: 'arkit', supported: true) => (
+    'Camera-only scan',
+    'This iPhone has no LiDAR. The scan finds flat surfaces only, and you label what they are. Sizes are rough.',
+  ),
+  BathroomScanCapabilities(source: 'arcore', canRequestCapture: true) => (
+    'Camera scan with ARCore',
+    'Finds surfaces and points only, and you label what they are. Sizes are rough. Google Play Services for AR may need an update first.',
+  ),
+  _ => (
+    '3D scan isn’t available on this phone',
+    'Use photos and measurements instead. They work for every room.',
+  ),
 };

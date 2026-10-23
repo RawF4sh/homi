@@ -183,31 +183,26 @@ void main() {
           await tester.pumpAndSettle();
         }
 
-        final prepare = find.text(tr('Prepare or recover this draft'));
+        final prepare = find.text(tr('Create draft PDF'));
         await reveal(prepare);
         await tester.tap(prepare);
         await tester.pumpAndSettle();
-        await reveal(find.text(tr('Not ready to submit')));
-        expect(
-          find.text(tr('Not ready to submit')).hitTestable(),
-          findsOneWidget,
+        final stillNeeded = find.text(
+          tr('{count} items still needed. Nothing has been submitted.', {
+            'count': 20,
+          }),
         );
-        expect(
-          find.text(
-            tr('{count} items still needed. Nothing has been submitted.', {
-              'count': 20,
-            }),
-          ),
-          findsOneWidget,
-        );
+        await reveal(stillNeeded);
+        expect(stillNeeded.hitTestable(), findsOneWidget);
         for (final warning in [
           'Program availability or requirements still need confirmation.',
         ]) {
           await reveal(find.text(tr(warning)));
           expect(find.text(tr(warning)).hitTestable(), findsOneWidget);
         }
-        final share = find.text(tr('Share or save draft'));
-        await reveal(share);
+        // The PDF and its share action come first; the checklist follows.
+        final share = find.text(tr('Share draft file'));
+        await reveal(share, delta: -300);
         expect(share.hitTestable(), findsOneWidget);
         expect(
           tester.takeException(),
@@ -222,14 +217,14 @@ void main() {
           isNull,
           reason: 'The share confirmation must fit at large text.',
         );
-        expect(find.text(tr('Share an incomplete draft?')), findsOneWidget);
+        expect(find.text(tr('Share the draft file?')), findsOneWidget);
         final cancel = find.text(tr('Cancel'));
         await tester.ensureVisible(cancel);
         await tester.pumpAndSettle();
         await tester.tap(cancel);
         await tester.pumpAndSettle();
         final preview = find.byKey(const ValueKey('validated-pdf-surface'));
-        await reveal(preview);
+        await reveal(preview, delta: -300);
         expect(preview.hitTestable(), findsOneWidget);
         for (final item in missing) {
           expect(find.text(item['description'] as String), findsNothing);

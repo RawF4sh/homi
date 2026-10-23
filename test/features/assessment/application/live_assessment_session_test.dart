@@ -424,6 +424,33 @@ void main() {
   );
 
   test(
+    'Not a concern dismisses the same imported finding and Keep restores it',
+    () async {
+      final current = make();
+      await current.initialize();
+      final suggestion = scanSuggestion();
+      final id = await current.importScanObservation(suggestion);
+      await current.setScanImportActive(suggestion.id, false);
+      expect(current.controller.toFinding(id)!.reviewState, 'dismissed');
+      expect(current.activeScanImports, isEmpty);
+      await current.setScanImportActive(suggestion.id, true);
+      expect(current.controller.toFinding(id)!.reviewState, 'confirmed');
+      expect(current.activeScanImports, {suggestion.id});
+      expect(current.controller.findings, hasLength(1));
+      expect(current.importedScanFinding(suggestion.id), id);
+      current.dispose();
+      active = null;
+      final resumed = make();
+      await resumed.initialize();
+      expect(resumed.controller.toFinding(id)!.reviewState, 'confirmed');
+      expect(
+        () => resumed.setScanImportActive('never-imported', false),
+        throwsStateError,
+      );
+    },
+  );
+
+  test(
     'scan review continues after restart and saves without taking a photo',
     () async {
       final current = make();
@@ -1413,7 +1440,8 @@ void main() {
             tester.widget<ButtonStyleButton>(start).enabled,
       );
       expect(find.text('Guest room in 3D'), findsOneWidget);
-      await tester.ensureVisible(start);
+      await Scrollable.ensureVisible(tester.element(start), alignment: .5);
+      await tester.pump();
       await tester.tap(start);
       await tester.pump();
       final next = find.byKey(const ValueKey('bathroom-continue'));
@@ -1678,15 +1706,18 @@ void main() {
             .isNotEmpty,
       );
       await check(ScanDifficulty.enteringBathroom.label);
-      final idea = find.byWidgetPredicate(
-        (w) =>
-            w is CheckboxListTile &&
-            w.key is ValueKey<String> &&
-            (w.key! as ValueKey<String>).value.startsWith('scan-suggestion-'),
+      final idea = find.descendant(
+        of: find.byWidgetPredicate(
+          (w) =>
+              w is Card &&
+              w.key is ValueKey<String> &&
+              (w.key! as ValueKey<String>).value.startsWith('scan-suggestion-'),
+        ),
+        matching: find.widgetWithText(OutlinedButton, 'Keep'),
       );
       await reveal(idea);
       await settleUntil(
-        () => tester.widget<CheckboxListTile>(idea).onChanged != null,
+        () => tester.widget<OutlinedButton>(idea).onPressed != null,
       );
       await tester.tap(idea);
       await settleUntil(

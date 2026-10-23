@@ -110,61 +110,59 @@ void main() {
         await tester.pumpAndSettle();
         expect(action.hitTestable(), findsOneWidget);
         expect(find.text(tr('Review requirements')), findsNothing);
-        expect(
-          find.text(
-            tr('{met} met · {notMet} not met · {unknown} need confirmation', {
-              'met': 3,
-              'notMet': 3,
-              'unknown': 4,
-            }),
-          ),
-          findsNothing,
+        final summary = tr(
+          '{notMet} not met · {met} looks met · {answer} for you to answer · {others} others must confirm',
+          {'notMet': 3, 'met': 3, 'answer': 0, 'others': 4},
         );
+        expect(find.text(summary), findsOneWidget);
         expect(find.text(tr('A known criterion is not met')), findsOneWidget);
         for (final reason in reasons) {
           expect(find.text(reason), findsNothing);
         }
         await tester.tap(action);
         await tester.pumpAndSettle();
-        expect(
-          find.text(
-            tr('{met} met · {notMet} not met · {unknown} need confirmation', {
-              'met': 3,
-              'notMet': 3,
-              'unknown': 4,
-            }),
-          ),
-          findsOneWidget,
-        );
+        for (final (group, count) in [
+          ('Looks met', 3),
+          ('Not met', 3),
+          ('The program must confirm', 4),
+        ]) {
+          expect(
+            find.text(
+              tr('{group} ({count})', {'group': tr(group), 'count': count}),
+            ),
+            findsOneWidget,
+          );
+        }
+        String firstSentence(String reason) =>
+            RegExp(r'^(.+?[.!?])\s').firstMatch(reason)!.group(1)!;
         for (var i = 0; i < 10; i++) {
           final tile = find.byKey(
             ValueKey('program-fictional-program-check-check-$i'),
           );
           expect(tile, findsOneWidget);
-          final widget = tester.widget<ListTile>(tile);
-          expect((widget.subtitle! as Text).data, reasons[i]);
+          // One line each; the full deterministic reason stays on request.
           expect(
-            (widget.title! as Text).data,
-            i < 3
-                ? tr('Met')
-                : i < 6
-                ? tr('Not met')
-                : tr('Needs confirmation'),
+            find.descendant(
+              of: tile,
+              matching: find.text(firstSentence(reasons[i])),
+            ),
+            findsOneWidget,
           );
+          expect(find.text(reasons[i]), findsNothing);
         }
         final last = find.byKey(
           const ValueKey('program-fictional-program-check-check-9'),
         );
-        final lastTitle = find.descendant(
-          of: last,
-          matching: find.text(tr('Needs confirmation')),
-        );
-        await Scrollable.ensureVisible(
-          tester.element(lastTitle),
-          alignment: .5,
-        );
+        final why = find.descendant(of: last, matching: find.text(tr('Why')));
+        await Scrollable.ensureVisible(tester.element(why), alignment: .5);
         await tester.pumpAndSettle();
-        expect(lastTitle.hitTestable(), findsOneWidget);
+        expect(why.hitTestable(), findsOneWidget);
+        await tester.tap(why);
+        await tester.pumpAndSettle();
+        final full = find.text(reasons.last);
+        await Scrollable.ensureVisible(tester.element(full), alignment: .5);
+        await tester.pumpAndSettle();
+        expect(full.hitTestable(), findsOneWidget);
         await Scrollable.ensureVisible(tester.element(action), alignment: .5);
         await tester.pumpAndSettle();
         await tester.tap(action);

@@ -149,4 +149,37 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  for (final email in [false, true]) {
+    testWidgets('sign-in explains invitations; reset only with email: $email', (
+      tester,
+    ) async {
+      final session = FakeSession();
+      addTearDown(session.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: SafeAtHomeTheme.light(),
+          home: LoginScreen(session: session, emailDeliveryEnabled: email),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Safe at Home'), findsOneWidget);
+      // One quiet beta line, no separate beta badge.
+      expect(find.text('Team beta: use fictional information only.'), findsOne);
+      expect(find.text('Private team beta'), findsNothing);
+      expect(find.byType(SahStatusBadge), findsNothing);
+      expect(find.text('Create account'), findsNothing);
+      expect(find.text('Forgot password'), email ? findsOne : findsNothing);
+      final help = find.text('How do I get an account?');
+      await _show(tester, help);
+      await tester.tap(help);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('creates accounts by invitation'), findsOne);
+      expect(
+        find.textContaining('Password reset appears here'),
+        email ? findsNothing : findsOne,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 }

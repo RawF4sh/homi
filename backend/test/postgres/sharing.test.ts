@@ -114,3 +114,25 @@ test('sixteen retained grants and fifty notes bound storage; permission retries 
  }finally{db.release();}
 
 });
+test('owner-typed labels: owner sees both, recipient only the owner label, others nothing; legacy shapes exact; revoke clears',async()=>{
+ const snapshot=await create(cases),code=randomBytes(32).toString('base64url'),tokenHash=createHash('sha256').update(code).digest('hex');
+ const fields={caseId:snapshot.caseId,expectedCaseRevision:snapshot.revision,invitationId:randomUUID(),recipientId:HELPER,role:'helper',scope:{...scope,allowHelperNotes:true},expiresAt:null,recipientLabel:'Fictional neighbor Ana',ownerLabel:'Fictional Sam'};
+ const created=member(ok(await execute(OWNER,'create-invitation',fields,tokenHash)));assert.equal(Object.hasOwn(created,'recipientLabel'),false);
+ assert.equal((await execute(OWNER,'create-invitation',{...fields,recipientLabel:'Changed'},tokenHash)).status,'conflict');
+ assert.equal((await execute(OTHER,'review-invitation',{code,includeLabels:true},tokenHash)).status,'not_found');
+ const reviewed=member(ok(await execute(HELPER,'review-invitation',{code,includeLabels:true},tokenHash)));assert.equal(reviewed.ownerLabel,'Fictional Sam');assert.equal(Object.hasOwn(reviewed,'recipientLabel'),false);
+ assert.equal(Object.hasOwn(member(ok(await execute(HELPER,'review-invitation',{code},tokenHash))),'ownerLabel'),false);
+ const g=member(ok(await execute(HELPER,'accept-invitation',{code,expectedPermissionRevision:1},tokenHash)));
+ const ownerRow=(includeLabels?:true)=>execute(OWNER,'list-sharing',{caseId:g.caseId,...(includeLabels?{includeLabels}:{})}).then(r=>(ok(r).shares as CaseMembership[])[0]);
+ const labelled=await ownerRow(true);assert.equal(labelled.recipientLabel,'Fictional neighbor Ana');assert.equal(labelled.ownerLabel,'Fictional Sam');
+ const legacy=await ownerRow();assert.ok(!Object.hasOwn(legacy,'recipientLabel') && !Object.hasOwn(legacy,'ownerLabel'),'legacy shape stays exact');
+ const mine=(user:string,includeLabels?:true)=>execute(user,'list-shared-cases',includeLabels?{includeLabels}:{}).then(r=>ok(r).memberships as CaseMembership[]);
+ const shared=(await mine(HELPER,true))[0];assert.equal(shared.ownerLabel,'Fictional Sam');assert.equal(Object.hasOwn(shared,'recipientLabel'),false);
+ assert.ok(!JSON.stringify(await mine(HELPER,true)).includes('neighbor Ana'));assert.ok(!Object.hasOwn((await mine(HELPER))[0],'ownerLabel'));
+ for(const user of [VIEWER,OTHER]){assert.deepEqual(await mine(user,true),[]);assert.equal((await execute(user,'list-sharing',{caseId:g.caseId,includeLabels:true})).status,'not_found');}
+ const changed=member(ok(await execute(OWNER,'change-sharing',{caseId:g.caseId,expectedCaseRevision:1,invitationId:g.membershipId,expectedPermissionRevision:2,role:'viewer',scope,expiresAt:null})));
+ assert.equal((await ownerRow(true)).recipientLabel,'Fictional neighbor Ana');
+ ok(await execute(OWNER,'revoke-sharing',{caseId:g.caseId,invitationId:g.membershipId,expectedPermissionRevision:changed.permissionRevision}));
+ const revoked=await ownerRow(true);assert.ok(!Object.hasOwn(revoked,'recipientLabel') && !Object.hasOwn(revoked,'ownerLabel'));
+ const row=(await admin.query('SELECT definition FROM safeathome_private.case_shares')).rows[0];assert.ok(!JSON.stringify(row).includes('Fictional'));
+});
