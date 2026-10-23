@@ -37,8 +37,27 @@ abstract interface class DownloadableAssistantModel {
   Future<void> download(String requestId);
 }
 
+abstract interface class ReleasableAssistantModel {
+  Future<void> unload();
+}
+
+abstract interface class ContextualAssistantModel {
+  Future<String> respondWithContext({
+    required String requestId,
+    required String locale,
+    required String question,
+    required String history,
+    required String findings,
+    required String appContext,
+    required String guide,
+  });
+}
+
 class OnDeviceAssistantModel
-    implements AssistantModel, DownloadableAssistantModel {
+    implements
+        AssistantModel,
+        DownloadableAssistantModel,
+        ContextualAssistantModel {
   const OnDeviceAssistantModel({
     this.channel = const MethodChannel('safe_at_home/assistant'),
     this.platform,
@@ -95,24 +114,48 @@ class OnDeviceAssistantModel
     required String question,
     required String history,
     required String findings,
-  }) async {
+  }) => _respond({
+    'requestId': requestId,
+    'locale': locale,
+    'question': question,
+    'history': history,
+    'findings': findings,
+  });
+
+  @override
+  Future<String> respondWithContext({
+    required String requestId,
+    required String locale,
+    required String question,
+    required String history,
+    required String findings,
+    required String appContext,
+    required String guide,
+  }) => _respond({
+    'requestId': requestId,
+    'locale': locale,
+    'question': question,
+    'history': history,
+    'findings': findings,
+    'appContext': appContext,
+    'guide': guide,
+  });
+
+  Future<String> _respond(Map<String, String> request) async {
     if (!_supported) throw const AssistantFailure('UNAVAILABLE');
     try {
       final text = await channel
-          .invokeMethod<String>('respond', {
-            'requestId': requestId,
-            'locale': locale,
-            'question': question,
-            'history': history,
-            'findings': findings,
-          })
+          .invokeMethod<String>('respond', request)
           .timeout(const Duration(seconds: 60));
-      if (text == null || text.trim().isEmpty || text.runes.length > 2400) {
+      if (text == null ||
+          text.trim().isEmpty ||
+          text.runes.length >
+              (request.containsKey('appContext') ? 8192 : 2400)) {
         throw const AssistantFailure('INVALID_RESPONSE');
       }
       return text.trim();
     } on TimeoutException {
-      unawaited(cancel(requestId));
+      unawaited(cancel(request['requestId']!));
       throw const AssistantFailure('TIMEOUT');
     } on PlatformException catch (error) {
       throw AssistantFailure(error.code);

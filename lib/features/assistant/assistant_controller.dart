@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../shared/models/case_draft.dart';
 import 'assistant_context.dart';
+import 'assistant_context_v2.dart';
 import 'assistant_model.dart';
 import 'assistant_history.dart';
 export 'assistant_history.dart' show AssistantTurn;
@@ -13,6 +14,7 @@ class AssistantController extends ChangeNotifier {
     required this.contextProvider,
     required this.locale,
     this.historyStore,
+    this.appContextProvider,
   }) : context = contextProvider();
 
   final AssistantHistoryStore? historyStore;
@@ -237,6 +239,7 @@ class AssistantController extends ChangeNotifier {
   final AssistantModel model;
   final AssistantContext? Function() contextProvider;
   final String locale;
+  final AssistantContextV2? Function()? appContextProvider;
   AssistantContext? context;
   AssistantAvailability availability = AssistantAvailability.unavailable;
   final List<AssistantTurn> _turns = [];
@@ -384,6 +387,14 @@ class AssistantController extends ChangeNotifier {
     _pendingCreatedAt = null;
     pendingQuestion = null;
     if (id != null) unawaited(model.cancel(id));
+    final runtime = model;
+    if (runtime is ReleasableAssistantModel) {
+      unawaited(
+        (runtime as ReleasableAssistantModel).unload().catchError(
+          (Object _) {},
+        ),
+      );
+    }
     if (persistInterrupted) unawaited(persist());
     _changed();
   }
@@ -432,6 +443,7 @@ class AssistantController extends ChangeNotifier {
     final id = newUuidV4();
     final epoch = ++_epoch;
     final scope = context!.key;
+    final appContext = appContextProvider?.call();
     _requestId = id;
     busy = true;
     errorCode = null;
@@ -454,7 +466,8 @@ class AssistantController extends ChangeNotifier {
           (turn) =>
               turn.answer.isNotEmpty &&
               (historyStore == null || turn.contextKey == scope) &&
-              (!turn.includedFindings || includeFindings),
+              (!turn.includedFindings || includeFindings) &&
+              (appContext == null || turn.appContextKey == appContext.key),
         )
         .toList();
     final recent = relevant.skip(relevant.length > 2 ? relevant.length - 2 : 0);
@@ -480,18 +493,47 @@ class AssistantController extends ChangeNotifier {
           return;
         }
       }
-      final answer = await model.respond(
-        requestId: id,
-        locale: locale,
-        question: question,
-        history: history,
-        findings: findings,
-      );
+      final contextual = model;
+      if (appContextProvider != null &&
+          (appContext?.authorized != true ||
+              contextual is! ContextualAssistantModel)) {
+        throw const AssistantFailure('UNAVAILABLE');
+      }
+      final raw = appContext != null && contextual is ContextualAssistantModel
+          ? await (contextual as ContextualAssistantModel).respondWithContext(
+              requestId: id,
+              locale: locale,
+              question: question,
+              history: history,
+              findings: findings,
+              appContext: appContext.modelJson,
+              guide: AssistantContextV2.trustedGuide,
+            )
+          : await model.respond(
+              requestId: id,
+              locale: locale,
+              question: question,
+              history: history,
+              findings: findings,
+            );
       if (_disposed || epoch != _epoch) return;
       if (contextProvider()?.key != scope) {
         refreshContext();
         return;
       }
+      if (appContext != null &&
+          appContextProvider?.call()?.key != appContext.key) {
+        throw const AssistantFailure('CONTEXT_CHANGED');
+      }
+      AssistantReply? reply;
+      if (appContext != null) {
+        try {
+          reply = appContext.decodeReply(raw);
+        } on FormatException {
+          throw const AssistantFailure('INVALID_RESPONSE');
+        }
+      }
+      final answer = reply?.text ?? raw;
       if (answer.trim().isEmpty || answer.runes.length > 2400) {
         throw const AssistantFailure('INVALID_RESPONSE');
       }
@@ -504,6 +546,8 @@ class AssistantController extends ChangeNotifier {
           answeredAt: DateTime.now().toUtc().toIso8601String(),
           contextKey: scope,
           includedFindings: includeFindings,
+          appReplyJson: reply == null ? null : raw,
+          appContextKey: reply?.contextKey,
         ),
       );
       if (historyStore == null && _turns.length > 12) _turns.removeAt(0);

@@ -1,3 +1,5 @@
+import '../assistant/assistant_runtime.dart';
+import '../assistant/local_model_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
 import '../../app/live_app.dart';
@@ -445,6 +447,7 @@ class AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 textAlign: TextAlign.center,
               ),
             ),
+            if (localAssistantTrial) const LocalModelSettings(),
             SahSectionHeading(title: context.tr('About and support')),
             FeatureAvailabilitySection(services: widget.services),
           ],

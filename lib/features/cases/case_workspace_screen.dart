@@ -1,5 +1,9 @@
 import '../sharing/sharing_screens.dart';
 import '../assistant/plan_assistant_screen.dart';
+import '../assistant/assistant_app_context.dart';
+import '../assistant/assistant_context_v2.dart';
+import '../../shared/navigation/homi_destination.dart';
+import '../assistant/assistant_runtime.dart';
 import '../settings/account_settings_screen.dart';
 import '../../shared/presentation/sah_floating_nav.dart';
 import 'package:flutter/material.dart';
@@ -91,11 +95,66 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
     }
   }
 
+  AssistantContextV2 get assistantContext =>
+      assistantContextAt(HomiDestination.values[_tab]);
+
+  AssistantContextV2 assistantContextAt(HomiDestination destination) =>
+      assistantAppContext(
+        services,
+        destination: destination,
+        rooms: _roomsKey.currentState?.session,
+        matches: _programsKey.currentState?.assistantMatches,
+      );
+
+  /// Called only after the chat decoder resolves an allowlisted source. Check
+  /// the current case again because changing the shell can await a save guard.
+  void openAssistantTarget(HomiTarget target) {
+    if (!mounted ||
+        !services.coordinator.isCurrent ||
+        target.caseId != services.coordinator.draft?.caseId ||
+        !canLeave) {
+      return;
+    }
+    final previousDestination = HomiDestination.values[_tab];
+    final expectedContext = assistantContextAt(previousDestination).key;
+    if (target.destination == HomiDestination.help) {
+      setState(() => _showLocalHelp = false);
+    }
+    _selectTab(target.destination.index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !services.coordinator.isCurrent ||
+          target.caseId != services.coordinator.draft?.caseId ||
+          _tab != target.destination.index ||
+          assistantContextAt(previousDestination).key != expectedContext) {
+        return;
+      }
+      if (target.roomId != null) {
+        _roomsKey.currentState?.openAssistantRoom(
+          target.roomId!,
+          findingId: target.findingId,
+        );
+      }
+      if (target.taskId != null) {
+        _tasksKey.currentState?.openAssistantTask(target.taskId!);
+      }
+      if (target.programId != null) {
+        _programsKey.currentState?.openAssistantProgram(target.programId!);
+      }
+    });
+  }
+
   void _assistant() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PlanAssistantScreen(
           coordinator: services.coordinator,
+          model: assistantRuntime(),
+          appContextProvider: () => assistantContext,
+          onTarget: (target) {
+            Navigator.of(context).pop();
+            openAssistantTarget(target);
+          },
           onSection: (section) {
             Navigator.of(context).pop();
             _selectTab(section);

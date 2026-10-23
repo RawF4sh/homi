@@ -6,6 +6,8 @@ import '../../l10n/app_localizations.dart';
 import '../../shared/presentation/sah_components.dart';
 import '../../shared/services/case_coordinator.dart';
 import 'assistant_context.dart';
+import 'assistant_context_v2.dart';
+import '../../shared/navigation/homi_destination.dart';
 import 'assistant_controller.dart';
 import 'assistant_model.dart';
 import 'assistant_history.dart';
@@ -16,11 +18,15 @@ class PlanAssistantScreen extends StatefulWidget {
     super.key,
     required this.onSection,
     this.coordinator,
+    this.appContextProvider,
+    this.onTarget,
     this.model = const OnDeviceAssistantModel(),
   });
   final ValueChanged<int> onSection;
   final CaseCoordinator? coordinator;
   final AssistantModel model;
+  final AssistantContextV2? Function()? appContextProvider;
+  final ValueChanged<HomiTarget>? onTarget;
 
   @override
   State<PlanAssistantScreen> createState() => _PlanAssistantScreenState();
@@ -116,16 +122,30 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       historyStore: history,
       model: widget.model,
       locale: locale,
-      contextProvider: () => widget.coordinator == null
-          ? const AssistantContext(key: 'app-help')
-          : !widget.coordinator!.isCurrent
-          ? null
-          : widget.coordinator!.draft == null
-          ? const AssistantContext(key: 'app-help')
-          : assistantContextFor(widget.coordinator!),
+      appContextProvider: widget.appContextProvider,
+      contextProvider: _legacyContext,
     );
     _controller!.addListener(_chatChanged);
     unawaited(_controller!.check());
+  }
+
+  AssistantContext? _legacyContext() {
+    final base = widget.coordinator == null
+        ? const AssistantContext(key: 'app-help')
+        : !widget.coordinator!.isCurrent
+        ? null
+        : widget.coordinator!.draft == null
+        ? const AssistantContext(key: 'app-help')
+        : assistantContextFor(widget.coordinator!);
+    final app = widget.appContextProvider?.call();
+    if (base == null ||
+        (widget.appContextProvider != null && app?.authorized != true)) {
+      return null;
+    }
+    return AssistantContext(
+      key: '${base.key}:${app?.key ?? ''}',
+      findings: base.findings,
+    );
   }
 
   void _sourceChanged() {
@@ -562,9 +582,74 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       'The response took too long. Your question is still here to retry.',
     'BUSY' => 'The model is busy. Wait a moment, then try again.',
     'CANCELLED' => 'Response stopped.',
+    'CONTEXT_CHANGED' => 'Context changed. Ask again for current information.',
     _ =>
       'The response could not be completed. Check availability and try again.',
   };
+
+  Widget _savedSources(AssistantTurn turn) {
+    final app = widget.appContextProvider?.call();
+    if (app == null || app.key != turn.appContextKey) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Text(
+          context.tr(
+            'This reply uses an earlier app state. Ask again for current sources.',
+          ),
+        ),
+      );
+    }
+    try {
+      final reply = app.decodeReply(turn.appReplyJson!);
+      if (reply.text != turn.answer) return const SizedBox.shrink();
+      return _sourceActions(app, reply);
+    } on FormatException {
+      return const SizedBox.shrink();
+    }
+  }
+
+  Widget _sourceActions(
+    AssistantContextV2 app,
+    AssistantReply reply, {
+    bool guidance = false,
+  }) {
+    final target = app.resolveOpen(reply);
+    String label(HomiDestination d) => switch (d) {
+      HomiDestination.plan => 'Plan',
+      HomiDestination.rooms => 'Rooms',
+      HomiDestination.help => 'Help',
+      HomiDestination.tasks => 'Tasks',
+      HomiDestination.settings => 'Settings',
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (guidance) Text(context.tr(reply.text)),
+          if (!guidance && reply.sourceIds.isNotEmpty)
+            Text(
+              '${context.tr('Sources')}: ${reply.sourceIds.map((id) => app.sources.firstWhere((s) => s.id == id)).map((s) => context.tr(label(s.target.destination))).toSet().join(', ')}',
+            ),
+          if (target != null && widget.onTarget != null)
+            OutlinedButton.icon(
+              icon: const Icon(Icons.open_in_new),
+              label: Text(
+                context.tr('Open {section}', {
+                  'section': context.tr(label(target.destination)),
+                }),
+              ),
+              onPressed: () async {
+                if (!await _saveBeforeLeaving() || !mounted) return;
+                final current = widget.appContextProvider?.call();
+                final validated = current?.resolveOpen(reply);
+                if (validated != null) widget.onTarget?.call(validated);
+              },
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _conversation(AssistantController c) {
     final available = c.availability == AssistantAvailability.ready;
@@ -597,6 +682,21 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
             child: Text(context.tr('Retry')),
           ),
         ],
+        if (widget.appContextProvider?.call() case final app?) ...[
+          Text(
+            context.tr('Current app context'),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            context.tr(
+              'Uses recorded statuses and available sections on this phone. Notes, photos and documents are excluded.',
+            ),
+          ),
+          const SizedBox(height: 8),
+          _sourceActions(app, app.deterministicReply(), guidance: true),
+          const SizedBox(height: 16),
+        ],
         for (var i = 0; i < c.turns.length; i++) ...[
           _ChatMessage(text: c.turns[i].question, reply: false),
           if (c.turns[i].answer.isEmpty)
@@ -611,6 +711,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
               reply: true,
               announce: i == c.turns.length - 1,
             ),
+          if (c.turns[i].appReplyJson != null) _savedSources(c.turns[i]),
         ],
 
         if (c.interruptedQuestion != null && !c.busy) ...[

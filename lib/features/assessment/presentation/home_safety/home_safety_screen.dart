@@ -43,12 +43,37 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
   bool working = false;
   int scanEpoch = 0;
   int _roomSection = 0;
+  String? _assistantFindingId;
   bool get canLeave =>
       !working && session?.busy != true && session?.localSaveFailed != true;
+
+  void openAssistantRoom(String id, {String? findingId}) {
+    final s = session;
+    if (!mounted ||
+        !enabled ||
+        !canLeave ||
+        s == null ||
+        !s.initialized ||
+        !s.document.activeRooms.any((room) => room.id == id)) {
+      return;
+    }
+    if (findingId != null &&
+        !s.document.findingRooms.any(
+          (f) => f.roomId == id && f.findingId == findingId,
+        )) {
+      return;
+    }
+    setState(() {
+      selectedRoom = id;
+      _roomSection = findingId == null ? 0 : 2;
+      _assistantFindingId = findingId;
+    });
+  }
 
   void _selectRoom(String? id) => setState(() {
     selectedRoom = id;
     _roomSection = 0;
+    _assistantFindingId = null;
   });
 
   /// Returns true when this feature consumed a back action.
@@ -61,7 +86,10 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
 
   void _roomBack() {
     if (_roomSection != 0) {
-      setState(() => _roomSection = 0);
+      setState(() {
+        _roomSection = 0;
+        _assistantFindingId = null;
+      });
     } else {
       _selectRoom(null);
     }
@@ -1360,6 +1388,11 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
   ];
 
   List<Widget> roomConcerns(HomeSafetySession s, RoomInstance room) => [
+    if (_assistantFindingId != null)
+      TextButton(
+        onPressed: () => setState(() => _assistantFindingId = null),
+        child: Text(context.tr('All concerns')),
+      ),
     Text(
       context.tr('Concerns and evidence'),
       style: Theme.of(context).textTheme.titleLarge,
@@ -1370,7 +1403,10 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen> {
       (l) => l.roomId == room.id,
     ))
       for (final finding in s.snapshot.findings.where(
-        (f) => f.id == link.findingId && f.reviewState != 'dismissed',
+        (f) =>
+            f.id == link.findingId &&
+            f.reviewState != 'dismissed' &&
+            (_assistantFindingId == null || f.id == _assistantFindingId),
       ))
         Card(
           child: Padding(

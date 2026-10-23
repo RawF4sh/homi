@@ -41,6 +41,15 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
       widget.referralId != null;
   bool _busy = true, _fresh = false;
   bool get canLeave => !_busy;
+  String? _assistantTaskId;
+  void openAssistantTask(String id) {
+    if (!current || saved?.tasks.any((t) => t.id == id) != true) return;
+    setState(() {
+      _tasks = true;
+      _assistantTaskId = id;
+    });
+  }
+
   String? _error;
   String? _loadError, _loadFailureCode;
   ProgressService get service => widget.services.progress!;
@@ -404,6 +413,7 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
         state?.tasks
             .where(
               (t) =>
+                  (_assistantTaskId == null || t.id == _assistantTaskId) &&
                   (widget.findingId == null ||
                       t.data['findingId'] == widget.findingId) &&
                   (widget.referralId == null ||
@@ -609,6 +619,11 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
               ),
             ),
           if (_tasks) ...[
+            if (_assistantTaskId != null)
+              TextButton(
+                onPressed: () => setState(() => _assistantTaskId = null),
+                child: Text(context.tr('All tasks')),
+              ),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: editable ? () => _edit() : null,

@@ -38,6 +38,35 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
 
   bool get canLeave => !_tracking;
 
+  MatchResponse? get assistantMatches {
+    final c = widget.services.coordinator;
+    final snapshot = c.snapshot;
+    return c.isCurrent &&
+            !_busy &&
+            _error == null &&
+            snapshot != null &&
+            !c.hasUnsavedChanges &&
+            _result?.isFreshFor(snapshot, now: DateTime.now()) == true
+        ? _result
+        : null;
+  }
+
+  String? _assistantProgramId;
+  void openAssistantProgram(String id) {
+    if (!mounted ||
+        !canLeave ||
+        assistantMatches?.matches.any((m) => m.programId == id) != true) {
+      return;
+    }
+    setState(() => _assistantProgramId = id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          assistantMatches?.matches.any((m) => m.programId == id) == true) {
+        _detailsController(id).expand();
+      }
+    });
+  }
+
   String? _error;
   Timer? _timer;
   int? _autoRevision;
@@ -607,8 +636,17 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
                 {'count': result.matches.length},
               ),
             ),
+          if (_assistantProgramId != null)
+            TextButton(
+              onPressed: () => setState(() => _assistantProgramId = null),
+              child: Text(context.tr('All programs')),
+            ),
           if (result != null)
-            for (final match in result.matches)
+            for (final match in result.matches.where(
+              (m) =>
+                  _assistantProgramId == null ||
+                  m.programId == _assistantProgramId,
+            ))
               Card(
                 key: ValueKey('program-${match.programId}'),
                 margin: const EdgeInsets.only(bottom: 24),

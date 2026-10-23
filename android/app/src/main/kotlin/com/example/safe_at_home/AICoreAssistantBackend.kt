@@ -52,30 +52,60 @@ internal class AICoreAssistantBackend(context: Context) : PlanAssistantBackend {
     override suspend fun respond(request: PlanAssistantRequest): String {
         try {
             if (status(request.locale) != "ready") throw AssistantNativeFailure("UNAVAILABLE")
+            val sourceIds = request.appContext?.let { context ->
+                try {
+                    val objectValue = JSONObject(context)
+                    require(objectValue.keys().asSequence().toSet() == setOf("version", "destination", "state", "sources"))
+                    require(objectValue.getInt("version") == 2)
+                    require(objectValue.getString("destination") in setOf("plan", "rooms", "help", "tasks", "settings"))
+                    objectValue.getJSONObject("state")
+                    val sources = objectValue.getJSONArray("sources")
+                    require(sources.length() <= 32)
+                    val ids = (0 until sources.length()).map { sources.getJSONObject(it).getString("id") }
+                    require(ids.all { it.isNotBlank() && it.length <= 80 } && ids.toSet().size == ids.size)
+                    ids.toSet()
+                } catch (_: Exception) { throw AssistantNativeFailure("INVALID_INPUT") }
+            }
             val data = JSONObject(mapOf(
                 "requestedLanguage" to request.locale,
                 "residentQuestion" to request.question,
                 "untrustedRecentConversation" to request.history,
                 "untrustedConfirmedFindingExcerpts" to request.findings,
-            )).toString()
+            ) + (request.appContext?.let { mapOf("currentAppContext" to it) } ?: emptyMap())).toString()
+            val instructions = planAssistantInstructionsFor(request)
+            val outputTokens = if (request.appContext == null) 384 else 768
             val hasSystem = model.isSystemPromptAvailable()
-            val input = if (hasSystem) data else "$planAssistantInstructions\nUNTRUSTED RESIDENT DATA (JSON):\n$data"
+            val input = if (hasSystem) data else "$instructions\nUNTRUSTED RESIDENT DATA (JSON):\n$data"
             val content = generateContentRequest(TextPart(input)) {
-                if (hasSystem) systemInstruction = SystemInstruction(planAssistantInstructions)
+                if (hasSystem) systemInstruction = SystemInstruction(instructions)
                 temperature = 0.2f
-                maxOutputTokens = 384
+                maxOutputTokens = outputTokens
                 candidateCount = 1
                 enableThinking = false
             }
             val tokens = model.countTokens(content).totalTokens
-            if (tokens <= 0 || tokens + 384 > model.getTokenLimit()) throw AssistantNativeFailure("CONTEXT_LIMIT")
+            if (tokens <= 0 || tokens + outputTokens > model.getTokenLimit()) throw AssistantNativeFailure("CONTEXT_LIMIT")
             currentCoroutineContext().ensureActive()
             val response = model.generateContent(content)
             currentCoroutineContext().ensureActive()
             val candidate = response.candidates.firstOrNull() ?: throw AssistantNativeFailure("REFUSED")
             if (candidate.finishReason == Candidate.FinishReason.MAX_TOKENS) throw AssistantNativeFailure("CONTEXT_LIMIT")
             val text = candidate.text.trim()
-            if (text.isEmpty() || text.codePointCount(0, text.length) > 2400) throw AssistantNativeFailure("INVALID_RESPONSE")
+            if (text.isEmpty() || text.codePointCount(0, text.length) > (if (request.appContext == null) 2400 else 8192)) throw AssistantNativeFailure("INVALID_RESPONSE")
+            if (sourceIds != null) {
+                val valid = try {
+                    require(text.toByteArray(Charsets.UTF_8).size <= 8192)
+                    val result = JSONObject(text)
+                    val values = result.keys().asSequence().associateWith { key ->
+                        when (key) {
+                            "sourceIds" -> result.getJSONArray(key).let { array -> (0 until array.length()).map { array.get(it) } }
+                            else -> result.get(key).takeUnless { it == JSONObject.NULL }
+                        }
+                    }
+                    PlanAssistantRequest.acceptsContextReply(values, sourceIds)
+                } catch (_: Exception) { false }
+                if (!valid) throw AssistantNativeFailure("INVALID_RESPONSE")
+            }
             return text
         } catch (e: GenAiException) { throw AssistantNativeFailure(errorCode(e.errorCode)) }
     }

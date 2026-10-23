@@ -41,6 +41,29 @@ class AndroidFeaturesTest {
         assertNull(HomeScanRequest.parse(request(listOf(mapOf("token" to a, "name" to "Bad\nname"), mapOf("token" to b, "name" to "Two")))))
         assertNull(HomeScanRequest.parse(request(List(9) { mapOf("token" to UUID.randomUUID().toString(), "name" to "Room") })))
     }
+    @Test fun `context chat requires the exact bounded pair and uses shared navigation guide`() {
+        val old = mapOf("requestId" to id, "locale" to "en", "question" to "Where next?", "history" to "[]", "findings" to "[]")
+        val context = """{"version":2,"destination":"rooms","state":{},"sources":[{"id":"app.rooms"}]}"""
+        val current = old + mapOf("appContext" to context, "guide" to "Shared app guide from Dart. Return strict JSON.")
+        val request = PlanAssistantRequest.parse(current)!!
+        assertEquals(context, request.appContext)
+        assertNull(PlanAssistantRequest.parse(old)!!.appContext)
+        assertTrue(planAssistantInstructionsFor(request).contains("Shared app guide from Dart"))
+        assertTrue(planAssistantInstructionsFor(request).contains("You have no tools or actions"))
+        assertFalse(planAssistantInstructionsFor(request).contains("Rooms, choose the named room"))
+        for (bad in listOf(old + ("appContext" to context), old + ("guide" to "guide"),
+            current + ("guide" to " "), current + ("appContext" to "x".repeat(16385)),
+            current + ("appContext" to "界".repeat(5462)), current + ("guide" to "x".repeat(8193)),
+            current + ("guide" to "界".repeat(2731)), current + ("guide" to "\uD800"),
+            current + ("accountId" to "private"))) assertNull(PlanAssistantRequest.parse(bad))
+        val valid = mapOf("text" to "Open Rooms.", "sourceIds" to listOf("app.rooms"), "openSourceId" to "app.rooms")
+        assertTrue(PlanAssistantRequest.acceptsContextReply(valid, setOf("app.rooms")))
+        for (bad in listOf(valid + ("route" to "admin"), valid + ("text" to "x".repeat(1201)),
+            valid + ("sourceIds" to listOf("invented")), valid + ("sourceIds" to listOf("app.rooms", "app.rooms")),
+            valid + ("openSourceId" to "invented"), valid + ("text" to "bad\u0000text"))) {
+            assertFalse(PlanAssistantRequest.acceptsContextReply(bad, setOf("app.rooms")))
+        }
+    }
     @Test fun `anchor-local geometry is rigidly rebased without mutating its original or inventing classifications`() {
         val source = geometry(a)
         val before = source.scene("2026-10-25T00:00:00.000Z", false)

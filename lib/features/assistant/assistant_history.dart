@@ -15,9 +15,12 @@ class AssistantTurn {
     required this.answeredAt,
     this.contextKey = '',
     this.includedFindings = false,
+    this.appReplyJson,
+    this.appContextKey,
   });
   final String question, answer, contextKey, id, createdAt;
   final String? answeredAt;
+  final String? appReplyJson, appContextKey;
   String get questionId => '$id-question';
   String get answerId => '$id-answer';
   final bool includedFindings;
@@ -30,17 +33,26 @@ class AssistantTurn {
     'answer': answer,
     'contextKey': contextKey,
     'includedFindings': includedFindings,
+    if (appReplyJson != null) 'appReplyJson': appReplyJson,
+    if (appContextKey != null) 'appContextKey': appContextKey,
   };
   factory AssistantTurn.fromJson(Object? raw) {
-    final value = _object(raw, {
-      'id',
-      'createdAt',
-      'answeredAt',
-      'question',
-      'answer',
-      'contextKey',
-      'includedFindings',
-    });
+    final value = _object(
+      raw,
+      {
+        'id',
+        'createdAt',
+        'answeredAt',
+        'question',
+        'answer',
+        'contextKey',
+        'includedFindings',
+      },
+      optional: {'appReplyJson', 'appContextKey'},
+    );
+    if ((value['appReplyJson'] == null) != (value['appContextKey'] == null)) {
+      throw const FormatException('Invalid saved source context.');
+    }
     if (value['includedFindings'] is! bool) {
       throw const FormatException('Invalid chat consent.');
     }
@@ -58,6 +70,12 @@ class AssistantTurn {
           : _date(value['answeredAt']),
       contextKey: _text(value['contextKey'], 256, empty: true),
       includedFindings: value['includedFindings'] as bool,
+      appReplyJson: value['appReplyJson'] == null
+          ? null
+          : _text(value['appReplyJson'], 8192),
+      appContextKey: value['appContextKey'] == null
+          ? null
+          : _text(value['appContextKey'], 64),
     );
   }
 }
@@ -246,9 +264,13 @@ class AssistantHistoryStore {
   }
 }
 
-Map<String, Object?> _object(Object? raw, Set<String> keys) {
+Map<String, Object?> _object(
+  Object? raw,
+  Set<String> keys, {
+  Set<String> optional = const {},
+}) {
   if (raw is! Map ||
-      raw.keys.toSet().difference(keys).isNotEmpty ||
+      raw.keys.toSet().difference({...keys, ...optional}).isNotEmpty ||
       keys.difference(raw.keys.toSet()).isNotEmpty) {
     throw const FormatException('Invalid saved chat fields.');
   }

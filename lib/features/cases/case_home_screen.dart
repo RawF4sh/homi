@@ -1,5 +1,8 @@
 import '../sharing/sharing_screens.dart';
 import '../assistant/plan_assistant_screen.dart';
+import '../assistant/assistant_app_context.dart';
+import '../assistant/assistant_runtime.dart';
+import '../../shared/navigation/homi_destination.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:safe_at_home/l10n/app_localizations.dart';
@@ -109,6 +112,39 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       MaterialPageRoute<void>(
         builder: (_) => PlanAssistantScreen(
           coordinator: widget.services.coordinator,
+          model: assistantRuntime(),
+          appContextProvider: () =>
+              _workspaceKey.currentState?.assistantContext ??
+              assistantAppContext(
+                widget.services,
+                destination: HomiDestination.values[_tab],
+              ),
+          onTarget: (target) async {
+            Navigator.of(context).pop();
+            final c = widget.services.coordinator;
+            final generation = c.generation;
+            final previousDestination = HomiDestination.values[_tab];
+            String contextKey() =>
+                (_workspaceKey.currentState?.assistantContextAt(
+                          previousDestination,
+                        ) ??
+                        assistantAppContext(
+                          widget.services,
+                          destination: previousDestination,
+                        ))
+                    .key;
+            final expectedContext = contextKey();
+            if (target.caseId != c.draft?.caseId) return;
+            await _selectTab(target.destination.index);
+            if (!_isCurrent ||
+                generation != c.generation ||
+                target.caseId != c.draft?.caseId ||
+                _tab != target.destination.index ||
+                contextKey() != expectedContext) {
+              return;
+            }
+            _workspaceKey.currentState?.openAssistantTarget(target);
+          },
           onSection: (index) {
             Navigator.of(context).pop();
             _selectTab(index);

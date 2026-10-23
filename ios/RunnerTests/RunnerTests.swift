@@ -7,6 +7,42 @@ import UniformTypeIdentifiers
 
 @MainActor
 class RunnerTests: XCTestCase {
+  func testContextAssistantKeepsLegacyRequestsAndRejectsUnboundedOrPartialContext() throws {
+    let old: [String: Any] = ["requestId": UUID().uuidString, "locale": "en", "question": "Where next?", "history": "[]", "findings": "[]"]
+    XCTAssertNil(try PlanAssistantRequest(old).appContext)
+    let context = #"{"version":2,"destination":"rooms","state":{},"sources":[{"id":"app.rooms"}]}"#
+    var current = old
+    current["appContext"] = context; current["guide"] = "Shared app guide from Dart. Return strict JSON."
+    let request = try PlanAssistantRequest(current)
+    XCTAssertEqual(request.appContext, context)
+    if #available(iOS 26.0, *) {
+      let instructions = PlanAssistantEngine.instructions(for: request)
+      XCTAssertTrue(instructions.contains("Shared app guide from Dart"))
+      XCTAssertTrue(instructions.contains("You have no tools or actions"))
+      XCTAssertFalse(instructions.contains("Rooms, choose the named room"))
+    }
+    var partial = old; partial["appContext"] = context
+    XCTAssertThrowsError(try PlanAssistantRequest(partial))
+    for (key, value): (String, Any) in [
+      ("guide", " "), ("guide", String(repeating: "x", count: 8193)),
+      ("guide", String(repeating: "界", count: 2731)),
+      ("appContext", String(repeating: "x", count: 16385)),
+      ("appContext", String(repeating: "界", count: 5462)),
+      ("appContext", "not JSON"), ("accountId", "private")
+    ] {
+      var invalid = current; invalid[key] = value
+      XCTAssertThrowsError(try PlanAssistantRequest(invalid))
+    }
+    XCTAssertTrue(request.acceptsReply(#"{"text":"Open Rooms.","sourceIds":["app.rooms"],"openSourceId":"app.rooms"}"#))
+    for response in [
+      #"{"text":"Open Rooms.","sourceIds":["invented"]}"#,
+      #"{"text":"Open Rooms.","sourceIds":["app.rooms","app.rooms"]}"#,
+      #"{"text":"Open Rooms.","sourceIds":["app.rooms"],"openSourceId":"invented"}"#,
+      #"{"text":"Open Rooms.","sourceIds":["app.rooms"],"route":"admin"}"#,
+      "{\"text\":\"" + String(repeating: "x", count: 1201) + "\",\"sourceIds\":[]}"
+    ] { XCTAssertFalse(request.acceptsReply(response)) }
+  }
+
   private func provider() -> NSItemProvider {
     NSItemProvider(item: Data([1, 2, 3]) as NSData, typeIdentifier: UTType.png.identifier)
   }

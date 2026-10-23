@@ -9,6 +9,7 @@ import 'catalogs/settings.dart';
 import 'catalogs/account_access.dart';
 import 'catalogs/invitations.dart';
 import 'catalogs/assistant.dart';
+import 'catalogs/assistant_context.dart';
 import 'catalogs/android_features.dart';
 import 'catalogs/plan_workspace.dart';
 import 'catalogs/sharing.dart';
@@ -51,6 +52,7 @@ class AppLocalizations {
     settingsTranslations,
     accountAccessTranslations,
     assistantTranslations,
+    assistantContextTranslations,
     androidFeatureTranslations,
     planWorkspaceTranslations,
     scanSyncTranslations,

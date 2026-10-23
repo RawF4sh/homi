@@ -21,13 +21,24 @@ android {
 
     defaultConfig {
         applicationId = "com.example.safe_at_home"
-        minSdk = 24
+        minSdk = if (project.findProperty("homiLlamaTrial") == "true") 28 else 24
+        if (project.findProperty("homiLlamaTrial") == "true") {
+            ndk { abiFilters += listOf("arm64-v8a") }
+        }
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
     buildTypes {
+        configureEach {
+            if (project.findProperty("homiLlamaTrial") == "true") {
+                ndk {
+                    abiFilters.clear()
+                    abiFilters += listOf("arm64-v8a")
+                }
+            }
+        }
         release {
             signingConfig = signingConfigs.getByName("debug")
         }
