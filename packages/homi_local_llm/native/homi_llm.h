@@ -15,12 +15,12 @@ struct homi_llm_metrics {
   int prompt_tokens;
   int output_tokens;
 };
-// Caller owns output (at least 9601 bytes). Generation is serialized process-wide.
+// Generate into a caller-owned buffer of at least 9601 bytes
 int homi_llm_generate(const char *request_id, const char *model_path,
                      const char *system_prompt, const char *prompt, int use_gpu,
                      char *output, size_t capacity, struct homi_llm_metrics *metrics);
 void homi_llm_cancel(const char *request_id);
-// Returns BUSY instead of freeing resources in use. Queue again after the worker exits.
+// Unload idle state or return BUSY while a worker runs
 int homi_llm_unload(void);
 int homi_llm_busy(void);
 const char *homi_llm_runtime_id(void);

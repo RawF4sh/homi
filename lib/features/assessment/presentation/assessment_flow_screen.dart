@@ -125,7 +125,6 @@ class AssessmentFlowScreen extends StatelessWidget {
                 : null,
             appBar: AppBar(
               actions: actions,
-              // Up to three actions leave little width: allow two lines.
               toolbarHeight: 64,
               title: MediaQuery.withClampedTextScaling(
                 maxScaleFactor: 1.3,

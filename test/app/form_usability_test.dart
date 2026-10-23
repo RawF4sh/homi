@@ -355,7 +355,6 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        // The timeline comes first; the editor opens on demand (UI-038).
         expect(find.byKey(const ValueKey('history-editor')), findsNothing);
         await _tap(tester, find.byKey(const ValueKey('history-add')));
         final date = tester.widget<IsoDateField>(
@@ -365,7 +364,6 @@ void main() {
           date.controller.text,
           DateTime.now().toIso8601String().substring(0, 10),
         );
-        // Follow-up details stay folded until needed.
         expect(find.byKey(const ValueKey('history-follow-up')), findsNothing);
         await _tap(tester, find.byKey(const ValueKey('history-save')));
         final message = tester

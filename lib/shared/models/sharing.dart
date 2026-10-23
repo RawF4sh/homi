@@ -23,8 +23,7 @@ int _revision(Object? v) {
 
 String _id(Object? v) => ExportContractValues.id(v);
 
-/// Owner-typed sharing label: trimmed, 1-80 characters, no control or
-/// direction-override characters. Not a verified identity.
+/// Check owner-entered labels for length and control characters
 bool validSharingLabel(String v) =>
     v.isNotEmpty &&
     v.trim() == v &&
@@ -33,7 +32,6 @@ bool validSharingLabel(String v) =>
       r'[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]',
     ).hasMatch(v);
 
-/// Labels are omitted when absent; a present label must be valid (not null).
 String? _label(Json j, String key) {
   if (!j.containsKey(key)) return null;
   final v = j[key];
@@ -104,16 +102,12 @@ class CaseMembership {
       state;
   final String? expiresAt;
 
-  /// "Who is this for?", typed by the owner; only present in owner views.
   final String? recipientLabel;
 
-  /// The name the owner chose to show the people they share with.
   final String? ownerLabel;
   final ShareScope scope;
   final int revision;
 
-  /// [ownerView] allows the owner-only [recipientLabel]; a recipient-facing
-  /// membership carrying it is rejected.
   factory CaseMembership.fromJson(Object? v, {bool ownerView = false}) {
     final j = _object(v, {
       'membershipId',

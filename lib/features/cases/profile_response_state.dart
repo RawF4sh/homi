@@ -7,10 +7,7 @@ import '../local_help/referral_geography.dart';
 
 enum ProfileCoverageChoice { plan, none, notSure }
 
-/// Device-only response metadata. Policy facts remain in the strict v1 profile.
-/// A missing choice is unanswered; an explicit uncertainty is still a response.
-/// Resident state and 5-digit ZIP are user-entered routing details for Help;
-/// they are saved only on this phone because strict v1 profiles exclude them.
+/// Keep explicit unknown answers and routing details on this device
 class ProfileResponseState {
   const ProfileResponseState({
     this.coverage,
@@ -26,7 +23,6 @@ class ProfileResponseState {
   final String? stateCode;
   final String? zip;
 
-  /// Keeps only the resident's state and ZIP.
   ProfileResponseState get locationOnly =>
       ProfileResponseState(stateCode: stateCode, zip: zip);
 
@@ -88,7 +84,6 @@ class ProfileResponseState {
       (profile.tenure == null && tenureNotSure ? 1 : 0) +
       (profile.ownerConsentReported == null && consentNotSure ? 1 : 0);
 
-  /// A known answer always wins over stale or inconsistent uncertainty metadata.
   ProfileResponseState forProfile(CaseProfile profile) => ProfileResponseState(
     coverage:
         profile.healthPlan != null && coverage == ProfileCoverageChoice.notSure
@@ -100,8 +95,6 @@ class ProfileResponseState {
     zip: zip,
   );
 
-  /// Binds the resident state and ZIP to the city and county they were entered
-  /// with, so a change made elsewhere leaves them unknown rather than stale.
   static String placeFingerprint(CaseProfile profile) => sha256
       .convert(utf8.encode(jsonEncode([profile.city, profile.county])))
       .toString();

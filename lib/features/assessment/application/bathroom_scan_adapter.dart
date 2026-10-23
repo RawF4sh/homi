@@ -59,7 +59,6 @@ abstract interface class BathroomScanAdapter {
   Future<void> cancel(String scanId);
 }
 
-/// Optional room-aware capture; existing adapters retain their ID-only contract.
 abstract interface class RoomContextScanAdapter {
   Future<BathroomScanScene> startForRoom(String scanId, RoomInstance room);
 }

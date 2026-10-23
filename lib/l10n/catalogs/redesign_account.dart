@@ -1,8 +1,4 @@
-// Strings for the October 2026 redesign of this area. Every entry needs
-// es, zh-Hans, zh-Hant, vi and fil.
 const redesignAccountTranslations = <String, Map<String, String>>{
-  // Assistant
-  // Composer hint at large text sizes, where the full hint cannot fit.
   'Ask…': {
     'es': 'Pregunte…',
     'zh-Hans': '提问…',
@@ -276,7 +272,6 @@ const redesignAccountTranslations = <String, Map<String, String>>{
     'fil': '{count} sa 12 palitan · puno na',
   },
 
-  // Account
   'Language and display': {
     'es': 'Idioma y pantalla',
     'zh-Hans': '语言和显示',
@@ -474,7 +469,6 @@ const redesignAccountTranslations = <String, Map<String, String>>{
     'fil': 'Suriin kung available ang serbisyo',
   },
 
-  // Sign-in
   'How do I get an account?': {
     'es': '¿Cómo obtengo una cuenta?',
     'zh-Hans': '如何获得账户？',
@@ -503,7 +497,6 @@ const redesignAccountTranslations = <String, Map<String, String>>{
         'Kung makalimutan mo ang password, magtanong sa project team. Lalabas dito ang pag-reset ng password kapag naka-on na ang email.',
   },
 
-  // Resident details
   'What health coverage does the resident have?': {
     'es': '¿Qué cobertura médica tiene el residente?',
     'zh-Hans': '住户有什么医疗保险？',
@@ -579,7 +572,6 @@ const redesignAccountTranslations = <String, Map<String, String>>{
     'fil':
         'May limitasyon sa kita ang ilang programa. Kung iiwan mo itong blangko, mananatili itong hindi alam. Hindi ito kailanman ituturing na zero o dahilan para tumanggi.',
   },
-  // Resident location (UI-039, UI-015/016)
   'ZIP code': {
     'es': 'Código postal',
     'zh-Hans': '邮政编码',

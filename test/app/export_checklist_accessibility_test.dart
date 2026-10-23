@@ -200,7 +200,6 @@ void main() {
           await reveal(find.text(tr(warning)));
           expect(find.text(tr(warning)).hitTestable(), findsOneWidget);
         }
-        // The PDF and its share action come first; the checklist follows.
         final share = find.text(tr('Share draft file'));
         await reveal(share, delta: -300);
         expect(share.hitTestable(), findsOneWidget);

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../l10n/app_localizations.dart';
 import 'referral_directory.dart';
 
-/// Counts Homi's actual reviewed records, independent of external network reach.
 class ReferralCoverageSummary extends StatelessWidget {
   const ReferralCoverageSummary({
     super.key,

@@ -34,7 +34,6 @@ void main() {
   testWidgets(
     'a new plan recommends resident details and opens them inside the Plan tab',
     (tester) async {
-      // Tall enough that every stage row is built without scrolling.
       viewSize(tester, const Size(390, 2000));
       final app = services(
         SafetyStore(),
@@ -118,7 +117,6 @@ void main() {
             ),
             home: Builder(
               builder: (context) => Scaffold(
-                // Builds every child, so offscreen rows are laid out too.
                 body: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,

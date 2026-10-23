@@ -78,7 +78,6 @@ class LocalGeneration {
   }
 }
 
-/// No network or automatic provider selection. Native code owns the model file.
 class HomiLocalLlm {
   const HomiLocalLlm({this.channel = const MethodChannel('homi_local_llm')});
   final MethodChannel channel;

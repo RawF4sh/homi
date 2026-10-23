@@ -1,12 +1,3 @@
-/// USPS 3-digit ZIP prefix allocation (public), written for this project and
-/// reviewed 2026-10-26. A ZIP only suggests the state to fill in; the person can
-/// always correct it, and nothing here infers a county, city or eligibility.
-///
-/// Gaps are deliberate: unallocated prefixes, military APO/FPO (AA/AE/AP) and
-/// 969 (shared by Guam, Northern Mariana Islands, Palau, Micronesia and the
-/// Marshall Islands) return null so the person is asked for the state.
-// ponytail: a few unused prefixes inside a state's run resolve to that state;
-// no real ZIP uses them. Swap for a USPS-published table if one is adopted.
 const _prefixRuns = <String, String>{
   'NY': '005 100-149',
   'PR': '006-007 009',
@@ -63,7 +54,6 @@ const _prefixRuns = <String, String>{
   'AK': '995-999',
 };
 
-/// Whole ZIPs that differ from their prefix's state.
 const _zipExceptions = {'96799': 'AS'};
 
 final _prefixState = () {
@@ -83,8 +73,7 @@ final _prefixState = () {
   return table;
 }();
 
-/// The state or territory code for a 5-digit ZIP or ZIP+4, or null when the ZIP
-/// is malformed or its prefix does not identify one state.
+/// Suggest a state from a ZIP without inferring county or eligibility
 String? stateForZip(String zip) {
   final z = zip.trim();
   if (!RegExp(r'^[0-9]{5}(-[0-9]{4})?$').hasMatch(z)) return null;

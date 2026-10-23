@@ -60,9 +60,6 @@ void main() {
         await tester.tap(check);
         await tester.pumpAndSettle();
       }
-      // This exercises the real typed native path, then the same Dart source
-      // validator used by production. It never uses App guidance as evidence of
-      // a generated reply. All inputs and printed answers are fictional.
       final raw = await model.respondWithContext(
         requestId: newUuidV4(),
         locale: 'en',
@@ -81,7 +78,6 @@ void main() {
       }
       debugPrint('ASSISTANT_FICTIONAL_CONTEXTUAL_REPLY: $raw');
       if (contextualOnly) {
-        // With a ready model the App guide lives in Chat options.
         await tester.tap(find.byKey(const ValueKey('assistant-options')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('assistant-options-guide')));

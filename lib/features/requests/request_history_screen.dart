@@ -21,8 +21,6 @@ class RequestHistoryScreen extends StatefulWidget {
   final AppServices services;
   final ProgramMatch program;
 
-  /// Preselects a status (for example `submitted` after "I sent it") and opens
-  /// the Add update sheet when no unfinished edit is waiting.
   final String? initialStatus;
   @override
   State<RequestHistoryScreen> createState() => _RequestHistoryScreenState();
@@ -373,9 +371,6 @@ class _RequestHistoryScreenState extends State<RequestHistoryScreen> {
       _error == 'Manual update saved. This is not verified agency status.' ||
       _error == 'The pending update was already saved.';
 
-  // Shown on demand below the timeline, so the screen reads as a record of
-  // what happened rather than an always-open editor. Unfinished edits reopen
-  // it automatically.
   Widget _editor(BuildContext context, bool exiting) {
     final enabled = !_busy && !exiting;
     void changed(VoidCallback update) {

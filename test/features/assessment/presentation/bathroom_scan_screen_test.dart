@@ -253,7 +253,6 @@ final _suggestionCard = find.byWidgetPredicate(
       (w.key! as ValueKey<String>).value.startsWith('scan-suggestion-'),
 );
 
-/// The unselected Keep choice of a scan suggestion.
 final _suggestionBox = find.descendant(
   of: _suggestionCard,
   matching: find.widgetWithText(OutlinedButton, 'Keep'),
@@ -263,8 +262,6 @@ final _notConcern = find.descendant(
   matching: find.widgetWithText(OutlinedButton, 'Not a concern'),
 );
 
-/// Selects the doorway from the visible "In this scan" list, which every
-/// user sees (not only screen-reader users).
 Future<void> _openModel(WidgetTester tester) async {
   await tester.pumpAndSettle();
   final item = find.byKey(const ValueKey('scan-item-door-1'));
@@ -390,7 +387,6 @@ void main() {
       await tester.drag(find.byType(Scrollable).first, const Offset(0, 3000));
       await tester.pumpAndSettle();
       expect(find.text('Camera scans can’t recognise objects'), findsOneWidget);
-      // Camera-only items never borrow LiDAR object names.
       final first = harness.session.review.scene!.elements.first;
       final item = find.byKey(ValueKey('scan-item-${first.id}'));
       await _reveal(tester, item);

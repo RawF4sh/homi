@@ -50,8 +50,6 @@ NextStepTask task(String id, {String? dueOn, String state = 'pending'}) =>
       'needsReview': false,
     });
 
-/// Everything answered, one kept concern and one closed program, so only the
-/// task branch and the final fallback remain reachable.
 PlanNextStep later({List<NextStepTask> tasks = const []}) => planNextStep(
   PlanProgressFacts(
     answered: 4,
@@ -156,7 +154,6 @@ void main() {
           step(answered: 5, questions: 5).title,
           isNot('Finish resident details'),
         );
-        // Kept concerns without answers still lead to resident details.
         expect(step(answered: 0, questions: 5).values['count'], 5);
       },
     );
@@ -174,7 +171,6 @@ void main() {
       final many = step(kept: 4);
       expect(many.title, 'Find help for {count} concerns');
       expect(many.values['count'], 4);
-      // Tasks do not outrank finding help while no program is followed.
       expect(step(kept: 2, tasks: [task('t')]).target, PlanStepTarget.help);
     });
 

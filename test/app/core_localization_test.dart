@@ -175,7 +175,6 @@ void main() {
         expect(find.byType(NavigationDestination), findsNWidgets(5));
         await tester.tap(find.byKey(const ValueKey('open-account')));
         await tester.pumpAndSettle();
-        // At 3.2x the row is taller than the screen; tap its visible title.
         final privacy = find
             .descendant(
               of: find.byKey(const ValueKey('account-privacy')),

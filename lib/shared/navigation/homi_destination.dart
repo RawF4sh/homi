@@ -1,7 +1,5 @@
-/// The same ordered destinations are used before and after selecting a plan.
 enum HomiDestination { plan, rooms, help, tasks, settings }
 
-/// Stable identifiers only; callers must revalidate selection and permissions.
 class HomiTarget {
   const HomiTarget(
     this.destination, {

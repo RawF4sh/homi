@@ -59,8 +59,6 @@ class LocalHelpScreen extends StatefulWidget {
   final AppServices services;
   final String? findingId;
 
-  /// Opens the app's checklist for a linked program when it is in this
-  /// plan's results; null otherwise.
   final VoidCallback? Function(String programId)? checklist;
 
   final Future<bool> Function(Uri)? openExternal;
@@ -111,8 +109,6 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
   HelpLocation? _resident;
   String? _residentKey;
 
-  /// The resident's entered city, county, state and ZIP. State and ZIP are
-  /// device-only profile answers; nothing is inferred from GPS.
   HelpLocation? _residentLocation() {
     final draft = widget.services.coordinator.draft;
     if (draft == null) return null;
@@ -149,9 +145,7 @@ class LocalHelpScreenState extends State<LocalHelpScreen> {
           draft.caseId,
           draft.profile,
         );
-      } catch (_) {
-        // Unreadable private answers leave the resident's state unknown.
-      }
+      } catch (_) {}
       final r = await _repository!.load();
       final receipts = await ReferralTaskImport(
         widget.services,

@@ -13,8 +13,6 @@ import 'progress_models.dart';
 import 'progress_service.dart';
 import 'program_progress_screen.dart';
 
-/// The `put_task` operation shared by quick add, suggestions and the task
-/// page, so every path sends the same contract fields.
 Map<String, Object?> putTaskOperation({
   required ProgressSnapshot snapshot,
   NextStepTask? task,
@@ -53,11 +51,9 @@ Map<String, Object?> putTaskOperation({
   },
 };
 
-/// YYYY-MM-DD for the wire; display always goes through the locale.
 String isoDay(DateTime d) =>
     DateTime(d.year, d.month, d.day).toIso8601String().substring(0, 10);
 
-/// Short form this year, full form (with the year) otherwise.
 String localDay(BuildContext context, String iso) {
   final day = DateTime.parse(iso), l = MaterialLocalizations.of(context);
   return day.year == DateTime.now().year

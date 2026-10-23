@@ -164,7 +164,6 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Safe at Home'), findsOneWidget);
-      // One quiet beta line, no separate beta badge.
       expect(find.text('Team beta: use fictional information only.'), findsOne);
       expect(find.text('Private team beta'), findsNothing);
       expect(find.byType(SahStatusBadge), findsNothing);

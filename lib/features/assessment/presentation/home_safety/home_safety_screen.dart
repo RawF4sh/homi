@@ -40,8 +40,6 @@ class HomeSafetyScreen extends StatefulWidget {
   });
   final HomeSafetyCatalog? catalog;
 
-  /// Opens assistance for a kept concern. When null, the room screen opens
-  /// local help inside the current tab if that feature is enabled.
   final ValueChanged<String?>? onFindHelp;
   final bool scansFirst;
   final bool workspaceMode;
@@ -68,8 +66,6 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
   int _roomSection = 0;
   String? _assistantFindingId;
 
-  /// Device-only scan state per room, read from the private store. A room
-  /// without an entry is still being checked.
   final Map<String, _RoomScan> _roomScans = {};
   final Set<String> _connectedRoomIds = {};
   bool _scansLoaded = false;
@@ -107,9 +103,7 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
         rooms: s.document.activeRooms,
         isCurrent: () => !stale(),
       );
-    } catch (_) {
-      // Do not claim a room belongs to a model that could not be validated.
-    }
+    } catch (_) {}
     if (stale()) return;
     setState(() {
       _roomScans
@@ -159,7 +153,6 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
     _assistantFindingId = null;
   });
 
-  /// Returns true when this feature consumed a back action.
   bool handleBack() {
     if (!canLeave || !enabled) return true;
     if (selectedRoom == null) return false;
@@ -635,8 +628,6 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
     );
     if (!mounted || !s.isCurrent) return;
     await run(_syncIfReady);
-    // Undo re-reviews the same finding ID with its previous observation and
-    // state. A newly created concern has no previous state to restore.
     if (finding == null ||
         saved == null ||
         !mounted ||
@@ -1018,7 +1009,6 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
   String _count(int n, String one, String many) =>
       n == 1 ? context.tr(one) : context.tr(many, {'count': n});
 
-  /// One save vocabulary: Saved, Saving…, Waiting to sync, or a problem.
   Widget _saveStatus(HomeSafetySession s) {
     final (label, state) = s.localSaveFailed
         ? ('Not saved on this device', SahSaveState.problem)
@@ -1167,7 +1157,6 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
     );
   }
 
-  /// One useful status per room instead of zero counters.
   String _roomStatus(HomeSafetySession s, RoomInstance room) {
     final f = _facts(s, room);
     final scan = _roomScans[room.id]?.state;
@@ -1234,8 +1223,6 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
     _assistantFindingId = null;
   });
 
-  /// The room's single recommended action: scan, review, find help, then the
-  /// next room. Missing answers stay unknown and never count as "no concern".
   _NextStep? _nextStep(HomeSafetySession s, RoomInstance room, _RoomFacts f) {
     final outdoor = room.type == AssessmentLocation.outdoorPaths;
     final scan = _roomScans[room.id]?.state;
@@ -1356,8 +1343,6 @@ class HomeSafetyScreenState extends State<HomeSafetyScreen>
     secondary: step.secondary,
   );
 
-  /// The next step shown at the end of a room sub-page, so finishing it moves
-  /// forward instead of only returning to the room.
   List<Widget> _forward(
     HomeSafetySession s,
     RoomInstance room,
@@ -2176,8 +2161,6 @@ class _QuestionCard extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 4),
-            // No choice is preselected; Not sure is stored as not_sure and,
-            // like no answer, stays unknown.
             RadioGroup<String>(
               key: ValueKey('answer-${question.id}'),
               groupValue: answered ? answer!.value : null,
@@ -2595,8 +2578,6 @@ class _RoomFacts {
     required this.questions,
   });
 
-  /// Linked findings still waiting for the resident's review, and confirmed
-  /// findings not reported addressed.
   final List<String> toReview, kept;
   final int addressed, fromAnswers, answered, questions;
   int get suggested => toReview.length + fromAnswers;

@@ -498,7 +498,6 @@ void main() {
                 ),
               )
               .bottom,
-          // Real fonts draw taller than the test font, so require clear space.
           lessThanOrEqualTo(
             tester.getRect(find.text('Access expires')).top - 16,
           ),

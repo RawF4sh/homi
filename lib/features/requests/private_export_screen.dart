@@ -41,8 +41,6 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
   bool _busy = false, _sharing = false;
   String? _error;
   String? _notice;
-  // The local operation journal: a draft whose download never finished is
-  // offered as "Finish draft"; a finished one for older inputs is out of date.
   Map<String, Object?>? _prior;
   Timer? _timer;
   late final String _caseId;
@@ -405,9 +403,7 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
           await widget.services.store.writeJson(_operationKey, done);
           _prior = done;
         }
-      } catch (_) {
-        // The draft is ready; only the recovery wording depends on this note.
-      }
+      } catch (_) {}
     } catch (error) {
       if (mounted) {
         setState(
@@ -592,8 +588,6 @@ class _PrivateExportScreenState extends State<PrivateExportScreen>
     });
   }
 
-  // Only evidence linked to a confirmed concern can be exported; the server
-  // enforces the same rule. Unknown links stay selectable for server review.
   bool _photoAllowed(EvidenceDescriptor evidence) {
     final findings = widget.services.coordinator.snapshot?.findings ?? [];
     final finding = findings.where((f) => f.id == evidence.findingId);

@@ -35,11 +35,8 @@ class DraftPacketScreen extends StatefulWidget {
   final Listenable? caseChanges;
   final DateTime Function()? now;
 
-  /// Optional next steps that make checklist items lead somewhere.
   final VoidCallback? onContact, onUpdates;
 
-  /// Resident items open resident details; resident and professional items
-  /// can become a task titled with the item's own text.
   final VoidCallback? onResidentDetails;
   final void Function(String title)? onAddTask;
 

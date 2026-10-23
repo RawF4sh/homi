@@ -181,15 +181,12 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      // While the saved review is current there is no conflict, so the
-      // reconcile tool stays hidden (N-02) and the value reads as confirmed.
       expect(find.byKey(const ValueKey('form-confirmed')), findsOneWidget);
       expect(
         find.byKey(const ValueKey('form-unconfirmed-memberFirstName')),
         findsNothing,
       );
       expect(find.byKey(const ValueKey('form-reconcile')), findsNothing);
-      // Another device moves the case to revision 2.
       server = {...server!, 'revision': 2};
       await app.coordinator.adoptRemoteSnapshot(
         CaseSnapshot.fromJson({
@@ -211,7 +208,6 @@ void main() {
       await reveal(unconfirmed, 250);
       expect(unconfirmed, findsOneWidget);
       expect(find.byKey(const ValueKey('form-confirmed')), findsNothing);
-      // The read-only summary opens the existing editor from "Change".
       await tester.tap(
         find.byKey(const ValueKey('form-change-memberFirstName')),
       );

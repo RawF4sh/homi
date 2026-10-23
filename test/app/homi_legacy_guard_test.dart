@@ -83,8 +83,6 @@ void main() {
         canLeave = value;
       }),
     );
-    // flush chains writes created in the test's fake-async zone. Pump that
-    // zone instead of awaiting from runAsync, which cannot drain its queue.
     await tester.pumpAndSettle(
       const Duration(milliseconds: 100),
       EnginePhase.sendSemanticsUpdate,

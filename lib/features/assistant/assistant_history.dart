@@ -158,7 +158,7 @@ class AssistantHistory {
   final List<AssistantConversation> conversations;
 }
 
-/// Uses the account's existing encrypted store. No cloud, export or shared-case channel.
+/// Store account and plan chat history in encrypted local storage
 class AssistantHistoryStore {
   AssistantHistoryStore({
     required this.store,
@@ -229,7 +229,6 @@ class AssistantHistoryStore {
     );
   }
 
-  // Queue the immutable snapshot immediately. A later clear/delete queues after it.
   Future<void> write(AssistantHistory history) {
     _guard();
     if (history.conversations.length > 10 ||

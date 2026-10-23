@@ -9,8 +9,6 @@ import 'help_finder.dart';
 import 'referral_directory.dart';
 import 'zip_states.dart';
 
-/// Public, read-only discovery. A browsing location is not a resident profile
-/// update and is never included in an external link.
 class NationwideHelpBrowser extends StatefulWidget {
   const NationwideHelpBrowser({
     super.key,
@@ -25,7 +23,6 @@ class NationwideHelpBrowser extends StatefulWidget {
   final DateTime Function()? now;
   final bool embedded;
 
-  /// Opens plan selection or creation. Saving needs a plan.
   final VoidCallback? onChoosePlan;
 
   @override
@@ -189,8 +186,6 @@ String referralLocationLabel(HelpLocation location) => [
   location.zip ?? '',
 ].where((v) => v.isNotEmpty).join(', ');
 
-/// No GPS request or geographic guessing. In particular, an old county name is
-/// preserved without treating it as California.
 class ReferralLocationEditor extends StatefulWidget {
   const ReferralLocationEditor({
     super.key,
@@ -218,11 +213,9 @@ class _ReferralLocationEditorState extends State<ReferralLocationEditor>
     text: widget.initialLocation?.county ?? '',
   );
   late bool _showCounty = _county.text.trim().isNotEmpty;
-  // A saved ZIP without a state stays state-unknown; only typing fills it.
   late String? _state = widget.initialLocation?.stateCode;
   bool _stateFromZip = false;
 
-  /// A ZIP fills a routable state; the person can still choose another.
   static String? _routable(String place) {
     final state = stateForZip(place);
     return referralState(state)?.routingSupported == true ? state : null;

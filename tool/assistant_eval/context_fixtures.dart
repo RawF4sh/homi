@@ -1,5 +1,3 @@
-// Fictional evaluation inputs built through the production B1 contract.
-// This file does not invoke a model, a network, or platform services.
 import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
 import 'package:safe_at_home/features/assistant/assistant_context_v2.dart';
 import 'package:safe_at_home/shared/models/contracts.dart';

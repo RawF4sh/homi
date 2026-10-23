@@ -25,7 +25,6 @@ test('team bundle exposes three independent draft routes without manufacturing e
   const exception = hpsm.criteria.find(c => c.id === 'cost-exception')!;
   assert.equal(exception.rule.kind, 'manual_review');
   assert.match(JSON.stringify(exception), /not an automatic rejection/);
-  // Published area, membership and income wording stays descriptive: every criterion remains manual review.
   assert.match(hpsm.intake!, /HPSM Medi-Cal or CareAdvantage members in San Mateo County/);
   const rtp = programs.find(p => p.programId === 'rtp-home-repair')!;
   assert.match(rtp.intake!, /San Mateo County, Palo Alto, Mountain View and Los Altos.*80% of area median income/);

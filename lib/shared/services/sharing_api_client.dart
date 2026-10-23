@@ -28,8 +28,6 @@ class SharingApiClient {
   final MatchingTransport _transport;
   final Duration timeout;
 
-  /// Off by default: the deployed backend rejects label fields. When off, no
-  /// label key is ever sent and labelled responses are rejected.
   final bool includeLabels;
   Future<SharingResponse> request(
     String route,
@@ -65,7 +63,6 @@ class SharingApiClient {
         (!includeLabels || fields.containsKey('includeLabels'))) {
       throw ArgumentError('Sharing labels are not enabled.');
     }
-    // Opt into owner-typed labels; without it the server keeps legacy shapes.
     const labelled = {
       'list-sharing',
       'list-email-sharing',

@@ -1,11 +1,9 @@
-// Shell, Plan overview and shared components for the October 2026 redesign.
 const redesignShellTranslations = <String, Map<String, String>>{
   'Assistant': {
     'es': 'Asistente',
     'zh-Hans': '助手',
     'zh-Hant': '助手',
     'vi': 'Trợ lý',
-    // Katulong also means a sharing helper; the tab uses the common loanword.
     'fil': 'Assistant',
   },
   'Account': {

@@ -113,7 +113,6 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        // At 3.2x the row is taller than this phone; tap its title.
         await tester.ensureVisible(find.text('Privacy and data'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Privacy and data'));

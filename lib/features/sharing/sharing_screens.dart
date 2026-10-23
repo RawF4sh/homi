@@ -132,8 +132,6 @@ String _sharedTitle(BuildContext context, CaseMembership grant) =>
 String _access(BuildContext context, String role) =>
     context.tr(role == 'helper' ? 'Can view and help' : 'Can view');
 
-/// Program names come from the owner's tracked programs on this device. The
-/// sharing service only returns IDs, so unknown ones get a neutral label.
 Map<String, String> _programNames(
   BuildContext context,
   AppServices services,
@@ -457,7 +455,6 @@ class _PeopleState extends _OnlineState<PeopleWithAccessScreen> {
   }
 }
 
-/// Who → what they can do → review and create → send it yourself.
 class InviteSomeoneScreen extends StatefulWidget {
   const InviteSomeoneScreen({
     super.key,
@@ -499,7 +496,6 @@ class _InviteState extends _OnlineState<InviteSomeoneScreen> {
       _labelText(recipientLabel) != false &&
       _labelText(ownerLabel) != false;
 
-  /// Trimmed optional label, null when empty, false when it cannot be sent.
   Object? _labelText(TextEditingController field) {
     final text = field.text.trim();
     return !labels || text.isEmpty
@@ -838,8 +834,6 @@ class _InviteState extends _OnlineState<InviteSomeoneScreen> {
             'After they accept, you can choose private details to share separately under Detailed helper access.',
           ),
         ),
-      // The floating label draws above the field's border; keep it clear of
-      // the note above at every text scale.
       const SizedBox(height: 24),
       DropdownButtonFormField<int>(
         isExpanded: true,
@@ -1156,7 +1150,6 @@ class _SharedListState extends _OnlineState<SharedWithMeScreen> {
             SahSectionHeading(title: context.tr('Plans shared with you')),
           for (final grant in memberships)
             ListTile(
-              // Plan names stay owner-only; the owner may choose a name to show.
               title: Text(_sharedTitle(context, grant)),
               subtitle: Text(
                 [

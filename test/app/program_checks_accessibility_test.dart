@@ -140,7 +140,6 @@ void main() {
             ValueKey('program-fictional-program-check-check-$i'),
           );
           expect(tile, findsOneWidget);
-          // One line each; the full deterministic reason stays on request.
           expect(
             find.descendant(
               of: tile,

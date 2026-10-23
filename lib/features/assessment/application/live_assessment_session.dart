@@ -817,9 +817,6 @@ class LiveAssessmentSession extends ChangeNotifier {
     return id;
   }
 
-  /// Reverses a scan suggestion the resident already kept, or keeps it again.
-  /// The same finding ID is dismissed or restored and confirmed; no new
-  /// finding is created.
   Future<void> setScanImportActive(String suggestionId, bool active) async {
     guard();
     if (flow.isBusy ||

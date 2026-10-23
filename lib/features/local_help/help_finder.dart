@@ -8,8 +8,6 @@ import 'provider_search.dart';
 import 'referral_coverage_summary.dart';
 import 'referral_directory.dart';
 
-/// What a Help result can do. Plan and no-plan Help supply their own handlers,
-/// so both share one layout.
 class HelpActions {
   const HelpActions({
     required this.open,
@@ -20,22 +18,17 @@ class HelpActions {
     this.checklist,
   });
 
-  /// Opens a fixed official destination. Returns false when it failed.
   final Future<bool> Function(Uri) open;
   final Future<void> Function(ReferralProvider) save, followUp;
   final bool Function(ReferralProvider) isSaved;
   final bool busy;
 
-  /// Returns an opener for the app's checklist when [programId] is in the
-  /// current plan's results, otherwise null (the card behaves as a referral).
   final VoidCallback? Function(String programId)? checklist;
 
   VoidCallback? checklistFor(ReferralProvider p) =>
       p.programId == null ? null : checklist?.call(p.programId!);
 }
 
-/// One Help layout: location line, search and type-of-help chips, then
-/// results. Location is only what the user entered; no GPS is used.
 class HelpFinder extends StatefulWidget {
   const HelpFinder({
     super.key,
@@ -111,7 +104,6 @@ class _HelpFinderState extends State<HelpFinder>
         (r.zip == null || l.zip == null || r.zip == l.zip);
   }
 
-  /// The resident's entered area, when it names a routable state.
   HelpLocation? get _residentArea {
     final r = widget.residentLocation;
     return referralState(r?.stateCode)?.routingSupported == true ? r : null;
@@ -584,8 +576,6 @@ List<Widget> _cautions(BuildContext context, ReferralProvider p, DateTime now) {
 String _saveLabel(bool saved) =>
     saved ? 'Saved · on this phone' : 'Save · on this phone';
 
-/// Result card in a fixed order: name, what they may help with, where they
-/// work, what this app can do, what is not confirmed, then actions.
 class HelpResultCard extends StatelessWidget {
   const HelpResultCard({
     super.key,
@@ -742,8 +732,6 @@ Uri? helpSourceUri(String source) {
       : uri;
 }
 
-/// Full result detail as its own page: coverage first, then what they do,
-/// what this app can do, contact, sources and saving.
 class HelpResultDetailScreen extends StatefulWidget {
   const HelpResultDetailScreen({
     super.key,
@@ -792,8 +780,6 @@ class _HelpResultDetailState extends State<HelpResultDetailScreen> {
       for (final a in p.listedAreas) ...a.cities,
     };
     return Scaffold(
-      // Provider names can be long: allow two lines, and stop the title
-      // growing before it outgrows the bar. The body keeps full scaling.
       appBar: AppBar(
         toolbarHeight: 64,
         title: MediaQuery.withClampedTextScaling(

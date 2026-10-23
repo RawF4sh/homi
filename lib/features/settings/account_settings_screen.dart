@@ -39,8 +39,6 @@ class AccountSettingsScreenState extends State<AccountSettingsScreen> {
   String? _error;
   _SettingsAction _feedbackAction = _SettingsAction.selectedCase;
 
-  /// Sub-pages are separate routes built from this state, so they rebuild
-  /// whenever it changes and every action keeps its existing guards.
   final _revision = ValueNotifier(0);
 
   @override

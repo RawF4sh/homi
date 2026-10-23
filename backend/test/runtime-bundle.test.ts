@@ -136,7 +136,6 @@ test('combined team-beta + nationwide bundle is explicit and serves all five rou
   const combined = await loadRuntimeBenefitsBundle('team-beta-with-nationwide-v1');
   assert.equal(combined.name, 'team-beta-with-nationwide-v1'); assert.equal(combined.enabled, true);
   assert.equal(Object.isFrozen(combined), true);
-  // Single bundles are unchanged and the combined registry is exactly their concatenation.
   const teamPrograms = await teamBeta.loadRegistry(), federalPrograms = await nationwide.loadRegistry();
   assert.deepEqual(teamPrograms.map(p => p.programId), ['scfhp-eaa', 'hpsm-eaa', 'rtp-home-repair']);
   assert.deepEqual(federalPrograms.map(p => p.programId), ['usda-section-504', 'va-hisa']);
@@ -152,7 +151,6 @@ test('combined team-beta + nationwide bundle is explicit and serves all five rou
   for (const program of registry) {
     assert.equal(program.rulesVerified, false); assert.equal(program.availability, 'unverified');
   }
-  // Output type is per program: the three team routes keep their pinned forms, federal routes stay checklist-only.
   for (const id of ['scfhp-eaa', 'hpsm-eaa', 'rtp-home-repair']) {
     assert.deepEqual(await combined.loadFormTemplate(id), await teamBeta.loadFormTemplate(id));
   }

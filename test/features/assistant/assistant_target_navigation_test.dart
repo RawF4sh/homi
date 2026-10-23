@@ -132,8 +132,6 @@ void main() {
 
     await app.coordinator.clearSelected();
     key.currentState!.openAssistantTask('retained');
-    // The workspace normally removes this screen when the selected plan closes.
-    // Rebuild the same state to verify its own stale-plan guard as well.
     await tester.pumpWidget(_tasks(app, key));
     await tester.pumpAndSettle();
     expect(find.text('All tasks'), findsNothing);

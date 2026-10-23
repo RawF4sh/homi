@@ -1,5 +1,3 @@
-// Strings for the October 2026 redesign of this area. Every entry needs
-// es, zh-Hans, zh-Hant, vi and fil.
 const redesignTasksTranslations = <String, Map<String, String>>{
   "Status": {
     "es": "Estado",

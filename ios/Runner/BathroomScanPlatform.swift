@@ -161,7 +161,6 @@ final class BathroomScanPlatform {
   }
 }
 
-/// Display-only context. Stable room/case IDs never cross the capture channel.
 struct RoomScanContext {
   enum RoomType: String { case bathroom, entrance, stairs, livingSpaces, bedroom, kitchen }
   let type: RoomType

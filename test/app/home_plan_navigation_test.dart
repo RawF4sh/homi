@@ -405,8 +405,6 @@ void main() {
       final retained = jsonEncode(store.records);
       final gate = Completer<List<String>>();
       store.keysGate = gate;
-      // Closing Account rechecks deletion receipts, because Account can
-      // delete plans; the shell stays blocked until the check finishes.
       await tester.pageBack();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));

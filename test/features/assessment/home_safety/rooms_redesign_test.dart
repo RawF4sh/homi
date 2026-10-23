@@ -68,7 +68,6 @@ void main() {
         ),
         findsOneWidget,
       );
-      // Manual sync is only offered inside a problem notice.
       expect(find.byKey(const ValueKey('rooms-sync')), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('room-bedroom')));
@@ -78,7 +77,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Fictional cluttered path'), findsOneWidget);
       expect(find.text('Needs your review'), findsOneWidget);
-      // A suggestion is never treated as a kept concern needing help.
       expect(
         find.byKey(const ValueKey('concern-find-help-path-concern')),
         findsNothing,
@@ -98,7 +96,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(helpFor, 'path-concern');
 
-      // Room questions end with the room's next step, not only "back".
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey('room-continue-questions')),
         300,
@@ -128,7 +125,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(inRow('bedroom', '1 concern'), findsOneWidget);
 
-      // An outdoor area with nothing started recommends questions, not a scan.
       await tester.tap(find.byKey(const ValueKey('room-yard')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('room-next-questions')), findsOneWidget);

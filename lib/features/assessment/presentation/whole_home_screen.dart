@@ -315,7 +315,6 @@ class _WholeHomeScreenState extends State<WholeHomeScreen>
   );
 
   Future<void> capture() async {
-    // Insertion order is the walking order the resident tapped.
     final selected = <String>{};
     final limit = session.rooms.length.clamp(2, 8);
     var limitReached = false;

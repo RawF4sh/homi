@@ -89,7 +89,6 @@ class LiveAppConfig {
   final bool sensitiveSharingEnabled;
   final bool simpleInvitationsEnabled;
 
-  /// Owner-typed sharing labels need a backend that accepts `includeLabels`.
   final bool sharingLabelsEnabled;
   final bool trackingEnabled;
   final bool scanSyncEnabled;

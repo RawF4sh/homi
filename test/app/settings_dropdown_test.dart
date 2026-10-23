@@ -151,7 +151,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(Scaffold), findsOneWidget);
       expect(find.byType(AppBar), findsNothing);
-      // Routine preferences and deletion live on separate pages.
       for (final key in [
         'account-display',
         'account-privacy',

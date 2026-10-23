@@ -69,8 +69,6 @@ class ReferralProvider {
   final String? parentNetworkId, organizationId;
   final ReferralProviderKind? kind;
 
-  /// Backend program ID this referral describes, when the app has a route for
-  /// it. Only links Help to a matched result; it never implies eligibility.
   final String? programId;
   final List<ReferralRole>? _roles;
   List<ReferralRole> get roles =>
@@ -143,8 +141,6 @@ class ReferralProvider {
         !listsCounty(county, stateCode: stateCode, countyFips: countyFips)) {
       return ReferralCoverage.unknown;
     }
-    // A county candidate can include partial areas, but it must never become an
-    // address-coverage claim. ZIP/city input does not resolve an area restriction.
     final wholeCounty = listedAreas.any(
       (a) =>
           a.stateCode == stateCode?.toUpperCase() &&
@@ -791,8 +787,6 @@ Uri referralDestination(ReferralProvider provider, {bool phone = false}) {
   return uri;
 }
 
-// Discovery and preparation only. These entries do not enable server policy
-// matching, official form generation, submission, or eligibility conclusions.
 const federalProgramReferrals = [
   ReferralProvider(
     id: 'referral-usda-section-504',

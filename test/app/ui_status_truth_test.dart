@@ -243,7 +243,6 @@ void main() {
     expect(paragraph.maxLines, isNull);
     expect(paragraph.didExceedMaxLines, false);
     expect(paragraph.size.height, greaterThan(100));
-    // The question is a heading spoken once; each choice is its own radio.
     final no = find.byKey(const ValueKey('remainingAtHome-false'));
     await reveal(tester, no);
     expect(
@@ -257,8 +256,6 @@ void main() {
     await tester.pumpAndSettle();
     final key = 'intake.${app.coordinator.draft!.caseId}.fictional-program';
     expect((store.records[key]!['booleans'] as Map)['remainingAtHome'], false);
-    // "Not sure" sends the same unknown (null) value, while this device keeps
-    // it distinct from a question nobody has answered yet (N-01).
     await tester.tap(find.byKey(const ValueKey('remainingAtHome-notSure')));
     await tester.pumpAndSettle();
     expect((store.records[key]!['booleans'] as Map)['remainingAtHome'], isNull);

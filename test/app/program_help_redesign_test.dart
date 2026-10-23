@@ -154,8 +154,6 @@ void main() {
           expect(find.text(label), findsNothing);
         }
         expect(find.textContaining('Review needed:'), findsNothing);
-        // The card carries one requirement summary; unknowns never count as
-        // met or failed.
         expect(
           find.text(
             '0 looks met · 2 for you to answer · 8 others must confirm',
@@ -203,8 +201,6 @@ void main() {
         expect(find.text('Why'), findsNWidgets(10));
         expect(find.text('Rule version: fictional-rule-v2'), findsOneWidget);
         expect(find.text('Fictional official source'), findsOneWidget);
-        // One application workspace replaces the old list of equal step
-        // links (UI-025).
         for (final action in ['intake', 'answers', 'export', 'history']) {
           expect(
             find.byKey(ValueKey('program-fictional-program-$action')),
@@ -339,7 +335,6 @@ void main() {
       );
       expect(find.text(title), findsOneWidget);
       expect(find.text(purpose), findsOneWidget);
-      // Each card states its key limit and the area from the program's page.
       expect(
         tester.widget<Text>(find.byKey(ValueKey('program-limit-$id'))).data,
         limit,

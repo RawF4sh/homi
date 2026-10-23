@@ -104,7 +104,6 @@ void main() {
         find.byKey(const ValueKey('checklist-add-task-professional-order')),
       );
       expect(tasks.last, 'Fictional professional order.');
-      // Program items keep Contact and never become tasks.
       expect(
         find.byKey(const ValueKey('checklist-add-task-intake-route')),
         findsNothing,

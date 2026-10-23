@@ -340,7 +340,6 @@ void main() {
         find.byKey(const ValueKey('help-use-resident-area')),
         findsNothing,
       );
-      // Showing the resident's area saves nothing until the user changes it.
       expect((await LocalHelpRepository(c).load()).location, isNull);
 
       await tap(tester, find.byKey(const ValueKey('help-location-change')));

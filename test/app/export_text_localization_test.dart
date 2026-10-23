@@ -195,7 +195,6 @@ void main() {
         }
 
         final selection = find.text(tr('Included · {number}', {'number': 1}));
-        // An unfinished journal is offered only as "Finish draft" (UI-035).
         final prepare = find.text(tr('Finish draft'));
         for (var attempt = 1; attempt <= 2; attempt++) {
           await tester.pumpWidget(screen());
@@ -255,7 +254,6 @@ void main() {
         await tester.pumpAndSettle();
         final givenNameLabel = tr('Given name');
         expect(find.text(givenNameLabel), findsOneWidget);
-        // Saved values open as a read-only summary; "Change" opens the editor.
         final change = find.byKey(
           const ValueKey('form-change-memberFirstName'),
         );

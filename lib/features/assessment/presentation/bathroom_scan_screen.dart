@@ -34,7 +34,6 @@ class BathroomScanScreen extends StatefulWidget {
   final VoidCallback? onAddOtherConcern;
   final VoidCallback? onUsePhotos;
 
-  /// Restores or dismisses the finding a suggestion already added.
   final Future<void> Function(String suggestionId, bool active)?
   onSetImportActive;
   @override
@@ -670,8 +669,6 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     ]);
   }
 
-  /// Camera-only scans find surfaces, not objects, so their items never use
-  /// object names unless the resident labelled them.
   String _itemName(
     BuildContext context,
     BathroomScanScene scene,
@@ -758,8 +755,6 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     ]);
   }
 
-  /// Keep / Not a concern stays reversible. Keeping adds the observation to
-  /// the assessment; Not a concern dismisses that same finding without a new ID.
   Widget _suggestion(BuildContext context, ScanSuggestionCandidate suggestion) {
     final findingId = widget.importedFinding(suggestion.id);
     final added = findingId != null;
@@ -776,8 +771,6 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
         ? false
         : null;
     void choose(bool keep) {
-      // Only an unchanged choice is a no-op; an undecided suggestion can be
-      // marked Not a concern.
       if (keep == before) return;
       run(() async {
         if (!added && keep) {
@@ -820,9 +813,6 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
     ]);
   }
 
-  /// Undo restores the previous choice on the same finding ID. A suggestion
-  /// added for the first time is set back to Not a concern, since an added
-  /// finding is dismissed rather than deleted.
   void _offerUndo(String suggestionId, bool keep, bool? before) {
     final added = widget.importedFinding(suggestionId) != null;
     final restore = widget.onSetImportActive;
@@ -831,7 +821,6 @@ class _BathroomScanScreenState extends State<BathroomScanScreen> {
       ?..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          // Fixed, so large text and footer buttons cannot push it off screen.
           behavior: SnackBarBehavior.fixed,
           content: Text(
             context.tr(keep ? 'Concern kept' : 'Marked not a concern'),
@@ -910,7 +899,6 @@ String _warning(String code) => switch (code) {
   _ => 'This scan may be incomplete.',
 };
 
-/// Plain-language name and description of the scan this phone will use.
 (String, String) scanModeCopy(
   BathroomScanCapabilities? capability,
 ) => switch (capability) {

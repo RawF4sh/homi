@@ -121,7 +121,6 @@ void main() {
                       'updatedAt': forms.stamp,
                       'updatedBy': 'fictional-user',
                       'answers': [
-                        // "Not sure" is stored as unknown, never as false.
                         {
                           'key': 'active',
                           'value': null,
@@ -223,7 +222,6 @@ void main() {
       }
       expect(find.text('SCFHP'), findsWidgets);
       expect(find.text('Official form draft'), findsOneWidget);
-      // External confirmations are never offered as a retry.
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey('workspace-waiting')),
         200,
@@ -240,7 +238,6 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Submitted'), findsNothing);
-      // The full official name appears once, under About this form.
       expect(
         find.text('Fictional official program title (referral draft)'),
         findsNothing,

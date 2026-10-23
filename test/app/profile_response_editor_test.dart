@@ -200,7 +200,6 @@ void main() {
         (disk.records['profile-edit.$id']!['responses'] as Map)['coverage'],
         'plan',
       );
-      // Reopen before the autosave timer to exercise the unfinished journal.
       await reopen(tester, app);
       expect(find.widgetWithText(TextFormField, 'Health plan'), findsOneWidget);
       await autosave(tester);
@@ -289,7 +288,6 @@ void main() {
         findsOneWidget,
       );
       await choose(tester, 'tenure', 'Not sure');
-      // "Not sure" is an explicit answer, never a blank.
       expect(shown('profile-answer-state-tenure'), 'Answered');
       expect(selected(tester, 'tenure'), 'notSure');
       expect(
@@ -309,7 +307,6 @@ void main() {
         await reveal(tester, text(key));
         expect(text(key), findsOneWidget);
       }
-      // The fields themselves did not move out of resident details.
       expect(text('profile-consent-card'), findsOneWidget);
       expect(text('profile-field-annualIncomeUsd'), findsOneWidget);
       expect(tester.takeException(), isNull);

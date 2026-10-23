@@ -4,9 +4,7 @@ import '../../shared/models/contracts.dart';
 import '../../shared/services/local_private_store.dart';
 import 'profile_response_state.dart';
 
-/// Account-encrypted metadata deliberately bound to the entire saved profile.
-/// A remote or external profile change invalidates local response markers rather
-/// than silently transferring an old uncertainty to a different set of answers.
+/// Bind encrypted response markers to the saved profile
 class ProfileResponseStore extends ChangeNotifier {
   ProfileResponseStore({
     required this.store,
@@ -56,7 +54,6 @@ class ProfileResponseStore extends ChangeNotifier {
       _requireCurrent(caseId, scope);
       var state = const ProfileResponseState();
       if (saved != null) {
-        // Version 2 adds the place binding for the resident state and ZIP.
         final version = saved['version'];
         if (!{1, 2}.contains(version) ||
             saved['caseId'] != caseId ||
@@ -78,11 +75,9 @@ class ProfileResponseStore extends ChangeNotifier {
           state = parsed.forProfile(profile);
         } else if (saved['placeFingerprint'] ==
             ProfileResponseState.placeFingerprint(profile)) {
-          // Other answers changed elsewhere; the location still matches.
           state = parsed.locationOnly;
         }
       }
-      // An earlier disk read must not replace a newer read or successful save.
       if (_operations[caseId] == operation) {
         _cache[caseId] = (scope: scope, fingerprint: fingerprint, state: state);
         notifyListeners();

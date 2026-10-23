@@ -20,9 +20,6 @@ import 'form_review_screen.dart';
 import 'private_export_screen.dart';
 import 'request_history_screen.dart';
 
-// v1 has no form-capability field. Only these existing production routes have
-// reviewed questionnaires and mappings. New production programs default to
-// an app-generated checklist; explicit fictional demos keep their test flow.
 bool programHasFormWorkflow(ProgramMatch match) =>
     match.isDemo ||
     const {
@@ -31,7 +28,6 @@ bool programHasFormWorkflow(ProgramMatch match) =>
       'rtp-home-repair',
     }.contains(match.programId);
 
-/// What this app actually produces for the route (presentation only).
 SahOutputKind programOutputKind(ProgramMatch match) =>
     !programHasFormWorkflow(match)
     ? SahOutputKind.checklist
@@ -39,7 +35,6 @@ SahOutputKind programOutputKind(ProgramMatch match) =>
     ? SahOutputKind.preparationWorksheet
     : SahOutputKind.officialFormDraft;
 
-/// Short header name; the full official name appears once under "About".
 String programShortName(ProgramMatch match) => switch (match.programId) {
   'scfhp-eaa' => 'SCFHP',
   'hpsm-eaa' => 'HPSM',
@@ -49,8 +44,6 @@ String programShortName(ProgramMatch match) => switch (match.programId) {
   _ => match.programName,
 };
 
-/// Short, localized name for lists outside the workspace, such as the Plan
-/// overview. Unknown programs keep [fallbackName].
 String programOverviewName(
   BuildContext context,
   String programId,
@@ -64,7 +57,6 @@ String programOverviewName(
   _ => fallbackName,
 };
 
-/// Opens an official https source outside the app. Returns false on failure.
 Future<bool> launchProgramSource(String value) async {
   final uri = Uri.tryParse(value);
   try {
@@ -78,9 +70,6 @@ Future<bool> launchProgramSource(String value) async {
   }
 }
 
-/// Opens the existing task editor with [title] filled in, then saves the
-/// reviewed task through the progress service as the tasks page does.
-/// Nothing is saved unless the person saves it in the editor.
 Future<void> addProgramTask(
   BuildContext context,
   AppServices services,
@@ -125,7 +114,6 @@ Future<void> addProgramTask(
   }
 }
 
-/// Resident details live in the existing profile editor.
 Future<void> openResidentDetails(BuildContext context, AppServices services) =>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -136,8 +124,6 @@ Future<void> openResidentDetails(BuildContext context, AppServices services) =>
 const _rtpApplication =
     'https://rebuildingtogetherpeninsula.my.salesforce-sites.com/HomeownerApplication';
 
-/// A date control that opens the system date picker and keeps the ISO
-/// `YYYY-MM-DD` wire format in [controller].
 class IsoDateField extends StatelessWidget {
   const IsoDateField({
     super.key,
@@ -229,8 +215,6 @@ enum _Step { questions, check, create, send, updates }
 
 enum _Draft { none, current, stale, interrupted }
 
-/// One place to prepare a program's output and track it. Each step opens the
-/// existing reviewed screen; nothing here changes eligibility or mappings.
 class ApplicationWorkspaceScreen extends StatefulWidget {
   const ApplicationWorkspaceScreen({
     super.key,
@@ -367,9 +351,6 @@ class _ApplicationWorkspaceScreenState
     });
   }
 
-  // Answered for the current questionnaire. The backend marks intake "not
-  // current" after any later case revision (for example the form answers
-  // save), which does not make the reported answers unanswered.
   bool get _questionsDone =>
       _intake != null &&
       (_intake!.definition.questions.isEmpty ||
@@ -774,8 +755,6 @@ class _ApplicationWorkspaceScreenState
   }
 }
 
-/// "Send it yourself": who receives it and what to record afterwards. The app
-/// never sends or submits; the resident records what they did.
 class SendApplicationScreen extends StatefulWidget {
   const SendApplicationScreen({
     super.key,
@@ -903,7 +882,6 @@ class _SendApplicationScreenState extends State<SendApplicationScreen> {
                       ),
                     ),
                   );
-                  // Back to the workspace, which reloads the recorded status.
                   if (mounted) navigator.pop();
                 },
                 child: Text(

@@ -2,8 +2,7 @@ import '../../shared/models/export_contract_values.dart';
 import 'local_help_record.dart' show helpDate, helpText;
 import 'referral_directory.dart';
 
-/// Offline, reviewable release format. No remote download or API credentials.
-/// Archived releases can be validated and restored using the same format.
+/// Validate versioned offline provider records
 class ReferralCatalog implements ReferralDirectory {
   ReferralCatalog({
     required this.version,
@@ -87,7 +86,6 @@ class ReferralCatalog implements ReferralDirectory {
       .toSet()
       .length;
 
-  /// Named editorial roles; no background jobs are activated by this queue.
   List<Map<String, Object?>> reviewQueue(DateTime now) =>
       [
         for (final p in providers)
@@ -163,7 +161,6 @@ class ReferralCatalog implements ReferralDirectory {
         'Separate review pending; county routing does not establish Tribal coverage',
   };
 
-  /// Update review must preserve old IDs so saved contacts/tasks remain resolvable.
   void requireCompatibleUpdate(ReferralCatalog previous) {
     for (final p in previous.providers) {
       if (provider(p.id) == null) {

@@ -57,7 +57,6 @@ static FlutterError *failure(NSString *code) {
 - (void)background {
   { std::lock_guard<std::mutex> lock(_importCommitMutex); _foreground = false; _cancelled = true; }
   if (self.operationId) homi_llm_cancel(self.operationId.UTF8String);
-  // System document pickers can temporarily deactivate the app. Cancelling is safe and explicit.
   if (self.picker) { [self.picker dismissViewControllerAnimated:NO completion:nil]; self.picker = nil; [self finish:self.operationId value:failure(@"CANCELLED")]; }
   dispatch_async(_worker, ^{ homi_llm_unload(); });
 }
@@ -181,9 +180,6 @@ static FlutterError *failure(NSString *code) {
       if (fd >= 0) close(fd);
     }
     if (valid) {
-      // This is the import's linearized commit point. Cancellation/background
-      // either wins this lock and preserves the old model, or follows a completed
-      // rename, in which case the installed result remains truthful.
       std::lock_guard<std::mutex> lock(self->_importCommitMutex);
       valid = !self->_cancelled && self->_foreground && self->_importIdentifier == identifier.UTF8String;
       if (valid) valid = homi_llm_unload() == HOMI_OK;

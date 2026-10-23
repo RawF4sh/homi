@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:homi_local_llm/homi_local_llm.dart';
 import 'assistant_model.dart';
 
-/// Selected explicitly by the opt-in trial build. Never falls back to a provider.
+/// Use the explicitly selected local model without a cloud fallback
 class LocalAssistantModel
     implements
         AssistantModel,
@@ -33,18 +33,14 @@ class LocalAssistantModel
   Future<void> cancel(String requestId) async {
     try {
       await runtime.cancel(requestId);
-    } catch (_) {
-      /* Closing remains safe when unavailable. */
-    }
+    } catch (_) {}
   }
 
   @override
   Future<void> unload() async {
     try {
       await runtime.unload();
-    } catch (_) {
-      // Navigation remains available if the trial plugin is unavailable.
-    }
+    } catch (_) {}
   }
 
   @override

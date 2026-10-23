@@ -269,7 +269,6 @@ void main() {
         'city': 'Fictional city',
         'county': 'Santa Clara',
       });
-      // Never part of v1 and not counted as a v1 answer.
       expect(located.answeredCount(facts), 3);
       expect(facts.toJson().keys, isNot(contains('zip')));
       expect(const ProfileResponseState().toJson().keys, {
@@ -298,17 +297,14 @@ void main() {
       final read = await responses.read('fictional-case', facts);
       expect((read.stateCode, read.zip), ('CA', '95112'));
 
-      // Another answer changed elsewhere: uncertainty resets, location stays.
       final incomeChanged = profile({...facts.toJson(), 'annualIncomeUsd': 0});
       final kept = await responses.read('fictional-case', incomeChanged);
       expect((kept.stateCode, kept.zip, kept.coverage), ('CA', '95112', null));
 
-      // The city changed elsewhere: state and ZIP become unknown, not stale.
       final moved = profile({...facts.toJson(), 'city': 'Another city'});
       final dropped = await responses.read('fictional-case', moved);
       expect((dropped.stateCode, dropped.zip), (null, null));
 
-      // Version 1 records written before this change still load.
       disk.records['profile-response.fictional-case'] = {
         'version': 1,
         'caseId': 'fictional-case',

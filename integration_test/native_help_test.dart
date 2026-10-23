@@ -227,7 +227,6 @@ void main() {
       await _settle(tester);
       await _reveal(tester, find.text(offlineNote));
       await _tab(tester, 'tasks');
-      // Completed tasks sit in the collapsed "Done (n)" group.
       await _tap(tester, find.byKey(const ValueKey('tasks-done')));
       await _reveal(tester, find.text(_title));
       expect(

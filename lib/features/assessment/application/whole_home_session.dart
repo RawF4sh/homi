@@ -203,8 +203,6 @@ class WholeHomeSession extends ChangeNotifier {
     guard();
   });
 
-  /// Reads only saved, currently valid placements. Does not check hardware,
-  /// clear an interrupted capture, or change any stored record.
   static Future<Set<String>> readSavedConnectedRoomIds({
     required LocalPrivateStore store,
     required String caseId,

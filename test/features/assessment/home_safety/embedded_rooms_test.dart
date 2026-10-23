@@ -94,7 +94,6 @@ void main() {
             500,
             scrollable: find.byType(Scrollable).first,
           );
-          // One recommended action: scan first, questions as the alternative.
           expect(tester.widget<FilledButton>(scan).onPressed, isNotNull);
           await tester.scrollUntilVisible(
             find.byKey(ValueKey('open-room-scan-$id')),

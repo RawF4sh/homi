@@ -116,7 +116,6 @@ void main() {
         );
         await tester.pumpAndSettle();
         if (availability == AssistantAvailability.ready) {
-          // Messages first: the guide is one tap away, not above the chat.
           expect(guidance(), findsNothing);
           expect(find.byKey(const ValueKey('assistant-context')), findsOne);
           await tap(tester, find.byKey(const ValueKey('assistant-options')));

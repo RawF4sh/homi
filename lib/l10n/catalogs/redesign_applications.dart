@@ -1,5 +1,3 @@
-// Strings for the October 2026 redesign of this area. Every entry needs
-// es, zh-Hans, zh-Hant, vi and fil.
 const redesignApplicationsTranslations = <String, Map<String, String>>{
   '1 evidence reference recorded. Files are not shown here.': {
     'es':

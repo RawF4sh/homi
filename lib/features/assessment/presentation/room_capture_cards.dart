@@ -10,7 +10,6 @@ import '../domain/home_safety/home_safety.dart';
 import '../domain/local_place_rooms.dart';
 import 'assessment_location_guide.dart';
 
-/// Capture is an action of a specific room, alongside its manual review route.
 class RoomCaptureCards extends StatefulWidget {
   const RoomCaptureCards({
     super.key,
@@ -82,16 +81,12 @@ class _RoomCaptureCardsState extends State<RoomCaptureCards> {
           caseId: widget.caseId,
           rooms: widget.rooms,
           isCurrent: () => mounted && widget.isCurrent(),
-          // Device place IDs have a separate namespace from named rooms.
           localPlaces:
               widget.rooms.isNotEmpty &&
               widget.rooms.every(LocalPlaceRooms.contains),
         ),
       );
-    } catch (_) {
-      // Do not claim a room belongs to a model that could not be validated.
-      // The connected-model entry remains available for recovery.
-    }
+    } catch (_) {}
     if (!mounted || !widget.isCurrent()) return;
     if (widget.savedPlacesOnly) {
       try {
@@ -101,8 +96,7 @@ class _RoomCaptureCardsState extends State<RoomCaptureCards> {
             ) !=
             null;
       } catch (_) {
-        _connected =
-            true; // Keep recovery reachable if a record cannot be read.
+        _connected = true;
       }
     }
     if (mounted && widget.isCurrent()) setState(() => _loaded = true);

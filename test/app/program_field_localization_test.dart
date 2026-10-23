@@ -74,8 +74,6 @@ void main() {
             expect(tester.widget<Text>(full).data, label);
             expect(tester.widget<Text>(full).maxLines, isNull);
             expect(find.text(question['label'] as String), findsNothing);
-            // Label shown once above the control; the control keeps the
-            // same accessible name (UI-030).
             expect(
               question['kind'] == 'boolean'
                   ? find.byKey(ValueKey('intake-choices-${question['key']}'))
@@ -152,7 +150,6 @@ void main() {
         final save = find.byKey(const ValueKey('form-save'));
         await revealProgramControl(tester, save);
         expect(save.hitTestable(), findsOneWidget);
-        // Case reload, form answers and the read-only program answers.
         expect(transport.requests, hasLength(3));
       },
     );

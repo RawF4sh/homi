@@ -2,8 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:safe_at_home/features/local_help/referral_catalog.dart';
 
-// Public catalog only. This tool never reads resident data or makes a network
-// request. Archive --export output before a release to permit offline rollback.
 void main(List<String> args) {
   try {
     if (args.isNotEmpty && !{'--export', '--validate'}.contains(args.first) ||

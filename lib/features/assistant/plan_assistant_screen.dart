@@ -25,7 +25,6 @@ class PlanAssistantScreen extends StatefulWidget {
     this.embedded = false,
   });
 
-  /// True when shown as the shell's Assistant tab rather than a pushed page.
   final bool embedded;
   final ValueChanged<int> onSection;
   final CaseCoordinator? coordinator;
@@ -202,9 +201,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
         '${c.conversationId}:${c.turns.length}:${c.busy}:${c.errorCode}:${c.interruptedQuestion}:${c.turns.lastOrNull?.answer}';
     if (stamp == _conversationStamp) return;
     _conversationStamp = stamp;
-    // Availability/history initialization must not scroll a new chat past its
-    // current-context actions and app guidance. Only conversation content has
-    // a meaningful "latest message" to reveal.
     if (c.turns.isEmpty &&
         c.pendingQuestion == null &&
         c.interruptedQuestion == null &&
@@ -520,9 +516,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
         : 'Uses: plan counts and statuses',
   );
 
-  /// Lists exactly what [AssistantController.send] passes to the model:
-  /// the enum-only app context, the question, two recent exchanges and,
-  /// only when turned on, confirmed finding excerpts.
   Future<void> _contextSheet() async {
     final c = _controller!;
     Widget item(String text, bool included) => ListTile(
@@ -765,7 +758,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       'The response could not be completed. Check availability and try again.',
   };
 
-  /// App-authored steps. These never call a language model.
   Widget _appGuidance(
     AssistantController c, {
     required _AppHelpTopic? topic,
@@ -907,7 +899,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     return context.tr(location?.title ?? 'Room');
   }
 
-  /// Names the record from its enum-only facts; never from notes or names.
   String _sourceLabel(AssistantContextV2 app, AssistantSource s) {
     final program = _programNames[s.facts['program']];
     return switch (s.kind) {
@@ -935,7 +926,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     AssistantSourceKind.preparation => Icons.description_outlined,
   };
 
-  /// Revalidates at tap with the same checks as [AssistantContextV2.resolveOpen].
   Future<void> _openSource(
     AssistantReply reply,
     String sourceId, {
@@ -1065,7 +1055,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
     ),
   );
 
-  /// The one place availability, checking and recovery are shown.
   Widget _statusArea(AssistantController c) {
     if (c.checking) {
       return Semantics(
@@ -1188,7 +1177,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
           ),
         ],
         if (!c.checking && available) _contextChip(c),
-        // One status area, above any saved messages it affects.
         if (c.checking || !available) _statusArea(c),
         if (c.conversationFull)
           SahNotice(
@@ -1289,8 +1277,6 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
               enableSuggestions: false,
               autocorrect: false,
               decoration: InputDecoration(
-                // One-line compact composer: the long hint clips at large
-                // text, so use a short one there.
                 hintText: context.tr(
                   compact ? 'Ask…' : 'Message the assistant…',
                 ),

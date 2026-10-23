@@ -377,8 +377,6 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
   String? _organization(String? id) =>
       id == null ? null : const OfficialReferralDirectory().provider(id)?.name;
 
-  /// Creates a task from just a title. Context (concern, referral or
-  /// program) fills the defaults; everything else stays optional.
   Future<bool> _add(String title, {String? programId, String? kind}) async {
     final text = String.fromCharCodes(title.trim().runes.take(200)).trim();
     if (!editable || text.isEmpty) return false;
@@ -421,9 +419,6 @@ class ProgramProgressScreenState extends State<ProgramProgressScreen> {
     }),
   );
 
-  /// Suggestions only use facts this screen already has: tracked programs
-  /// with unconfirmed requirements, earlier proposed next actions, and the
-  /// help contact the screen was opened for. Nothing is added until tapped.
   List<_Suggestion> _suggestions(BuildContext context, ProgressSnapshot state) {
     final titles = state.tasks.map((t) => t.title).toSet();
     final out = <_Suggestion>[];

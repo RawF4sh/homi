@@ -12,9 +12,6 @@ import 'package:safe_at_home/l10n/app_localizations.dart';
 
 import '../test/features/local_help/referral_test_support.dart';
 
-// This fixture uses only memory storage, fictional authentication, an in-process
-// HTTP transport and a fake notification device. No resident data, real backend,
-// external browser, dialer, GPS, permission request or notification is accessed.
 const _providerId = 'rt-seattle-wa';
 
 Widget _app(Widget home) => MaterialApp(
@@ -33,8 +30,6 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
   tester.state<ScrollableState>(scrollable).position.jumpTo(0);
   await _settle(tester);
   for (var i = 0; i < 250 && finder.evaluate().isEmpty; i++) {
-    // Drag from the list edge so a text field or provider expansion does not
-    // consume the gesture intended for the containing list.
     final rect = tester.getRect(scrollable);
     await tester.dragFrom(
       Offset(rect.left + 8, rect.center.dy),

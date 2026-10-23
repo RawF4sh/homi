@@ -87,9 +87,6 @@ AppServices services(MemoryPrivateStore store, FakeTransport transport) =>
       transport: transport,
     );
 
-/// Finds a text field by its accessible label: a decoration label, or (for
-/// redesigned questions whose label is shown once above the control) the
-/// nearest enclosing `Semantics` label.
 Finder input(String label) => find.byElementPredicate((element) {
   final w = element.widget;
   if (w is! TextField) return false;

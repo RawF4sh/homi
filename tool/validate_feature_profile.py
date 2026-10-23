@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Validate public features against one explicit source of backend evidence.
-
-Use either the authenticated POST /v1/capabilities response, or a fresh report
-from authenticated read probes plus Railway flags for the selected API origin.
-Neither mode proves write/export or physical-device acceptance. Never print
-private configuration, tokens, case contents, or raw HTTP error responses.
-"""
+"""Check public features against authenticated backend evidence."""
 import argparse
 from datetime import datetime, timedelta, timezone
 import json
@@ -111,12 +105,7 @@ def _timestamp(value):
 
 
 def validate_readiness(profile, readiness, *, api_origin, now=None):
-    """Validate actual read-probe evidence; a capabilities 404 is never evidence.
-
-    Sensitive-sharing availability uses the authenticated Railway flag and base
-    sharing read. This report explicitly does not prove sensitive write/export
-    acceptance, just as a capability advertisement does not prove that journey.
-    """
+    """Validate current read-probe evidence for the configured service."""
     _validate_profile(profile)
     if (not isinstance(readiness, dict) or set(readiness) != READINESS_FIELDS
             or readiness.get('schemaVersion') != '1'

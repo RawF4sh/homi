@@ -53,7 +53,6 @@ void main() {
     'matched program shows one card with the checklist; unmatched stays a referral',
     (tester) async {
       final opened = <String>[];
-      // Only USDA is in the current plan's results.
       await _pump(
         tester,
         (id) => id == 'usda-section-504' ? () => opened.add(id) : null,

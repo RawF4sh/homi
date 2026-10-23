@@ -2,16 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 
-/// Top-level shell tabs. The assistant is a destination, not a floating
-/// button, so it never covers row actions and always keeps its label.
 enum HomiTab { plan, rooms, help, tasks, assistant }
 
-/// Page padding for scrolling content inside the shell. The tab bar is laid
-/// out below the body, so no extra clearance is needed.
 EdgeInsets sahFloatingContentPadding(BuildContext context, {double all = 20}) =>
     EdgeInsets.all(all);
 
-/// One shell for both the selected-plan and no-plan states.
 class SahFloatingScaffold extends StatelessWidget {
   const SahFloatingScaffold({
     super.key,
@@ -54,9 +49,6 @@ class SahFloatingNavBar extends StatelessWidget {
     }
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    // Labels stay visible at every text size and never split mid-word. They
-    // grow up to 1.3×, then shrink just enough for the longest translated
-    // label to fit its tab; long-pressing shows the full label.
     final style =
         (theme.navigationBarTheme.labelTextStyle?.resolve({
                   WidgetState.selected,
@@ -74,7 +66,6 @@ class SahFloatingNavBar extends StatelessWidget {
       if (painter.width > widest) widest = painter.width;
       painter.dispose();
     }
-    // The scale at which the longest label still fits on one line.
     final fits = widest <= 0 ? 1.3 : width / widest;
     final requested = MediaQuery.textScalerOf(context).scale(1);
     final scale = [requested, 1.3, fits].reduce((a, b) => a < b ? a : b);
@@ -129,8 +120,7 @@ List<NavigationDestination> homiDestinations(BuildContext context) => [
     ),
 ];
 
-/// Keeps a tab's pushed screens inside the tab, so the tab bar stays
-/// visible and each tab remembers where the person was.
+/// Keep each tab navigation stack inside the shared shell
 class SahTabNavigator extends StatefulWidget {
   const SahTabNavigator({
     super.key,
@@ -163,8 +153,7 @@ class SahTabNavigatorState extends State<SahTabNavigator> {
     }
   }
 
-  /// Returns to the tab's first screen through each screen's own leave
-  /// guard. Returns false when a screen keeps itself open.
+  /// Close nested screens through their save guards
   Future<bool> closeOpenScreens() async {
     while (hasOpenScreens) {
       final navigator = _navigator.currentState;

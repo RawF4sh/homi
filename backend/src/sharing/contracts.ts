@@ -24,9 +24,7 @@ export interface CaseMembership {
   membershipId: string; caseId: string; grantorId: string; recipientId: string; role: 'viewer' | 'helper'; scope: ShareScope;
   permissionRevision: number; expiresAt: string | null; invitationExpiresAt: string;
   state: 'pending' | 'active' | 'revoked' | 'expired';
-  /** Owner-typed "Who is this for?"; only ever returned to the owner. */
   recipientLabel?: string;
-  /** Owner-typed name the owner chose to show the recipient. */
   ownerLabel?: string;
 }
 export interface OwnerShare extends CaseMembership { projection: SharedCaseProjection | null; notes: SharedNote[]; audit: AccessAuditEvent[] }
@@ -59,8 +57,6 @@ const keys: Record<Exclude<SharingRoute,CollaborationRoute | SensitiveRoute>, st
   'read-shared-case': ['membershipId', 'expectedPermissionRevision'],
   'add-shared-note': ['membershipId', 'expectedPermissionRevision', 'mutationId', 'note'],
 };
-// Additive v3 keys: owner-typed labels on create; list/review opt into labels so
-// legacy clients keep the exact earlier response shape.
 const optionalKeys: Partial<Record<SharingRoute, string[]>> = {
   'create-invitation': ['recipientLabel', 'ownerLabel'], 'create-email-invitation': ['recipientLabel', 'ownerLabel'],
   'list-sharing': ['includeLabels'], 'list-email-sharing': ['includeLabels'], 'list-shared-cases': ['includeLabels'], 'review-invitation': ['includeLabels'],

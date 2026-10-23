@@ -6,8 +6,6 @@ import 'package:safe_at_home/features/assistant/assistant_context_v2.dart';
 import 'package:safe_at_home/features/assessment/domain/assessment_location.dart';
 import 'package:safe_at_home/shared/navigation/homi_destination.dart';
 
-// Fictional structural inputs for the Swift --fixtures boundary check. No model
-// is invoked by this test. Set HOMI_NATIVE_REQUEST_FIXTURES to export its input.
 void main() {
   test(
     'representative native requests preserve bounded sources in six locales',

@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare pinned local trial artifacts. No app installation or model distribution.
-
-Artifacts stay in ignored build/ and ios/.generated/. The model is optional and
-must still be explicitly imported on the phone. No credentials are used.
-"""
+"""Prepare pinned trial artifacts in ignored local folders."""
 import argparse
 import hashlib
 import json
@@ -18,7 +14,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / 'build/homi-local-llm'
 COMMIT = 'd854d98bae598388ecea1ed84396587e5edc326d'
-# Pinned from the exact commit's codeload archive, independently of the Apple binary.
 SOURCE_SHA = '7d1fc4a3e5b202fc5136bd52948c73e5e2a112cbbc6fdf9156ffc7f05d4fd918'
 FRAMEWORK_SHA = 'c7e98ed7e75f29ca90c311dd00c303efa982c54f523e81312db27f9b066c828f'
 MODEL_SHA = '9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031'
@@ -69,7 +64,7 @@ def prepare_runtime():
             raise ValueError('Runtime license does not match the pinned source.')
         extracted.replace(source)
         staging.rmdir()
-    # Refuse a modified extracted cache instead of silently building different source.
+
     with tarfile.open(archive) as bundle:
         for member in bundle.getmembers():
             if member.isfile():
@@ -106,8 +101,8 @@ def prepare_runtime():
                 expected = hashlib.file_digest(stream, 'sha256').hexdigest()
             if not cached.is_file() or digest(cached) != expected:
                 raise ValueError('Extracted Apple runtime differs from the pinned archive: ' + str(relative))
-    # CocoaPods rejects a mixed-platform archive with different framework kinds.
-    # Derive only the verified iOS device slice; never rebuild or alter its bytes.
+
+
     upstream = generated / 'llama.xcframework'
     info = plistlib.loads((upstream / 'Info.plist').read_bytes())
     libraries = [entry for entry in info['AvailableLibraries'] if entry['SupportedPlatform'] == 'ios']
@@ -117,7 +112,7 @@ def prepare_runtime():
     magic, cpu, _, kind = struct.unpack('<IIII', binary.read_bytes()[:16])
     if magic != 0xFEEDFACF or cpu != 0x0100000C or kind != 6:
         raise ValueError('Expected the publisher iOS arm64 dynamic framework.')
-    # CocoaPods derives the linked framework name from the XCFramework basename.
+
     derived = generated / 'ios' / 'llama.xcframework'
     derived.parent.mkdir(exist_ok=True)
     expected_info = {**info, 'AvailableLibraries': libraries}

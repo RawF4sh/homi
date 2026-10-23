@@ -242,7 +242,6 @@ void main() {
         await tester.pumpAndSettle();
         _translatedText(tester, l10n, 'Language and display');
         _translatedText(tester, l10n, 'Privacy and data');
-        // Rows can be taller than the screen at 3.2x; tap their titles.
         await _tap(
           tester,
           find.descendant(

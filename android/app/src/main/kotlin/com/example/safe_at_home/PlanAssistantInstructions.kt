@@ -1,6 +1,5 @@
 package com.example.safe_at_home
 
-// Navigation truth is supplied by the shared Dart guide in context mode.
 internal fun planAssistantInstructionsFor(request: PlanAssistantRequest): String =
     request.guide?.let { guide -> """
 You are a read-only on-device assistant. Respond in requestedLanguage, including the requested Chinese script.

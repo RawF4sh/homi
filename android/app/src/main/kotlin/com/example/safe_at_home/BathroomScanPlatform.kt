@@ -187,7 +187,6 @@ internal fun bathroomScanRequestId(arguments: Any?, allowLanguage: Boolean = fal
     return id.takeIf { BathroomScanGeometry.isScanId(it) }
 }
 
-// Display-only context; case/room IDs and arbitrary options are rejected.
 internal data class RoomScanContext(val type: Type, val name: String) {
     enum class Type { bathroom, entrance, stairs, livingSpaces, bedroom, kitchen }
     companion object {

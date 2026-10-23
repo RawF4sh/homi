@@ -1,10 +1,8 @@
 import '../tracking/progress_models.dart';
 
-/// Where the plan's recommended step leads.
 enum PlanStepTarget { profile, rooms, help, program, tasks }
 
-/// The single recommendation shown at the top of Plan. English text is a
-/// catalog key; [values] fills its placeholders.
+/// Describe the next action for the selected plan
 class PlanNextStep {
   const PlanNextStep({
     required this.title,
@@ -20,7 +18,6 @@ class PlanNextStep {
   final String? programId;
 }
 
-/// Facts the overview already has; nothing here makes eligibility decisions.
 class PlanProgressFacts {
   const PlanProgressFacts({
     required this.answered,

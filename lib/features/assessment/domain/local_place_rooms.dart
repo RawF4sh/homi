@@ -1,8 +1,7 @@
 import 'assessment_location.dart';
 import 'home_safety/home_safety.dart';
 
-/// Stable device-only capture slots for the legacy assessment's places.
-/// These are never server room IDs and must not be sent to room/scan APIs.
+/// Keep device-only capture slots separate from server room IDs
 abstract final class LocalPlaceRooms {
   static final List<RoomInstance> all = List.unmodifiable([
     for (final type in AssessmentLocation.values)

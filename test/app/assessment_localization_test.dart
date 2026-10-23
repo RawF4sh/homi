@@ -117,8 +117,6 @@ void main() {
       await tester.pumpAndSettle();
       final changedCity = find.widgetWithText(TextField, '城市');
       expect(tester.widget<TextField>(changedCity).controller!.text, 'San J');
-      // The translated layout can move the field; suggestions show only
-      // while it is on screen.
       await tester.ensureVisible(changedCity);
       await tester.pumpAndSettle();
       final suggestion = find.byKey(

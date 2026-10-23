@@ -111,7 +111,6 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(opened, isEmpty);
-      // A ZIP alone is enough: it fills the state, which stays correctable.
       await tester.enterText(
         find.widgetWithText(TextFormField, 'ZIP code or city (optional)'),
         '82001',

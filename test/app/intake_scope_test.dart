@@ -177,10 +177,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      // Current saved answers are not a conflict: no reconcile tool (N-02).
       expect(find.byKey(const ValueKey('intake-reconcile')), findsNothing);
-      // Another device moves the case to revision 2; the older saved answers
-      // are now a conflict and the reconcile tool appears.
       server = {...server!, 'revision': 2};
       await app.coordinator.adoptRemoteSnapshot(
         CaseSnapshot.fromJson({

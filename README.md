@@ -22,6 +22,20 @@ flutter run --dart-define-from-file=backend/local-artifacts/mobile-config.json
 
 Set `SAH_LIVE_BACKEND` to `true`. The API URL must identify the configured HTTPS backend. Enable optional feature flags only after the corresponding backend setup is complete. Database passwords and elevated keys never belong in a mobile configuration file.
 
+For the core feature profile, save the authenticated `/v1/capabilities` response
+in an ignored file and use the checked build wrapper:
+
+```sh
+python3 tool/build_homi_core.py --platform ios --config backend/local-artifacts/mobile-config.json --capabilities backend/local-artifacts/capabilities.json
+```
+
+Use `--platform apk` or `appbundle` for Android. Older services can use
+`--readiness` with an authenticated read-probe report for the same API origin,
+no more than 24 hours old. Missing evidence or a capabilities 404 does not enable
+features. The wrapper validates before building; it does not install or deploy.
+Neither evidence format proves writes, exports or physical-device acceptance.
+Keep private configuration, tokens and raw case responses out of logs.
+
 See [Android setup](docs/android-local-setup.md), [backend setup](backend/README.md) and [account configuration](docs/public-account-access.md) for platform and server details.
 
 ## Checks

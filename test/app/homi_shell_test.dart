@@ -45,8 +45,6 @@ void main() {
           }
           throw StateError('Tab selection must not mutate or create a case');
         });
-        // SafetyStore keeps encrypted bytes in memory; the Assistant tab
-        // reads its app-help history through readBytes.
         final app = services(SafetyStore(), transport);
         addTearDown(app.dispose);
         await tester.pumpWidget(

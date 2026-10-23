@@ -254,7 +254,6 @@ void main() {
       '$change during generation independently rejects late contextual output',
       () async {
         final model = _ContextModel()..pending = Completer<String>();
-        // Exercise the V2 fence independently of the screen's combined legacy key.
         final c = controller(model, combineScope: false);
         await c.check();
         final pending = c.send('A fictional question');

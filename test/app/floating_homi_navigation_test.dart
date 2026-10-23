@@ -165,7 +165,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('case-profile')));
     await tester.pumpAndSettle();
-    // The resident editor opens inside the Plan tab: the tab bar stays.
     expect(find.byType(SahFloatingNavBar), findsOneWidget);
     expect(find.byKey(const ValueKey('active-plan-selector')), findsNothing);
     await capture(tester, 'resident');
@@ -221,7 +220,6 @@ void main() {
     expect(resident, findsOneWidget);
     expect(find.byKey(const ValueKey('case-plan-title')), findsNothing);
 
-    // Android back closes the nested screen, not the shell.
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(resident, findsNothing);

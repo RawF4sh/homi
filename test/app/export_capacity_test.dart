@@ -163,8 +163,6 @@ void main() {
       }
 
       final selection = find.text('Included · 1');
-      // The journal records an unfinished attempt, so the only recovery
-      // wording in this flow is "Finish draft" (UI-035).
       final prepare = find.text('Finish draft');
       for (var attempt = 1; attempt <= 2; attempt++) {
         await tester.pumpWidget(screen());

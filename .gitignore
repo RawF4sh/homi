@@ -101,7 +101,6 @@ private-packets/
 *.pem
 
 /docs/*
-!/docs/homi-approved-ui.md
 !/docs/android-local-setup.md
 !/docs/backup-and-restore.md
 !/docs/bathroom-scanning.md
@@ -141,9 +140,6 @@ private-packets/
 /output/pdf/safe-at-home-app-guide.pdf
 /output/pdf/safe-at-home-continuation-handoff.pdf
 
-!/docs/homi-phase-a.md
-
-!/docs/homi-phase-b.md
 !/docs/homi-assistant-evaluation.md
 
 !/docs/ask-homi-recovery.md

@@ -13,8 +13,6 @@ import type { CaseSnapshot } from '../types.ts';
 const S = 'safeathome_private';
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const time = (value: string | Date) => new Date(value).toISOString();
-// Labels live in the owner-written definition. The recipient-facing view never
-// carries the owner's private "Who is this for?" label.
 type LabelView = 'owner' | 'recipient' | undefined;
 const labelsOf = (source: { recipientLabel?: unknown; ownerLabel?: unknown }): { recipientLabel?: string; ownerLabel?: string } =>
   Object.fromEntries((['recipientLabel', 'ownerLabel'] as const).filter(key => typeof source[key] === 'string').map(key => [key, source[key]]));

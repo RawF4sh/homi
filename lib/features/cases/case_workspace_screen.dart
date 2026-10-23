@@ -90,10 +90,7 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
   Future<void> _readResponses(CaseDraft draft) async {
     try {
       await services.profileResponses.read(draft.caseId, draft.profile);
-    } catch (_) {
-      // The editor provides retry and blocks edits if its private response
-      // metadata cannot be read. The overview counts only confirmed data.
-    }
+    } catch (_) {}
   }
 
   @override
@@ -134,7 +131,6 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
     (_) => GlobalKey<SahTabNavigatorState>(),
   );
 
-  /// True when a tab shows a screen opened from its first page.
   bool hasOpenScreensIn(int tab) =>
       tab < _tabNavigators.length &&
       _tabNavigators[tab].currentState?.hasOpenScreens == true;
@@ -142,8 +138,6 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
   bool get hasOpenScreens =>
       _tabNavigators.any((key) => key.currentState?.hasOpenScreens == true);
 
-  /// Before another plan opens, close every pushed screen through its own
-  /// leave guard so nothing from the previous plan stays on screen.
   Future<bool> prepareToChangePlan() async {
     if (!await prepareToLeave()) return false;
     for (final key in _tabNavigators) {
@@ -186,8 +180,6 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
         matches: _programsKey.currentState?.assistantMatches,
       );
 
-  /// Called only after the chat decoder resolves an allowlisted source. Check
-  /// the current case again because changing the shell can await a save guard.
   void openAssistantTarget(HomiTarget target) {
     if (!mounted ||
         !services.coordinator.isCurrent ||
@@ -257,7 +249,6 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
 
     final draft = services.coordinator.draft;
     final localEnabled = services.config.localHelpEnabled;
-    // Chips keep one line; larger text gets full-width choices instead.
     final largeText = MediaQuery.textScalerOf(context).scale(14) > 17;
     String label(bool local) => context.tr(
       local ? 'Organizations and referrals' : 'Programs for this plan',
@@ -337,8 +328,6 @@ class CaseWorkspaceScreenState extends State<CaseWorkspaceScreen> {
     ),
   );
 
-  /// Recovery for device saves, conflicts and uncertain saves. Shown only
-  /// when something needs attention, never as routine status.
   List<Widget> _problemNotice(
     BuildContext context,
     CaseCoordinator c,

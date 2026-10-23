@@ -227,7 +227,6 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        // Every user selects from the visible, numbered list.
         final item = find.byKey(const ValueKey('scan-item-surface-1'));
         await revealPastModel(tester, item);
         expect(

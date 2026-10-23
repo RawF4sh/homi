@@ -464,7 +464,6 @@ void main() {
       final retained = controller(saved: history(plan: otherCase));
       await retained.check();
       await retained.send('Plan to retain');
-      // Match production: plan invalidation occurs before storage cleanup can queue.
       current = false;
       context = null;
       c.refreshContext();

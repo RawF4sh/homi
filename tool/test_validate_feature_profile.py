@@ -46,7 +46,7 @@ class ProfileTests(unittest.TestCase):
         self.assertTrue(self.profile['SAH_LOCAL_HELP_ENABLED'])
         self.assertFalse(self.profile['SAH_EMAIL_DELIVERY_ENABLED'])
         self.assertFalse(self.profile['SAH_PUBLIC_SIGNUP_ENABLED'])
-        # Labels stay off until the hosted backend accepts includeLabels.
+
         self.assertFalse(self.profile['SAH_SHARING_LABELS_ENABLED'])
 
     def test_strict_capability_response_still_accepted(self):

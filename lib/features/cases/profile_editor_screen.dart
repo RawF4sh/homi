@@ -72,7 +72,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     'annualIncomeUsd': 'Annual household income (USD)',
   };
 
-  /// Device-only location answers; never part of the strict v1 profile.
   static const _locationLabels = {'zip': 'ZIP code', 'stateCode': 'State'};
   static final _zipPattern = RegExp(r'^[0-9]{5}$');
   String _labelOf(String key) => labels[key] ?? _locationLabels[key]!;
@@ -214,7 +213,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
       'values': restored,
       'tenure': saved['tenure'],
       'consent': saved['consent'],
-      // Old journals did not distinguish explicit uncertainty from no response.
       'responses': responses.toJson(),
     };
   }
@@ -424,7 +422,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
         zip: zip,
       );
 
-  /// A complete ZIP fills the state; the person can still choose another.
   void _zipChanged(String value) {
     if (!_editable) return;
     final zip = value.trim();
@@ -744,7 +741,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     if (_syncFailed || c.hasUnsavedChanges) {
       return context.tr('Saved on this device.');
     }
-    // Explicit uncertainty is encrypted on this phone, not part of v1 sync.
     return _responses.coverage != null ||
             _responses.tenureNotSure ||
             _responses.consentNotSure
@@ -1067,7 +1063,6 @@ class _ProfileEditorScreenState extends State<ProfileEditorScreen> {
     );
   }
 
-  /// Suggestions are a short local list; say so at the field (UI-040).
   static const _suggestionCoverage = {
     'healthPlan':
         'Suggestions cover some California plans only. You can type any plan name.',

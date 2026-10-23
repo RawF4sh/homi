@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Build with the checked public profile and existing ignored private config.
-
-Requires either strict capability-response evidence or fresh authenticated
-read-probe evidence bound to the configured API origin. Does not install,
-deploy, migrate, stage, or commit. Private configuration is never printed.
-"""
+"""Build with verified features and an ignored private configuration."""
 import argparse
 import json
 import subprocess

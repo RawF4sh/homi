@@ -314,7 +314,6 @@ void main() {
         findsOneWidget,
       );
       await tap('Start application');
-      // One application workspace: the Now step leads through each stage.
       expect(find.text('Draft · not sent'), findsOneWidget);
       expect(find.text('Official form draft'), findsOneWidget);
       Future<void> nowStep() async {
@@ -374,7 +373,6 @@ void main() {
       );
       await back();
       expect(find.textContaining('The case changed.'), findsNothing);
-      // The workspace now points to the external step the app cannot take.
       expect(find.text('You send it — the app can’t'), findsOneWidget);
       await tap('Updates');
       await tap('Add update');

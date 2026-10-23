@@ -170,8 +170,6 @@ class HomiLocalLlmPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, Activ
                     }
                 }
                 require(count == MODEL_BYTES && digest.digest().joinToString("") { "%02x".format(it) } == HASH)
-                // Cancel/background either wins before this commit or follows
-                // an installed model; report the latter as an honest success.
                 synchronized(importCommitLock) {
                     check(!cancelled.get() && foreground && attached && importId == id)
                     check(LocalNative.unload() == 0)

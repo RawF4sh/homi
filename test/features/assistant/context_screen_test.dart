@@ -51,7 +51,6 @@ void main() {
       await tester.ensureVisible(open);
       await tester.pumpAndSettle();
       expect(open, findsOneWidget);
-      // A permission change after paint must make the already-visible button inert.
       current = _context(authorized: false);
       await tester.tap(open);
       await tester.pumpAndSettle();
@@ -164,7 +163,6 @@ void main() {
           reason: text,
         );
       }
-      // Without confirmed findings there is nothing optional to include.
       expect(
         find.byKey(const ValueKey('assistant-include-findings')),
         findsNothing,
@@ -188,7 +186,6 @@ void main() {
       await tester.tap(chip);
       await tester.pumpAndSettle();
       expect(opened.single.destination, HomiDestination.help);
-      // A permission change after paint makes the visible chip inert.
       current = contextFor(authorized: false);
       await tester.tap(chip);
       await tester.pumpAndSettle();

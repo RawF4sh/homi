@@ -36,8 +36,6 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
   int _validationAttempt = 0;
   bool _feedbackAtAction = false;
   final _booleans = <String, bool?>{};
-  // Local only: v2 stores "Not sure" and unanswered both as unknown (null).
-  // This set lets this device show which unknowns were chosen on purpose.
   final _notSure = <String>{};
   final _unmappedAnswers = <String, Object?>{};
   ProgramIntakeResponse? _response;
@@ -158,7 +156,7 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
 
   void _restoreCached(Map<String, Object?> local) {
     final raw = local['response'];
-    if (raw == null) return; // Older journals need one online reload.
+    if (raw == null) return;
     final response = ProgramIntakeResponse.fromJson(raw);
     if (response.caseId != _caseId ||
         response.definition.programId != widget.program.programId ||
@@ -730,8 +728,6 @@ class _ProgramIntakeScreenState extends State<ProgramIntakeScreen> {
       );
     },
   );
-  // Reconcile tools are for conflicts only: an uncertain save, an offline or
-  // older saved context, a failed load, or a recovery notice.
   bool get _needsReconcile =>
       !_busy &&
       (_uncertain ||

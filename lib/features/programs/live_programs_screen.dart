@@ -186,8 +186,6 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
     if (mounted) _loadStarted();
   }
 
-  // A local intake journal exists once a program's questions were opened on
-  // this device; it only changes the button wording to "Continue".
   final _started = <String>{};
   Future<void> _loadStarted() async {
     final result = _result;
@@ -251,10 +249,6 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
   ExpansibleController _detailsController(String programId) =>
       _detailsControllers.putIfAbsent(programId, ExpansibleController.new);
 
-  // Presentation summaries only: matching, coverage and eligibility remain
-  // entirely in the versioned server response. Purpose, limit and "Where"
-  // lines restate each program's own public page (checked 2026-10-26); they
-  // are not a service-area rule, and the program still confirms the address.
   String _purpose(ProgramMatch match) => switch (match.programId) {
     'scfhp-eaa' =>
       'May help SCFHP Medi-Cal members with home changes needed for safety and independence.',
@@ -269,8 +263,6 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
     _ => 'Possible help: review the program’s service scope.',
   };
 
-  // The key limit from each program's own page (wording check 2026-10-26).
-  // Presentation only; the rules and their versions are unchanged.
   String? _limit(ProgramMatch match) => switch (match.programId) {
     'scfhp-eaa' || 'hpsm-eaa' =>
       'Needs a professional order and a physical or occupational therapy evaluation.',
@@ -374,9 +366,6 @@ class LiveProgramsScreenState extends State<LiveProgramsScreen>
     return match?.group(1) ?? text.trim();
   }
 
-  // Presentation only: each check keeps its deterministic server status.
-  // Unknown checks are grouped by who can resolve them; none become a pass or
-  // a failure here.
   List<Widget> _requirements(
     BuildContext context,
     ProgramMatch match,

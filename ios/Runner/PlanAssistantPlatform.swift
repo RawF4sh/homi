@@ -70,8 +70,6 @@ struct PlanAssistantRequest {
 
 enum PlanAssistantError: Error { case code(String) }
 
-// Constrained decoding supplies the wire shape. Prompting a free-text response
-// to look like JSON is not a schema guarantee, even when availability is ready.
 @available(iOS 26.0, macOS 26.0, *)
 @Generable
 struct PlanAssistantGeneratedReply {
@@ -94,13 +92,9 @@ struct PlanAssistantGeneratedReply {
 
 @available(iOS 26.0, macOS 26.0, *)
 enum PlanAssistantEngine {
-  // Aggregate guard includes instructions, serialized input and generated schema.
-  // Bytes are not tokens: keep the model's CONTEXT_LIMIT recovery as well. This
-  // conservative cap prevents the old separately-bounded ~34 KB input envelope.
   static let maximumGenerationInputBytes = 8192
 
   static func failureCode(_ error: Error) -> String {
-    // Return only stable categories. Native diagnostics can contain prompt text.
     if error is CancellationError { return "CANCELLED" }
     if case PlanAssistantError.code(let code) = error { return code }
     if #available(iOS 27.0, macOS 27.0, *) {
@@ -199,8 +193,6 @@ enum PlanAssistantEngine {
       "untrustedRecentConversation": request.history,
       "untrustedConfirmedFindingExcerpts": request.findings,
     ]
-    // Preserve the verified JSON structure instead of quoting/escaping an
-    // entire JSON document inside another JSON string. No IDs are rewritten.
     if let context = request.appContext {
       data["currentAppContext"] = try JSONSerialization.jsonObject(with: Data(context.utf8))
     }

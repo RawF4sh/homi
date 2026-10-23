@@ -220,8 +220,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
-                          // Large titles stop growing before body text so
-                          // words never break mid-word at accessibility sizes.
                           child: MediaQuery.withClampedTextScaling(
                             maxScaleFactor: 1.6,
                             child: Semantics(
@@ -269,8 +267,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(SahRadius.large),
                     border: Border.all(color: theme.colorScheme.outlineVariant),
                   ),
-                  // Field labels and entries stay legible without
-                  // splitting words like "Password" inside the field.
                   child: MediaQuery.withClampedTextScaling(
                     maxScaleFactor: 2.0,
                     child: Column(
@@ -478,7 +474,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 const SizedBox(height: 20),
-                // The one beta line while the beta lasts.
                 Text(
                   context.tr('Team beta: use fictional information only.'),
                   style: theme.textTheme.bodyMedium?.copyWith(

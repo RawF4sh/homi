@@ -28,8 +28,6 @@ class BathroomModelView extends StatefulWidget {
   final List<PlacedRoomScene>? placedRooms;
   final bool homeModel;
 
-  /// Short persistent labels drawn on the model, keyed by element ID. They
-  /// match the numbers in the visible item list.
   final Map<String, String>? markers;
   @override
   State<BathroomModelView> createState() => _BathroomModelViewState();
@@ -125,7 +123,6 @@ class _BathroomModelViewState extends State<BathroomModelView> {
 
   @override
   Widget build(BuildContext context) {
-    // Use most of the screen height for the model instead of a small fixed box.
     final height = (MediaQuery.sizeOf(context).height * .5).clamp(280.0, 560.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -255,8 +252,6 @@ class _BathroomModelViewState extends State<BathroomModelView> {
   }
 }
 
-/// A small set of mutually exclusive choices that wraps at large text sizes,
-/// unlike a segmented control. The selected choice shows a check.
 class ChoiceButtons<T> extends StatelessWidget {
   const ChoiceButtons({
     super.key,
@@ -280,7 +275,6 @@ class ChoiceButtons<T> extends StatelessWidget {
           child: key == selected
               ? FilledButton.tonalIcon(
                   onPressed: onSelected == null ? null : () {},
-                  // The check would crowd out the label at very large text.
                   icon: MediaQuery.textScalerOf(context).scale(14) <= 21
                       ? const Icon(Icons.check)
                       : null,

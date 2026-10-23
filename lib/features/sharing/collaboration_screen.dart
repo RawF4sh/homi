@@ -113,7 +113,6 @@ class _CollaborationState extends _OnlineState<CollaborationScreen> {
     _pendingRoute = null;
   }
 
-  /// Names come only from the owner-typed membership labels; IDs never show.
   String _person(BuildContext context, String id) {
     if (id == (widget.ownerView ? _grant.grantorId : _grant.recipientId)) {
       return context.tr('You');
@@ -534,7 +533,6 @@ class SharedTaskDetails extends StatelessWidget {
   const SharedTaskDetails({super.key, required this.task, this.assignee});
   final SharedTask task;
 
-  /// Display name for [SharedTask.assigneeUserId]; never the raw ID.
   final String? assignee;
   @override
   Widget build(BuildContext context) => Card(

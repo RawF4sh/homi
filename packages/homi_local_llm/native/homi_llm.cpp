@@ -116,7 +116,6 @@ extern "C" int homi_llm_generate(const char *id, const char *path,
     }
     const auto *vocab = llama_model_get_vocab(model);
     std::vector<llama_token> tokens;
-    // Only trusted delimiters parse special tokens. App/user/history text cannot create roles.
     if (!add_tokens(vocab, "<|im_start|>system\n", true, tokens) ||
         !add_tokens(vocab, system, false, tokens) ||
         !add_tokens(vocab, "<|im_end|>\n<|im_start|>user\n", true, tokens) ||
@@ -161,7 +160,6 @@ extern "C" int homi_llm_generate(const char *id, const char *path,
       }
     }
     if (cancelled.load()) return HOMI_CANCELLED;
-    // The pinned template disables thinking. Unexpected reasoning/control output is rejected.
     if (text.empty() || text.find("<think>") != std::string::npos ||
         text.find("</think>") != std::string::npos || text.find("<|im_") != std::string::npos) return HOMI_FAILED;
     std::memcpy(output, text.data(), text.size()); output[text.size()] = '\0';

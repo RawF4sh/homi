@@ -302,7 +302,6 @@ void main() {
       );
       expect(find.text('7 of 8 chosen'), findsOneWidget);
       expect(find.textContaining('You can connect up to 8'), findsNothing);
-      // Room 2 moves up to the first stop once room 1 is removed.
       expect(
         find.descendant(
           of: find.widgetWithText(CheckboxListTile, 'Fictional room 2'),

@@ -398,8 +398,6 @@ class SahPageHeader extends StatelessWidget {
             ),
             const SizedBox(height: 10),
           ],
-          // Large titles stop growing before body text so content still fits
-          // at accessibility sizes; body copy keeps the full system scale.
           MediaQuery.withClampedTextScaling(
             maxScaleFactor: 1.6,
             child: Semantics(
@@ -892,8 +890,6 @@ class _SahGroupScope extends InheritedWidget {
   bool updateShouldNotify(_SahGroupScope oldWidget) => false;
 }
 
-/// An inset grouped list: one rounded surface with separators. Tiles inside
-/// render as flat rows, so related rows read as one group.
 class SahListGroup extends StatelessWidget {
   const SahListGroup({super.key, required this.children, this.title});
   final List<Widget> children;
@@ -932,7 +928,6 @@ class SahListGroup extends StatelessWidget {
   }
 }
 
-/// The single recommended action for the current screen.
 class SahNextStepCard extends StatelessWidget {
   const SahNextStepCard({
     super.key,
@@ -1014,7 +1009,6 @@ class SahNextStepCard extends StatelessWidget {
 
 enum SahStepState { notStarted, inProgress, done, attention }
 
-/// A numbered stage row used for plan progress and application steps.
 class SahStepTile extends StatelessWidget {
   const SahStepTile({
     super.key,
@@ -1129,8 +1123,6 @@ class SahStepTile extends StatelessWidget {
   }
 }
 
-/// A small status label with a coloured dot. Text carries the meaning; the
-/// colour only reinforces it.
 class SahTag extends StatelessWidget {
   const SahTag({
     super.key,
@@ -1174,7 +1166,6 @@ class SahTag extends StatelessWidget {
   }
 }
 
-/// What the app can actually produce for a program or organization.
 enum SahOutputKind {
   officialFormDraft,
   preparationWorksheet,
@@ -1269,7 +1260,6 @@ class SahOutputLabel extends StatelessWidget {
 
 enum SahSaveState { saved, saving, waiting, problem }
 
-/// One vocabulary for saving: Saved, Saving…, Waiting to sync, or a problem.
 class SahStatusLine extends StatelessWidget {
   const SahStatusLine({super.key, required this.label, required this.state});
   final String label;

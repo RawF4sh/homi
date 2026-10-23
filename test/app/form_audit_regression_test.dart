@@ -230,8 +230,6 @@ Future<void> _enter(WidgetTester tester, String label, String value) async {
 
 Finder _formField(String key) => find.byKey(ValueKey('form-field-$key'));
 
-/// Seeds the private form journal, the durable path for values (including
-/// malformed restored dates) that the date picker itself cannot produce.
 Future<void> _seedForm(
   MemoryPrivateStore store,
   AppServices app,
@@ -264,7 +262,6 @@ void main() {
       final app = await _app(server, store);
       await tester.pumpWidget(_screen(app));
       await tester.pumpAndSettle();
-      // Nothing saved yet: the editors open directly.
       await _enter(tester, 'Given name', 'Fictional summary name');
       await _tap(tester, find.byKey(const ValueKey('form-save')));
       expect(server.saves, 1);
@@ -298,7 +295,6 @@ void main() {
           'updatedBy': 'fictional-user',
           'answers': [
             {'key': 'permission', 'value': true, 'reviewState': 'reported'},
-            // Both unknown on the wire; only this device knows "Not sure".
             {'key': 'order', 'value': null, 'reviewState': 'unknown'},
             {'key': 'evaluation', 'value': null, 'reviewState': 'unknown'},
           ],
@@ -325,7 +321,6 @@ void main() {
       expect(row('intake-order'), contains('Not sure'));
       expect(row('intake-evaluation'), contains('Not answered'));
       expect(find.text('Left blank on purpose'), findsOneWidget);
-      // Change opens the existing editor and returns to the summary.
       await _tap(
         tester,
         find.byKey(const ValueKey('form-change-memberFirstName')),
@@ -344,7 +339,6 @@ void main() {
         find.byKey(const ValueKey('form-summary-resident')),
         findsOneWidget,
       );
-      // One confirmation still records reviewState per provided field.
       await _tap(tester, find.byKey(const ValueKey('form-save')));
       expect(server.saves, 2);
       final saved = {
@@ -470,7 +464,6 @@ void main() {
         findsOneWidget,
       );
       expect(server.saves, 0);
-      // Validation is not a save conflict, so reconcile tools stay hidden.
       expect(find.byKey(const ValueKey('form-reconcile')), findsNothing);
       server.omitBirthDate = true;
       await _reopen(tester, app);
@@ -675,8 +668,6 @@ void main() {
       );
       await _tap(tester, find.byKey(const ValueKey('form-save')));
       expect(server.saves, 1);
-      // One "Confirm these answers" still records reviewState per field, and
-      // blank values are never marked reviewed (UI-029).
       final saved = {
         for (final answer in (server.saved!['answers'] as List).cast<Map>())
           answer['key']: answer,

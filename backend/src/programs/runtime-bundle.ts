@@ -71,7 +71,6 @@ export async function loadRuntimeBenefitsBundle(
         loadRegistry: async () => [], loadFormTemplate: async () => null });
     }
     if (selected === 'nationwide-preparation-v1') {
-      // Referral/checklist access is independent of the California PDF artifacts.
       const programs = createFederalPreparationPrograms();
       return Object.freeze({ name: selected, enabled: true,
         loadRegistry: async () => structuredClone(programs), loadFormTemplate: async () => null });
@@ -101,8 +100,6 @@ export async function loadRuntimeBenefitsBundle(
         entries.push({ program: item.program, template: item.template, bytes: Uint8Array.from(extraBytes) });
       }
     }
-    // Combined bundle: the five routes side by side; each keeps its own rule version, sources and output.
-    // Federal routes are checklist-only, so they have no form template entry.
     const federal = withNationwide ? createFederalPreparationPrograms() : [];
     return Object.freeze({ name: selected, enabled: true,
       loadRegistry: async () => [...entries.map(item => item.program), ...federal].map(program => structuredClone(program)),

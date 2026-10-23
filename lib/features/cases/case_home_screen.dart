@@ -50,8 +50,6 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
       !_selectionBlocked &&
       _workspaceKey.currentState?.canLeave != false;
 
-  /// The section the assistant should describe: the last work tab, never
-  /// the assistant tab itself.
   HomiDestination get _contextDestination =>
       HomiDestination.values[_lastWorkTab];
 
@@ -166,7 +164,6 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
             builder: (_) => AccountSettingsScreen(services: widget.services),
           ),
         )
-        // Account can delete plans; recheck removal receipts on return.
         .then((_) {
           if (_isCurrent) unawaited(_refreshLocal());
         });
@@ -811,8 +808,6 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
                     child: Text(context.tr('Manage plans')),
                   ),
                 ],
-                // The plan name is a title: it stops growing before body
-                // text so it stays whole at accessibility sizes.
                 child: MediaQuery.withClampedTextScaling(
                   maxScaleFactor: 1.6,
                   child: ConstrainedBox(
@@ -867,8 +862,6 @@ class _CaseHomeScreenState extends State<CaseHomeScreen>
     );
   }
 
-  /// No plan yet: each tab explains what it is for instead of repeating the
-  /// same message.
   Widget _noPlan(BuildContext context) {
     final (title, message, icon) = switch (HomiTab.values[_tab]) {
       HomiTab.rooms => (

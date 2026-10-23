@@ -154,8 +154,6 @@ void main() {
         find.text('Confirm the accepted application with the program.'),
         findsOneWidget,
       );
-      // Checklist-only routes never read as a failed form (UI-028), and
-      // program items lead to a contact action (UI-027).
       expect(find.text('Checklist — no form in this app'), findsOneWidget);
       expect(
         find.text('Official form not prepared. Its fields are unverified.'),

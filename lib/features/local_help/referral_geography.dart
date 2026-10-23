@@ -1,5 +1,3 @@
-/// Routing geography only. State selection never establishes program eligibility.
-/// Codes: US Census national_county2020.txt, reviewed 2026-10-26.
 class ReferralState {
   const ReferralState(
     this.code,
@@ -65,8 +63,6 @@ const usStates = <ReferralState>[
   ReferralState('WY', 'Wyoming', '56'),
 ];
 
-// Outside this release's reviewed routing scope. This does not assert that the
-// national networks lack territorial or Tribal services.
 const usTerritories = <ReferralState>[
   ReferralState('AS', 'American Samoa', '60', routingSupported: false),
   ReferralState('GU', 'Guam', '66', routingSupported: false),
@@ -87,8 +83,6 @@ ReferralState? referralState(String? code) => code == null
         ...usTerritories,
       ].where((s) => s.code == code.toUpperCase()).firstOrNull;
 
-/// A reviewed service-area statement. Partial areas retain restrictions and are
-/// discovery candidates only; no ZIP is resolved into a county or eligibility.
 class ReferralServiceArea {
   const ReferralServiceArea({
     required this.stateCode,
@@ -106,8 +100,6 @@ class ReferralServiceArea {
 const referralGeographySource =
     'https://www2.census.gov/geo/docs/reference/codes2020/national_county2020.txt';
 
-// Only county/county-equivalent codes used by the published catalog. Independent
-// Virginia cities retain their own names and FIPS instead of county-name guessing.
 const referralCountyFips = <String, Map<String, String>>{
   'PA': {'Philadelphia': '42101'},
   'AZ': {'Maricopa': '04013'},

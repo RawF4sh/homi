@@ -1,5 +1,3 @@
-// Strings for the October 2026 redesign of this area. Every entry needs
-// es, zh-Hans, zh-Hant, vi and fil.
 const redesignHelpTranslations = <String, Map<String, String>>{
   'This app has a checklist for this program': {
     'es': 'Esta aplicación tiene una lista de verificación para este programa',

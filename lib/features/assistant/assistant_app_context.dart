@@ -4,8 +4,7 @@ import '../../shared/navigation/homi_destination.dart';
 import '../assessment/application/home_safety/home_safety_session.dart';
 import 'assistant_context_v2.dart';
 
-/// Reads already-authorized, already-loaded state. Opening chat never fetches
-/// records, starts capture, prepares a packet, or loads private media.
+/// Build chat context from loaded, authorized app state
 AssistantContextV2 assistantAppContext(
   AppServices services, {
   required HomiDestination destination,

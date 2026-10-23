@@ -45,8 +45,6 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
   late final DraftSaveTracker _draftSaves;
   bool _leaving = false;
   bool _justSaved = false;
-  // The summary shows once online values match the saved answers; empty,
-  // offline or unsaved local values open in the editors.
   bool _editing = true;
   ProgramIntakeResponse? _intake;
   Set<String> _intakeNotSure = {};
@@ -130,7 +128,7 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
 
   void _restoreCached(Map<String, Object?> local) {
     final raw = local['response'];
-    if (raw == null) return; // Older journals need one online reload.
+    if (raw == null) return;
     final response = raw is Map && raw['schemaVersion'] == '2'
         ? FormAnswersResponse.fromV2Json(raw)
         : FormAnswersResponse.fromJson(raw);
@@ -150,7 +148,6 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
     for (final key in _activeKeys) {
       final value = values[key];
       _fields[key]!.text = value as String? ?? '';
-      // Offline context is useful for editing, never proof of current review.
       _reviewed[key] = false;
     }
     _uncertain = local['uncertain'] == true;
@@ -265,8 +262,6 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
     }
   }
 
-  // Read-only program answers for the summary. "Not sure" exists only in this
-  // device's intake journal; v2 stores it as unknown (null) like unanswered.
   Future<void> _readIntake() async {
     try {
       final snapshot = _screenCase();
@@ -466,8 +461,6 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
     }
   }
 
-  // One confirmation records reviewState=reviewed for each listed value; the
-  // per-field contract is unchanged and any later edit clears that field.
   Future<void> _confirm() async {
     if (_validateAnswers().isEmpty) {
       setState(() {
@@ -848,7 +841,6 @@ class _FormReviewScreenState extends State<FormReviewScreen> {
   );
 }
 
-/// One read-only answer with a "Change" link to its existing editor.
 class _SummaryRow extends StatelessWidget {
   const _SummaryRow({
     super.key,

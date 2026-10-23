@@ -473,8 +473,6 @@ void main() {
         await workspaceReady();
       }
 
-      // Numbered steps are disabled while the workspace reloads; target the
-      // InkWell so tapFinder waits for the enabled tap handler.
       Future<void> workspaceStep(String key) async {
         await workspaceReady();
         await tapFinder(
@@ -659,7 +657,6 @@ void main() {
         () {
           final coordinator = h.services!.coordinator;
           final findings = coordinator.snapshot?.findings;
-          // The embedded Rooms tab returns to its place list after saving.
           return findings?.length == 1 &&
               findings!.single.reviewState == 'confirmed' &&
               !coordinator.busy &&
@@ -743,8 +740,6 @@ void main() {
         'durable annotations saved',
         seconds: 55,
       );
-      // The embedded Rooms tab has no close action; leaving the tab is only
-      // allowed once the assessment and photo marks are durably flushed.
       await tab('plan');
       await until(
         () => find.text(ui('Resident details')).evaluate().isNotEmpty,
@@ -834,8 +829,6 @@ void main() {
           ),
           findsOneWidget,
         );
-        // The checklist of what others must still confirm is opened from the
-        // workspace's "Waiting on others" row.
         await workspaceStep('workspace-waiting');
         await until(
           () =>
@@ -988,7 +981,6 @@ void main() {
         await visible(givenName);
         await tester.enterText(givenName, packetText.residentName);
         await settle();
-        // An edited value stays unreviewed until the one explicit confirmation.
         await visible(
           find.byKey(const ValueKey('form-unconfirmed-memberFirstName')),
         );
@@ -1058,7 +1050,6 @@ void main() {
           ),
           findsOneWidget,
         );
-        // Only the confirmed concern's photo is selectable for the draft.
         await tapFinder(
           find.descendant(
             of: find.byKey(ValueKey('export-photo-$evidenceId')),
@@ -1326,7 +1317,6 @@ void main() {
         );
         await back();
         await workspaceReady();
-        // A "preparing" note is not a submission; the app never marks it sent.
         expect(
           find.descendant(
             of: workspaceStatus,

@@ -106,9 +106,6 @@ void main() {
         tester,
       ) async {
         narrowLargeText(tester, scale: 3.2);
-        // Model availability is a native boundary, not a widget-test timer.
-        // Supply the intended unavailable state instead of relying on a missing
-        // plugin's timeout being advanced by incidental scroll animations.
         const assistantChannel = MethodChannel('safe_at_home/assistant');
         final messenger =
             TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -150,9 +147,6 @@ void main() {
         expect(find.byKey(const ValueKey('case-room-scans')), findsNothing);
         await tapKey(tester, 'plan-tab-assistant');
         expect(find.byType(PlanAssistantScreen), findsOneWidget);
-        // At 3.2x, the context and App guidance occupy multiple viewports.
-        // Exercise the lazy list as a reader does instead of requiring every
-        // translated status to be mounted immediately when the screen opens.
         final assistantScroll = find.descendant(
           of: find.byKey(const ValueKey('assistant-messages')),
           matching: find.byType(Scrollable),
@@ -393,7 +387,6 @@ void main() {
     h.server.beforeRead = () => release.future;
     final refresh = find.widgetWithText(TextButton, 'Check saved state');
     await tester.ensureVisible(refresh);
-    // The tab bar sits below the list; lay out the scroll before tapping.
     await tester.pumpAndSettle();
     await tester.tap(refresh);
     await tester.pump();
