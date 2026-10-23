@@ -129,7 +129,7 @@ void main() {
         expect(
           find.text(
             words.text(
-              'On-device AI is unavailable right now. You can still use the help tools below.',
+              'Plan chat is unavailable right now. You can still use the help tools below.',
             ),
           ),
           findsOneWidget,
@@ -317,7 +317,7 @@ void main() {
       expect(find.byType(TextField), findsNothing);
       expect(
         find.text(
-          'On-device AI is unavailable right now. You can still use the help tools below.',
+          'Plan chat is unavailable right now. You can still use the help tools below.',
         ),
         findsOneWidget,
       );

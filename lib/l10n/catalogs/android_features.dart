@@ -1,47 +1,48 @@
 const androidFeatureTranslations = <String, Map<String, String>>{
-  "AI chat needs Android 8 or later. The other app tools still work.": {
+  "Plan chat needs Android 8 or later. The other app tools still work.": {
     "es":
-        "El chat con IA requiere Android 8 o posterior. Las otras herramientas siguen funcionando.",
-    "zh-Hans": "AI 聊天需要 Android 8 或更新版本。其他应用工具仍可使用。",
-    "zh-Hant": "AI 聊天需要 Android 8 或更新版本。其他 App 工具仍可使用。",
+        "El chat del plan requiere Android 8 o posterior. Las otras herramientas siguen funcionando.",
+    "zh-Hans": "计划聊天需要 Android 8 或更新版本。其他应用工具仍可使用。",
+    "zh-Hant": "計畫聊天需要 Android 8 或更新版本。其他 App 工具仍可使用。",
     "vi":
-        "Trò chuyện AI cần Android 8 trở lên. Các công cụ khác vẫn hoạt động.",
+        "Trò chuyện về kế hoạch cần Android 8 trở lên. Các công cụ khác vẫn hoạt động.",
     "fil":
-        "Kailangan ng AI chat ang Android 8 o mas bago. Gumagana pa rin ang ibang tool.",
+        "Kailangan ng chat tungkol sa plano ang Android 8 o mas bago. Gumagana pa rin ang ibang tool.",
   },
-  "Download the on-device AI model to use chat. Wi-Fi is recommended. No chat text is included in the download.": {
+  "Download the on-device model to use chat. Wi-Fi is recommended. No chat text is included in the download.": {
     "es":
-        "Descargue el modelo de IA del dispositivo para usar el chat. Se recomienda Wi-Fi. La descarga no incluye texto del chat.",
-    "zh-Hans": "请下载设备端 AI 模型以使用聊天。建议使用 Wi-Fi。下载不包含聊天内容。",
-    "zh-Hant": "請下載裝置端 AI 模型以使用聊天。建議使用 Wi-Fi。下載不包含聊天內容。",
+        "Descargue el modelo del dispositivo para usar el chat. Se recomienda Wi-Fi. La descarga no incluye texto del chat.",
+    "zh-Hans": "请下载设备端模型以使用聊天。建议使用 Wi-Fi。下载不包含聊天内容。",
+    "zh-Hant": "請下載裝置端模型以使用聊天。建議使用 Wi-Fi。下載不包含聊天內容。",
     "vi":
-        "Tải mô hình AI trên thiết bị để trò chuyện. Nên dùng Wi-Fi. Không có nội dung trò chuyện trong yêu cầu tải.",
+        "Tải mô hình trên thiết bị để trò chuyện. Nên dùng Wi-Fi. Không có nội dung trò chuyện trong yêu cầu tải.",
     "fil":
-        "I-download ang AI model sa device para makipag-chat. Inirerekomenda ang Wi-Fi. Walang chat text sa pag-download.",
+        "I-download ang model sa device para makipag-chat. Inirerekomenda ang Wi-Fi. Walang chat text sa pag-download.",
   },
-  "The on-device AI model is downloading. Check again when it finishes.": {
+  "The on-device model is downloading. Check again when it finishes.": {
     "es":
-        "El modelo de IA se está descargando. Vuelva a comprobar al terminar.",
-    "zh-Hans": "正在下载设备端 AI 模型。完成后请重新检查。",
-    "zh-Hant": "正在下載裝置端 AI 模型。完成後請重新檢查。",
-    "vi": "Đang tải mô hình AI trên thiết bị. Kiểm tra lại khi hoàn tất.",
-    "fil": "Dina-download ang AI model sa device. Suriin muli kapag tapos na.",
+        "El modelo del dispositivo se está descargando. Vuelva a comprobar al terminar.",
+    "zh-Hans": "正在下载设备端模型。完成后请重新检查。",
+    "zh-Hant": "正在下載裝置端模型。完成後請重新檢查。",
+    "vi": "Đang tải mô hình trên thiết bị. Kiểm tra lại khi hoàn tất.",
+    "fil": "Dina-download ang model sa device. Suriin muli kapag tapos na.",
   },
-  "On-device AI is not supported on this Android phone.": {
-    "es": "Este teléfono Android no admite IA en el dispositivo.",
-    "zh-Hans": "此 Android 手机不支持设备端 AI。",
-    "zh-Hant": "此 Android 手機不支援裝置端 AI。",
-    "vi": "Điện thoại Android này không hỗ trợ AI trên thiết bị.",
-    "fil": "Hindi sinusuportahan ang AI sa device sa Android phone na ito.",
+  "On-device chat is not supported on this Android phone.": {
+    "es": "Este teléfono Android no admite el chat en el dispositivo.",
+    "zh-Hans": "此 Android 手机不支持设备端聊天。",
+    "zh-Hant": "此 Android 手機不支援裝置端聊天。",
+    "vi": "Điện thoại Android này không hỗ trợ trò chuyện trên thiết bị.",
+    "fil": "Hindi sinusuportahan ang chat sa device sa Android phone na ito.",
   },
-  "The on-device AI model is not ready. Update Android AICore, then check again.": {
+  "The on-device model is not ready. Update Android AICore, then check again.": {
     "es":
-        "El modelo de IA no está listo. Actualice Android AICore y vuelva a comprobar.",
-    "zh-Hans": "设备端 AI 模型尚未就绪。请更新 Android AICore 后重试。",
-    "zh-Hant": "裝置端 AI 模型尚未就緒。請更新 Android AICore 後重試。",
-    "vi": "Mô hình AI chưa sẵn sàng. Cập nhật Android AICore rồi kiểm tra lại.",
+        "El modelo del dispositivo no está listo. Actualice Android AICore y vuelva a comprobar.",
+    "zh-Hans": "设备端模型尚未就绪。请更新 Android AICore 后重试。",
+    "zh-Hant": "裝置端模型尚未就緒。請更新 Android AICore 後重試。",
+    "vi":
+        "Mô hình trên thiết bị chưa sẵn sàng. Cập nhật Android AICore rồi kiểm tra lại.",
     "fil":
-        "Hindi pa handa ang AI model. I-update ang Android AICore at suriin muli.",
+        "Hindi pa handa ang model sa device. I-update ang Android AICore at suriin muli.",
   },
   "The on-device model does not support the selected app language. You can keep using the help tools below.": {
     "es":
@@ -53,15 +54,15 @@ const androidFeatureTranslations = <String, Map<String, String>>{
     "fil":
         "Hindi sinusuportahan ng model ang napiling wika. Magagamit pa rin ang mga tool sa tulong sa ibaba.",
   },
-  "AI chat needs a compatible iPhone or Android phone. You can keep using the help tools below.": {
+  "Plan chat needs a compatible iPhone or Android phone. You can keep using the help tools below.": {
     "es":
-        "El chat con IA requiere un iPhone o Android compatible. Puede seguir usando las herramientas de ayuda.",
-    "zh-Hans": "AI 聊天需要兼容的 iPhone 或 Android 手机。您仍可使用下方帮助工具。",
-    "zh-Hant": "AI 聊天需要相容的 iPhone 或 Android 手機。您仍可使用下方協助工具。",
+        "El chat del plan requiere un iPhone o Android compatible. Puede seguir usando las herramientas de ayuda.",
+    "zh-Hans": "计划聊天需要兼容的 iPhone 或 Android 手机。您仍可使用下方帮助工具。",
+    "zh-Hant": "計畫聊天需要相容的 iPhone 或 Android 手機。您仍可使用下方協助工具。",
     "vi":
-        "Trò chuyện AI cần iPhone hoặc Android tương thích. Bạn vẫn có thể dùng các công cụ trợ giúp.",
+        "Trò chuyện về kế hoạch cần iPhone hoặc Android tương thích. Bạn vẫn có thể dùng các công cụ trợ giúp.",
     "fil":
-        "Kailangan ng AI chat ang katugmang iPhone o Android. Magagamit pa rin ang mga tool sa tulong sa ibaba.",
+        "Kailangan ng chat tungkol sa plano ang katugmang iPhone o Android. Magagamit pa rin ang mga tool sa tulong sa ibaba.",
   },
   "Download on-device model": {
     "es": "Descargar modelo en el dispositivo",

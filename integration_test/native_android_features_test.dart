@@ -31,13 +31,13 @@ void main() {
     );
   }
 
-  testWidgets('AI status uses the installed native SDK without downloading', (
+  testWidgets('Chat status uses the installed native SDK without downloading', (
     tester,
   ) async {
     await harness(tester);
     final status = await call(_assistant, 'availability', {'locale': 'en'});
     debugPrint(
-      'Android native AI availability: $status (no download or inference)',
+      'Android native chat availability: $status (no download or inference)',
     );
     expect(
       status,

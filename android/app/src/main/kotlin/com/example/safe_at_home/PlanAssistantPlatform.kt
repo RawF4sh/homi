@@ -31,7 +31,7 @@ class PlanAssistantPlatform(private val activity: Activity, messenger: BinaryMes
     }
     fun register() {
         channel.setMethodCallHandler { call, result ->
-            if (detached) { result.error("UNAVAILABLE", "On-device AI is unavailable.", null); return@setMethodCallHandler }
+            if (detached) { result.error("UNAVAILABLE", "On-device chat is unavailable.", null); return@setMethodCallHandler }
             when (call.method) {
                 "availability" -> {
                     val args = call.arguments as? Map<*, *>
@@ -56,9 +56,9 @@ class PlanAssistantPlatform(private val activity: Activity, messenger: BinaryMes
                 "respond", "download" -> {
                     val request = if (call.method == "respond") PlanAssistantRequest.parse(call.arguments) else null
                     val id = request?.requestId ?: if (call.method == "download") PlanAssistantRequest.requestId(call.arguments) else null
-                    if (id == null) { result.error("INVALID_INPUT", "The AI request is invalid.", null) }
-                    else if (activeId != null) { result.error("BUSY", "Finish the current AI request.", null) }
-                    else if (Build.VERSION.SDK_INT < 26 || !foreground) { result.error("UNAVAILABLE", "On-device AI is unavailable.", null) }
+                    if (id == null) { result.error("INVALID_INPUT", "The chat request is invalid.", null) }
+                    else if (activeId != null) { result.error("BUSY", "Finish the current chat request.", null) }
+                    else if (Build.VERSION.SDK_INT < 26 || !foreground) { result.error("UNAVAILABLE", "On-device chat is unavailable.", null) }
                     else {
                         activeId = id; reply = result
                         active = scope.launch {
@@ -77,7 +77,7 @@ class PlanAssistantPlatform(private val activity: Activity, messenger: BinaryMes
                 }
                 "cancel" -> {
                     val id = PlanAssistantRequest.requestId(call.arguments)
-                    if (id == null) result.error("INVALID_INPUT", "The AI request is invalid.", null)
+                    if (id == null) result.error("INVALID_INPUT", "The chat request is invalid.", null)
                     else { if (activeId == id) cancelActive(); result.success(null) }
                 }
                 else -> result.notImplemented()
@@ -89,7 +89,7 @@ class PlanAssistantPlatform(private val activity: Activity, messenger: BinaryMes
         val result = reply
         activeId = null; reply = null; active = null
         if (code == null && foreground && !detached) result?.success(text)
-        else result?.error(code ?: "CANCELLED", "The AI request could not finish.", null)
+        else result?.error(code ?: "CANCELLED", "The chat request could not finish.", null)
     }
     private fun cancelActive() {
         val id = activeId ?: return

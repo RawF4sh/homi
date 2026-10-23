@@ -246,7 +246,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                     padding: const EdgeInsets.all(12),
                     child: Text(
                       context.tr(
-                        'AI can make mistakes. Confirm details in your plan.',
+                        'Generated replies can be wrong. Confirm details in your plan.',
                       ),
                     ),
                   ),
@@ -254,7 +254,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
                     padding: const EdgeInsets.all(12),
                     child: Text(
                       context.tr(
-                        'Replies use this phone’s on-device model. Chat text and replies are not sent to an AI server. Chat clears when you leave this screen, switch plans, or leave the app. Only the last two exchanges are used for follow-up questions. The assistant cannot change your plan, decide eligibility, or submit an application.',
+                        'Replies use this phone’s on-device model. Chat text and replies are not sent to a remote model server. Chat clears when you leave this screen, switch plans, or leave the app. Only the last two exchanges are used for follow-up questions. The assistant cannot change your plan, decide eligibility, or submit an application.',
                       ),
                     ),
                   ),
@@ -323,30 +323,30 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
   );
 
   String _availabilityText(AssistantAvailability value) => switch (value) {
-    AssistantAvailability.ready => 'On-device AI',
-    AssistantAvailability.requiresIos26 => 'AI chat needs iOS 26 or later.',
+    AssistantAvailability.ready => 'On-device chat',
+    AssistantAvailability.requiresIos26 => 'Plan chat needs iOS 26 or later.',
     AssistantAvailability.requiresAndroid26 =>
-      'AI chat needs Android 8 or later. The other app tools still work.',
+      'Plan chat needs Android 8 or later. The other app tools still work.',
     AssistantAvailability.modelDownloadable =>
-      'Download the on-device AI model to use chat. Wi-Fi is recommended. No chat text is included in the download.',
+      'Download the on-device model to use chat. Wi-Fi is recommended. No chat text is included in the download.',
     AssistantAvailability.modelDownloading =>
-      'The on-device AI model is downloading. Check again when it finishes.',
+      'The on-device model is downloading. Check again when it finishes.',
     AssistantAvailability.unsupportedDevice =>
       defaultTargetPlatform == TargetPlatform.android
-          ? 'On-device AI is not supported on this Android phone.'
+          ? 'On-device chat is not supported on this Android phone.'
           : 'This iPhone does not support Apple Intelligence.',
     AssistantAvailability.disabled =>
       'Turn on Apple Intelligence in iPhone Settings, then check again.',
     AssistantAvailability.modelNotReady =>
       defaultTargetPlatform == TargetPlatform.android
-          ? 'The on-device AI model is not ready. Update Android AICore, then check again.'
+          ? 'The on-device model is not ready. Update Android AICore, then check again.'
           : 'Apple’s on-device model is not ready. Check Apple Intelligence in Settings, then try again.',
     AssistantAvailability.unsupportedLanguage =>
       'The on-device model does not support the selected app language. You can keep using the help tools below.',
     AssistantAvailability.unsupportedPlatform =>
-      'AI chat needs a compatible iPhone or Android phone. You can keep using the help tools below.',
+      'Plan chat needs a compatible iPhone or Android phone. You can keep using the help tools below.',
     AssistantAvailability.unavailable =>
-      'On-device AI is unavailable right now. You can still use the help tools below.',
+      'Plan chat is unavailable right now. You can still use the help tools below.',
   };
 
   String _errorText(String code) => switch (code) {
@@ -374,7 +374,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
         if (c.checking) ...[
           const LinearProgressIndicator(),
           const SizedBox(height: 12),
-          Text(context.tr('Checking on-device AI…')),
+          Text(context.tr('Checking on-device chat…')),
         ] else if (!available) ...[
           SahNotice(message: context.tr(_availabilityText(c.availability))),
           const SizedBox(height: 12),
@@ -581,7 +581,7 @@ class _PlanAssistantScreenState extends State<PlanAssistantScreen>
       listenable: c,
       builder: (context, _) => Scaffold(
         appBar: AppBar(
-          title: Text(context.tr('AI assistant')),
+          title: Text(context.tr('Plan assistant')),
           actions: [
             if (MediaQuery.viewInsetsOf(context).bottom > 0)
               IconButton(
@@ -657,7 +657,7 @@ class _ChatMessage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  context.tr(reply ? 'AI assistant' : 'You'),
+                  context.tr(reply ? 'Plan assistant' : 'You'),
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

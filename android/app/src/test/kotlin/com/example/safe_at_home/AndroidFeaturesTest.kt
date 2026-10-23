@@ -18,7 +18,7 @@ class AndroidFeaturesTest {
         if (dense) repeat(4096) { i -> addPoint(i % 64 * .1f, i / 64 * .1f, 1f, .75f) }
     }
 
-    @Test fun `AI accepts only bounded UTF8 text and fresh request identifiers`() {
+    @Test fun `Chat accepts only bounded UTF8 text and fresh request identifiers`() {
         val v = mapOf("requestId" to id, "locale" to "zh-Hant", "question" to "房間模型", "history" to "[]", "findings" to "[]")
         assertEquals("房間模型", PlanAssistantRequest.parse(v)!!.question)
         for (bad in listOf(v + ("accountId" to "private"), v + ("question" to " "),

@@ -136,7 +136,7 @@ void main() {
       ('updateId', '12345678-1234-4123-8123-000000000001\n'),
       ('status', 'verified'),
       ('source', 'agency_verified'),
-      ('responsibleParty', 'agent'),
+      ('responsibleParty', 'unknown_role'),
       for (final date in [
         '0000-01-01',
         '2026-02-29',

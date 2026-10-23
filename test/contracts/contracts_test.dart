@@ -118,7 +118,7 @@ void main() {
       for (final bad in <(String, Object)>[
         ('value', -1),
         ('unit', 'inches'),
-        ('method', 'ai'),
+        ('method', 'unknown_method'),
         ('confirmed', 'true'),
       ]) {
         final input = rawCase();
